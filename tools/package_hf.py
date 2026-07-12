@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Assemble the Hugging Face distribution folder for Jugnu-Qwen3.6-35B-A3B.
+
+Collects the int4 container, tokenizer, engine sources, installer, and the
+`jugnu` wrapper into one folder, computes SHA-256 for every file into
+checksums.txt, and verifies nothing is missing. Large model files are
+HARD-LINKED (same volume) so the staging folder costs no extra disk space.
+
+Usage:
+  python3 tools/package_hf.py --out /path/to/staging [--repo-id user/name]
+
+Upload afterwards (needs `pip install huggingface_hub` and a write token):
+  hf upload <repo-id> /path/to/staging . --repo-type model
+"""
+
+import argparse
+import hashlib
+import os
+import pathlib
+import shutil
+import sys
+
+C_DIR = pathlib.Path(__file__).resolve().parents[1]
+
+MODEL_FILES = [
+    "experts.bin",
+    "resident.safetensors",
+    "manifest.json",
+    "config.json",
+    "generation_config.json",
+]
+
+SOURCE_FILES = [
+    "qwen36b.c",
+    "expert_cache.c",
+    "expert_cache.h",
+    "kernels.h",
+    "st.h",
+    "json.h",
+    "tok.h",
+    "tok_unicode.h",
+    "compat.h",
+]
+
+def sha256_file(path: pathlib.Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+def place(src: pathlib.Path, dst: pathlib.Path, link: bool) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    if link:
+        try:
+            os.link(src, dst)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dst)
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", required=True, type=pathlib.Path)
+    ap.add_argument("--snapshot", type=pathlib.Path, default=C_DIR / "qwen36_i4")
+    ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
+    args = ap.parse_args()
+    out: pathlib.Path = args.out
+    out.mkdir(parents=True, exist_ok=True)
+
+    staged: list[pathlib.Path] = []
+    for name in MODEL_FILES:
+        src = args.snapshot / name
+        if not src.exists():
+            print(f"missing model file: {src}", file=sys.stderr)
+            return 1
+        place(src, out / name, link=True)
+        staged.append(out / name)
+    tok = C_DIR / "tokenizer_qwen36.json"
+    place(tok, out / "tokenizer_qwen36.json", link=True)
+    staged.append(out / "tokenizer_qwen36.json")
+
+    for name in SOURCE_FILES:
+        src = C_DIR / name
+        if not src.exists():
+            print(f"missing source file: {src}", file=sys.stderr)
+            return 1
+        place(src, out / "engine" / name, link=False)
+        staged.append(out / "engine" / name)
+
+    for name, dst in (("install.sh", out / "install.sh"),
+                      ("jugnu", out / "jugnu"),
+                      ("README.md", out / "README.md")):
+        src = C_DIR.parent / "dist" / name
+        if not src.exists():
+            print(f"missing dist file: {src}", file=sys.stderr)
+            return 1
+        place(src, dst, link=False)
+        if args.repo_id != "REPO_ID_PLACEHOLDER":
+            text = dst.read_text(encoding="utf-8")
+            if "REPO_ID_PLACEHOLDER" in text:
+                dst.write_text(text.replace("REPO_ID_PLACEHOLDER", args.repo_id),
+                               encoding="utf-8")
+        staged.append(dst)
+
+    lines = []
+    for path in sorted(staged):
+        digest = sha256_file(path)
+        lines.append(f"{digest}  {path.relative_to(out)}")
+        print(f"{digest[:16]}  {path.relative_to(out)}")
+    (out / "checksums.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    total = sum(p.stat().st_size for p in staged) / 1e9
+    print(f"\nstaged {len(staged)} files, {total:.2f} GB -> {out}")
+    print(f"upload: hf upload {args.repo_id} {out} . --repo-type model")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

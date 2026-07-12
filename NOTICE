@@ -1,0 +1,17 @@
+Jugnu — a 35B model for everyone
+Copyright (c) 2026 Deepan Wadhwa
+
+This product is inspired by and built on colibrì
+(https://github.com/JustVugg/colibri), copyright JustVugg (Vincenzo),
+licensed under the Apache License, Version 2.0. The SIMD kernels
+(src/kernels.h) and utility headers (src/st.h, src/json.h, src/compat.h,
+src/tok.h, src/tok_unicode.h) originate from or derive from the colibrì
+project.
+
+The model weights distributed alongside this software are converted from
+Qwen3.6-35B-A3B (https://huggingface.co/Qwen/Qwen3.6-35B-A3B),
+copyright the Qwen team / Alibaba Cloud, licensed under the Apache
+License, Version 2.0.
+
+Jugnu is not affiliated with or endorsed by the colibrì project,
+Alibaba Cloud, or the Qwen team.

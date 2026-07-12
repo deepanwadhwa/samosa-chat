@@ -1,0 +1,62 @@
+#!/bin/sh
+# jugnu — chat with Qwen3.6-35B-A3B locally. No cloud, no account, no telemetry.
+#
+#   jugnu "explain how DNS works"          answer a question
+#   jugnu --continue "and DNSSEC?"         follow up on the last conversation
+#   jugnu --think "hard logic puzzle"      slower, reasons step-by-step
+#   jugnu --fast "..."                     use all performance cores (runs warmer)
+#   jugnu --long "..."                     allow a long answer (2048 tokens)
+#   jugnu doctor                           check the installation
+#
+# Conversations resume instantly from a small snapshot — your chat history
+# never has to be re-processed, even after a reboot.
+
+set -eu
+
+HOME_DIR="${JUGNU_HOME:-$HOME/.jugnu}"
+ENGINE="$HOME_DIR/bin/qwen36b"
+MODEL="$HOME_DIR/model"
+TOKENIZER="$HOME_DIR/tokenizer_qwen36.json"
+SESSION="$HOME_DIR/last_session.qws"
+
+THINK="--no-thinking"
+TOKENS=512
+RESUME=""
+
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+doctor() {
+  ok=1
+  [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
+  [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
+  [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
+  [ -f "$SESSION" ] && echo "session:   $(du -h "$SESSION" | awk '{print $1}') (jugnu --continue works)" || echo "session:   none yet"
+  echo "ram:       $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+  [ "$ok" = 1 ] && echo "all good." || exit 1
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --continue) [ -f "$SESSION" ] && RESUME=1 || echo "(no previous conversation - starting fresh)" ;;
+    --think)    THINK="" ;;
+    --fast)     OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu); export OMP_NUM_THREADS ;;
+    --long)     TOKENS=2048 ;;
+    doctor)     doctor; exit 0 ;;
+    -h|--help)  usage ;;
+    --*)        echo "unknown flag: $1 (try: jugnu --help)"; exit 1 ;;
+    *)          break ;;
+  esac
+  shift
+done
+
+[ $# -gt 0 ] || usage
+
+if [ -n "$RESUME" ]; then
+  SNAP="$MODEL" exec "$ENGINE" --resume-session "$SESSION" --chat "$*" \
+    ${THINK:+$THINK} --stream --tokens "$TOKENS" \
+    --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
+else
+  SNAP="$MODEL" exec "$ENGINE" --chat "$*" \
+    ${THINK:+$THINK} --stream --tokens "$TOKENS" \
+    --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
+fi

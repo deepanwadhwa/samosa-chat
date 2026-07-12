@@ -1,0 +1,6 @@
+qwen36b
+test_expert_cache
+test_kv_cache
+*.qws
+*.dSYM/
+model/
