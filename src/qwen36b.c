@@ -2789,6 +2789,18 @@ typedef int (*TokenSink)(int token, void *ctx); /* return nonzero to stop */
 typedef struct {
     int sample, top_k;
     float temperature, top_p;
+    /* Penalita' di presenza in stile OpenAI, sottratta dal logit di ogni
+     * token GIA' GENERATO in questa risposta.  Default 0 (sampling ufficiale
+     * intatto).  La famiglia Qwen la raccomanda per i deployment quantizzati
+     * contro le ripetizioni; qui mitiga il raddoppio sporadico delle parole
+     * funzione dell'int4 (vedi docs/bench_log.md 2026-07-12). */
+    float presence_penalty;
+    /* Penalita' solo sull'ULTIMO token emesso: colpisce esattamente il
+     * raddoppio immediato ("of of") senza punire il riuso legittimo dei
+     * token nel resto del documento (essenziale per il codice). */
+    float last_token_penalty;
+    int last_token;
+    uint8_t *seen;          /* bitmap vocab, allocata da generate quando serve */
     uint64_t rng;
 } GenOptions;
 typedef struct {
@@ -2802,15 +2814,35 @@ static uint64_t rng_next(uint64_t *s) {
     return x * 2685821657736338717ULL;
 }
 
+static float penalized(const GenOptions *o, int id, float v) {
+    if (!o) return v;
+    if (o->presence_penalty > 0.f && o->seen && (o->seen[id >> 3] & (1u << (id & 7))))
+        v -= o->presence_penalty;
+    if (o->last_token_penalty > 0.f && id == o->last_token)
+        v -= o->last_token_penalty;
+    return v;
+}
+
+static void mark_seen(GenOptions *o, int id) {
+    if (!o) return;
+    if (o->seen) o->seen[id >> 3] |= (uint8_t)(1u << (id & 7));
+    o->last_token = id;
+}
+
 static int choose_token(const float *logit, int vocab, GenOptions *o) {
     if (!o || !o->sample || o->temperature <= 0.f) {
-        int best=0; for(int i=1;i<vocab;i++) if(logit[i]>logit[best]) best=i;
+        int best = 0; float bv = penalized(o, 0, logit[0]);
+        for (int i = 1; i < vocab; i++) {
+            float v = penalized(o, i, logit[i]);
+            if (v > bv) { bv = v; best = i; }
+        }
+        mark_seen(o, best);
         return best;
     }
     int k=o->top_k; if(k<1) k=vocab; if(k>vocab) k=vocab; if(k>256) k=256;
     int ids[256], n=0; float vals[256];
     for(int id=0;id<vocab;id++) {
-        float v=logit[id]; if(!isfinite(v)) continue;
+        float v=penalized(o,id,logit[id]); if(!isfinite(v)) continue;
         if(n==k && v<=vals[n-1]) continue;
         int p=n<k?n:n-1; if(n<k)n++;
         while(p>0 && v>vals[p-1]) { if(p<k){vals[p]=vals[p-1];ids[p]=ids[p-1];} p--; }
@@ -2822,8 +2854,10 @@ static int choose_token(const float *logit, int vocab, GenOptions *o) {
     float target=(o->top_p>0.f&&o->top_p<1.f)?o->top_p*total:total, cum=0.f;
     int keep=0; do { cum+=weights[keep++]; } while(keep<n && cum<target);
     double u=(double)(rng_next(&o->rng)>>11)*(1.0/9007199254740992.0)*cum, acc=0;
-    for(int i=0;i<keep;i++){ acc+=weights[i]; if(u<acc) return ids[i]; }
-    return ids[keep-1];
+    int chosen=ids[keep-1];
+    for(int i=0;i<keep;i++){ acc+=weights[i]; if(u<acc){ chosen=ids[i]; break; } }
+    mark_seen(o, chosen);
+    return chosen;
 }
 
 static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
@@ -2851,6 +2885,8 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     }
     
     for (int i = 0; i < np; i++) out[i] = prompt[i];
+    if (options && options->presence_penalty > 0.f && !options->seen)
+        options->seen = calloc(((size_t)c->vocab + 7) / 8, 1);
     double gen_t0=now_s();
     float *logit = step(m, prompt, np, 0);
     double prefill_done=now_s();
@@ -3054,6 +3090,8 @@ static void generate_continue(Model *m, int *hist, int hist_len,
                               TokenSink sink, void *sink_ctx, GenOptions *options,
                               GenStats *stats) {
     Cfg *c = &m->c;
+    if (options && options->presence_penalty > 0.f && !options->seen)
+        options->seen = calloc(((size_t)c->vocab + 7) / 8, 1);
     int n_cont = 1 + n_extra;
     int *cont = malloc((size_t)n_cont * sizeof(int));
     cont[0] = hist[hist_len - 1];
@@ -3386,7 +3424,7 @@ static int chat_token_sink(int id, void *opaque) {
 }
 
 static void load_generation_options(const char *snap, GenOptions *o) {
-    *o=(GenOptions){.sample=1,.top_k=20,.temperature=1.f,.top_p=.95f,
+    *o=(GenOptions){.sample=1,.top_k=20,.temperature=1.f,.top_p=.95f,.last_token=-1,
                     .rng=(uint64_t)time(NULL)^(uint64_t)getpid()};
     char path[2048]; snprintf(path,sizeof(path),"%s/generation_config.json",snap);
     FILE *f=fopen(path,"rb"); if(!f)return;
@@ -3548,7 +3586,7 @@ int main(int argc, char **argv) {
     const char *teacher_corpus = NULL, *teacher_output = NULL;
     int teacher_calibration = 128;
     int n_chat = 128, no_thinking = 0, stream = 0, bad_option = 0, greedy=0;
-    int cli_top_k=-1; float cli_top_p=-1.f, cli_temp=-1.f; uint64_t cli_seed=0;
+    int cli_top_k=-1; float cli_top_p=-1.f, cli_temp=-1.f, cli_presence=-1.f, cli_no_doubling=-1.f; uint64_t cli_seed=0;
     const char *cli_save_session = NULL, *cli_resume_session = NULL;
     int cli_resume_decode = 0;
     const char *moe_fixed = getenv("MOE_K"), *moe_mass = getenv("MOE_MASS");
@@ -3599,6 +3637,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--top-k") && i+1<argc) cli_top_k=atoi(argv[++i]);
         else if (!strcmp(argv[i], "--top-p") && i+1<argc) cli_top_p=(float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i+1<argc) cli_seed=(uint64_t)strtoull(argv[++i],NULL,10);
+        else if (!strcmp(argv[i], "--presence-penalty") && i+1<argc) cli_presence=(float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--no-doubling") && i+1<argc) cli_no_doubling=(float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--moe-k")) {
             if (i + 1 >= argc) { fprintf(stderr, "--moe-k richiede un valore\n"); bad_option = 1; }
             else cli_moe_fixed = argv[++i];
@@ -3779,6 +3819,8 @@ int main(int argc, char **argv) {
         printf("== Qwen3.6 Stage-B chat (prompt tokens via %s) ==\n", tokenizer_path);
         GenOptions options; load_generation_options(snap,&options);
         if(greedy)options.sample=0; if(cli_temp>=0)options.temperature=cli_temp;
+        if(cli_presence>=0)options.presence_penalty=cli_presence;
+        if(cli_no_doubling>=0)options.last_token_penalty=cli_no_doubling;
         if(cli_top_k>=0)options.top_k=cli_top_k; if(cli_top_p>=0)options.top_p=cli_top_p;
         if(cli_seed)options.rng=cli_seed;
         if(options.temperature<=0 || options.top_k<1 || options.top_p<=0 || options.top_p>1){
