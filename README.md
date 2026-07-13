@@ -9,6 +9,14 @@ Jugnu is ~4,000 lines of dependency-free C. It keeps 1.3 GB of dense weights
 resident in RAM and streams the 16.6 GB of mixture-of-experts weights from
 SSD on demand, so a 35B-parameter model fits in a 2–3 GB memory footprint.
 
+## Demo
+
+Generation and memory footprint, live (35B parameters, 2.5 GB peak RSS):
+
+<p align="center"><img src="assets/demo.gif" alt="jugnu demo: streaming generation with live memory footprint" width="740"></p>
+
+Reproduce it yourself after installing: `./demo.sh`
+
 ## Install
 
 ```sh
