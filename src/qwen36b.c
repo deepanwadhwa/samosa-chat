@@ -2161,7 +2161,20 @@ static void attention_gqa(Model *m, Layer *l, int layer, float *x, int S, int po
     
     float *ctx = falloc((int64_t)S * H * hd);
     float scale = 1.f / sqrtf((float)hd);
-    
+
+    /* Punteggi di attenzione su HEAP, dimensionati al contesto reale: il
+     * vecchio buffer fisso sc[4096] sfondava lo stack (SIGABRT via
+     * __stack_chk_fail) alla prima generazione con contesto > 4096 token —
+     * mai colpito finche' i tetti di generazione erano piccoli.  Una fetta
+     * per thread; collapse(2)+static garantisce che ogni iterazione usi solo
+     * la fetta del proprio thread. */
+#ifdef _OPENMP
+    int sc_threads = omp_get_max_threads();
+#else
+    int sc_threads = 1;
+#endif
+    float *sc_pool = falloc((int64_t)sc_threads * m->max_t);
+
     #pragma omp parallel for collapse(2) schedule(static)
     for (int g = 0; g < G; g++) {
         for (int h_in_g = 0; h_in_g < grp; h_in_g++) {
@@ -2169,8 +2182,12 @@ static void attention_gqa(Model *m, Layer *l, int layer, float *x, int S, int po
             for (int s = 0; s < S; s++) {
                 int qpos = pos_base + s;
                 const float *qv = q + (int64_t)s * H * hd + h * hd;
-                
-                float sc[4096];
+
+#ifdef _OPENMP
+                float *sc = sc_pool + (int64_t)omp_get_thread_num() * m->max_t;
+#else
+                float *sc = sc_pool;
+#endif
                 for (int t = 0; t <= qpos; t++) {
                     const float *kv = m->K[layer] + ((int64_t)g * m->max_t + t) * hd;
                     float acc = 0;
@@ -2190,6 +2207,7 @@ static void attention_gqa(Model *m, Layer *l, int layer, float *x, int S, int po
             }
         }
     }
+    free(sc_pool);
     free(q);
     
     for (int64_t j = 0; j < (int64_t)S * H * hd; j++) {

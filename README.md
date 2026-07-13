@@ -14,7 +14,7 @@ Real output from this model running on the 16 GB test machine, commands shown ve
 ### A landing page
 
 ```sh
-jugnu --fast --long "Write a complete, single-file landing page (HTML with embedded CSS, \
+jugnu --fast --think "Write a complete, single-file landing page (HTML with embedded CSS, \
 no JavaScript) for a small specialty coffee shop called Kaapi. Include a hero section, \
 a menu with four items, and a footer. Clean, modern, dark theme. Keep the CSS compact."
 ```
@@ -311,7 +311,6 @@ jugnu "explain how a hash table handles collisions"
 jugnu --continue "and which strategy does Python use?"  # resumes last conversation
 jugnu --think "tricky logic puzzle"                     # chain-of-thought mode
 jugnu --fast "..."                                      # all P-cores
-jugnu --long "..."                                      # up to 2048 output tokens
 jugnu doctor                                            # verify the install
 ```
 
