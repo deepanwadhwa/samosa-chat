@@ -368,6 +368,13 @@ checkpoint shard-by-shard in under 25 GB of working disk.
 - Sessions (`QWSESS01`): geometry-bound, SHA-256-sealed snapshots written
   atomically (tmp + fsync + rename).
 
+## Roadmap
+
+A local chat app on this engine — ChatGPT-style UI in the browser, document
+chat built on instant-resume sessions, and user-initiated web access — is
+specified with measured acceptance gates in
+[docs/APP_TASKS.md](docs/APP_TASKS.md).
+
 ## Known limitations
 
 - The int4 conversion occasionally doubles a short function word during
