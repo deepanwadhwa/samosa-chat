@@ -76,6 +76,14 @@ soak, swap/write/thermal guardrails).
 
 Source repository: https://github.com/deepanwadhwa/Jugnu
 
+## Known limitations
+
+- The int4 conversion occasionally doubles a short function word during
+  generation ("of of"), roughly once per ~10 longer answers — a quantization
+  artifact of generation-time states, absent under teacher forcing.
+  Re-asking or a different seed avoids it.
+- Text-only: the upstream vision tower is not included.
+
 ## Credits and license
 
 Built on [colibrì](https://github.com/JustVugg/colibri) by JustVugg: the
