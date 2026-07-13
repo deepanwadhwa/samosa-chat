@@ -11,7 +11,7 @@ tags:
 pipeline_tag: text-generation
 ---
 
-# Jugnu — Qwen3.6-35B-A3B int4 for 16 GB Macs
+# Samosa Chat — Qwen3.6-35B-A3B int4 for 16 GB Macs
 
 Run Qwen3.6-35B-A3B (int4, text-only) locally on an Apple Silicon Mac with
 16 GB of RAM. No cloud, no account, no telemetry, no GPU. This repo contains
@@ -32,15 +32,15 @@ curl -fsSL https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main/install.sh | 
 Requirements: Apple Silicon Mac (M1 or newer), 16 GB RAM, ~25 GB free disk,
 ~18 GB download. The installer verifies every file by SHA-256, resumes
 interrupted downloads, compiles the engine locally, and runs a smoke test.
-No admin rights. Uninstall: `rm -rf ~/.jugnu`.
+No admin rights. Uninstall: `rm -rf ~/.samosa`.
 
 ## Use
 
 ```sh
-jugnu "explain how a hash table handles collisions"
-jugnu --continue "and which strategy does Python use?"  # resumes last conversation
-jugnu --think "tricky logic puzzle"                     # chain-of-thought mode
-jugnu --fast "..."                                      # all P-cores
+samosa "explain how a hash table handles collisions"
+samosa --continue "and which strategy does Python use?"  # resumes last conversation
+samosa --think "tricky logic puzzle"                     # chain-of-thought mode
+samosa --fast "..."                                      # all P-cores
 ```
 
 `--continue` restores the previous conversation from a ~70 MB snapshot
@@ -71,10 +71,10 @@ soak, swap/write/thermal guardrails).
 | `resident.safetensors` | 1.3 GB | dense weights kept in RAM |
 | `tokenizer_qwen36.json` | 28 MB | tokenizer (248,320-token vocab) |
 | `engine/` | ~250 KB | complete C source |
-| `install.sh`, `jugnu` | — | installer and chat command |
+| `install.sh`, `samosa` | — | installer and chat command |
 | `checksums.txt` | — | SHA-256 of every file above |
 
-Source repository: https://github.com/deepanwadhwa/Jugnu
+Source repository: https://github.com/deepanwadhwa/samosa-chat
 
 ## Known limitations
 
@@ -88,7 +88,7 @@ Source repository: https://github.com/deepanwadhwa/Jugnu
 
 Built on [colibrì](https://github.com/JustVugg/colibri) by JustVugg: the
 expert-streaming design, SIMD kernels, and utility headers originate there.
-Jugnu adds the Qwen3.6 engine (DeltaNet linear attention, gated GQA,
+Samosa Chat adds the Qwen3.6 engine (DeltaNet linear attention, gated GQA,
 256-expert MoE), the converter, sessions, and the distribution.
 
 Apache-2.0. Weights converted from Qwen/Qwen3.6-35B-A3B — credit to the Qwen

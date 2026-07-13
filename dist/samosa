@@ -1,19 +1,19 @@
 #!/bin/sh
-# jugnu — chat with Qwen3.6-35B-A3B locally. No cloud, no account, no telemetry.
+# samosa — chat with Qwen3.6-35B-A3B locally. No cloud, no account, no telemetry.
 #
-#   jugnu "explain how DNS works"          answer a question
-#   jugnu --continue "and DNSSEC?"         follow up on the last conversation
-#   jugnu --think "hard logic puzzle"      slower, reasons step-by-step
-#   jugnu --fast "..."                     use all performance cores (runs warmer)
-#   jugnu --long "..."                     allow a long answer (2048 tokens)
-#   jugnu doctor                           check the installation
+#   samosa "explain how DNS works"          answer a question
+#   samosa --continue "and DNSSEC?"         follow up on the last conversation
+#   samosa --think "hard logic puzzle"      slower, reasons step-by-step
+#   samosa --fast "..."                     use all performance cores (runs warmer)
+#   samosa --long "..."                     allow a long answer (2048 tokens)
+#   samosa doctor                           check the installation
 #
 # Conversations resume instantly from a small snapshot — your chat history
 # never has to be re-processed, even after a reboot.
 
 set -eu
 
-HOME_DIR="${JUGNU_HOME:-$HOME/.jugnu}"
+HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
 ENGINE="$HOME_DIR/bin/qwen36b"
 MODEL="$HOME_DIR/model"
 TOKENIZER="$HOME_DIR/tokenizer_qwen36.json"
@@ -30,7 +30,7 @@ doctor() {
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
   [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
   [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
-  [ -f "$SESSION" ] && echo "session:   $(du -h "$SESSION" | awk '{print $1}') (jugnu --continue works)" || echo "session:   none yet"
+  [ -f "$SESSION" ] && echo "session:   $(du -h "$SESSION" | awk '{print $1}') (samosa --continue works)" || echo "session:   none yet"
   echo "ram:       $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
@@ -43,7 +43,7 @@ while [ $# -gt 0 ]; do
     --long)     TOKENS=2048 ;;
     doctor)     doctor; exit 0 ;;
     -h|--help)  usage ;;
-    --*)        echo "unknown flag: $1 (try: jugnu --help)"; exit 1 ;;
+    --*)        echo "unknown flag: $1 (try: samosa --help)"; exit 1 ;;
     *)          break ;;
   esac
   shift

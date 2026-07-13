@@ -1,9 +1,9 @@
-# Jugnu
+# Samosa Chat
 
 Run **Qwen3.6-35B-A3B** (int4, text-only) locally on a **16 GB Apple Silicon
 Mac**. No cloud, no account, no telemetry, no GPU.
 
-Jugnu is ~4,000 lines of dependency-free C. It keeps 1.3 GB of dense weights
+Samosa Chat is ~4,000 lines of dependency-free C. It keeps 1.3 GB of dense weights
 resident in RAM and streams the 16.6 GB of mixture-of-experts weights from
 SSD on demand, so a 35B-parameter model fits in a 2–3 GB memory footprint.
 
@@ -14,7 +14,7 @@ Real output from this model running on the 16 GB test machine, commands shown ve
 ### A landing page
 
 ```sh
-jugnu --fast --think "Write a complete, single-file landing page (HTML with embedded CSS, \
+samosa --fast --think "Write a complete, single-file landing page (HTML with embedded CSS, \
 no JavaScript) for a small specialty coffee shop called Kaapi. Include a hero section, \
 a menu with four items, and a footer. Clean, modern, dark theme. Keep the CSS compact."
 ```
@@ -255,7 +255,7 @@ Engine stats for this exact run (seed 11, 4 threads):
 ### A Python utility
 
 ```sh
-jugnu "Write a Python function merge_intervals(intervals) that merges overlapping \
+samosa "Write a Python function merge_intervals(intervals) that merges overlapping \
 intervals. Include type hints, a concise docstring, and three assert-based test cases."
 ```
 
@@ -296,22 +296,22 @@ unsorted-input tests. Stats: `generated=191 decode 11.19 tok/s peak_rss=2.53 GB`
 ## Install
 
 ```sh
-curl -fsSL https://huggingface.co/deepanwa/Jugnu-Qwen3.6-35B-A3B-int4/resolve/main/install.sh | sh
+curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-int4/resolve/main/install.sh | sh
 ```
 
 Requirements: Apple Silicon Mac (M1 or newer), 16 GB RAM, ~25 GB free disk.
 The installer checks the machine, downloads ~18 GB (resumable, every file
 SHA-256-verified), compiles the engine locally, and runs a smoke test.
-No admin rights needed. Uninstall: `rm -rf ~/.jugnu`.
+No admin rights needed. Uninstall: `rm -rf ~/.samosa`.
 
 ## Use
 
 ```sh
-jugnu "explain how a hash table handles collisions"
-jugnu --continue "and which strategy does Python use?"  # resumes last conversation
-jugnu --think "tricky logic puzzle"                     # chain-of-thought mode
-jugnu --fast "..."                                      # all P-cores
-jugnu doctor                                            # verify the install
+samosa "explain how a hash table handles collisions"
+samosa --continue "and which strategy does Python use?"  # resumes last conversation
+samosa --think "tricky logic puzzle"                     # chain-of-thought mode
+samosa --fast "..."                                      # all P-cores
+samosa doctor                                            # verify the install
 ```
 
 `--continue` restores the previous conversation from a ~70 MB snapshot
@@ -383,7 +383,7 @@ checkpoint shard-by-shard in under 25 GB of working disk.
 
 Built on [colibrì](https://github.com/JustVugg/colibri) by JustVugg: the
 expert-streaming design and the SIMD kernels (`src/kernels.h`) and utility
-headers originate there. Jugnu adds the Qwen3.6 engine (DeltaNet, gated GQA,
+headers originate there. Samosa Chat adds the Qwen3.6 engine (DeltaNet, gated GQA,
 256-expert MoE), the converter, sessions, and the distribution.
 
 Weights converted from

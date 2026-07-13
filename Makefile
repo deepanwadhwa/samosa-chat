@@ -1,9 +1,9 @@
-# Jugnu — build the engine. `make` for the portable build; `make omp` for
+# Samosa Chat — build the engine. `make` for the portable build; `make omp` for
 # the multithreaded build (brew install libomp first).
 CC ?= clang
 OMP_PREFIX := $(shell [ -d /opt/homebrew/opt/libomp ] && echo /opt/homebrew/opt/libomp || echo /usr/local/opt/libomp)
 
-jugnu-engine: src/qwen36b.c src/expert_cache.c
+samosa-engine: src/qwen36b.c src/expert_cache.c
 	$(CC) -O3 -Wno-unused-function src/qwen36b.c src/expert_cache.c -o qwen36b -lm
 
 omp: src/qwen36b.c src/expert_cache.c

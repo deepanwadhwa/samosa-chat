@@ -1,27 +1,27 @@
 #!/bin/sh
-# Jugnu installer — one command, no admin rights, no app store.
+# Samosa Chat installer — one command, no admin rights, no app store.
 #
 #   curl -fsSL https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main/install.sh | sh
 #
 # What it does, in order:
 #   1. Checks your Mac: Apple Silicon, 16 GB RAM, ~25 GB free disk, a C compiler.
-#   2. Downloads the model (~18 GB) into ~/.jugnu — resumable, checksum-verified.
+#   2. Downloads the model (~18 GB) into ~/.samosa — resumable, checksum-verified.
 #   3. Compiles the inference engine locally (one clang command, ~15 seconds).
-#   4. Installs the `jugnu` chat command and runs a hello-world test.
+#   4. Installs the `samosa` chat command and runs a hello-world test.
 #
 # Re-running is safe: finished downloads are verified and skipped.
-# Uninstall: rm -rf ~/.jugnu (and the PATH line it added to your shell rc).
+# Uninstall: rm -rf ~/.samosa (and the PATH line it added to your shell rc).
 
 set -eu
 
-BASE_URL="${JUGNU_BASE_URL:-https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main}"
-HOME_DIR="${JUGNU_HOME:-$HOME/.jugnu}"
+BASE_URL="${SAMOSA_BASE_URL:-https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main}"
+HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
 MODEL_DIR="$HOME_DIR/model"
 ENGINE_DIR="$HOME_DIR/engine"
 BIN_DIR="$HOME_DIR/bin"
 
-say()  { printf '\033[1;36m[jugnu]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[jugnu] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ---------- 1. machine checks ----------
 [ "$(uname -s)" = "Darwin" ] || fail "this installer currently supports macOS only"
@@ -80,8 +80,8 @@ get tokenizer_qwen36.json    "$HOME_DIR/tokenizer_qwen36.json"
 for f in qwen36b.c expert_cache.c expert_cache.h kernels.h st.h json.h tok.h tok_unicode.h compat.h; do
   get "engine/$f" "$ENGINE_DIR/$f"
 done
-get jugnu "$BIN_DIR/jugnu"
-chmod +x "$BIN_DIR/jugnu"
+get samosa "$BIN_DIR/samosa"
+chmod +x "$BIN_DIR/samosa"
 
 # ---------- 3. build ----------
 say "Compiling the engine..."
@@ -112,17 +112,17 @@ case ":$PATH:" in *":$BIN_DIR:"*) ;; *)
     */bash) RC="$HOME/.bashrc" ;;
     *)      RC="$HOME/.profile" ;;
   esac
-  if ! grep -qs "\.jugnu/bin" "$RC" 2>/dev/null; then
-    printf '\nexport PATH="$HOME/.jugnu/bin:$PATH"\n' >> "$RC"
-    say "added ~/.jugnu/bin to PATH in $RC (takes effect in new terminals)"
+  if ! grep -qs "\.samosa/bin" "$RC" 2>/dev/null; then
+    printf '\nexport PATH="$HOME/.samosa/bin:$PATH"\n' >> "$RC"
+    say "added ~/.samosa/bin to PATH in $RC (takes effect in new terminals)"
   fi
 esac
 
 say "Running a quick hello-world (first run reads the model from disk)..."
-"$BIN_DIR/jugnu" "Say hello in exactly five words." || fail "smoke test failed"
+"$BIN_DIR/samosa" "Say hello in exactly five words." || fail "smoke test failed"
 
 say ""
-say "Done! Try:   jugnu \"explain git rebase simply\""
-say "             jugnu --continue \"give me an example\""
-say "             jugnu --think \"a tricky logic puzzle\""
-say "Open a NEW terminal (or: export PATH=\"\$HOME/.jugnu/bin:\$PATH\")"
+say "Done! Try:   samosa \"explain git rebase simply\""
+say "             samosa --continue \"give me an example\""
+say "             samosa --think \"a tricky logic puzzle\""
+say "Open a NEW terminal (or: export PATH=\"\$HOME/.samosa/bin:\$PATH\")"
