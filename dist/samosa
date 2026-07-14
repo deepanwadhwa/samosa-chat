@@ -6,6 +6,7 @@
 #   samosa --think "hard logic puzzle"      slower, reasons step-by-step
 #   samosa --fast "..."                     use all performance cores (runs warmer)
 #   samosa --long "..."                     allow a long answer (2048 tokens)
+#   samosa --seed N "..."                  reproducible sampling (seeded)
 #   samosa doctor                           check the installation
 #
 # Conversations resume instantly from a small snapshot — your chat history
@@ -40,6 +41,7 @@ while [ $# -gt 0 ]; do
     --continue) [ -f "$SESSION" ] && RESUME=1 || echo "(no previous conversation - starting fresh)" ;;
     --think)    THINK="" ;;
     --fast)     OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu); export OMP_NUM_THREADS ;;
+    --seed)     shift; SEED=(--seed "$1") ;;
     --long)     TOKENS=2048 ;;
     doctor)     doctor; exit 0 ;;
     -h|--help)  usage ;;
@@ -53,10 +55,10 @@ done
 
 if [ -n "$RESUME" ]; then
   SNAP="$MODEL" exec "$ENGINE" --resume-session "$SESSION" --chat "$*" \
-    ${THINK:+$THINK} --stream --tokens "$TOKENS" \
+    ${THINK:+$THINK} --stream --tokens "$TOKENS" "${SEED[@]}" \
     --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
 else
   SNAP="$MODEL" exec "$ENGINE" --chat "$*" \
-    ${THINK:+$THINK} --stream --tokens "$TOKENS" \
+    ${THINK:+$THINK} --stream --tokens "$TOKENS" "${SEED[@]}" \
     --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
 fi

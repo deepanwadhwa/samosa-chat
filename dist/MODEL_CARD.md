@@ -78,6 +78,8 @@ Source repository: https://github.com/deepanwadhwa/samosa-chat
 
 ## Known limitations
 
+- Thinking mode can deliberate to the token ceiling without answering on
+  open-ended tasks; direct mode is recommended for code/writing generation.
 - The int4 conversion occasionally doubles a short function word during
   generation ("of of"), roughly once per ~10 longer answers — a quantization
   artifact of generation-time states, absent under teacher forcing.

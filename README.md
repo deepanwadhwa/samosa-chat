@@ -14,7 +14,7 @@ Real output from this model running on the 16 GB test machine, commands shown ve
 ### A landing page
 
 ```sh
-samosa --fast --think "Write a complete, single-file landing page (HTML with embedded CSS, \
+samosa --fast --seed 11 "Write a complete, single-file landing page (HTML with embedded CSS, \
 no JavaScript) for a small specialty coffee shop called Kaapi. Include a hero section, \
 a menu with four items, and a footer. Clean, modern, dark theme. Keep the CSS compact."
 ```
@@ -377,6 +377,12 @@ specified with measured acceptance gates in
 
 ## Known limitations
 
+- Thinking mode (`--think`) reliably concludes on simple prompts but can
+  deliberate up to the token ceiling without producing an answer on
+  open-ended tasks (measured: 5/5 non-conclusions on a multi-section design
+  prompt and a bug-analysis prompt across seeds). Use direct mode for code
+  and writing tasks; this is an int4 generation-state trait, not a sampler
+  setting.
 - The int4 conversion occasionally doubles a short function word during
   generation ("of of"), roughly once per ~10 longer answers. It is a
   quantization artifact of generation-time states, not present under
