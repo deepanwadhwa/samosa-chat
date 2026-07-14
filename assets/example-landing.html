@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Samosa Chat | Local LLM on Mac</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --surface: #1a1a1a;
+            --text-main: #ffffff;
+            --text-muted: #a1a1aa;
+            --accent: #ffb347; /* Warm Amber */
+            --accent-hover: #ff9f25;
+            --border: #333;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { text-decoration: none; color: inherit; transition: 0.2s; }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-primary {
+            background-color: var(--accent);
+            color: #000;
+        }
+        .btn-primary:hover { background-color: var(--accent-hover); }
+        .btn-secondary {
+            background-color: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            margin-left: 10px;
+        }
+        .btn-secondary:hover { border-color: var(--text-main); }
+
+        /* Hero Section */
+        header {
+            padding: 100px 0 60px;
+            text-align: center;
+            background: radial-gradient(circle at top, #2a2010 0%, var(--bg) 60%);
+        }
+        h1 {
+            font-size: 3.5rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 20px;
+            background: linear-gradient(to right, #fff, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subhead {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        /* Stats Strip */
+        .stats-strip {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 80px;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-val {
+            display: block;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Features Grid */
+        .section-title {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+        }
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 100px;
+        }
+        .card {
+            background: var(--surface);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .card h3 { margin-bottom: 10px; color: var(--accent); }
+        .card p { color: var(--text-muted); font-size: 0.95rem; }
+
+        /* Principles */
+        .principles {
+            background: var(--surface);
+            padding: 60px;
+            border-radius: 16px;
+            margin-bottom: 100px;
+            text-align: center;
+        }
+        .principle-list {
+            list-style: none;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .principle-list li {
+            font-size: 1.1rem;
+            font-weight: 500;
+            position: relative;
+            padding-left: 25px;
+        }
+        .principle-list li::before {
+            content: "•";
+            color: var(--accent);
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        /* Terminal Block */
+        .terminal-wrapper {
+            max-width: 600px;
+            margin: 0 auto 100px;
+            text-align: center;
+        }
+        .terminal {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: var(--font-mono);
+            color: #ccc;
+            text-align: left;
+            position: relative;
+        }
+        .terminal::before {
+            content: "● ● ●";
+            display: block;
+            color: #555;
+            font-size: 10px;
+            margin-bottom: 15px;
+            letter-spacing: 2px;
+        }
+        .code-line { color: var(--accent); }
+        .comment { color: #666; display: block; margin-top: 10px; font-size: 0.9rem; }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        footer strong { color: var(--text-main); }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            .stats-strip { gap: 20px; }
+            .principles { padding: 30px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="container">
+            <h1>Samosa Chat</h1>
+            <p class="subhead">Run Qwen3.6-35B-A3B locally on your Mac. No GPU required. No cloud account needed.</p>
+            <div>
+                <a href="#" class="btn btn-primary">Get Started</a>
+                <a href="#" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Stats Strip -->
+        <div class="stats-strip">
+            <div class="stat-item">
+                <span class="stat-val">35B</span>
+                <span class="stat-label">Parameters</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-val">16 GB</span>
+                <span class="stat-label">RAM Usage</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-val">0</span>
+                <span class="stat-label">Cloud Telemetry</span>
+            </div>
+        </div>
+
+        <!-- Feature Cards -->
+        <h2 class="section-title">Why Samosa?</h2>
+        <div class="grid-4">
+            <div class="card">
+                <h3>Pure CPU Power</h3>
+                <p>No discrete GPU or complex setup required. It runs efficiently on the Apple Silicon CPU of your 16GB Mac.</p>
+            </div>
+            <div class="card">
+                <h3>Smart Streaming</h3>
+                <p>Fits massive models by streaming expert weights from the SSD. Only ~3B parameters run per token.</p>
+            </div>
+            <div class="card">
+                <h3>Transparent Thinking</h3>
+                <p>A dedicated view reveals the model's internal reasoning process alongside the streaming chat answers.</p>
+            </div>
+            <div class="card">
+                <h3>Apache 2.0</h3>
+                <p>Built on the colibri runtime and Qwen models. Completely open source with no telemetry or tracking.</p>
+            </div>
+        </div>
+
+        <!-- Principles -->
+        <div class="principles">
+            <h2 class="section-title" style="margin-bottom: 10px;">Core Principles</h2>
+            <ul class="principle-list">
+                <li>Stable on 16 GB machines</li>
+                <li>Actually useful performance</li>
+                <li>No excessive hardware wear</li>
+            </ul>
+        </div>
+
+        <!-- Installation -->
+        <div class="terminal-wrapper">
+            <h2 class="section-title">One Line Install</h2>
+            <div class="terminal">
+                <span class="code-line">$ brew install samosa-chat</span>
+                <span class="comment"># Runs ~5-9 tokens/sec on Apple Silicon</span>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>Credits to the <strong>Qwen</strong> and <strong>colibri</strong> teams for the underlying technology.</p>
+            <p style="margin-top: 10px;">Licensed under Apache-2.0.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

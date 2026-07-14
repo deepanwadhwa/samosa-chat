@@ -33,24 +33,26 @@ one 16 GB M3 MacBook Air. "Runs on the CPU" does **not** mean it runs on any
 16 GB laptop. The installer refuses other systems. Linux and Windows are not
 supported.
 
-## Two things you can get, and they are at different versions
+## The product: Samosa Chat on the group-32 model
 
-There are two separate things. They are not at the same version, and the
-difference is the single most important thing to understand here.
+The product is **the browser chat app running the group-32 model**. That is what
+this repository builds, what the app uses, and what every number and example
+below refers to unless it says otherwise. The group-32 model is explained in
+[What group-32 is](#what-group-32-is).
 
-**1. The published download (Hugging Face).** One command installs it. You get
-a command-line tool and an older version of the model. This download does **not**
-include the browser app yet. This is the easiest way to try Samosa today.
+There is also an older, separate thing: a published one-command download on
+Hugging Face. It is easy to install, but it is **behind the product** in two
+ways — it has no browser app, and it still carries the first, lower-quality
+model format (see [What we tried that did not work](#what-we-tried-that-did-not-work)).
+The group-32 product is not packaged into that download yet.
 
-**2. This repository (source).** This is the current, more advanced system. It
-includes the browser chat app, the local server, and a newer, higher-quality
-model format (called group-32). The browser app is **finished and working** —
-it is what the maintainer uses every day. It is simply not packaged into the
-Hugging Face download yet.
+So today:
 
-So: the **command-line tool is published** and easy to install. The **browser
-app is done and working in this repository**, but you currently run it by
-building from source, not from the published download.
+- **The product (group-32 model + browser app)** runs by building from this
+  repository. It is finished and working — it is what the maintainer uses every
+  day.
+- **The published download** is the quickest way to try Samosa, but it gives you
+  the older command-line tool and the older model.
 
 ## The three principles
 
@@ -112,6 +114,10 @@ it before using any memory. Only the conversation you are using is loaded into
 RAM. Opening other saved chats does not add to memory.
 
 ## Install the published command-line tool
+
+This is the quick way to try Samosa, but note what it gives you: the older
+command-line tool and the older whole-row model, **not** the group-32 product or
+the browser app. To run the product, build from source (next section).
 
 ```sh
 curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-int4/resolve/main/install.sh | sh
@@ -217,38 +223,74 @@ kind of problem. It is not proof of broad benchmark quality. See the
 [upstream-control report](docs/UPSTREAM_CONTROL_2026-07-14.md) and the
 [regression ledger](docs/REGRESSION_LEDGER.md).
 
-## The two model versions
+## What group-32 is
 
-Qwen describes the model as 35B parameters in total with about 3B used per
-token, 40 layers, 256 routed experts, and 8 routed plus 1 shared expert active
-in each Mixture-of-Experts layer.
+Group-32 is the model format Samosa Chat uses. This section explains what it
+means, because it is the heart of the product.
 
-Samosa has two model versions:
+Qwen describes the model as 35B parameters in total, about 3B used per token,
+40 layers, 256 routed experts, and 8 routed plus 1 shared expert active in each
+Mixture-of-Experts layer. To fit that on a 16 GB Mac, Samosa stores most weights
+in int4 — 4 bits each instead of 16. Four bits cannot hold a real number on
+their own, so each weight also needs a **scale**: a full-precision number that
+the 4-bit value is multiplied by to reconstruct the original weight.
 
-| version | expert weights | shared weights | status |
-|---|---:|---:|---|
-| older whole-row int4 | 16.6 GB | 1.3 GB | published on Hugging Face |
-| newer group-32 int4 | 20.94 GB | 3.02 GB | tested locally, not published |
+The question is how many weights share one scale.
 
-The group-32 version uses finer scaling data and larger shared int8 weights. It
-reconstructs the original weights with less error than the older whole-row
-format. One good reasoning run is not enough to call it fully proven, so it is
-not published yet. The mixed int4/int8 format exists in code only; no full model
-was built in it.
+- **Group-32** gives every block of **32 weights** its own scale. A scale only
+  has to cover 32 nearby numbers, so it fits them closely. The reconstructed
+  weights are close to the originals, and the model's output quality is good.
+- The older approach (see below) gave a whole matrix **row** — hundreds or
+  thousands of weights — a single scale. One scale cannot fit that many
+  different numbers well, so the reconstructed weights drift from the originals
+  and the output shows visible defects.
+
+Finer scales cost more storage, which is why group-32 is larger on disk:
+
+| part | group-32 (the product) | older whole-row |
+|---|---:|---:|
+| expert weights | 20.94 GB | 16.6 GB |
+| shared weights | 3.02 GB | 1.3 GB |
+
+Group-32 also keeps the down-projection weights at int8 (8 bits) rather than
+int4, which is the main reason its shared weights are larger. The result is a
+model that reconstructs the original Qwen weights with measurably less error
+than the older format. It is tested locally and is what the app runs. It is not
+published on Hugging Face yet, because one good reasoning run is not enough
+evidence to call it fully proven.
+
+## What we tried that did not work
+
+**Whole-row int4 (the older format, still the published one).** This was the
+first quantization attempt: one int4 scale for an entire weight row. It is too
+coarse. A single scale has to cover a whole row of weights with very different
+sizes, so many weights are reconstructed inaccurately. In use this shows up as
+word-level defects such as `of ofof`. Re-asking or changing the seed can avoid a
+given case but does not fix the cause. This is exactly why group-32 was built.
+It is still the model in the Hugging Face download only because the group-32
+release has not shipped yet.
+
+**Mixed int4/int8 format.** An attempt to use int4 for the gate and up
+projections and int8 for the down projection across the whole model. The code
+for it exists and its math is tested, but no full model was ever produced in
+this format. It is not used by the product.
 
 ## Speed
 
 All numbers are from one fanless MacBook Air M3 with 16 GB of RAM. They describe
 specific runs on this one machine, not a guarantee for other machines.
 
-| model and task | threads | speed |
+The product is group-32, so those numbers come first:
+
+| group-32 task | threads | speed |
 |---|---:|---:|
-| older model, normal decode | 2 | about 7–8 tokens/sec |
-| older model, `--fast` decode | 4 | about 9.5 tokens/sec |
-| older model, prefill | 2–4 | about 14–24 tokens/sec |
-| group-32, direct answer | 2 | 7.27 tokens/sec |
-| group-32, 933-token thinking answer | 2 | 4.85 tokens/sec |
-| group-32, 5,000-token code page | 4 | 6.47 tokens/sec |
+| direct answer | 2 | 7.27 tokens/sec |
+| 933-token thinking answer | 2 | 4.85 tokens/sec |
+| 5,000-token code page | 4 | 6.47 tokens/sec |
+
+For reference, the older published model runs slightly faster because it is
+smaller: about 7–8 tokens/sec on 2 threads, about 9.5 on 4 threads (`--fast`),
+and 14–24 tokens/sec for prefill.
 
 Decode is the speed of writing the answer. Prefill is the speed of reading your
 input before it starts. Prefill is the slow part for long inputs: reading a
@@ -321,62 +363,64 @@ What this means for you:
   running a 35B model in 16 GB of RAM. It is not a bug. It is the one resource
   worth spending on purpose.
 
-## Example answers
+## Example output from the group-32 model
 
-These were generated on the 16 GB reference Mac using the same older model
-format that is on Hugging Face. The screenshot is not edited.
+Everything here was generated by the **group-32 model** — the product — through
+the app's chat endpoint in direct mode (no thinking, seed 11) on the 16 GB
+reference Mac. The screenshot is not edited.
 
-```sh
-samosa --fast --long --seed 11 "Write a complete, single-file landing page (HTML with embedded CSS, \
-no JavaScript) for a small specialty coffee shop called Kaapi. Include a hero section, \
-a menu with four items, and a footer. Clean, modern, dark theme. Keep the CSS compact."
-```
+Asked to build its own landing page — a single HTML file with embedded CSS, no
+JavaScript, dark theme, given the facts about Samosa Chat — the model produced
+this:
 
-<p align="center"><img src="assets/example-landing.png" alt="Kaapi landing page generated by Samosa Chat" width="740"></p>
+<p align="center"><img src="assets/example-landing.png" alt="Landing page for Samosa Chat, generated by the group-32 model" width="740"></p>
 
-This run: 1,807 tokens, 9.60 tokens/sec, 2.47 GB peak memory. The published tool
-needs `--long` to leave room for an answer this long.
+This run: 2,528 tokens, 5.15 tokens/sec, 4.33 GB memory. The exact HTML it wrote
+is saved at [assets/example-landing.html](assets/example-landing.html). (The
+`brew install` line in the page is the model's own copy; the real install
+command is the one above.)
 
-The same model wrote this Python function:
-
-```sh
-samosa "Write a Python function merge_intervals(intervals) that merges overlapping \
-intervals. Include type hints, a concise docstring, and three assert-based test cases."
-```
+Asked for a Python function, the group-32 model wrote this, and it passes its
+own tests when run:
 
 ```python
-from typing import List, Tuple
+from typing import List
 
 
-def merge_intervals(intervals: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+def merge_intervals(intervals: List[List[int]]) -> List[List[int]]:
     """Merge overlapping intervals.
 
-    Given a list of [start, end] pairs, merge all overlapping intervals.
-    """
+    Args:
+        intervals: A list of intervals, each represented as [start, end].
 
+    Returns:
+        A list of non-overlapping intervals that cover all input intervals.
+    """
     if not intervals:
         return []
 
     # Sort by start time
     sorted_intervals = sorted(intervals, key=lambda x: x[0])
-
     merged = [sorted_intervals[0]]
 
     for current in sorted_intervals[1:]:
-        last_start, last_end = merged[-1]
-        new_start, new_end = current
-
-        if new_start <= last_end:
-            # Overlapping or adjacent, merge them
-            merged[-1] = (last_start, max(last_end, new_end))
+        last = merged[-1]
+        if current[0] <= last[1]:
+            # Overlapping intervals, merge them
+            last[1] = max(last[1], current[1])
         else:
             merged.append(current)
 
     return merged
+
+
+# Test cases
+assert merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]]) == [[1, 6], [8, 10], [15, 18]]
+assert merge_intervals([[1, 4], [4, 5]]) == [[1, 5]]
+assert merge_intervals([]) == []
 ```
 
-It passed the overlap, adjacent, empty-input, and unsorted-input tests. This
-run: 191 tokens, 11.19 tokens/sec, 2.53 GB peak memory.
+This run: 279 tokens, 7.19 tokens/sec, 4.09 GB memory.
 
 ## Testing
 
@@ -408,10 +452,11 @@ steps are in [docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md).
 
 ## What is not done yet
 
-- The published model still uses the coarse whole-row int4 format. It can make
-  small word-level mistakes such as `of ofof`. Asking again or changing the seed
-  can avoid a given case but does not fully fix it.
-- The group-32 model is promising but not broadly tested or published.
+- The group-32 model (the product) is tested locally but not yet broadly proven
+  or published to Hugging Face. Publishing it is the next release step.
+- The published Hugging Face download still ships the older whole-row model, with
+  its word-level defects, until the group-32 release goes out. See
+  [What we tried that did not work](#what-we-tried-that-did-not-work).
 - Some app features are still planned: keeping recent conversations in RAM
   instead of reading them from disk each turn, managing transcripts on the
   server, chatting over a document, and web access. Deleting a chat in the app
