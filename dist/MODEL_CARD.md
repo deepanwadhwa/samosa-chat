@@ -25,6 +25,13 @@ pipeline_tag: text-generation
 > Qwen team. This is an independent, unofficial Apache-2.0 text-only
 > conversion. It is not affiliated with or endorsed by either upstream team.
 
+> **This repository hosts the model that powers Samosa Chat.** These are the
+> group-32 model files used by [Samosa Chat](https://github.com/deepanwadhwa/samosa-chat),
+> a free, open-source app that runs Qwen3.6-35B-A3B fully locally on a 16 GB
+> Apple Silicon Mac. The app, complete source, documentation, and issue tracker
+> live on GitHub:
+> **[github.com/deepanwadhwa/samosa-chat](https://github.com/deepanwadhwa/samosa-chat)**
+
 Samosa Chat packages the group-32 int4 model, a dependency-free C inference
 engine, and a responsive local chat interface. The model stays on the Mac;
 the app binds only to `127.0.0.1`, has no account or telemetry, and makes no
@@ -97,6 +104,11 @@ Saved history, the newly tokenized turn, and the requested completion ceiling
 must fit a 24,576-token total context cap. Samosa rejects an oversized request
 before queueing or allocating KV state. One conversation state is resident at
 a time; other conversations remain as sealed snapshots on disk.
+
+Stopping a generation is safe for the saved conversation: a cancelled turn is
+persisted only up to its last complete sentence, so an interrupted answer does
+not poison later turns. If it produced no complete sentence, the previous
+snapshot is kept and `session_saved` reports false.
 
 ## Model layout
 
