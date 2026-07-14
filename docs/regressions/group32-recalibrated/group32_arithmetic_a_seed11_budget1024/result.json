@@ -1,0 +1,88 @@
+{
+  "case": {
+    "id": "group32_arithmetic_a_seed11_budget1024",
+    "max_tokens": 2048,
+    "profile": "think",
+    "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+    "repetition_limit": 0.45,
+    "require_regex": [
+      "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+      "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+      "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+    ],
+    "seed": 11,
+    "thinking_budget": 1024
+  },
+  "checks": {
+    "final_answer_nonempty": true,
+    "longest_repeated_line_run": 1,
+    "machine_safety": true,
+    "model_stopped": true,
+    "natural_closure": true,
+    "no_pressure_events": true,
+    "repeated_4gram_fraction": 0.05620608899297424,
+    "repeated_line_run_within_limit": true,
+    "repetition_within_limit": true,
+    "required_patterns_present": true,
+    "required_substrings_present": true,
+    "tail_repeated_4gram_fraction": 0.0,
+    "tail_repetition_within_limit": true,
+    "thinking_closed": true
+  },
+  "command": [
+    "/Users/deepanwadhwa/Documents/colibri/samosa-chat/qwen36b",
+    "--chat",
+    "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+    "--tokens",
+    "2048",
+    "--tokenizer",
+    "/Users/deepanwadhwa/Documents/colibri/c/tokenizer_qwen36.json",
+    "--seed",
+    "11",
+    "--stream",
+    "--thinking-budget",
+    "1024"
+  ],
+  "metrics": {
+    "bytes_avoided_gb": 217.28,
+    "bytes_read_gb": 376.77,
+    "decode_s": 192.161,
+    "decode_tps": 4.85,
+    "generated": 933,
+    "peak_rss_gb": 3.23,
+    "prefill_s": 5.842,
+    "prefill_tps": 8.22,
+    "pressure_critical": 0,
+    "pressure_warn": 0,
+    "prompt": 48,
+    "stop": "model",
+    "thinking": "model-controlled",
+    "total_s": 198.003
+  },
+  "passed": true,
+  "returncode": 0,
+  "safety_after": {
+    "disk_free_gb": 28.272975872,
+    "memory_free_percent": 59,
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "time": 1784040742.224433,
+    "vm": {
+      "pages_throttled": 0,
+      "swapins": 128425,
+      "swapouts": 498913
+    }
+  },
+  "safety_before": {
+    "disk_free_gb": 28.274081792,
+    "memory_free_percent": 77,
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "time": 1784040541.73914,
+    "vm": {
+      "pages_throttled": 0,
+      "swapins": 128389,
+      "swapouts": 498913
+    }
+  },
+  "safety_violation": null,
+  "schema": 1
+}

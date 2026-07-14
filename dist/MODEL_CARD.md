@@ -15,8 +15,8 @@ pipeline_tag: text-generation
 
 Run Qwen3.6-35B-A3B (int4, text-only) locally on an Apple Silicon Mac with
 16 GB of RAM. No cloud, no account, no telemetry, no GPU. This repo contains
-the quantized model, the dependency-free C inference engine (~4,000 lines),
-and a one-command installer.
+the quantized model, the dependency-free C inference engine, a loopback app
+server, and a one-command installer.
 
 > ⚠️ Unofficial, text-only int4 conversion of
 > [Qwen/Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B)
@@ -29,19 +29,52 @@ and a one-command installer.
 curl -fsSL https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main/install.sh | sh
 ```
 
-Requirements: Apple Silicon Mac (M1 or newer), 16 GB RAM, ~25 GB free disk,
-~18 GB download. The installer verifies every file by SHA-256, resumes
-interrupted downloads, compiles the engine locally, and runs a smoke test.
-No admin rights. Uninstall: `rm -rf ~/.samosa`.
+Requirements: Apple Silicon Mac (M1 or newer) and 16 GB RAM. The installer
+reads exact release sizes before downloading; allow roughly 30 GB free for the
+groupwise build. It downloads into an inactive versioned release, verifies
+every byte size and SHA-256 digest, compiles the engine, and smoke-tests it
+before atomically switching the active release pointer. A failed upgrade leaves
+the working release untouched. No admin rights. Uninstall: `rm -rf ~/.samosa`.
 
 ## Use
 
 ```sh
 samosa "explain how a hash table handles collisions"
 samosa --continue "and which strategy does Python use?"  # resumes last conversation
-samosa --think "tricky logic puzzle"                     # chain-of-thought mode
+samosa --think "tricky logic puzzle"                     # general reasoning profile
+samosa --think-code "build a responsive settings page"   # precise coding/WebDev
 samosa --fast "..."                                      # all P-cores
+samosa serve                                             # foreground localhost API
+samosa app                                               # start server + open browser
+samosa serve --stop                                      # clean server shutdown
 ```
+
+The resident server binds only to `127.0.0.1:8642`. It provides OpenAI-shaped
+JSON/SSE completions, separate reasoning and answer deltas, a bounded request
+queue, cancellation, health telemetry, and optional sealed conversation
+snapshots. The server is a developer preview: the full browser chat interface
+and four-slot in-RAM conversation pool are not part of this artifact yet.
+
+The two thinking commands use Qwen3.6's published task-specific sampling
+profiles. Precise coding/WebDev additionally keeps the routed/shared MoE
+down-projection input in float. This selective precision boundary crossed the
+fully accelerated path's long-output failure point without a repetition
+attractor, while retaining 6.47 tok/s in the 5,000-token four-thread control.
+
+Generation stops early when the model emits end-of-turn. Every profile
+defaults to an 8,192-new-token outer ceiling. General reasoning also has a
+1,024-token internal thinking budget and precise code has 2,048;
+`--max-tokens N` and `--thinking-budget N` override those bounds. On budget
+exhaustion Samosa appends Qwen's published natural-language early-stop
+transition before `</think>` rather than forcing a bare control token. A visible
+notice distinguishes a ceiling stop from a model-completed answer, and a
+repeated-token-cycle guard stops runaway loops.
+
+A six-run upstream FP8 arithmetic pilot naturally used 353--616 reasoning
+tokens. The matched local group-32 control closed naturally and answered
+correctly after 933 total tokens with the 1,024 budget. This validates the
+configured thinking path for that prompt family; broader release claims still
+require upstream-calibrated parity across task families.
 
 `--continue` restores the previous conversation from a ~70 MB snapshot
 instead of re-processing the history, including across reboots; continuation
@@ -53,22 +86,27 @@ of the model's 40 layers are DeltaNet linear-attention layers with a fixed
 
 | workload | tokens/s |
 |---|---|
-| decode, default (2 threads) | 7–8 |
-| decode, `--fast` (4 threads) | ~9.5 |
+| decode, direct default (2 threads) | 7–8 |
+| decode, direct `--fast` (4 threads) | ~9.5 |
+| 933-token general-thinking control (2 threads) | 4.85 |
+| selective-precision 5,000-token WebDev control (4 threads) | 6.47 |
 | prefill | 14–24 |
 
-Peak RSS 2–3 GB (the 16.6 GB of experts stream from SSD on demand); zero
-swap; no disk writes except the session snapshot. Engine output is validated
-bit-exact against a quantization-aware reference, and the release
-configuration passed a gated benchmark suite (100-prompt corpus, 15-minute
-soak, swap/write/thermal guardrails).
+Measured peak RSS ranges from about 2.5 GB on the legacy direct path to
+3.2–3.9 GB on the group-32 chat/server path. Experts stream from SSD on demand;
+there are no model-data writes. Durable conversations atomically replace a
+roughly 63–70 MB sealed snapshot at turn end. The 5,000-token stability control
+peaked at 2.48 GB RSS, left 69% memory free, held swap at 5 MB, and caused no
+macOS thermal or performance warning. Quantization-aware teacher forcing is
+supplemented by structural generation gates for thinking closure, repetition,
+and task-specific completion.
 
 ## Files
 
 | file | size | what |
 |---|---|---|
-| `experts.bin` | 16.6 GB | int4 routed experts (streamed from disk) |
-| `resident.safetensors` | 1.3 GB | dense weights kept in RAM |
+| `experts.bin` | 20.94 GB | group-32 int4 routed experts (streamed from disk) |
+| `resident.safetensors` | 3.02 GB | dense row-q8 weights kept in RAM |
 | `tokenizer_qwen36.json` | 28 MB | tokenizer (248,320-token vocab) |
 | `engine/` | ~250 KB | complete C source |
 | `install.sh`, `samosa` | — | installer and chat command |
@@ -78,12 +116,9 @@ Source repository: https://github.com/deepanwadhwa/samosa-chat
 
 ## Known limitations
 
-- Thinking mode can deliberate to the token ceiling without answering on
-  open-ended tasks; direct mode is recommended for code/writing generation.
-- The int4 conversion occasionally doubles a short function word during
-  generation ("of of"), roughly once per ~10 longer answers — a quantization
-  artifact of generation-time states, absent under teacher forcing.
-  Re-asking or a different seed avoids it.
+- The int4 conversion can still produce isolated word-level defects such as
+  `of ofof`, including with full float activations. This is separate from the
+  catastrophic fast-path attractor addressed by selective precision.
 - Text-only: the upstream vision tower is not included.
 
 ## Credits and license

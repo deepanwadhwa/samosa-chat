@@ -1,90 +1,113 @@
 #!/bin/sh
-# Samosa Chat installer — one command, no admin rights, no app store.
-#
-#   curl -fsSL https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main/install.sh | sh
-#
-# What it does, in order:
-#   1. Checks your Mac: Apple Silicon, 16 GB RAM, ~25 GB free disk, a C compiler.
-#   2. Downloads the model (~18 GB) into ~/.samosa — resumable, checksum-verified.
-#   3. Compiles the inference engine locally (one clang command, ~15 seconds).
-#   4. Installs the `samosa` chat command and runs a hello-world test.
-#
-# Re-running is safe: finished downloads are verified and skipped.
-# Uninstall: rm -rf ~/.samosa (and the PATH line it added to your shell rc).
+# Samosa Chat installer — versioned, checksum-verified, atomic activation.
 
 set -eu
 
 BASE_URL="${SAMOSA_BASE_URL:-https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main}"
 HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
-MODEL_DIR="$HOME_DIR/model"
-ENGINE_DIR="$HOME_DIR/engine"
-BIN_DIR="$HOME_DIR/bin"
+RELEASES_DIR="$HOME_DIR/releases"
+LAUNCHER_DIR="$HOME_DIR/bin"
+MIN_FREE_AFTER_GB="${SAMOSA_MIN_FREE_AFTER_GB:-2}"
 
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-# ---------- 1. machine checks ----------
-[ "$(uname -s)" = "Darwin" ] || fail "this installer currently supports macOS only"
-[ "$(uname -m)" = "arm64" ]  || fail "an Apple Silicon Mac (M1 or newer) is required"
-
-RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
-[ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
-
-FREE_GB=$(df -g "$HOME" | awk 'NR==2 {print $4}')
-NEED_GB=25
-if [ -f "$MODEL_DIR/experts.bin" ]; then NEED_GB=5; fi
-[ "$FREE_GB" -ge "$NEED_GB" ] || fail "need ~${NEED_GB} GB free (found ${FREE_GB} GB). Free some space and re-run."
-
-if ! command -v clang >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
-  say "The Apple command-line tools are needed (one-time, free)."
-  say "A dialog will pop up - click Install, then RE-RUN this installer."
-  xcode-select --install 2>/dev/null || true
-  exit 1
+if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
+  [ "$(uname -s)" = "Darwin" ] || fail "this installer currently supports macOS only"
+  [ "$(uname -m)" = "arm64" ] || fail "an Apple Silicon Mac (M1 or newer) is required"
+  RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+  [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
+  if ! command -v clang >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
+    say "The Apple command-line tools are needed (one-time, free)."
+    say "A dialog will pop up - click Install, then RE-RUN this installer."
+    xcode-select --install 2>/dev/null || true
+    exit 1
+  fi
 fi
 
-say "Mac check passed: Apple Silicon, ${RAM_GB} GB RAM, ${FREE_GB} GB free."
+mkdir -p "$HOME_DIR" "$RELEASES_DIR" "$LAUNCHER_DIR"
+MANIFEST_NEXT="$HOME_DIR/.release-manifest.next.tsv"
 
-# ---------- 2. download ----------
-mkdir -p "$MODEL_DIR" "$ENGINE_DIR" "$BIN_DIR"
+say "Fetching release manifest..."
+curl -fL --retry 5 --retry-delay 3 --progress-bar \
+  "$BASE_URL/release-manifest.tsv" -o "$MANIFEST_NEXT" \
+  || fail "release manifest download failed"
 
-fetch() { # fetch <relative-path> <destination>
-  say "downloading $1 ..."
-  curl -fL --retry 5 --retry-delay 3 -C - --progress-bar "$BASE_URL/$1" -o "$2" \
-    || fail "download failed for $1 - re-run the installer to resume"
+# Format: SHA-256<TAB>byte-size<TAB>relative-path. Reject unsafe paths before
+# using any field as a destination.
+awk -F '\t' '
+  NF != 3 || $1 !~ /^[0-9a-f]{64}$/ || $2 !~ /^[0-9]+$/ ||
+  $3 == "" || $3 ~ /^\// || $3 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
+' "$MANIFEST_NEXT" || fail "release manifest is malformed or unsafe"
+
+RELEASE_ID=$(shasum -a 256 "$MANIFEST_NEXT" | awk '{print substr($1,1,16)}')
+STAGE="$RELEASES_DIR/.${RELEASE_ID}.partial"
+FINAL="$RELEASES_DIR/$RELEASE_ID"
+mkdir -p "$STAGE/model" "$STAGE/engine" "$STAGE/bin"
+
+manifest_field() { # manifest_field <path> <column>
+  awk -F '\t' -v p="$1" -v c="$2" '$3==p {print $c; found=1} END {if(!found) exit 1}' "$MANIFEST_NEXT"
 }
 
-fetch checksums.txt "$HOME_DIR/checksums.txt"
+destination() { # destination <remote-path>
+  case "$1" in
+    experts.bin|resident.safetensors|manifest.json|config.json|generation_config.json)
+      printf '%s/model/%s\n' "$STAGE" "$1" ;;
+    tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
+    engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
+    samosa) printf '%s/bin/samosa\n' "$STAGE" ;;
+    *) return 1 ;;
+  esac
+}
 
-verified() { # verified <relative-path> <local-file>  -> 0 if checksum matches
-  want=$(awk -v f="$1" '$2==f {print $1}' "$HOME_DIR/checksums.txt")
-  [ -n "$want" ] || return 1
+INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
+
+required_remaining=0
+for relative in $INSTALL_FILES; do
+  size=$(manifest_field "$relative" 2) || fail "release manifest missing $relative"
+  target=$(destination "$relative") || fail "unsupported release path $relative"
+  present=0
+  [ -f "$target" ] && present=$(wc -c <"$target" | tr -d ' ')
+  [ "$present" -le "$size" ] || { rm -f "$target"; present=0; }
+  required_remaining=$((required_remaining + size - present))
+done
+free_bytes=$(df -k "$HOME_DIR" | awk 'NR==2 {printf "%.0f\n", $4 * 1024}')
+reserve_bytes=$((MIN_FREE_AFTER_GB * 1000000000))
+[ "$free_bytes" -ge $((required_remaining + reserve_bytes)) ] ||
+  fail "atomic install needs $(( (required_remaining + reserve_bytes + 999999999) / 1000000000 )) GB free; found $((free_bytes / 1000000000)) GB. The live release was not changed."
+
+fetch() { # fetch <relative-path> <destination>
+  relative=$1; target=$2
+  mkdir -p "$(dirname "$target")"
+  say "downloading $relative ..."
+  curl -fL --retry 5 --retry-delay 3 -C - --progress-bar \
+    "$BASE_URL/$relative" -o "$target" \
+    || fail "download failed for $relative - re-run to resume the inactive staging release"
+}
+
+verified() { # verified <relative-path> <local-file>
+  want=$(manifest_field "$1" 1) || return 1
+  size=$(manifest_field "$1" 2) || return 1
   [ -f "$2" ] || return 1
+  [ "$(wc -c <"$2" | tr -d ' ')" = "$size" ] || return 1
   have=$(shasum -a 256 "$2" | awk '{print $1}')
   [ "$want" = "$have" ]
 }
 
-get() { # get <relative-path> <destination>
-  if verified "$1" "$2"; then say "$1 already present and verified - skipping"; return; fi
-  fetch "$1" "$2"
-  verified "$1" "$2" || fail "checksum mismatch for $1 - delete $2 and re-run"
-}
-
-say "Fetching the model (~18 GB total). Safe to interrupt; re-run resumes."
-get experts.bin              "$MODEL_DIR/experts.bin"
-get resident.safetensors     "$MODEL_DIR/resident.safetensors"
-get manifest.json            "$MODEL_DIR/manifest.json"
-get config.json              "$MODEL_DIR/config.json"
-get generation_config.json   "$MODEL_DIR/generation_config.json"
-get tokenizer_qwen36.json    "$HOME_DIR/tokenizer_qwen36.json"
-
-for f in qwen36b.c expert_cache.c expert_cache.h kernels.h st.h json.h tok.h tok_unicode.h compat.h; do
-  get "engine/$f" "$ENGINE_DIR/$f"
+for relative in $INSTALL_FILES; do
+  target=$(destination "$relative")
+  if verified "$relative" "$target"; then
+    say "$relative already staged and verified - skipping"
+  else
+    fetch "$relative" "$target"
+    verified "$relative" "$target" ||
+      fail "checksum mismatch for $relative in inactive staging; live release was not changed"
+  fi
 done
-get samosa "$BIN_DIR/samosa"
-chmod +x "$BIN_DIR/samosa"
+cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
+chmod +x "$STAGE/bin/samosa"
 
-# ---------- 3. build ----------
-say "Compiling the engine..."
+say "Compiling the staged engine..."
 OMP_FLAGS=""
 for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
   if [ -f "$prefix/lib/libomp.dylib" ]; then
@@ -93,36 +116,49 @@ for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
   fi
 done
 # shellcheck disable=SC2086
-clang -O3 $OMP_FLAGS \
-  -Wno-unused-function \
-  "$ENGINE_DIR/qwen36b.c" "$ENGINE_DIR/expert_cache.c" \
-  -o "$BIN_DIR/qwen36b" -lm \
-  || fail "compilation failed - please report this"
-if [ -z "$OMP_FLAGS" ]; then
-  say "note: built single-threaded (2-4x slower). For full speed:"
-  say "      brew install libomp   then re-run this installer."
+clang -O3 -pthread $OMP_FLAGS -Wno-unused-function \
+  "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" \
+  -o "$STAGE/bin/qwen36b" -lm ||
+  fail "staged engine compilation failed; live release was not changed"
+
+if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
+  say "Smoke-testing the inactive release..."
+  SAMOSA_RELEASE_DIR="$STAGE" "$STAGE/bin/samosa" --max-tokens 16 \
+    "Say hello in exactly five words." ||
+    fail "staged smoke test failed; live release was not changed"
 fi
 
-# ---------- 4. PATH + smoke test ----------
-case ":$PATH:" in *":$BIN_DIR:"*) ;; *)
-  # The user's LOGIN shell decides the rc file, not the shell running this
-  # script (curl | sh runs under bash even for zsh users).
-  case "${SHELL:-}" in
-    */zsh)  RC="$HOME/.zshrc" ;;
-    */bash) RC="$HOME/.bashrc" ;;
-    *)      RC="$HOME/.profile" ;;
+# Publish the immutable release directory, then atomically switch one symlink.
+if [ ! -d "$FINAL" ]; then mv "$STAGE" "$FINAL"; else rm -rf "$STAGE"; fi
+rm -f "$HOME_DIR/.current.next"
+ln -s "releases/$RELEASE_ID" "$HOME_DIR/.current.next"
+mv -fh "$HOME_DIR/.current.next" "$HOME_DIR/current"
+
+LAUNCHER_NEXT="$LAUNCHER_DIR/.samosa.next"
+cat >"$LAUNCHER_NEXT" <<'EOF'
+#!/bin/sh
+set -eu
+HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
+exec "$HOME_DIR/current/bin/samosa" "$@"
+EOF
+chmod +x "$LAUNCHER_NEXT"
+mv -f "$LAUNCHER_NEXT" "$LAUNCHER_DIR/samosa"
+mv -f "$MANIFEST_NEXT" "$HOME_DIR/release-manifest.tsv"
+
+if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
+  case ":$PATH:" in *":$LAUNCHER_DIR:"*) ;; *)
+    case "${SHELL:-}" in
+      */zsh) RC="$HOME/.zshrc" ;;
+      */bash) RC="$HOME/.bashrc" ;;
+      *) RC="$HOME/.profile" ;;
+    esac
+    if ! grep -qs "\.samosa/bin" "$RC" 2>/dev/null; then
+      printf '\nexport PATH="$HOME/.samosa/bin:$PATH"\n' >>"$RC"
+      say "added ~/.samosa/bin to PATH in $RC"
+    fi
   esac
-  if ! grep -qs "\.samosa/bin" "$RC" 2>/dev/null; then
-    printf '\nexport PATH="$HOME/.samosa/bin:$PATH"\n' >> "$RC"
-    say "added ~/.samosa/bin to PATH in $RC (takes effect in new terminals)"
-  fi
-esac
+fi
 
-say "Running a quick hello-world (first run reads the model from disk)..."
-"$BIN_DIR/samosa" "Say hello in exactly five words." || fail "smoke test failed"
-
-say ""
-say "Done! Try:   samosa \"explain git rebase simply\""
-say "             samosa --continue \"give me an example\""
-say "             samosa --think \"a tricky logic puzzle\""
-say "Open a NEW terminal (or: export PATH=\"\$HOME/.samosa/bin:\$PATH\")"
+say "Activated verified release $RELEASE_ID."
+say "Previous releases and any legacy ~/.samosa/model directory were left untouched for rollback."
+say "Run: samosa doctor"

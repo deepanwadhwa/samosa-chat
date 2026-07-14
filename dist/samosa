@@ -3,10 +3,15 @@
 #
 #   samosa "explain how DNS works"          answer a question
 #   samosa --continue "and DNSSEC?"         follow up on the last conversation
-#   samosa --think "hard logic puzzle"      slower, reasons step-by-step
+#   samosa --think "hard logic puzzle"      general reasoning profile
+#   samosa --think-code "build a page"      precise coding/WebDev profile
 #   samosa --fast "..."                     use all performance cores (runs warmer)
-#   samosa --long "..."                     allow a long answer (2048 tokens)
-#   samosa --seed N "..."                  reproducible sampling (seeded)
+#   samosa --seed N "..."                   reproducible sampling
+#   samosa --max-tokens N "..."             override the safety ceiling
+#   samosa --thinking-budget N "..."         cap internal reasoning before the answer
+#   samosa serve                            run the local app server in foreground
+#   samosa serve --stop                     stop the local app server cleanly
+#   samosa app                              start the server and open the browser app
 #   samosa doctor                           check the installation
 #
 # Conversations resume instantly from a small snapshot — your chat history
@@ -15,34 +20,164 @@
 set -eu
 
 HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
-ENGINE="$HOME_DIR/bin/qwen36b"
-MODEL="$HOME_DIR/model"
-TOKENIZER="$HOME_DIR/tokenizer_qwen36.json"
+SELF_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if [ -n "${SAMOSA_RELEASE_DIR:-}" ]; then
+  RELEASE_DIR=$SAMOSA_RELEASE_DIR
+elif [ -x "$SELF_DIR/qwen36b" ] && [ -d "$SELF_DIR/../model" ]; then
+  RELEASE_DIR=$(CDPATH= cd -- "$SELF_DIR/.." && pwd)
+else
+  RELEASE_DIR=$HOME_DIR
+fi
+ENGINE="$RELEASE_DIR/bin/qwen36b"
+MODEL="$RELEASE_DIR/model"
+TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
 SESSION="$HOME_DIR/last_session.qws"
+PORT="${SAMOSA_PORT:-8642}"
+PID_FILE="$HOME_DIR/server.pid"
+SERVER_LOG="$HOME_DIR/server.log"
+CURL="${SAMOSA_CURL:-curl}"
+OPEN="${SAMOSA_OPEN:-open}"
 
-THINK="--no-thinking"
-TOKENS=512
+PROFILE="direct"
+TOKENS=""
+THINKING_BUDGET=""
 RESUME=""
+SEED=""
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+positive_integer() {
+  case "$1" in ''|*[!0-9]*|0) return 1 ;; *) return 0 ;; esac
+}
+
+server_running() {
+  "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1
+}
+
+serve_foreground() {
+  mkdir -p "$HOME_DIR/chats"
+  SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
+    exec "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER"
+}
+
+start_server() {
+  server_running && return 0
+  mkdir -p "$HOME_DIR/chats"
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
+    return 1
+  fi
+  nohup env SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
+    "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER" \
+    >"$SERVER_LOG" 2>&1 &
+  pid=$!
+  printf '%s\n' "$pid" >"$PID_FILE"
+  i=0
+  while [ "$i" -lt 240 ]; do
+    server_running && return 0
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Samosa server failed to start; see $SERVER_LOG" >&2
+      rm -f "$PID_FILE"
+      return 1
+    fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  echo "Samosa server did not become ready within 120 seconds; see $SERVER_LOG" >&2
+  return 1
+}
+
+stop_server() {
+  if server_running; then
+    "$CURL" -fsS --max-time 5 -X POST "http://127.0.0.1:$PORT/v1/shutdown" >/dev/null || true
+  fi
+  if [ -f "$PID_FILE" ]; then
+    pid=$(cat "$PID_FILE" 2>/dev/null || true)
+    i=0
+    while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE"
+  fi
+  echo "Samosa server stopped."
+}
 
 doctor() {
   ok=1
+  [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release:   $(basename "$RELEASE_DIR")"
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
   [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
+  if [ -f "$MODEL/manifest.json" ]; then
+    if grep -q 'groupwise-q4-gate-up-row-q8-down-v1' "$MODEL/manifest.json"; then
+      echo "format:    mixed group-q4 gate/up + row-q8 down (experimental)"
+    elif grep -q 'groupwise-symmetric-q4-v1' "$MODEL/manifest.json"; then
+      group=$(sed -n 's/.*"group_size"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$MODEL/manifest.json" | head -1)
+      echo "format:    groupwise q4 (group ${group:-unknown})"
+    else
+      echo "format:    LEGACY whole-row q4 - upgrade required"
+    fi
+  else
+    echo "format:    UNKNOWN (manifest missing)"
+    ok=0
+  fi
   [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
+  if [ -d "$HOME_DIR/releases" ]; then
+    releases=$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' 2>/dev/null | wc -l | tr -d ' ')
+    [ "$releases" -le 1 ] || echo "rollback:  $((releases - 1)) previous verified release(s) retained"
+  fi
+  [ ! -d "$HOME_DIR/model" ] || [ "$RELEASE_DIR" = "$HOME_DIR" ] ||
+    echo "legacy:    ~/.samosa/model retained from the pre-versioned installer"
   [ -f "$SESSION" ] && echo "session:   $(du -h "$SESSION" | awk '{print $1}') (samosa --continue works)" || echo "session:   none yet"
   echo "ram:       $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
 
+if [ "${1:-}" = "serve" ]; then
+  shift
+  if [ "${1:-}" = "--stop" ]; then
+    [ "$#" = 1 ] || usage
+    stop_server
+    exit 0
+  fi
+  [ "$#" = 0 ] || usage
+  serve_foreground
+fi
+
+if [ "${1:-}" = "app" ]; then
+  shift
+  [ "$#" = 0 ] || usage
+  start_server
+  url="http://127.0.0.1:$PORT"
+  echo "$url"
+  "$OPEN" "$url"
+  exit 0
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --continue) [ -f "$SESSION" ] && RESUME=1 || echo "(no previous conversation - starting fresh)" ;;
-    --think)    THINK="" ;;
+    --think)    PROFILE="think" ;;
+    --think-code) PROFILE="think-code" ;;
     --fast)     OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu); export OMP_NUM_THREADS ;;
-    --seed)     shift; SEED=(--seed "$1") ;;
-    --long)     TOKENS=2048 ;;
+    --seed)
+      shift
+      [ $# -gt 0 ] && positive_integer "$1" || { echo "--seed requires a positive integer" >&2; exit 1; }
+      SEED="$1"
+      ;;
+    --max-tokens)
+      shift
+      [ $# -gt 0 ] && positive_integer "$1" || { echo "--max-tokens requires a positive integer" >&2; exit 1; }
+      TOKENS="$1"
+      ;;
+    --thinking-budget)
+      shift
+      [ $# -gt 0 ] && positive_integer "$1" || { echo "--thinking-budget requires a positive integer" >&2; exit 1; }
+      THINKING_BUDGET="$1"
+      ;;
     doctor)     doctor; exit 0 ;;
     -h|--help)  usage ;;
     --*)        echo "unknown flag: $1 (try: samosa --help)"; exit 1 ;;
@@ -52,13 +187,30 @@ while [ $# -gt 0 ]; do
 done
 
 [ $# -gt 0 ] || usage
+PROMPT="$*"
+
+[ -n "$TOKENS" ] || TOKENS=8192
+case "$PROFILE" in
+  direct)     THINKING_BUDGET="" ;;
+  think)      [ -n "$THINKING_BUDGET" ] || THINKING_BUDGET=1024 ;;
+  think-code) [ -n "$THINKING_BUDGET" ] || THINKING_BUDGET=2048 ;;
+esac
 
 if [ -n "$RESUME" ]; then
-  SNAP="$MODEL" exec "$ENGINE" --resume-session "$SESSION" --chat "$*" \
-    ${THINK:+$THINK} --stream --tokens "$TOKENS" "${SEED[@]}" \
-    --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
+  set -- --resume-session "$SESSION" --chat "$PROMPT"
 else
-  SNAP="$MODEL" exec "$ENGINE" --chat "$*" \
-    ${THINK:+$THINK} --stream --tokens "$TOKENS" "${SEED[@]}" \
-    --tokenizer "$TOKENIZER" --save-session "$SESSION" 2>/dev/null
+  set -- --chat "$PROMPT"
 fi
+
+case "$PROFILE" in
+  direct)     set -- "$@" --no-thinking ;;
+  think)      : ;;
+  think-code) set -- "$@" --thinking-code ;;
+esac
+
+set -- "$@" --stream --tokens "$TOKENS" --tokenizer "$TOKENIZER" \
+  --save-session "$SESSION"
+[ -z "$SEED" ] || set -- "$@" --seed "$SEED"
+[ -z "$THINKING_BUDGET" ] || set -- "$@" --thinking-budget "$THINKING_BUDGET"
+
+SNAP="$MODEL" exec "$ENGINE" "$@" 2>/dev/null

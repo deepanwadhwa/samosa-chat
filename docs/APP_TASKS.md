@@ -21,6 +21,12 @@ tradition of the engine's own task program.
 - Context safety: contexts > 4,096 tokens are exercised and safe as of the
   2026-07-13 `attention_gqa` fix; long-context generation coverage is still
   thin (see A0.4).
+- Thinking control: general mode defaults to 1,024 internal tokens and
+  precise-code to 2,048, both inside the 8,192 outer ceiling. Budget exhaustion
+  appends Qwen's published natural-language early-stop transition rather than
+  a bare `</think>` token. A recalibrated 933-token group-32 arithmetic run
+  closed naturally and passed; broader quality is a parity gate, not an
+  app-development blocker.
 - Upstream colibrì has a GLM-side reference for a persistent serve mode:
   OpenAI-compatible stdlib-only HTTP gateway, bounded FIFO admission with
   429/503, and isolated per-slot KV contexts (upstream commits #21/#28/#29).
@@ -42,6 +48,17 @@ model resident once, serving turns.
 
 ### A0.1 `samosa serve`: persistent process with an HTTP API  ~2–3 days
 
+**Status (2026-07-14): implemented and bounded-real tested.** The resident
+loopback server, SSE/non-streaming responses, FIFO admission, 429/503 behavior,
+cooperative cancellation, shared tokenizer/model cache, health telemetry, and
+clean shutdown are in-tree. Component coverage includes 20 sequential socket
+connections without RSS drift. Real-model checks cover streaming, cancellation,
+queue-full rejection, and shutdown. The 15-minute real-model soak remains a
+release gate, as do exact engine/artifact fingerprints in `/healthz`; the
+current endpoint reports the model identifier but not those hashes. The soak
+was deliberately not substituted with thousands of decode tokens during
+implementation.
+
 Add a serve mode to `qwen36b` (or a thin C server binary linking the same
 objects): load model once, accept HTTP on `127.0.0.1:<port>` (default 8642),
 stdlib sockets only.
@@ -49,8 +66,10 @@ stdlib sockets only.
 Endpoints:
 - `POST /v1/chat/completions` — OpenAI-shaped, `stream: true` via SSE;
   supports `temperature/top_k/top_p/seed`, a `thinking` switch (maps to the
-  chat template), and `max_tokens` defaulting to the 8,192 safety ceiling
-  (EOS-bounded, never a creative constraint).
+  chat template), `thinking_budget`, and `max_tokens` defaulting to the 8,192
+  safety ceiling (EOS-bounded, never a creative constraint). Stream telemetry
+  reports natural closure versus Qwen budget transition versus repetition
+  guard separately.
 - `GET /v1/models`, `GET /healthz` (returns engine hash, model hash, RSS,
   tok/s of last turn).
 - One generation at a time; a small bounded FIFO queue (port the upstream
@@ -60,6 +79,10 @@ Concurrency model: single compute thread pool (the engine's own OMP);
 socket accept loop + queue on a separate thread; no locks around the model —
 turns are strictly serialized.
 
+Cancellation is part of the server contract, not deferred to the UI: client
+disconnect, `POST /v1/cancel`, and clean shutdown set a cooperative flag that
+the engine checks between generated tokens.
+
 **Acceptance:** `curl` streams a completion; 20 sequential requests leak no
 RSS (< 1% drift); standing tiny oracles and the frozen-baseline comparison
 are unaffected (serve code compiled but idle in oracle mode); guardrails
@@ -67,6 +90,12 @@ hold in a 15-minute serve soak driven by scripted requests (zero swap,
 writes < 100 MB/h, thermal ≤ moderate at the 2T default).
 
 ### A0.2 Conversation slots on the session machinery  ~2 days
+
+**Status (2026-07-14): partially implemented.** `conversation_id` uses sealed,
+atomic `QWSESS01` snapshots, and two real HTTP turns verified exact restore
+without history re-prefill. The four-slot in-RAM LRU, pressure eviction, write
+batching, and four-conversation soak are still open; the current developer
+preview restores the snapshot from disk on every later turn.
 
 Per-conversation state without re-prefill: keep N in-RAM conversation slots
 (N=4 default; each ≈ KV bytes of its context + 63 MB state). API:
@@ -88,6 +117,12 @@ budget and zero swap.
 
 ### A0.3 `samosa app` launcher  ~0.5 day
 
+**Status (2026-07-14): implemented in-tree.** Double launch retained one PID,
+the browser URL opened through the launcher, and `samosa serve --stop` shut the
+real server down cleanly. The staged installer includes the new server header
+and pthread build flag. The fresh/upgrade installer integration and its
+corrupt-staging rollback both pass.
+
 `samosa app`: starts serve if not running (single-instance lock file),
 opens `http://127.0.0.1:8642` in the default browser, prints the URL.
 `samosa serve --stop` stops it. No launchd/autostart in v1.
@@ -97,13 +132,21 @@ opens `http://127.0.0.1:8642` in the default browser, prints the URL.
 
 ### A0.4 Long-context generation test (debt from the 4096 fix)  ~0.5 day
 
-The stack-overflow class was invisible to every existing test. Add a harness
-case that generates past 4,096 and past 8,192 total context on the real
-model (cheap prompt, `--fast`), asserting clean exit + stats line, and a
-tiny-fixture equivalent with a shrunken threshold if feasible.
+**Status (2026-07-14): not yet implemented.** The acceptance design below was
+corrected to use a tiny fixture plus bounded real prefill, but neither arm is
+being claimed as complete.
 
-**Acceptance:** case fails on the pre-fix binary, passes on current; wired
-into `make test`-level docs as a release requirement.
+The stack-overflow class was invisible to every existing test. Add a tiny
+fixture that crosses shrunken equivalents of both boundaries on every test
+run. The real-model arm should cross 4,096 and 8,192 **total context primarily
+through bounded prefill**, then generate only enough tokens to prove the fixed
+path and stats line. Do not generate 8,192 real-model output tokens locally:
+the measured 933-token control already requested 376.77 GB of expert reads.
+
+**Acceptance:** the tiny case fails on the pre-fix binary and passes on current;
+the bounded real-model prefill/generation case exits cleanly under the standing
+machine guard; both are documented release requirements, while only the tiny
+case runs in ordinary `make test`.
 
 ---
 
@@ -121,13 +164,13 @@ no external requests (CSP: `default-src 'self'`). Contents:
   fenced code with a copy button — no external highlighter; monospace block
   is enough), a visible-but-collapsed "thinking" section when thinking mode
   is on.
-- Composer: Enter sends / Shift-Enter newline; stop button (server aborts
-  generation between tokens — engine needs a cooperative cancel flag checked
-  per token, ~10 lines); regenerate last answer.
+- Composer: Enter sends / Shift-Enter newline; stop button (uses the A0.1
+  cooperative cancellation endpoint); regenerate last answer.
 - Footer telemetry, always visible (the product's honesty signature):
   tok/s of the current generation, engine RSS, model-on-disk size, and
   fast/cool mode indicator.
-- Settings drawer: thinking on/off, fast/cool (maps to engine threads;
+- Settings drawer: thinking off/general/precise-code, fast/cool (maps to the
+  engine's Qwen task profiles and thread count;
   cool is default per the standing user preference), seed field (blank =
   random), offline mode (disables Phase-A3 features globally).
 

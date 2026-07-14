@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "control_basis": "OpenRouter Qwen3.6 FP8 pilot: reasoning 353-616, completion 587-928 tokens",
+  "cases": [
+    {
+      "id": "group32_arithmetic_a_seed11_budget1024",
+      "profile": "think",
+      "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+      "seed": 11,
+      "max_tokens": 2048,
+      "thinking_budget": 1024,
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ],
+      "repetition_limit": 0.45
+    }
+  ]
+}

@@ -46,6 +46,8 @@ typedef struct {
     uint32_t byte2cp[256]; int byte2cp_len[256]; char byte2str[256][3];
     int16_t cp2byte[1024];
     int ignore_merges;   /* Hugging Face BPE model.ignore_merges */
+    jval *json_root;     /* owns vocab/added-token strings */
+    char *source_buf;
 } Tok;
 
 /* ---------- UTF-8 ---------- */
@@ -94,6 +96,7 @@ static void tok_load(Tok *T, const char *path){
     tk_build_bytemap(T);
     long fn; char *buf=tk_read_file(path,&fn);
     char *arena=NULL; jval *root=json_parse(buf,&arena);
+    T->json_root=root; T->source_buf=buf;
     jval *model=json_get(root,"model");
     jval *vocab=json_get(model,"vocab");
     jval *merges=json_get(model,"merges");
@@ -141,6 +144,16 @@ static void tok_load(Tok *T, const char *path){
     }
     /* arena/buf restano allocati: le stringhe (j_dup) sono malloc indipendenti e ci servono vive */
     (void)arena;
+}
+
+static void tok_free(Tok *T){
+    if(!T)return;
+    if(T->merges.e) for(int i=0;i<T->merges.cap;i++)
+        if(T->merges.e[i].used) free((void *)T->merges.e[i].k);
+    free(T->vocab.e); free(T->merges.e);
+    free(T->id2str); free(T->id_added); free(T->sp);
+    json_free(T->json_root); free(T->source_buf);
+    memset(T,0,sizeof(*T));
 }
 
 /* ---------- BPE su un pezzo: byte grezzi [a,b) -> id appesi a out ---------- */

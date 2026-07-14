@@ -1,0 +1,28 @@
+{
+  "control": "OpenRouter upstream-compatible provider control",
+  "correct_final_rate": 1.0,
+  "declared_provider_quantization": "fp8",
+  "natural_stop_rate": 1.0,
+  "not_bf16": true,
+  "p90_is_pilot_only": true,
+  "reasoning_tokens": [
+    595
+  ],
+  "reasoning_tokens_max": 595,
+  "reasoning_tokens_min": 595,
+  "reasoning_tokens_p50_nearest_rank": 595,
+  "reasoning_tokens_p90_nearest_rank": 595,
+  "requested_model": "qwen/qwen3.6-35b-a3b",
+  "requested_provider": "AkashML",
+  "results": [
+    {
+      "case_id": "upstream_arithmetic_a_seed11",
+      "passed": true,
+      "path": "upstream_arithmetic_a_seed11.json",
+      "seed": 11
+    }
+  ],
+  "runs": 1,
+  "schema": 1,
+  "total_cost": 0.00102272
+}

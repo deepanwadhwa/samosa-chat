@@ -1,0 +1,5 @@
+[decode] sampling profile=think-general activations=int8-fast temp=1 top_k=20 top_p=0.95 presence=1.5 max_tokens=2048 thinking_budget=1024
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=48 generated=933 stop=model thinking=model-controlled prefill=5.842s (8.22 tok/s) decode=192.161s (4.85 tok/s) total=198.003s expert_hit=110516/302150 (36.6%) expert_disk=98.586s expert_mm=32.041s peak_rss=3.23 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=190978 bytes_read=376.77 GB bytes_avoided=217.28 GB failed_admissions=0 pressure_warn=0 pressure_critical=0

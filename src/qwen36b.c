@@ -30,10 +30,15 @@
 #endif
 #include "kernels.h"
 #include "expert_cache.h"
+#include "repetition_guard.h"
+#include "thinking_budget.h"
+#include "samosa_http.h"
 #define matmul_qt matmul_qt_impl
 
 static int g_direct = 0;
 static int g_idot = 1;
+static int g_stateful_idot = 1;
+static int g_moe_down_idot = 1;
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static int g_i4s = 1;
 #else
@@ -230,6 +235,11 @@ typedef struct {
     int64_t *expert_offsets;
     int64_t *expert_sizes;
     uint8_t *expert_sha256;
+    /* 0 means the legacy one-scale-per-row q4 container. A positive value
+     * selects grouped-q4 gate/up. expert_down_bits distinguishes the all-q4
+     * baseline from the mixed row-q8 down-projection candidate. */
+    int expert_group_size;
+    int expert_down_bits;
     ESlot ws[256]; // scratch loading slots
     /* Byte-budget LRU policy core (expert_cache.h).  Payload handles are heap
      * ESlot*; slabs recycle through eslot_pool so steady-state misses reuse
@@ -1073,11 +1083,13 @@ static void embed_gather_row(float *out, const QT *w, int row) {
         for (int i = 0; i < I; i++) out[i] = (float)r8[i] * sc;
     } else {
         int rb = (I + 1) / 2;
-        float sc = w->s[row];
         const uint8_t *r4 = w->q4 + (int64_t)row * rb;
         for (int i = 0; i < I; i++) {
             uint8_t byte = r4[i / 2];
             int val = (i % 2 == 0) ? ((int)(byte & 0x0F) - 8) : ((int)(byte >> 4) - 8);
+            float sc = w->fmt == 4
+                     ? w->s[(int64_t)row * ((I + w->qgroup - 1) / w->qgroup) + i / w->qgroup]
+                     : w->s[row];
             out[i] = (float)val * sc;
         }
     }
@@ -1108,6 +1120,7 @@ static QT qt_load(Model *m, const char *name, int O, int I) {
     
     t.O = O;
     t.I = I;
+    t.qgroup = 0;
     
     char qs_name[512];
     snprintf(qs_name, sizeof(qs_name), "%s.qs", nm);
@@ -1152,6 +1165,34 @@ static void load_manifest(Model *m, const char *snap) {
     if (!experts) {
         fprintf(stderr, "manifest.json non contiene 'experts'!\n");
         exit(1);
+    }
+
+    m->expert_group_size = 0;
+    m->expert_down_bits = 4;
+    jval *quant = json_get(root, "expert_quantization");
+    if (quant) {
+        jval *format = json_get(quant, "format");
+        jval *group = json_get(quant, "group_size");
+        jval *down_bits = json_get(quant, "down_bits");
+        int all_q4 = format && format->t == J_STR &&
+                     !strcmp(format->str, "groupwise-symmetric-q4-v1");
+        int mixed = format && format->t == J_STR &&
+                    !strcmp(format->str, "groupwise-q4-gate-up-row-q8-down-v1");
+        int expected_down = mixed ? 8 : 4;
+        if (quant->t != J_OBJ || (!all_q4 && !mixed) ||
+            !group || group->t != J_NUM || !isfinite(group->num) ||
+            floor(group->num) != group->num || group->num < 2 ||
+            group->num > INT_MAX || ((int)group->num & 1) ||
+            m->c.hidden % (int)group->num ||
+            m->c.moe_intermediate_size % (int)group->num ||
+            (down_bits && (down_bits->t != J_NUM || !isfinite(down_bits->num) ||
+                           floor(down_bits->num) != down_bits->num ||
+                           (int)down_bits->num != expected_down))) {
+            fprintf(stderr, "manifest.json: expert_quantization non valida\n");
+            exit(1);
+        }
+        m->expert_group_size = (int)group->num;
+        m->expert_down_bits = expected_down;
     }
     
     int E = m->c.num_experts;
@@ -1721,29 +1762,33 @@ static void expert_views(Model *m, int layer, ESlot *s) {
      * "40" (vero solo per il checkpoint reale a 40 layer, sbagliato per
      * qualunque altra configurazione, inclusi gli oracoli tiny). */
     int bits = (layer == m->c.n_layers) ? 8 : 4;
+    int down_bits = (layer == m->c.n_layers) ? 8 : m->expert_down_bits;
+    int group = bits == 4 ? m->expert_group_size : 0;
 
     int64_t g_w_size = (bits == 8) ? (int64_t)I * D : ((int64_t)I * D + 1) / 2;
-    int64_t g_s_size = (int64_t)I * 4;
+    int64_t g_s_size = group ? (int64_t)I * ((D + group - 1) / group) * 4
+                             : (int64_t)I * 4;
     int64_t u_w_size = (bits == 8) ? (int64_t)I * D : ((int64_t)I * D + 1) / 2;
-    int64_t u_s_size = (int64_t)I * 4;
-    int64_t d_w_size = (bits == 8) ? (int64_t)D * I : ((int64_t)D * I + 1) / 2;
+    int64_t u_s_size = group ? (int64_t)I * ((D + group - 1) / group) * 4
+                             : (int64_t)I * 4;
+    int64_t d_w_size = (down_bits == 8) ? (int64_t)D * I : ((int64_t)D * I + 1) / 2;
 
-    s->g.fmt = (bits == 8) ? 1 : 2;
-    s->g.O = I; s->g.I = D; s->g.qf = NULL;
+    s->g.fmt = (bits == 8) ? 1 : group ? 4 : 2;
+    s->g.O = I; s->g.I = D; s->g.qgroup = group; s->g.qf = NULL;
     s->g.q8 = (bits == 8) ? (int8_t*)s->slab : NULL;
     s->g.q4 = (bits == 8) ? NULL : s->slab;
     s->g.s  = (float*)(s->slab + g_w_size);
 
-    s->u.fmt = (bits == 8) ? 1 : 2;
-    s->u.O = I; s->u.I = D; s->u.qf = NULL;
+    s->u.fmt = (bits == 8) ? 1 : group ? 4 : 2;
+    s->u.O = I; s->u.I = D; s->u.qgroup = group; s->u.qf = NULL;
     s->u.q8 = (bits == 8) ? (int8_t*)(s->slab + g_w_size + g_s_size) : NULL;
     s->u.q4 = (bits == 8) ? NULL : (s->slab + g_w_size + g_s_size);
     s->u.s  = (float*)(s->slab + g_w_size + g_s_size + u_w_size);
 
-    s->d.fmt = (bits == 8) ? 1 : 2;
-    s->d.O = D; s->d.I = I; s->d.qf = NULL;
-    s->d.q8 = (bits == 8) ? (int8_t*)(s->slab + g_w_size + g_s_size + u_w_size + u_s_size) : NULL;
-    s->d.q4 = (bits == 8) ? NULL : (s->slab + g_w_size + g_s_size + u_w_size + u_s_size);
+    s->d.fmt = (down_bits == 8) ? 1 : group ? 4 : 2;
+    s->d.O = D; s->d.I = I; s->d.qgroup = down_bits == 4 ? group : 0; s->d.qf = NULL;
+    s->d.q8 = (down_bits == 8) ? (int8_t*)(s->slab + g_w_size + g_s_size + u_w_size + u_s_size) : NULL;
+    s->d.q4 = (down_bits == 8) ? NULL : (s->slab + g_w_size + g_s_size + u_w_size + u_s_size);
     s->d.s  = (float*)(s->slab + g_w_size + g_s_size + u_w_size + u_s_size + d_w_size);
 }
 
@@ -1904,6 +1949,13 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
      * attivazioni): stesso interruttore A/B di glm.c, serve per la
      * validazione quantization-aware contro l'oracolo torch. */
     g_idot = getenv("IDOT") ? atoi(getenv("IDOT")) : 1;
+    /* Optional narrower validation switch: keep the large MoE matmuls on
+     * the accelerated path while preserving float activations in DeltaNet,
+     * whose recurrent state carries error across every later token. */
+    g_stateful_idot = getenv("IDOT_STATEFUL")
+                       ? atoi(getenv("IDOT_STATEFUL")) : g_idot;
+    g_moe_down_idot = getenv("IDOT_MOE_DOWN")
+                    ? atoi(getenv("IDOT_MOE_DOWN")) : g_idot;
     if (getenv("SEQ_PREFILL")) g_seq_prefill = atoi(getenv("SEQ_PREFILL"));
     if (getenv("SEQ_PREFILL_FRAC")) g_seq_frac = (float)atof(getenv("SEQ_PREFILL_FRAC"));
     if (getenv("SEQ_PREFILL_MIN_S")) g_seq_min_s = atoi(getenv("SEQ_PREFILL_MIN_S"));
@@ -1912,6 +1964,18 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
     
     st_init(&m->S, snap);
     load_manifest(m, snap);
+    if (m->expert_group_size && refine_mode != REFINE_OFF) {
+        fprintf(stderr,
+                "refinable shelves: legacy row-q4 shelves are incompatible with groupwise experts\n");
+        exit(1);
+    }
+    fprintf(stderr, "[weights] expert_quant=%s%s%d down_bits=%d\n",
+            m->expert_group_size ?
+                (m->expert_down_bits == 8 ? "groupwise-q4-gate-up/q8-down group="
+                                          : "groupwise-q4 group=")
+                : "legacy-row-q4",
+            m->expert_group_size ? "" : " group=",
+            m->expert_group_size, m->expert_down_bits);
     
     // Open experts file
     char exp_path[1024];
@@ -2232,15 +2296,15 @@ static void attention_deltanet(Model *m, Layer *l, int layer, float *x, int S, i
     int grp = num_v_heads / num_k_heads;
     
     float *mixed_qkv = falloc((int64_t)S * conv_dim);
-    matmul_qt(mixed_qkv, x, &l->in_proj_qkv, S, g_idot, g_i4s);
+    matmul_qt(mixed_qkv, x, &l->in_proj_qkv, S, g_stateful_idot, g_i4s);
     
     float *z = falloc((int64_t)S * value_dim);
-    matmul_qt(z, x, &l->in_proj_z, S, g_idot, g_i4s);
+    matmul_qt(z, x, &l->in_proj_z, S, g_stateful_idot, g_i4s);
     
     float *b_proj = falloc((int64_t)S * num_v_heads);
     float *a_proj = falloc((int64_t)S * num_v_heads);
-    matmul_qt(b_proj, x, &l->in_proj_b, S, g_idot, g_i4s);
-    matmul_qt(a_proj, x, &l->in_proj_a, S, g_idot, g_i4s);
+    matmul_qt(b_proj, x, &l->in_proj_b, S, g_stateful_idot, g_i4s);
+    matmul_qt(a_proj, x, &l->in_proj_a, S, g_stateful_idot, g_i4s);
     
     // Gated DeltaNet Convolution state update and causal conv.
     // T2.6 fase 1: ogni canale porta il proprio stato (v0,v1,v2) e la sua
@@ -2367,7 +2431,7 @@ static void attention_deltanet(Model *m, Layer *l, int layer, float *x, int S, i
     free(q); free(k); free(v); free(z); free(b_proj); free(a_proj);
     
     // Output projection
-    matmul_qt(out, attn_out, &l->out_proj, S, g_idot, g_i4s);
+    matmul_qt(out, attn_out, &l->out_proj, S, g_stateful_idot, g_i4s);
     free(attn_out);
 }
 
@@ -2633,7 +2697,7 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
             matmul_qt(gg, xg, &e->g, nr, g_idot, g_i4s);
             matmul_qt(uu, xg, &e->u, nr, g_idot, g_i4s);
             for (int64_t z = 0; z < (int64_t)nr * I; z++) gg[z] = siluf(gg[z]) * uu[z];
-            matmul_qt(hh, gg, &e->d, nr, g_idot, g_i4s);
+            matmul_qt(hh, gg, &e->d, nr, g_moe_down_idot, g_i4s);
             
             for (int r = 0; r < nr; r++) {
                 float *os = out + (int64_t)rows[r] * D;
@@ -2687,7 +2751,7 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
     matmul_qt(sg, x, &l->shared_gate, S, g_idot, g_i4s);
     matmul_qt(su, x, &l->shared_up, S, g_idot, g_i4s);
     for (int64_t z = 0; z < (int64_t)S * sI; z++) sg[z] = siluf(sg[z]) * su[z];
-    matmul_qt(shh, sg, &l->shared_down, S, g_idot, g_i4s);
+    matmul_qt(shh, sg, &l->shared_down, S, g_moe_down_idot, g_i4s);
     
     // Sigmoid Gating for Shared Expert
     for (int s = 0; s < S; s++) {
@@ -2820,9 +2884,22 @@ typedef struct {
     int last_token;
     uint8_t *seen;          /* bitmap vocab, allocata da generate quando serve */
     uint64_t rng;
+    int thinking_budget;    /* reasoning tokens before forced close; 0 disables */
+    int think_close_token;
+    int thinking_open;
+    int thinking_forced;
+    ThinkingBudgetTransition thinking_transition;
+    atomic_int *cancel_flag; /* cooperative server cancellation; NULL in CLI */
 } GenOptions;
 typedef struct {
+    int prompt;
     int generated;
+    int model_stopped;
+    int repetition_stopped;
+    int cancelled;
+    int thinking_forced;
+    int session_save_requested;
+    int session_save_failed;
     double prefill_s, decode_s, total_s;
 } GenStats;
 
@@ -2878,6 +2955,25 @@ static int choose_token(const float *logit, int vocab, GenOptions *o) {
     return chosen;
 }
 
+static int choose_controlled_token(const float *logit, int vocab, GenOptions *o,
+                                   int generated) {
+    int token;
+    if (o && thinking_budget_next(&o->thinking_transition, o->thinking_open,
+                                  o->thinking_budget, generated, &token)) {
+        mark_seen(o, token);
+        if (!o->thinking_forced)
+            fprintf(stderr, "[decode] thinking budget %d reached; appending "
+                    "Qwen early-stop transition\n", o->thinking_budget);
+        o->thinking_forced = 1;
+        if (token == o->think_close_token) o->thinking_open = 0;
+        return token;
+    }
+    token = choose_token(logit, vocab, o);
+    if (o && o->thinking_open && token == o->think_close_token)
+        o->thinking_open = 0;
+    return token;
+}
+
 static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
                      TokenSink sink, void *sink_ctx, GenOptions *options,
                      GenStats *stats) {
@@ -2910,13 +3006,33 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     double prefill_done=now_s();
     int len = np;
     int generated=0;
+    int model_stopped=0;
+    int repetition_stopped=0;
+    int cancelled=0;
     
     for (int s = 0; s < n_new; s++) {
-        int best = choose_token(logit, c->vocab, options);
+        if (options && options->cancel_flag &&
+            atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
+            cancelled=1;
+            break;
+        }
+        int best = choose_controlled_token(logit, c->vocab, options, generated);
         free(logit);
         out[len++] = best;
         generated++;
-        if (sink && sink(best, sink_ctx)) break;
+        int sink_result = sink ? sink(best, sink_ctx) : 0;
+        if (sink_result) {
+            if (sink_result == 1) model_stopped=1;
+            else cancelled=1;
+            break;
+        }
+        int repeated_period = sink ? repeated_tail_period(out + np, generated) : 0;
+        if (repeated_period) {
+            fprintf(stderr,"[decode] stopped repeated token cycle period=%d repeats=16\n",
+                    repeated_period);
+            repetition_stopped=1;
+            break;
+        }
         if (s == n_new - 1) break;
         int one = best;
         logit = step(m, &one, 1, len - 1);
@@ -2924,6 +3040,10 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     if(stats) {
         double done=now_s();
         stats->generated=generated;
+        stats->model_stopped=model_stopped;
+        stats->repetition_stopped=repetition_stopped;
+        stats->cancelled=cancelled;
+        stats->thinking_forced=options ? options->thinking_forced : 0;
         stats->prefill_s=prefill_done-gen_t0;
         stats->decode_s=done-prefill_done;
         stats->total_s=done-gen_t0;
@@ -3123,12 +3243,32 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     free(cont);
     int len = hist_len + n_extra;
     int generated = 0;
+    int model_stopped = 0;
+    int repetition_stopped = 0;
+    int cancelled = 0;
     for (int s = 0; s < n_new; s++) {
-        int best = choose_token(logit, c->vocab, options);
+        if (options && options->cancel_flag &&
+            atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
+            cancelled=1;
+            break;
+        }
+        int best = choose_controlled_token(logit, c->vocab, options, generated);
         free(logit);
         out[generated++] = best;
         hist[len++] = best; /* il chiamante garantisce la capacita' */
-        if (sink && sink(best, sink_ctx)) break;
+        int sink_result = sink ? sink(best, sink_ctx) : 0;
+        if (sink_result) {
+            if (sink_result == 1) model_stopped=1;
+            else cancelled=1;
+            break;
+        }
+        int repeated_period = sink ? repeated_tail_period(out, generated) : 0;
+        if (repeated_period) {
+            fprintf(stderr,"[decode] stopped repeated token cycle period=%d repeats=16\n",
+                    repeated_period);
+            repetition_stopped=1;
+            break;
+        }
         if (s == n_new - 1) break;
         int one = best;
         logit = step(m, &one, 1, len - 1);
@@ -3136,6 +3276,10 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     if (stats) {
         double done = now_s();
         stats->generated = generated;
+        stats->model_stopped = model_stopped;
+        stats->repetition_stopped = repetition_stopped;
+        stats->cancelled = cancelled;
+        stats->thinking_forced = options ? options->thinking_forced : 0;
         stats->prefill_s = prefill_done - t0;
         stats->decode_s = done - prefill_done;
         stats->total_s = done - t0;
@@ -3475,11 +3619,48 @@ static char *qwen_chat_continuation(const char *user, int no_thinking,
 static int run_chat(Model *m, const char *tokenizer_path, const char *user,
                     const char *system, int n_new, int no_thinking, int stream,
                     GenOptions *options, const char *save_session,
-                    const char *resume_session, int resume_decode) {
-    Tok tok;
-    tok_load(&tok, tokenizer_path);
-    ChatSink sink = { .tok=&tok, .eos=tok_id_of(&tok, "<|im_end|>"),
-                      .eot=tok_id_of(&tok, "<|endoftext|>"), .stream=stream };
+                    const char *resume_session, int resume_decode,
+                    Tok *shared_tokenizer,
+                    TokenSink output_sink, void *output_ctx,
+                    GenStats *stats_out) {
+    Tok local_tokenizer;
+    Tok *tok=shared_tokenizer;
+    if(!tok){ tok=&local_tokenizer; tok_load(tok,tokenizer_path); }
+    ChatSink cli_sink = { .tok=tok, .eos=tok_id_of(tok, "<|im_end|>"),
+                          .eot=tok_id_of(tok, "<|endoftext|>"), .stream=stream };
+    TokenSink active_sink = output_sink ? output_sink : chat_token_sink;
+    void *active_ctx = output_sink ? output_ctx : &cli_sink;
+    if (!no_thinking) {
+        options->think_close_token = tok_id_of(tok, "</think>");
+        if (options->think_close_token < 0) {
+            fprintf(stderr, "tokenizer: </think> token missing\n");
+            return 1;
+        }
+        options->thinking_open = 1;
+        options->thinking_forced = 0;
+        options->thinking_transition.position = 0;
+        options->thinking_transition.count = tok_encode(
+            tok, QWEN_THINKING_EARLY_STOP_TEXT,
+            (int)strlen(QWEN_THINKING_EARLY_STOP_TEXT),
+            options->thinking_transition.tokens,
+            THINKING_EARLY_STOP_MAX_TOKENS);
+        if (options->thinking_transition.count <= 0 ||
+            options->thinking_transition.count >= THINKING_EARLY_STOP_MAX_TOKENS) {
+            fprintf(stderr, "tokenizer: invalid Qwen thinking early-stop transition\n");
+            return 1;
+        }
+        int transition_has_close = 0;
+        for (int i = 0; i < options->thinking_transition.count; ++i)
+            if (options->thinking_transition.tokens[i] == options->think_close_token)
+                transition_has_close = 1;
+        if (!transition_has_close) {
+            fprintf(stderr, "tokenizer: Qwen early-stop transition lacks </think>\n");
+            return 1;
+        }
+        /* Exact saved-state continuation must not inject a token absent from
+         * the original run. A new user turn still receives the normal cap. */
+        if (resume_decode > 0) options->thinking_budget = 0;
+    }
     GenStats stats={0};
     int *transcript = NULL; int final_len = 0; int np = 0;
 
@@ -3497,27 +3678,29 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
             /* modalita' di validazione: continua la decodifica esatta */
         } else {
             if (!user) { fprintf(stderr, "--resume-session richiede --chat o --resume-decode\n"); return 1; }
-            int ended = (hist[hlen-1] == sink.eos);
+            int ended = (hist[hlen-1] == cli_sink.eos);
             cont_text = qwen_chat_continuation(user, no_thinking, ended);
             int cap = (int)strlen(cont_text) + 32;
             extra = malloc((size_t)cap * sizeof(int));
-            n_extra = tok_encode(&tok, cont_text, (int)strlen(cont_text), extra, cap);
+            n_extra = tok_encode(tok, cont_text, (int)strlen(cont_text), extra, cap);
             if (n_extra + n_new > reserve_guess) {
                 fprintf(stderr, "sessione: turno troppo lungo per la riserva\n");
                 return 1;
             }
         }
-        printf("%s", "\n--- risposta ---\n");
-        fflush(stdout);
+        if (!output_sink) {
+            printf("%s", "\n--- risposta ---\n");
+            fflush(stdout);
+        }
         int *gen_out = malloc((size_t)n_new * sizeof(int));
         generate_continue(m, hist, hlen, extra, n_extra, n_new, gen_out,
-                          chat_token_sink, &sink, options, &stats);
-        if (!stream) {
+                          active_sink, active_ctx, options, &stats);
+        if (!stream && !output_sink) {
             for (int i = 0; i < stats.generated; i++) {
                 int id = gen_out[i];
-                if (id == sink.eos || id == sink.eot) break;
+                if (id == cli_sink.eos || id == cli_sink.eot) break;
                 char piece[4096];
-                int n = tok_decode(&tok, &id, 1, piece, (int)sizeof(piece) - 1);
+                int n = tok_decode(tok, &id, 1, piece, (int)sizeof(piece) - 1);
                 if (n) fwrite(piece, 1, (size_t)n, stdout);
             }
         }
@@ -3529,18 +3712,20 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         char *text = qwen_chat_prompt(user, system, no_thinking);
         int cap = (int)strlen(text) + 32;
         int *prompt = malloc((size_t)cap * sizeof(int));
-        np = tok_encode(&tok, text, (int)strlen(text), prompt, cap);
+        np = tok_encode(tok, text, (int)strlen(text), prompt, cap);
         if (!np) { fprintf(stderr, "Il prompt non ha prodotto token\n"); free(text); free(prompt); return 1; }
         int *out = malloc((size_t)(np + n_new) * sizeof(int));
-        printf("%s", "\n--- risposta ---\n");
-        fflush(stdout);
-        generate(m, prompt, np, n_new, out, chat_token_sink, &sink, options, &stats);
-        if (!stream) {
+        if (!output_sink) {
+            printf("%s", "\n--- risposta ---\n");
+            fflush(stdout);
+        }
+        generate(m, prompt, np, n_new, out, active_sink, active_ctx, options, &stats);
+        if (!stream && !output_sink) {
             for (int i = np; i < np + n_new; i++) {
                 int id = out[i];
-                if (id == sink.eos || id == sink.eot) break;
+                if (id == cli_sink.eos || id == cli_sink.eot) break;
                 char piece[4096];
-                int n = tok_decode(&tok, &id, 1, piece, (int)sizeof(piece) - 1);
+                int n = tok_decode(tok, &id, 1, piece, (int)sizeof(piece) - 1);
                 if (n) fwrite(piece, 1, (size_t)n, stdout);
             }
         }
@@ -3548,15 +3733,32 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         final_len = np + stats.generated;
         free(text); free(prompt);
     }
-    putchar('\n');
-    if (save_session) session_save(m, transcript, final_len, save_session);
+    if (!output_sink) {
+        putchar('\n');
+        if (stats.cancelled) {
+            puts("[Samosa stopped this generation on request.]");
+        } else if (stats.repetition_stopped) {
+            puts("[Samosa stopped generation after detecting a repeated token cycle.]");
+        } else if (!stats.model_stopped) {
+            printf("[Samosa reached the %d-token limit; this answer may be incomplete. "
+                   "Use --max-tokens to raise the ceiling.]\n", n_new);
+        }
+    }
+    stats.session_save_requested = save_session != NULL;
+    if (save_session)
+        stats.session_save_failed = session_save(m, transcript, final_len, save_session) != 0;
+    stats.prompt=np;
     double hit_rate=(m->hits+m->miss)?(double)m->hits/(double)(m->hits+m->miss):0.0;
     double decode_tps=(stats.generated>1 && stats.decode_s>0)
         ? (double)(stats.generated-1)/stats.decode_s : 0.0;
-    fprintf(stderr,"[stats] prompt=%d generated=%d prefill=%.3fs (%.2f tok/s) "
+    fprintf(stderr,"[stats] prompt=%d generated=%d stop=%s thinking=%s prefill=%.3fs (%.2f tok/s) "
         "decode=%.3fs (%.2f tok/s) total=%.3fs expert_hit=%llu/%llu (%.1f%%) "
         "expert_disk=%.3fs expert_mm=%.3fs peak_rss=%.2f GB\n",
-        np,stats.generated,stats.prefill_s,stats.prefill_s>0?np/stats.prefill_s:0.0,
+        np,stats.generated,stats.cancelled?"cancelled":
+                           stats.repetition_stopped?"repetition-guard":
+                           stats.model_stopped?"model":"limit",
+        stats.thinking_forced?"forced-close":"model-controlled",
+        stats.prefill_s,stats.prefill_s>0?np/stats.prefill_s:0.0,
         stats.decode_s,decode_tps,stats.total_s,
         (unsigned long long)m->hits,(unsigned long long)(m->hits+m->miss),100.0*hit_rate,
         m->t_edisk,m->t_emm,rss_gb());
@@ -3577,8 +3779,367 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         fprintf(stderr,"[seqio] layer_reads=%llu bytes=%.2f GB\n",
                 (unsigned long long)m->seq_reads,(double)m->seq_bytes/1e9);
     free(transcript);
+    if (stats_out) *stats_out=stats;
+    if (options) {
+        free(options->seen);
+        options->seen=NULL;
+    }
+    teacher_state_end(m);
+    if(!shared_tokenizer)tok_free(tok);
     refine_report(m);
     return route_close();
+}
+
+/* ---------- A0: resident localhost app server ---------- */
+typedef struct {
+    char *data;
+    size_t length, capacity;
+} ServeBuffer;
+
+static int serve_buffer_append(ServeBuffer *buffer, const char *data, size_t length) {
+    if(buffer->length+length+1<buffer->length)return 0;
+    size_t need=buffer->length+length+1;
+    if(need>buffer->capacity){
+        size_t capacity=buffer->capacity?buffer->capacity:1024;
+        while(capacity<need){ if(capacity>SIZE_MAX/2)return 0; capacity*=2; }
+        char *next=realloc(buffer->data,capacity); if(!next)return 0;
+        buffer->data=next; buffer->capacity=capacity;
+    }
+    memcpy(buffer->data+buffer->length,data,length); buffer->length+=length;
+    buffer->data[buffer->length]=0; return 1;
+}
+
+static int serve_json_escape(ServeBuffer *out, const char *text, size_t length) {
+    static const char hex[]="0123456789abcdef";
+    for(size_t i=0;i<length;i++){
+        unsigned char c=(unsigned char)text[i];
+        if(c=='"'||c=='\\'){ char pair[2]={'\\',(char)c}; if(!serve_buffer_append(out,pair,2))return 0; }
+        else if(c=='\n'){ if(!serve_buffer_append(out,"\\n",2))return 0; }
+        else if(c=='\r'){ if(!serve_buffer_append(out,"\\r",2))return 0; }
+        else if(c=='\t'){ if(!serve_buffer_append(out,"\\t",2))return 0; }
+        else if(c<0x20){ char encoded[6]={'\\','u','0','0',hex[c>>4],hex[c&15]};
+            if(!serve_buffer_append(out,encoded,6))return 0; }
+        else if(!serve_buffer_append(out,(const char *)&text[i],1))return 0;
+    }
+    return 1;
+}
+
+typedef struct {
+    pthread_mutex_t mu;
+    pthread_cond_t cv;
+    uint64_t next_ticket, serving_ticket;
+    int active, waiting, max_waiting, stopping;
+} ServeScheduler;
+
+static void serve_scheduler_init(ServeScheduler *scheduler,int max_waiting){
+    memset(scheduler,0,sizeof(*scheduler)); scheduler->max_waiting=max_waiting;
+    pthread_mutex_init(&scheduler->mu,NULL); pthread_cond_init(&scheduler->cv,NULL);
+}
+
+/* 1 admitted, 0 queue full, -1 shutting down. */
+static int serve_scheduler_acquire(ServeScheduler *scheduler,double *wait_s){
+    double started=now_s(); pthread_mutex_lock(&scheduler->mu);
+    if(scheduler->stopping){pthread_mutex_unlock(&scheduler->mu);return -1;}
+    if((scheduler->active||scheduler->waiting) && scheduler->waiting>=scheduler->max_waiting){
+        pthread_mutex_unlock(&scheduler->mu); return 0;
+    }
+    uint64_t ticket=scheduler->next_ticket++; scheduler->waiting++;
+    while(!scheduler->stopping &&
+          (scheduler->active || ticket!=scheduler->serving_ticket))
+        pthread_cond_wait(&scheduler->cv,&scheduler->mu);
+    scheduler->waiting--;
+    if(scheduler->stopping){pthread_mutex_unlock(&scheduler->mu);return -1;}
+    scheduler->active=1; scheduler->serving_ticket++;
+    pthread_mutex_unlock(&scheduler->mu); if(wait_s)*wait_s=now_s()-started; return 1;
+}
+
+static void serve_scheduler_release(ServeScheduler *scheduler){
+    pthread_mutex_lock(&scheduler->mu); scheduler->active=0;
+    pthread_cond_broadcast(&scheduler->cv); pthread_mutex_unlock(&scheduler->mu);
+}
+
+typedef struct {
+    Model *model;
+    Tok tokenizer;
+    const char *tokenizer_path;
+    const char *snapshot;
+    char chats_dir[PATH_MAX];
+    ServeScheduler scheduler;
+    atomic_int cancel;
+    pthread_mutex_t stats_mu;
+    GenStats last_stats;
+    int has_last_stats;
+    double started;
+    int port;
+} SamosaServeContext;
+
+typedef struct {
+    int fd, stream, thinking_open, close_token;
+    Tok *tokenizer;
+    atomic_int *cancel;
+    ServeBuffer reasoning, content;
+} ServeTokenSink;
+
+static int serve_sse_piece(ServeTokenSink *sink,const char *field,
+                           const char *piece,size_t length){
+    ServeBuffer event={0};
+    const char *prefix="data: {\"object\":\"chat.completion.chunk\","
+        "\"choices\":[{\"index\":0,\"delta\":{\"";
+    const char *suffix="\"},\"finish_reason\":null}]}\n\n";
+    int ok=serve_buffer_append(&event,prefix,strlen(prefix)) &&
+        serve_buffer_append(&event,field,strlen(field)) &&
+        serve_buffer_append(&event,"\":\"",3) &&
+        serve_json_escape(&event,piece,length) &&
+        serve_buffer_append(&event,suffix,strlen(suffix));
+    if(ok)ok=samosa_send_all(sink->fd,event.data,event.length);
+    free(event.data); return ok;
+}
+
+static int serve_token_sink(int token,void *opaque){
+    ServeTokenSink *sink=(ServeTokenSink *)opaque;
+    if(atomic_load_explicit(sink->cancel,memory_order_relaxed))return 2;
+    if(token==sink->close_token){sink->thinking_open=0;return 0;}
+    char piece[4096]; int n=tok_decode(sink->tokenizer,&token,1,piece,sizeof(piece)-1);
+    if(n<=0)return 1; /* end-of-turn/end-of-text special token */
+    ServeBuffer *target=sink->thinking_open?&sink->reasoning:&sink->content;
+    if(!serve_buffer_append(target,piece,(size_t)n)){atomic_store(sink->cancel,1);return 2;}
+    if(sink->stream && !serve_sse_piece(sink,sink->thinking_open?"reasoning":"content",
+                                        piece,(size_t)n)){
+        atomic_store(sink->cancel,1);return 2;
+    }
+    return 0;
+}
+
+static int serve_valid_id(const char *id){
+    if(!id||!*id||strlen(id)>64)return 0;
+    for(const unsigned char *p=(const unsigned char *)id;*p;p++)
+        if(!((*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||
+             (*p>='0'&&*p<='9')||*p=='-'||*p=='_'))return 0;
+    return 1;
+}
+
+static int serve_mkdir(const char *path){
+    char copy[PATH_MAX]; if(strlen(path)>=sizeof(copy))return 0;
+    strcpy(copy,path);
+    for(char *p=copy+1;*p;p++)if(*p=='/'){*p=0;if(mkdir(copy,0700)&&errno!=EEXIST)return 0;*p='/';}
+    return !mkdir(copy,0700)||errno==EEXIST;
+}
+
+static jval *serve_json_field(jval *object,const char *key,jtype type){
+    jval *value=json_get(object,key); return value&&value->t==type?value:NULL;
+}
+
+static const char *serve_last_user(jval *root,const char **system){
+    jval *messages=serve_json_field(root,"messages",J_ARR); const char *user=NULL; *system=NULL;
+    if(!messages)return NULL;
+    for(int i=0;i<messages->len;i++){
+        jval *message=messages->kids[i];
+        jval *role=serve_json_field(message,"role",J_STR);
+        jval *content=serve_json_field(message,"content",J_STR);
+        if(!role||!content)continue;
+        if(!strcmp(role->str,"system") && !*system)*system=content->str;
+        else if(!strcmp(role->str,"user"))user=content->str;
+    }
+    return user;
+}
+
+static int serve_finish_reason(const GenStats *stats,const char **closure){
+    if(stats->cancelled){*closure="cancelled";return 4;}
+    if(stats->repetition_stopped){*closure="repetition";return 3;}
+    if(stats->thinking_forced)*closure="budget_transition";else *closure="natural";
+    return stats->model_stopped?1:2; /* stop / length */
+}
+
+static int serve_send_nonstream(int fd,ServeTokenSink *sink,const GenStats *stats){
+    const char *closure; int finish=serve_finish_reason(stats,&closure);
+    const char *reason=finish==1?"stop":finish==2?"length":finish==3?"repetition":"cancelled";
+    ServeBuffer body={0}; char prefix[512],suffix[896];
+    int n=snprintf(prefix,sizeof(prefix),
+        "{\"object\":\"chat.completion\",\"model\":\"qwen3.6-35b-a3b\","
+        "\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\","
+        "\"reasoning\":\"");
+    int ok=n>0&&serve_buffer_append(&body,prefix,(size_t)n)&&
+        serve_json_escape(&body,sink->reasoning.data?sink->reasoning.data:"",sink->reasoning.length)&&
+        serve_buffer_append(&body,"\",\"content\":\"",strlen("\",\"content\":\""))&&
+        serve_json_escape(&body,sink->content.data?sink->content.data:"",sink->content.length);
+    n=snprintf(suffix,sizeof(suffix),
+        "\"},\"finish_reason\":\"%s\"}],\"usage\":{\"prompt_tokens\":%d,"
+        "\"completion_tokens\":%d,\"total_tokens\":%d},\"samosa\":{"
+        "\"thinking_closure\":\"%s\",\"tokens_per_second\":%.2f,"
+        "\"rss_gb\":%.2f,\"session_saved\":%s}}",reason,stats->prompt,stats->generated,
+        stats->prompt+stats->generated,closure,
+        stats->generated>1&&stats->decode_s>0?(stats->generated-1)/stats->decode_s:0,
+        rss_gb(),stats->session_save_requested
+            ? (stats->session_save_failed?"false":"true") : "null");
+    ok=ok&&n>0&&serve_buffer_append(&body,suffix,(size_t)n)&&
+       samosa_http_headers(fd,200,"application/json",body.length,NULL)&&
+       samosa_send_all(fd,body.data,body.length);
+    free(body.data);return ok;
+}
+
+static int serve_send_stream_end(int fd,const GenStats *stats){
+    const char *closure; int finish=serve_finish_reason(stats,&closure);
+    const char *reason=finish==1?"stop":finish==2?"length":finish==3?"repetition":"cancelled";
+    char event[1152]; int n=snprintf(event,sizeof(event),
+        "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,"
+        "\"delta\":{},\"finish_reason\":\"%s\"}],\"usage\":{\"prompt_tokens\":%d,"
+        "\"completion_tokens\":%d,\"total_tokens\":%d},\"samosa\":{"
+        "\"thinking_closure\":\"%s\",\"tokens_per_second\":%.2f,"
+        "\"rss_gb\":%.2f,\"session_saved\":%s}}\n\ndata: [DONE]\n\n",reason,stats->prompt,
+        stats->generated,stats->prompt+stats->generated,closure,
+        stats->generated>1&&stats->decode_s>0?(stats->generated-1)/stats->decode_s:0,
+        rss_gb(),stats->session_save_requested
+            ? (stats->session_save_failed?"false":"true") : "null");
+    return n>0&&(size_t)n<sizeof(event)&&samosa_send_all(fd,event,(size_t)n);
+}
+
+static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
+    const char *system=NULL,*user=serve_last_user(root,&system);
+    if(!user)return samosa_http_json_error(fd,400,"invalid_messages",
+        "A text user message is required.");
+    jval *stream_value=json_get(root,"stream"); int stream=stream_value&&stream_value->t==J_BOOL&&stream_value->boolean;
+    int max_tokens=8192; jval *value=json_get(root,"max_tokens");
+    if(!value)value=json_get(root,"max_completion_tokens");
+    if(value){if(value->t!=J_NUM||value->num<1||value->num>8192||floor(value->num)!=value->num)
+        return samosa_http_json_error(fd,400,"invalid_max_tokens","max_tokens must be an integer in 1..8192.");
+        max_tokens=(int)value->num;}
+    int no_thinking=0,thinking_code=0;
+    value=json_get(root,"thinking");
+    if(value&&value->t==J_BOOL)no_thinking=!value->boolean;
+    else if(value&&value->t==J_STR){
+        if(!strcmp(value->str,"off"))no_thinking=1;
+        else if(!strcmp(value->str,"code")||!strcmp(value->str,"precise-code"))thinking_code=1;
+        else if(strcmp(value->str,"general"))return samosa_http_json_error(fd,400,
+            "invalid_thinking","thinking must be off, general, or code.");
+    }
+    GenOptions options; load_generation_options(ctx->snapshot,&options);
+    if(no_thinking){options.temperature=.7f;options.top_p=.8f;options.presence_penalty=1.5f;}
+    else if(thinking_code){options.temperature=.6f;options.top_p=.95f;options.presence_penalty=0;}
+    else {options.temperature=1.f;options.top_p=.95f;options.presence_penalty=1.5f;}
+    options.top_k=20; options.thinking_budget=no_thinking?0:(thinking_code?2048:1024);
+    if((value=json_get(root,"thinking_budget"))){
+        if(value->t!=J_NUM||value->num<0||value->num>8192||floor(value->num)!=value->num)
+            return samosa_http_json_error(fd,400,"invalid_thinking_budget",
+                "thinking_budget must be an integer in 0..8192.");
+        options.thinking_budget=(int)value->num;
+    }
+    if((value=json_get(root,"temperature"))){if(value->t!=J_NUM||value->num<0||value->num>2)
+        return samosa_http_json_error(fd,400,"invalid_temperature","temperature must be in 0..2.");
+        options.temperature=(float)value->num;options.sample=value->num>0;}
+    if((value=json_get(root,"top_p"))){if(value->t!=J_NUM||value->num<=0||value->num>1)
+        return samosa_http_json_error(fd,400,"invalid_top_p","top_p must be in (0,1].");options.top_p=(float)value->num;}
+    if((value=json_get(root,"top_k"))){if(value->t!=J_NUM||value->num<1||value->num>256||floor(value->num)!=value->num)
+        return samosa_http_json_error(fd,400,"invalid_top_k","top_k must be an integer in 1..256.");options.top_k=(int)value->num;}
+    if((value=json_get(root,"seed"))){if(value->t!=J_NUM||value->num<0||floor(value->num)!=value->num)
+        return samosa_http_json_error(fd,400,"invalid_seed","seed must be a non-negative integer.");options.rng=(uint64_t)value->num;}
+    options.cancel_flag=&ctx->cancel;
+
+    char session_path[PATH_MAX]={0}; const char *save_session=NULL,*resume_session=NULL;
+    value=serve_json_field(root,"conversation_id",J_STR);
+    if(value){
+        if(!serve_valid_id(value->str))return samosa_http_json_error(fd,400,
+            "invalid_conversation_id","conversation_id must use letters, numbers, dash, or underscore.");
+        char directory[PATH_MAX];
+        if(snprintf(directory,sizeof(directory),"%s/%s",ctx->chats_dir,value->str)>=(int)sizeof(directory)||
+           !serve_mkdir(directory)||
+           snprintf(session_path,sizeof(session_path),"%s/session.qws",directory)>=(int)sizeof(session_path))
+            return samosa_http_json_error(fd,500,"session_path_failed","Unable to create conversation storage.");
+        save_session=session_path; if(!access(session_path,R_OK))resume_session=session_path;
+    }
+
+    double wait_s=0; int admitted=serve_scheduler_acquire(&ctx->scheduler,&wait_s);
+    if(admitted==0)return samosa_http_json_error(fd,429,"queue_full","The inference queue is full.");
+    if(admitted<0)return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down.");
+    atomic_store(&ctx->cancel,0); g_moe_down_idot=thinking_code?0:g_idot;
+    ServeTokenSink sink={.fd=fd,.stream=stream,.thinking_open=!no_thinking,
+        .close_token=tok_id_of(&ctx->tokenizer,"</think>"),.tokenizer=&ctx->tokenizer,
+        .cancel=&ctx->cancel};
+    int sent=stream?samosa_http_stream_headers(fd):1;
+    GenStats stats={0}; int result=1;
+    if(sent)result=run_chat(ctx->model,ctx->tokenizer_path,user,system,max_tokens,
+        no_thinking,1,&options,save_session,resume_session,0,&ctx->tokenizer,
+        serve_token_sink,&sink,&stats);
+    if(sent && !result){ if(stream)serve_send_stream_end(fd,&stats); else serve_send_nonstream(fd,&sink,&stats); }
+    pthread_mutex_lock(&ctx->stats_mu);ctx->last_stats=stats;ctx->has_last_stats=1;pthread_mutex_unlock(&ctx->stats_mu);
+    free(sink.reasoning.data);free(sink.content.data);serve_scheduler_release(&ctx->scheduler);
+    (void)wait_s; return result?0:1;
+}
+
+static int samosa_serve_handler(SamosaHttpServer *server,int fd,
+                                const SamosaHttpRequest *request,void *opaque){
+    SamosaServeContext *ctx=(SamosaServeContext *)opaque;
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/"))
+        return samosa_http_response(fd,200,"text/html; charset=utf-8",
+            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\">"
+            "<title>Samosa Chat</title><style>body{font:16px system-ui;max-width:42rem;margin:12vh auto;"
+            "padding:1.5rem;color:#24170d}code{background:#f5eee7;padding:.15rem .35rem}</style>"
+            "<h1>Samosa Chat</h1><p>The local model server is ready.</p>"
+            "<p>The full chat interface is the next app phase. Health: <a href=/healthz><code>/healthz</code></a></p>",
+            "Content-Security-Policy: default-src 'self'; style-src 'unsafe-inline'\r\n");
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/healthz")){
+        GenStats stats={0};int has;
+        pthread_mutex_lock(&ctx->stats_mu);stats=ctx->last_stats;has=ctx->has_last_stats;pthread_mutex_unlock(&ctx->stats_mu);
+        pthread_mutex_lock(&ctx->scheduler.mu);int active=ctx->scheduler.active,queued=ctx->scheduler.waiting;pthread_mutex_unlock(&ctx->scheduler.mu);
+        char body[1024];snprintf(body,sizeof(body),
+            "{\"status\":\"ok\",\"model\":\"qwen3.6-35b-a3b\",\"rss_gb\":%.2f,"
+            "\"uptime_seconds\":%.0f,\"scheduler\":{\"active\":%s,\"queued\":%d,"
+            "\"max_queue\":%d},\"last_generation\":{\"available\":%s,"
+            "\"tokens\":%d,\"tokens_per_second\":%.2f}}",rss_gb(),now_s()-ctx->started,
+            active?"true":"false",queued,ctx->scheduler.max_waiting,has?"true":"false",
+            stats.generated,stats.generated>1&&stats.decode_s>0?(stats.generated-1)/stats.decode_s:0);
+        return samosa_http_response(fd,200,"application/json",body,NULL);
+    }
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/v1/models"))
+        return samosa_http_response(fd,200,"application/json",
+            "{\"object\":\"list\",\"data\":[{\"id\":\"qwen3.6-35b-a3b\","
+            "\"object\":\"model\",\"owned_by\":\"samosa\"}]}",NULL);
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/cancel")){
+        atomic_store(&ctx->cancel,1);
+        return samosa_http_response(fd,200,"application/json","{\"cancelled\":true}",NULL);
+    }
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/shutdown")){
+        atomic_store(&ctx->cancel,1);pthread_mutex_lock(&ctx->scheduler.mu);
+        ctx->scheduler.stopping=1;pthread_cond_broadcast(&ctx->scheduler.cv);pthread_mutex_unlock(&ctx->scheduler.mu);
+        samosa_http_response(fd,200,"application/json","{\"shutting_down\":true}",NULL);
+        samosa_http_server_stop(server);return 1;
+    }
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/chat/completions")){
+        char *arena=NULL;jval *root=json_parse(request->body,&arena);
+        if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
+        int result=samosa_serve_chat(ctx,fd,root);json_free(root);free(arena);return result;
+    }
+    return samosa_http_json_error(fd,404,"not_found","Endpoint not found.");
+}
+
+static SamosaHttpServer *g_signal_server=NULL;
+static SamosaServeContext *g_signal_context=NULL;
+static void samosa_serve_signal(int signal_number){
+    (void)signal_number;if(g_signal_context)atomic_store(&g_signal_context->cancel,1);
+    if(g_signal_server)samosa_http_server_stop(g_signal_server);
+}
+
+static int run_samosa_serve(Model *model,const char *snapshot,
+                            const char *tokenizer_path,int port,int max_queue){
+    SamosaServeContext context={.model=model,.tokenizer_path=tokenizer_path,
+        .snapshot=snapshot,.started=now_s(),.port=port};
+    atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
+    serve_scheduler_init(&context.scheduler,max_queue);tok_load(&context.tokenizer,tokenizer_path);
+    const char *configured=getenv("SAMOSA_CHATS_DIR");
+    if(configured)snprintf(context.chats_dir,sizeof(context.chats_dir),"%s",configured);
+    else {const char *home=getenv("HOME");snprintf(context.chats_dir,sizeof(context.chats_dir),
+        "%s/.samosa/chats",home?home:".");}
+    if(!serve_mkdir(context.chats_dir)){fprintf(stderr,"serve: cannot create %s\n",context.chats_dir);return 2;}
+    SamosaHttpServer server;
+    if(!samosa_http_server_init(&server,port,samosa_serve_handler,&context)){
+        fprintf(stderr,"serve: cannot bind 127.0.0.1:%d: %s\n",port,strerror(errno));return 2;}
+    g_signal_server=&server;g_signal_context=&context;signal(SIGINT,samosa_serve_signal);signal(SIGTERM,samosa_serve_signal);
+    fprintf(stderr,"[serve] ready http://127.0.0.1:%d queue=%d chats=%s\n",
+        server.port,max_queue,context.chats_dir);fflush(stderr);
+    int ok=samosa_http_server_run(&server);
+    samosa_http_server_destroy(&server);tok_free(&context.tokenizer);
+    pthread_mutex_destroy(&context.stats_mu);pthread_cond_destroy(&context.scheduler.cv);
+    pthread_mutex_destroy(&context.scheduler.mu);g_signal_server=NULL;g_signal_context=NULL;
+    return ok?0:2;
 }
 
 int main(int argc, char **argv) {
@@ -3603,8 +4164,12 @@ int main(int argc, char **argv) {
     const char *tokenizer_path = getenv("TOKENIZER");
     const char *teacher_corpus = NULL, *teacher_output = NULL;
     int teacher_calibration = 128;
-    int n_chat = 128, no_thinking = 0, stream = 0, bad_option = 0, greedy=0;
-    int cli_top_k=-1; float cli_top_p=-1.f, cli_temp=-1.f, cli_presence=-1.f, cli_no_doubling=-1.f; uint64_t cli_seed=0;
+    int n_chat = 128, no_thinking = 0, thinking_code = 0;
+    int serve_mode=0, serve_port=8642, serve_queue=4;
+    int stream = 0, bad_option = 0, greedy=0;
+    int cli_top_k=-1, cli_thinking_budget=-1;
+    float cli_top_p=-1.f, cli_temp=-1.f, cli_presence=-1.f, cli_no_doubling=-1.f;
+    uint64_t cli_seed=0;
     const char *cli_save_session = NULL, *cli_resume_session = NULL;
     int cli_resume_decode = 0;
     const char *moe_fixed = getenv("MOE_K"), *moe_mass = getenv("MOE_MASS");
@@ -3633,10 +4198,32 @@ int main(int argc, char **argv) {
      * unchanged so tiny-fixture regressions stay script-compatible. */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--chat") && i + 1 < argc) chat = argv[++i];
+        else if (!strcmp(argv[i], "--serve")) serve_mode=1;
+        else if (!strcmp(argv[i], "--port") && i+1<argc) {
+            if(!parse_int_strict(argv[++i],&serve_port)||serve_port<1||serve_port>65535){
+                fprintf(stderr,"--port requires an integer in 1..65535\n");bad_option=1;}
+        }
+        else if (!strcmp(argv[i], "--queue") && i+1<argc) {
+            if(!parse_int_strict(argv[++i],&serve_queue)||serve_queue<0||serve_queue>64){
+                fprintf(stderr,"--queue requires an integer in 0..64\n");bad_option=1;}
+        }
         else if (!strcmp(argv[i], "--system") && i + 1 < argc) system = argv[++i];
         else if ((!strcmp(argv[i], "--tokens") || !strcmp(argv[i], "--max-tokens")) && i + 1 < argc) n_chat = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--tokenizer") && i + 1 < argc) tokenizer_path = argv[++i];
-        else if (!strcmp(argv[i], "--no-thinking")) no_thinking = 1;
+        else if (!strcmp(argv[i], "--no-thinking")) {
+            if (thinking_code) {
+                fprintf(stderr,"--no-thinking and --thinking-code are mutually exclusive\n");
+                bad_option = 1;
+            }
+            no_thinking = 1;
+        }
+        else if (!strcmp(argv[i], "--thinking-code")) {
+            if (no_thinking) {
+                fprintf(stderr,"--thinking-code and --no-thinking are mutually exclusive\n");
+                bad_option = 1;
+            }
+            thinking_code = 1;
+        }
         else if (!strcmp(argv[i], "--stream")) stream = 1;
         else if (!strcmp(argv[i], "--save-session")) {
             if (i + 1 >= argc) { fprintf(stderr, "--save-session richiede un percorso\n"); bad_option = 1; }
@@ -3657,6 +4244,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--seed") && i+1<argc) cli_seed=(uint64_t)strtoull(argv[++i],NULL,10);
         else if (!strcmp(argv[i], "--presence-penalty") && i+1<argc) cli_presence=(float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--no-doubling") && i+1<argc) cli_no_doubling=(float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--thinking-budget") && i+1<argc) {
+            if (!parse_int_strict(argv[++i], &cli_thinking_budget) || cli_thinking_budget < 0) {
+                fprintf(stderr, "--thinking-budget requires a non-negative integer\n");
+                bad_option = 1;
+            }
+        }
         else if (!strcmp(argv[i], "--moe-k")) {
             if (i + 1 >= argc) { fprintf(stderr, "--moe-k richiede un valore\n"); bad_option = 1; }
             else cli_moe_fixed = argv[++i];
@@ -3714,6 +4307,8 @@ int main(int argc, char **argv) {
         else if (!strncmp(argv[i], "--", 2)) { fprintf(stderr, "Opzione sconosciuta: %s\n", argv[i]); bad_option = 1; }
     }
     if (bad_option) return 1;
+    if(serve_mode && (chat||cli_resume_session||teacher_corpus)){
+        fprintf(stderr,"--serve cannot be combined with chat, resume, or teacher modes\n");return 2;}
     if ((teacher_corpus != NULL) != (teacher_output != NULL)) {
         fprintf(stderr,
             "teacher metrics: --teacher-corpus and --teacher-output must be supplied together\n");
@@ -3782,17 +4377,17 @@ int main(int argc, char **argv) {
             "refinable shelves: --refine-dir/REFINE_DIR and --refine-mode/REFINE_MODE must be supplied together\n");
         return 2;
     }
-    if (!chat && !cli_resume_session && !teacher_mode && g_moe_policy.mode != MOE_POLICY_OFF) {
+    if (!chat && !cli_resume_session && !serve_mode && !teacher_mode && g_moe_policy.mode != MOE_POLICY_OFF) {
         fprintf(stderr,
             "adaptive MoE: policies are forbidden in oracle/validation mode; use --chat for explicit experiments\n");
         return 2;
     }
-    if (!chat && !cli_resume_session && !teacher_mode && refine_mode==REFINE_BASE) {
+    if (!chat && !cli_resume_session && !serve_mode && !teacher_mode && refine_mode==REFINE_BASE) {
         fprintf(stderr,
             "refinable shelves: base mode is forbidden in oracle/validation mode; use full mode for exact validation\n");
         return 2;
     }
-    if (!chat && !cli_resume_session && !teacher_mode && refine_mode==REFINE_MIXED) {
+    if (!chat && !cli_resume_session && !serve_mode && !teacher_mode && refine_mode==REFINE_MIXED) {
         fprintf(stderr,
             "refinable shelves: mixed mode is forbidden in oracle/validation mode; use full mode for exact validation\n");
         return 2;
@@ -3829,6 +4424,15 @@ int main(int argc, char **argv) {
         int route_result=route_close();
         return result ? result : route_result;
     }
+    if(serve_mode){
+        if(!snap&&argc>1&&argv[1][0]!='-')snap=argv[1];
+        if(!snap){fprintf(stderr,"Usage: SNAP=<dir> ./qwen36b --serve [--port 8642] [--queue 4] [--tokenizer file]\n");return 1;}
+        if(!tokenizer_path)tokenizer_path="tokenizer_qwen36.json";
+        Model m;model_init(&m,snap,refine_dir,refine_mode,refine_verify,
+                           refine_full_ranks,refine_base_projections,
+                           refine_base_layers_text);
+        return run_samosa_serve(&m,snap,tokenizer_path,serve_port,serve_queue);
+    }
     if (chat || cli_resume_session) {
         if (!snap && argc > 1 && argv[1][0] != '-') snap = argv[1];
         if (!snap) { fprintf(stderr, "Uso: SNAP=<dir> ./qwen36b --chat <prompt> [--stream] [--no-thinking] [--system <prompt>] [--tokens N] [--tokenizer file] [--moe-k N | --moe-mass P]\n"); return 1; }
@@ -3836,16 +4440,63 @@ int main(int argc, char **argv) {
         if (n_chat <= 0) { fprintf(stderr, "--tokens deve essere positivo\n"); return 1; }
         printf("== Qwen3.6 Stage-B chat (prompt tokens via %s) ==\n", tokenizer_path);
         GenOptions options; load_generation_options(snap,&options);
+        /* Long thinking runs are a precision-sensitive path. The accelerated
+         * kernel quantizes every activation row to int8 on top of the stored
+         * int4 weights. Same-prompt/seed controls isolated the unstable choke
+         * point to routed/shared expert down projections: keeping only those
+         * inputs in float crossed the fast run's repetition point, completed
+         * the requested HTML, and retained useful speed. IDOT=0 remains the
+         * full-float validation override; an explicit IDOT keeps precedence. */
+        if (thinking_code && !getenv("IDOT") && !getenv("IDOT_MOE_DOWN"))
+            setenv("IDOT_MOE_DOWN", "0", 0);
+        /* Qwen3.6 publishes different sampling profiles for direct, general
+         * thinking, and precise coding/WebDev.  The old runner loaded only
+         * generation_config.json, which omits presence_penalty and therefore
+         * ran every mode as temp=1/top_p=.95/presence=0.  Controlled same-seed
+         * A/B runs showed that this made general thinking enter repetition
+         * attractors and made WebDev reasoning run away.  Apply the official
+         * mode profile unless the user explicitly overrides a field. */
+        const char *profile = no_thinking ? "direct" :
+                              thinking_code ? "think-code" : "think-general";
+        if (no_thinking) {
+            if (cli_temp < 0) options.temperature = .7f;
+            if (cli_top_p < 0) options.top_p = .8f;
+            if (cli_presence < 0) options.presence_penalty = 1.5f;
+        } else if (thinking_code) {
+            if (cli_temp < 0) options.temperature = .6f;
+            if (cli_top_p < 0) options.top_p = .95f;
+            if (cli_presence < 0) options.presence_penalty = 0.f;
+        } else {
+            if (cli_temp < 0) options.temperature = 1.f;
+            if (cli_top_p < 0) options.top_p = .95f;
+            if (cli_presence < 0) options.presence_penalty = 1.5f;
+        }
+        if (cli_top_k < 0) options.top_k = 20;
         if(greedy)options.sample=0; if(cli_temp>=0)options.temperature=cli_temp;
         if(cli_presence>=0)options.presence_penalty=cli_presence;
         if(cli_no_doubling>=0)options.last_token_penalty=cli_no_doubling;
         if(cli_top_k>=0)options.top_k=cli_top_k; if(cli_top_p>=0)options.top_p=cli_top_p;
         if(cli_seed)options.rng=cli_seed;
+        options.thinking_budget = no_thinking ? 0 :
+            cli_thinking_budget >= 0 ? cli_thinking_budget :
+            thinking_code ? 2048 : 1024;
         if(options.temperature<=0 || options.top_k<1 || options.top_p<=0 || options.top_p>1){
             fprintf(stderr,"Parametri sampling non validi\n"); return 1;
         }
-        fprintf(stderr,"[decode] %s temp=%.3g top_k=%d top_p=%.3g max_tokens=%d\n",
-                options.sample?"sampling":"greedy",options.temperature,options.top_k,options.top_p,n_chat);
+        int idot_enabled = getenv("IDOT") ? atoi(getenv("IDOT")) : 1;
+        int stateful_idot_enabled = getenv("IDOT_STATEFUL")
+                                  ? atoi(getenv("IDOT_STATEFUL")) : idot_enabled;
+        int moe_down_idot_enabled = getenv("IDOT_MOE_DOWN")
+                                  ? atoi(getenv("IDOT_MOE_DOWN")) : idot_enabled;
+        const char *activation_mode = !idot_enabled ? "f32-exact"
+                                    : !stateful_idot_enabled ? "mixed-stateful-f32"
+                                    : !moe_down_idot_enabled ? "mixed-moe-down-f32"
+                                    : "int8-fast";
+        fprintf(stderr,"[decode] %s profile=%s activations=%s temp=%.3g top_k=%d top_p=%.3g "
+                       "presence=%.3g max_tokens=%d thinking_budget=%d\n",
+                options.sample?"sampling":"greedy",profile,activation_mode,options.temperature,
+                options.top_k,options.top_p,options.presence_penalty,n_chat,
+                options.thinking_budget);
         if (g_moe_policy.mode != MOE_POLICY_OFF) {
             fprintf(stderr,
                 "[moe-policy] EXPERIMENTAL opt-in mode=%s k=%d mass=%.9g max_entropy=%.9g min_gap=%.9g\n",
@@ -3858,7 +4509,8 @@ int main(int argc, char **argv) {
                             refine_full_ranks,refine_base_projections,
                             refine_base_layers_text);
         return run_chat(&m, tokenizer_path, chat, system, n_chat, no_thinking, stream,&options,
-                        cli_save_session, cli_resume_session, cli_resume_decode);
+                        cli_save_session, cli_resume_session, cli_resume_decode,
+                        NULL, NULL, NULL, NULL);
     }
     
     if (snap) {

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "artifact_manifest_sha256": "12ad73a9457e5d88b7cd4b00cae4a5c7ccb9031aa10d1111b80932d115f224d4",
+  "case_id": "group32_arithmetic_a_seed11",
+  "profile": "think",
+  "seed": 11,
+  "max_tokens": 512,
+  "thinking_budget": 256,
+  "passed": false,
+  "checks": {
+    "thinking_closed": true,
+    "natural_closure": false,
+    "final_answer_nonempty": true,
+    "required_substrings_present_after_think": false,
+    "model_stopped": true,
+    "repetition_stopped": false,
+    "machine_safety": true
+  },
+  "metrics": {
+    "prompt_tokens": 48,
+    "generated_tokens": 272,
+    "stop": "model",
+    "thinking": "forced-close",
+    "prefill_seconds": 5.399,
+    "prefill_tokens_per_second": 8.89,
+    "decode_seconds": 41.414,
+    "decode_tokens_per_second": 6.54,
+    "peak_rss_gb": 3.85,
+    "expert_bytes_read_gb": 114.94,
+    "expert_bytes_avoided_gb": 63.24,
+    "pressure_warning_events": 0,
+    "pressure_critical_events": 0
+  },
+  "result": "The reasoning contained the correct 7 red, 4 blue, 11 total calculation before forced closure, but the final answer after </think> was incomplete and did not contain all required answer markers. Fail-fast stops before variant B."
+}

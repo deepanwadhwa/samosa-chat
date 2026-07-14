@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Assemble the Hugging Face distribution folder for Jugnu-Qwen3.6-35B-A3B.
+"""Assemble the Hugging Face distribution folder for Samosa Chat.
 
 Collects the int4 container, tokenizer, engine sources, installer, and the
-`jugnu` wrapper into one folder, computes SHA-256 for every file into
-checksums.txt, and verifies nothing is missing. Large model files are
+`samosa` wrapper into one folder, computes SHA-256 and byte sizes for atomic
+installation, and verifies nothing is missing. Large model files are
 HARD-LINKED (same volume) so the staging folder costs no extra disk space.
 
 Usage:
@@ -20,7 +20,7 @@ import pathlib
 import shutil
 import sys
 
-C_DIR = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 MODEL_FILES = [
     "experts.bin",
@@ -40,6 +40,9 @@ SOURCE_FILES = [
     "tok.h",
     "tok_unicode.h",
     "compat.h",
+    "repetition_guard.h",
+    "thinking_budget.h",
+    "samosa_http.h",
 ]
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -64,7 +67,10 @@ def place(src: pathlib.Path, dst: pathlib.Path, link: bool) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, type=pathlib.Path)
-    ap.add_argument("--snapshot", type=pathlib.Path, default=C_DIR / "qwen36_i4")
+    ap.add_argument("--snapshot", type=pathlib.Path,
+                    default=ROOT.parent / "c" / "qwen36_i4")
+    ap.add_argument("--tokenizer", type=pathlib.Path,
+                    default=ROOT.parent / "c" / "tokenizer_qwen36.json")
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     args = ap.parse_args()
     out: pathlib.Path = args.out
@@ -78,22 +84,24 @@ def main() -> int:
             return 1
         place(src, out / name, link=True)
         staged.append(out / name)
-    tok = C_DIR / "tokenizer_qwen36.json"
+    tok = args.tokenizer
+    if not tok.exists():
+        print(f"missing tokenizer: {tok}", file=sys.stderr)
+        return 1
     place(tok, out / "tokenizer_qwen36.json", link=True)
     staged.append(out / "tokenizer_qwen36.json")
 
     for name in SOURCE_FILES:
-        src = C_DIR / name
+        src = ROOT / "src" / name
         if not src.exists():
             print(f"missing source file: {src}", file=sys.stderr)
             return 1
         place(src, out / "engine" / name, link=False)
         staged.append(out / "engine" / name)
 
-    for name, dst in (("install.sh", out / "install.sh"),
-                      ("jugnu", out / "jugnu"),
-                      ("README.md", out / "README.md")):
-        src = C_DIR.parent / "dist" / name
+    for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
+                     (ROOT / "dist" / "samosa", out / "samosa"),
+                     (ROOT / "dist" / "MODEL_CARD.md", out / "README.md")):
         if not src.exists():
             print(f"missing dist file: {src}", file=sys.stderr)
             return 1
@@ -106,11 +114,16 @@ def main() -> int:
         staged.append(dst)
 
     lines = []
+    release_lines = []
     for path in sorted(staged):
         digest = sha256_file(path)
-        lines.append(f"{digest}  {path.relative_to(out)}")
-        print(f"{digest[:16]}  {path.relative_to(out)}")
+        relative = path.relative_to(out)
+        lines.append(f"{digest}  {relative}")
+        release_lines.append(f"{digest}\t{path.stat().st_size}\t{relative}")
+        print(f"{digest[:16]}  {relative}")
     (out / "checksums.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out / "release-manifest.tsv").write_text(
+        "\n".join(release_lines) + "\n", encoding="utf-8")
 
     total = sum(p.stat().st_size for p in staged) / 1e9
     print(f"\nstaged {len(staged)} files, {total:.2f} GB -> {out}")

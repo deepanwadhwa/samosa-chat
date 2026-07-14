@@ -146,4 +146,14 @@ static jval *json_get(jval *o, const char *key) {
     return NULL;
 }
 
+static void json_free(jval *value) {
+    if (!value) return;
+    for (int i=0;i<value->len;i++) {
+        if (value->t==J_OBJ) free(value->keys[i]);
+        json_free(value->kids[i]);
+    }
+    if (value->t==J_STR) free(value->str);
+    free(value->keys); free(value->kids); free(value);
+}
+
 #endif

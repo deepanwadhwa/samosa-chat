@@ -1,0 +1,63 @@
+{
+  "control": "OpenRouter upstream-compatible provider control",
+  "correct_final_rate": 1.0,
+  "declared_provider_quantization": "fp8",
+  "natural_stop_rate": 1.0,
+  "not_bf16": true,
+  "p90_is_pilot_only": true,
+  "reasoning_tokens": [
+    388,
+    370,
+    383,
+    353,
+    616,
+    376
+  ],
+  "reasoning_tokens_max": 616,
+  "reasoning_tokens_min": 353,
+  "reasoning_tokens_p50_nearest_rank": 376,
+  "reasoning_tokens_p90_nearest_rank": 616,
+  "requested_model": "qwen/qwen3.6-35b-a3b",
+  "requested_provider": "AkashML",
+  "results": [
+    {
+      "case_id": "upstream_arithmetic_a_seed11",
+      "passed": true,
+      "path": "upstream_arithmetic_a_seed11.json",
+      "seed": 11
+    },
+    {
+      "case_id": "upstream_arithmetic_b_seed11",
+      "passed": true,
+      "path": "upstream_arithmetic_b_seed11.json",
+      "seed": 11
+    },
+    {
+      "case_id": "upstream_arithmetic_a_seed29",
+      "passed": true,
+      "path": "upstream_arithmetic_a_seed29.json",
+      "seed": 29
+    },
+    {
+      "case_id": "upstream_arithmetic_b_seed29",
+      "passed": true,
+      "path": "upstream_arithmetic_b_seed29.json",
+      "seed": 29
+    },
+    {
+      "case_id": "upstream_arithmetic_a_seed47",
+      "passed": true,
+      "path": "upstream_arithmetic_a_seed47.json",
+      "seed": 47
+    },
+    {
+      "case_id": "upstream_arithmetic_b_seed47",
+      "passed": true,
+      "path": "upstream_arithmetic_b_seed47.json",
+      "seed": 47
+    }
+  ],
+  "runs": 6,
+  "schema": 1,
+  "total_cost": 0.00412958
+}

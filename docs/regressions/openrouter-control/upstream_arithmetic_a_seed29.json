@@ -1,0 +1,26 @@
+{
+  "case_id": "upstream_arithmetic_a_seed29",
+  "checks": {
+    "final_answer_nonempty": true,
+    "natural_model_stop": true,
+    "reasoning_returned": true,
+    "required_patterns_present": true,
+    "required_substrings_present": true
+  },
+  "content": "\n\n**Final Count:**  \n- \ud83d\udd34 Red: 7  \n- \ud83d\udd35 Blue: 4  \n- \ud83d\udce6 Total: 11 balls  \n\n**Brief Check:**  \n- Initial total: 5 + 7 = 12  \n- Net change: \u22123 blue + 2 red = \u22121 ball overall \u2192 12 \u2212 1 = 11 \u2714\ufe0f  \n- Red: 5 (initial) + 2 (added) = 7 \u2714\ufe0f  \n- Blue: 7 (initial) \u2212 3 (removed) = 4 \u2714\ufe0f  \nAll values match.",
+  "elapsed_s": 13.499245708000672,
+  "finish_reason": "stop",
+  "model": "qwen/qwen3.6-35b-a3b",
+  "native_finish_reason": "stop",
+  "passed": true,
+  "provider": "AkashML",
+  "reasoning": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - Initial state: Box has 5 red balls and 7 blue balls.\n   - Action 1: Remove 3 blue balls.\n   - Action 2: Add 2 red balls.\n   - Question: How many balls and what colors remain? Show a brief check.\n\n2.  **Step-by-Step Calculation:**\n   - Initial: Red = 5, Blue = 7, Total = 12\n   - After removing 3 blue: Red = 5, Blue = 7 - 3 = 4, Total = 9\n   - After adding 2 red: Red = 5 + 2 = 7, Blue = 4, Total = 7 + 4 = 11\n   - Final count: 7 red balls, 4 blue balls, Total = 11 balls\n\n3.  **Perform Brief Check:**\n   - Start with total: 5 + 7 = 12\n   - Net change: -3 blue, +2 red \u2192 net change in total = -1\n   - New total should be: 12 - 1 = 11 \u2713\n   - Red check: 5 (initial) + 2 (added) = 7 \u2713\n   - Blue check: 7 (initial) - 3 (removed) = 4 \u2713\n   - Colors match calculation.\n\n4.  **Format Output:**\n   - State final answer clearly.\n   - Show the step-by-step or brief check as requested.\n   - Keep it concise.\n\n   Draft:\n   - Initially: 5 red + 7 blue = 12 balls\n   - Remove 3 blue: 5 red, 4 blue (9 total)\n   - Add 2 red: 7 red, 4 blue (11 total)\n   - **Answer:** 7 red balls and 4 blue balls remain (11 total).\n   - **Check:** Starting total was 12. Net change is \u22123 blue + 2 red = \u22121 ball overall. 12 \u2212 1 = 11. Red: 5 + 2 = 7. Blue: 7 \u2212 3 = 4. Matches. \u2713\n\n5.  **Self-Correction/Verification:**\n   - Math is straightforward. No tricks.\n   - All steps verified.\n   - Output matches request exactly.\n   - Ready.\u2705\n",
+  "schema": 1,
+  "seed": 29,
+  "usage": {
+    "completion_tokens": 665,
+    "cost": 0.00067172,
+    "prompt_tokens": 48,
+    "reasoning_tokens": 383
+  }
+}

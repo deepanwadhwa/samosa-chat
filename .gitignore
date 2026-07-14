@@ -4,3 +4,4 @@ test_kv_cache
 *.qws
 *.dSYM/
 model/
+.env

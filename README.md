@@ -1,11 +1,21 @@
 # Samosa Chat
 
+<p align="center"><img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="220"></p>
+
 Run **Qwen3.6-35B-A3B** (int4, text-only) locally on a **16 GB Apple Silicon
 Mac**. No cloud, no account, no telemetry, no GPU.
 
-Samosa Chat is ~4,000 lines of dependency-free C. It keeps 1.3 GB of dense weights
-resident in RAM and streams the 16.6 GB of mixture-of-experts weights from
-SSD on demand, so a 35B-parameter model fits in a 2–3 GB memory footprint.
+Samosa Chat is a dependency-free C inference engine and localhost app server.
+The current group-32 development baseline keeps approximately 3.0 GB of dense
+weights resident and streams its 20.94 GB mixture-of-experts store from SSD on
+demand. Measured chat/server runs peak around 3.2–3.9 GB RSS on the reference
+machine.
+
+The CLI is usable today. The resident OpenAI-shaped server, bounded request
+queue, SSE reasoning/content stream, cancellation, health telemetry, clean
+shutdown, and `samosa app` launcher are implemented in the repository. The
+full browser chat interface and in-RAM multi-conversation slot pool remain
+under active development; see [docs/APP_TASKS.md](docs/APP_TASKS.md).
 
 ## Examples
 
@@ -299,20 +309,66 @@ unsorted-input tests. Stats: `generated=191 decode 11.19 tok/s peak_rss=2.53 GB`
 curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-int4/resolve/main/install.sh | sh
 ```
 
-Requirements: Apple Silicon Mac (M1 or newer), 16 GB RAM, ~25 GB free disk.
-The installer checks the machine, downloads ~18 GB (resumable, every file
-SHA-256-verified), compiles the engine locally, and runs a smoke test.
-No admin rights needed. Uninstall: `rm -rf ~/.samosa`.
+Requirements: Apple Silicon Mac (M1 or newer) and 16 GB RAM. Disk need is
+release-specific; the installer reads exact artifact sizes before downloading
+and preserves a 2 GB completion margin. Allow roughly 30 GB free for the local
+groupwise build. Downloads are resumable and staged as an inactive versioned
+release. Every byte size and SHA-256 digest, the compiled engine, and a smoke
+test must pass before one atomic `current` pointer switches. A failed or corrupt
+upgrade leaves the live release untouched. No admin rights needed. Uninstall:
+`rm -rf ~/.samosa`.
 
 ## Use
 
 ```sh
 samosa "explain how a hash table handles collisions"
 samosa --continue "and which strategy does Python use?"  # resumes last conversation
-samosa --think "tricky logic puzzle"                     # chain-of-thought mode
+samosa --think "tricky logic puzzle"                     # general reasoning profile
+samosa --think-code "build a responsive settings page"   # precise coding/WebDev
 samosa --fast "..."                                      # all P-cores
+samosa serve                                             # foreground localhost API
+samosa app                                               # start server + open browser
+samosa serve --stop                                      # clean server shutdown
 samosa doctor                                            # verify the install
 ```
+
+The resident server binds only to `127.0.0.1:8642` and exposes
+`GET /healthz`, `GET /v1/models`, `POST /v1/chat/completions`,
+`POST /v1/cancel`, and `POST /v1/shutdown`. Chat completions support ordinary
+JSON and SSE streaming, `thinking: "off" | "general" | "code"`,
+`thinking_budget`, `max_tokens`, sampler controls, and an optional sanitized
+`conversation_id` backed by sealed session snapshots.
+
+Thinking modes use Qwen3.6's task-specific sampling profiles. General
+reasoning uses temperature 1.0 with presence penalty 1.5; precise coding uses
+temperature 0.6 without a presence penalty. The distinction matters: applying
+the general temperature to WebDev, or omitting the general presence penalty,
+can send otherwise valid reasoning into a repetition loop. Precise coding also
+uses float activations specifically for the routed/shared expert down
+projections; this avoids the long-output attractor reproduced by the fully
+W4A8 path without imposing the roughly 4 tok/s cost of full float activations.
+See the controlled same-seed ledger in
+[docs/THINKING_DIAGNOSIS.md](docs/THINKING_DIAGNOSIS.md).
+
+The token setting is a ceiling, not a fixed answer size. The model normally
+stops early on its end-of-turn token. Every profile allows up to 8,192 new
+tokens by default; `--max-tokens N` overrides the outer ceiling. General
+reasoning has a 1,024-token internal thinking budget and precise code has
+2,048. The model may finish reasoning earlier; otherwise Samosa appends Qwen's
+published natural-language early-stop transition before `</think>`, then
+preserves the remaining budget for the requested answer. A bare control-token
+injection is deliberately not used because it does not match Qwen's trained
+budget protocol.
+`--thinking-budget N` overrides that safety bound. Samosa prints an explicit
+notice if the outer ceiling is reached, because that answer may be incomplete.
+A repeated-token-cycle guard stops pathological loops early.
+
+For example, `samosa --think --thinking-budget 2048 "your prompt"` permits a
+longer reasoning trajectory. A higher budget does not change the arithmetic
+performed per token or force the model to consume the whole allowance; it can
+increase total response time and expert-cache traffic when the model chooses
+to think longer. The current 1,024 general default remains the cooler bounded
+choice pending upstream-calibrated results from more than the arithmetic pilot.
 
 `--continue` restores the previous conversation from a ~70 MB snapshot
 instead of re-processing the history, including across reboots. 30 of the
@@ -327,14 +383,30 @@ to an uninterrupted session.
 |---|---|
 | decode, default (2 threads) | 7–8 |
 | decode, `--fast` (4 threads) | ~9.5 |
+| recalibrated 933-token thinking control (2 threads) | 4.85 |
+| 5,000-token WebDev, selective-precision control (4 threads) | 6.47 |
+| 5,000-token WebDev, full float-activation validation (4 threads) | 4.19 |
 | prefill, default | ~14 |
 | prefill, `--fast` | ~24 |
 
-Peak RSS 2–3 GB; zero swap; the engine performs no disk writes except the
-session snapshot. Engine output is validated bit-exact against a
-quantization-aware reference implementation (teacher-forcing and generation),
-and the release configuration passed a gated benchmark suite (100-prompt
-corpus, 15-minute soak, swap/write/thermal guardrails).
+Measured peak RSS ranges from about 2.5 GB on the legacy direct path to
+3.2–3.9 GB on the group-32 chat/server path. The engine performs no model-data
+writes; durable conversations atomically replace a roughly 63–70 MB sealed
+session snapshot at turn end. The 5,000-token stability control peaked at
+2.48 GB RSS, left 69% system memory free, held swap at 5 MB, and triggered no
+macOS thermal or performance warning. The engine has quantization-aware
+teacher-forcing checks, but release quality also requires structural generation
+checks; the older substring-only suite did not detect unfinished thinking.
+
+## Evaluation
+
+There is no single benchmark suite run identically by every model company.
+Samosa's reproducible evaluation ladder covers runtime stability first, then
+public knowledge/reasoning, coding, instruction-following, long-context, and
+agent benchmarks with pinned prompts and dataset revisions. See
+[docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md). Results are not compared with
+upstream unless the template, sampler, tool scaffold, context limit, and
+scorer match.
 
 ## Build from source
 
@@ -356,8 +428,11 @@ checkpoint shard-by-shard in under 25 GB of working disk.
 
 ## Architecture notes
 
-- int4 experts (per-row scales), int8 activations with SDOT/AVX2 integer-dot
-  kernels; `IDOT=0` switches to exact f32 kernels for validation.
+- legacy int4 experts use per-row scales; the replacement groupwise-q4 format
+  and kernels are implemented and awaiting a reconverted release artifact.
+  Quantized weights normally use int8 activations and SDOT/AVX2 integer-dot
+  kernels. Precise coding keeps the MoE down-projection input in float;
+  `IDOT=0` switches every quantized matmul to float activations for validation.
 - Expert blobs are 16 KB-aligned and streamed with F_NOCACHE + F_RDADVISE;
   a byte-budget LRU cache with per-layer floors handles residency, and a
   kernel memory-pressure poll evicts under system pressure (zero-swap
@@ -377,19 +452,11 @@ specified with measured acceptance gates in
 
 ## Known limitations
 
-- Thinking mode (`--think`) reliably concludes on simple prompts but can
-  deliberate up to the token ceiling without producing an answer on
-  open-ended tasks (measured: 5/5 non-conclusions on a multi-section design
-  prompt and a bug-analysis prompt across seeds). Use direct mode for code
-  and writing tasks; this is an int4 generation-state trait, not a sampler
-  setting.
-- The int4 conversion occasionally doubles a short function word during
-  generation ("of of"), roughly once per ~10 longer answers. It is a
-  quantization artifact of generation-time states, not present under
-  teacher forcing; analysis notes live in the source history. Re-asking or a
-  different seed avoids it. `--presence-penalty` and `--no-doubling` exist as
-  experimental sampler knobs, but the artifact can bypass token-id-level
-  penalties, so neither is a complete fix.
+- The int4 conversion can still produce isolated word-level defects such as
+  `of ofof`, even on the full float-activation validation path. This is
+  distinct from the catastrophic W4A8 repetition attractor fixed by the
+  selective thinking path. Re-asking or a different seed can avoid a local
+  defect; token-level penalties are not a complete fix.
 - Text-only: the vision tower of the upstream model is not included.
 
 ## Credits and license

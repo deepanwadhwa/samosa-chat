@@ -6,6 +6,7 @@ import shutil
 import argparse
 import hashlib
 import gc
+import errno
 import numpy as np
 
 STATE_SCHEMA = 2
@@ -99,6 +100,28 @@ def atomic_copy_file(source, destination):
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
+
+
+def atomic_link_or_copy_file(source, destination):
+    """Publish a large immutable artifact without duplicating it when possible."""
+    if os.path.abspath(source) == os.path.abspath(destination):
+        return
+    tmp = destination + ".tmp"
+    try:
+        remove_if_exists(tmp)
+        try:
+            os.link(source, tmp)
+        except OSError as error:
+            if error.errno not in (errno.EXDEV, errno.EPERM, errno.EACCES):
+                raise
+            with open(source, "rb") as src, open(tmp, "wb") as dst:
+                shutil.copyfileobj(src, dst, length=8 * 1024 * 1024)
+                dst.flush()
+                os.fsync(dst.fileno())
+        os.replace(tmp, destination)
+        fsync_dir(os.path.dirname(destination) or ".")
+    finally:
+        remove_if_exists(tmp)
 
 
 def validate_manifest_blobs(path, manifest, committed_bytes=None):
@@ -226,8 +249,13 @@ def quant_int8(w):
     q = np.clip(np.rint(w / s), -128, qmax).astype(np.int8)
     return q.reshape(-1).view(np.uint8).copy(), s[:, 0].astype(np.float32)
 
-def quant_int4(w):
-    """Quantize float32 matrix w [O,I] to int4 (Q4_0 style).
+def quant_int4_rowwise(w):
+    """Legacy whole-row symmetric int4 (not GGML/GGUF Q4_0).
+
+    One scale covers every input value in an output row. This function is
+    retained only for compatibility with already-published containers; new
+    expert artifacts should use quant_int4_grouped.
+
     Valori in [-8, 7] memorizzati come v+8 (0..15).
     Returns (packed_uint8_array, scales_float32_array).
     """
@@ -245,7 +273,27 @@ def quant_int4(w):
         out[:, :v1.shape[1]] |= (v1 << 4)
     return out.reshape(-1), s[:, 0].astype(np.float32)
 
-def dequantize(q, scales, shape, bits):
+
+def quant_int4_grouped(w, group_size):
+    """Symmetric int4 with one scale per contiguous input group.
+
+    Packed codes retain the established row-major nibble layout; only the
+    scale plane changes from [O] to [O, ceil(I/group_size)].  Requiring an even
+    divisor keeps every group byte-aligned for the integer-dot kernel.
+    """
+    O, I = w.shape
+    if group_size < 2 or group_size % 2 or I % group_size:
+        raise ValueError(f"group_size {group_size} must be an even divisor of {I}")
+    groups = I // group_size
+    blocks = w.reshape(O, groups, group_size)
+    scales = np.maximum(np.abs(blocks).max(axis=2) / 7, 1e-8).astype(np.float32)
+    q = np.clip(np.rint(blocks / scales[:, :, None]), -8, 7).astype(np.int32)
+    q = q.reshape(O, I)
+    packed = ((q[:, 0::2] + 8).astype(np.uint8) |
+              ((q[:, 1::2] + 8).astype(np.uint8) << 4))
+    return packed.reshape(-1), scales.reshape(-1)
+
+def dequantize(q, scales, shape, bits, group_size=0):
     """Mirror kernels.h's on-disk int4/int8 interpretation for diagnostics."""
     rows, cols = shape
     if bits == 8:
@@ -256,12 +304,50 @@ def dequantize(q, scales, shape, bits):
         values[:, 0::2] = (packed & 0x0F).astype(np.int16) - 8
         if cols > 1:
             values[:, 1::2] = (packed[:, :cols // 2] >> 4).astype(np.int16) - 8
+    if bits == 4 and group_size:
+        groups = (cols + group_size - 1) // group_size
+        expanded = np.repeat(scales.reshape(rows, groups), group_size, axis=1)[:, :cols]
+        return values * expanded
     return values * scales[:, None]
 
-def quantize_with_stats(w, bits, stats, group):
-    q, scales = quant_int8(w) if bits == 8 else quant_int4(w)
-    stats.add(group, w, dequantize(q, scales, w.shape, bits))
+def quantize_with_stats(w, bits, stats, group, group_size=0):
+    if bits == 8:
+        q, scales = quant_int8(w)
+    elif group_size:
+        q, scales = quant_int4_grouped(w, group_size)
+    else:
+        q, scales = quant_int4_rowwise(w)
+    if stats is not None:
+        stats.add(group, w, dequantize(q, scales, w.shape, bits, group_size))
     return q, scales
+
+
+def quantize_expert_blob(gate_w, up_w, down_w, gate_up_bits=4,
+                         down_bits=4, group_size=0, stats=None):
+    """Encode one aligned expert blob, including the mixed q4/q8 candidate.
+
+    Projection order remains gate weights/scales, up weights/scales, then down
+    weights/scales. Regular mixed experts use grouped q4 for gate/up and
+    row-q8 for down; MTP experts continue to pass 8/8 with group_size zero.
+    """
+    if gate_up_bits not in (4, 8) or down_bits not in (4, 8):
+        raise ValueError("expert projection bits must be 4 or 8")
+    q_group = group_size if gate_up_bits == 4 else 0
+    gate_group = f"experts-int{gate_up_bits}" + (f"-group{q_group}" if q_group else "-row")
+    down_group = f"experts-int{down_bits}" + (
+        f"-group{group_size}" if down_bits == 4 and group_size else "-row")
+    q_gate, s_gate = quantize_with_stats(
+        gate_w, gate_up_bits, stats, gate_group, q_group)
+    q_up, s_up = quantize_with_stats(
+        up_w, gate_up_bits, stats, gate_group, q_group)
+    q_down, s_down = quantize_with_stats(
+        down_w, down_bits, stats, down_group,
+        group_size if down_bits == 4 else 0)
+    blob = (q_gate.tobytes() + s_gate.tobytes() +
+            q_up.tobytes() + s_up.tobytes() +
+            q_down.tobytes() + s_down.tobytes())
+    pad = (-len(blob)) % ALIGNMENT_BYTES
+    return blob + (b"\x00" * pad)
 
 def quantize_tensor_rows(handle, bits, stats, group, rows_per_chunk):
     """Quantize a safetensors slice without materializing a full bf16 tensor.
@@ -305,10 +391,10 @@ def repack_experts(source_path, destination_path, append_manifest):
     leaving the append file and its checkpoint state intact if final publishing
     is interrupted.
     """
-    final_manifest = {
-        "alignment_kb": ALIGNMENT_BYTES // 1024,
-        "experts": {},
-    }
+    final_manifest = {key: value for key, value in append_manifest.items()
+                      if key != "experts"}
+    final_manifest["alignment_kb"] = ALIGNMENT_BYTES // 1024
+    final_manifest["experts"] = {}
     tmp = destination_path + ".tmp"
     try:
         offset = 0
@@ -335,6 +421,45 @@ def repack_experts(source_path, destination_path, append_manifest):
         if os.path.exists(tmp):
             os.remove(tmp)
     return final_manifest
+
+
+def manifest_is_canonical(manifest):
+    """Return true when append order already matches numeric layer/expert order."""
+    cursor = 0
+    items = manifest.get("experts", {})
+    try:
+        for name in sorted(items, key=expert_sort_key):
+            entry = items[name]
+            if int(entry["offset"]) != cursor:
+                return False
+            cursor += int(entry["size"])
+    except (KeyError, TypeError, ValueError, IndexError):
+        return False
+    return True
+
+
+def manifest_is_dense(manifest, committed_bytes=None):
+    """Return true when manifest regions exactly tile the append container.
+
+    Runtime lookup is manifest-driven, so numeric layer order is not a format
+    requirement.  Publishing a validated dense append container directly
+    avoids a second full-store write solely to reorder otherwise identical
+    expert blobs.
+    """
+    cursor = 0
+    items = manifest.get("experts", {})
+    if not items:
+        return False
+    try:
+        for entry in sorted(items.values(), key=lambda item: int(item["offset"])):
+            offset = int(entry["offset"])
+            size = int(entry["size"])
+            if offset != cursor or size <= 0:
+                return False
+            cursor += size
+    except (KeyError, TypeError, ValueError):
+        return False
+    return committed_bytes is None or cursor == committed_bytes
 
 def get_layer_idx(name):
     """Extract layer index from tensor name."""
@@ -437,14 +562,30 @@ def main():
                         help="Maximum matrix rows expanded to float32 at once (default: 256)")
     parser.add_argument("--staging-dir", default=None,
                         help="Disposable local shard directory (default: OUTDIR/.staging)")
+    parser.add_argument("--resident-bits", type=int, choices=(4, 8), default=4,
+                        help="Quantization bits for non-MTP resident matrices (default: 4)")
+    parser.add_argument("--expert-group-size", type=int, default=0,
+                        help="Expert int4 scale group (0 keeps legacy whole-row scales; recommended: 32)")
+    parser.add_argument("--expert-down-bits", type=int, choices=(4, 8), default=4,
+                        help="Regular expert down-projection bits (8 requires grouped q4 gate/up)")
+    parser.add_argument("--reuse-experts-from", default=None, metavar="DIR",
+                        help="Reuse DIR/experts.bin and manifest.json; convert resident tensors only")
     parser.add_argument("--no-resume", action="store_true", help="Discard saved conversion work")
     parser.add_argument("--stop-after-shard", type=int, default=0,
                         help="Test hook: exit after checkpointing this 1-based shard index")
     args = parser.parse_args()
+    if args.expert_group_size < 0 or (args.expert_group_size and
+                                     (args.expert_group_size < 2 or args.expert_group_size % 2)):
+        parser.error("--expert-group-size must be 0 or a positive even integer >= 2")
+    if args.expert_down_bits == 8 and not args.expert_group_size:
+        parser.error("--expert-down-bits 8 requires --expert-group-size")
     if args.rows_per_chunk < 1:
         parser.error("--rows-per-chunk must be positive")
     if args.stop_after_shard < 0:
         parser.error("--stop-after-shard must not be negative")
+    if (args.reuse_experts_from and
+            os.path.abspath(args.reuse_experts_from) == os.path.abspath(args.outdir)):
+        parser.error("--reuse-experts-from must differ from --outdir")
 
     from safetensors import safe_open
     from safetensors.numpy import save_file
@@ -454,6 +595,32 @@ def main():
     staging_dir = args.staging_dir or os.path.join(args.outdir, ".staging")
     if not args.indir:
         os.makedirs(staging_dir, exist_ok=True)
+
+    reuse_experts_path = None
+    reuse_manifest = None
+    reuse_identity = None
+    if args.reuse_experts_from:
+        reuse_dir = os.path.abspath(args.reuse_experts_from)
+        reuse_experts_path = os.path.join(reuse_dir, "experts.bin")
+        reuse_manifest_path = os.path.join(reuse_dir, "manifest.json")
+        if not os.path.isfile(reuse_experts_path) or not os.path.isfile(reuse_manifest_path):
+            raise RuntimeError("--reuse-experts-from requires experts.bin and manifest.json")
+        with open(reuse_manifest_path, "r", encoding="utf-8") as f:
+            reuse_manifest = json.load(f)
+        reuse_bytes = os.path.getsize(reuse_experts_path)
+        if not validate_manifest_blobs(reuse_experts_path, reuse_manifest, reuse_bytes):
+            raise RuntimeError("reused expert container fails manifest validation")
+        reuse_quant = reuse_manifest.get("expert_quantization")
+        reuse_group = int(reuse_quant.get("group_size", 0)) if reuse_quant else 0
+        reuse_down_bits = int(reuse_quant.get("down_bits", 4)) if reuse_quant else 4
+        if (reuse_group != args.expert_group_size or
+                reuse_down_bits != args.expert_down_bits):
+            raise RuntimeError("expert quantization options do not match the reused expert container")
+        reuse_identity = {
+            "manifest_sha256": stable_json_sha256(reuse_manifest),
+            "experts_bytes": reuse_bytes,
+        }
+        print(f"Reusing validated expert container: {reuse_experts_path}")
 
     # Resolve the index.  A local single-file fixture deliberately has no
     # index, so synthesize the same mapping used by a real indexed checkpoint.
@@ -543,8 +710,12 @@ def main():
         "format": {
             "alignment_bytes": ALIGNMENT_BYTES,
             "quantization": "rowwise-symmetric-q4-q8-v1",
+            "resident_bits": args.resident_bits,
+            "expert_group_size": args.expert_group_size,
+            "expert_down_bits": args.expert_down_bits,
             "mtp_layer_idx": mtp_layer_idx,
             "rows_per_chunk": args.rows_per_chunk,
+            "reused_experts": reuse_identity,
         },
     }
 
@@ -567,6 +738,14 @@ def main():
         clear_work()
 
     manifest = {"alignment_kb": ALIGNMENT_BYTES // 1024, "experts": {}}
+    if args.expert_group_size:
+        manifest["expert_quantization"] = {
+            "format": ("groupwise-q4-gate-up-row-q8-down-v1"
+                       if args.expert_down_bits == 8
+                       else "groupwise-symmetric-q4-v1"),
+            "group_size": args.expert_group_size,
+            "down_bits": args.expert_down_bits,
+        }
     resident_dict = {}
     pending_fused = {}
     pending_individual = {}
@@ -690,17 +869,11 @@ def main():
                 os.remove(path)
 
     def expert_blob(gate_w, up_w, down_w, bits):
-        group = f"experts-int{bits}"
-        q_gate, s_gate = quantize_with_stats(gate_w, bits, quant_stats, group)
-        q_up, s_up = quantize_with_stats(up_w, bits, quant_stats, group)
-        q_down, s_down = quantize_with_stats(down_w, bits, quant_stats, group)
-        blob = (q_gate.tobytes() + s_gate.tobytes() +
-                q_up.tobytes() + s_up.tobytes() +
-                q_down.tobytes() + s_down.tobytes())
-        pad = (-len(blob)) % ALIGNMENT_BYTES
-        if pad:
-            blob += b"\x00" * pad
-        return blob
+        if bits == 8:
+            return quantize_expert_blob(gate_w, up_w, down_w, 8, 8, 0, quant_stats)
+        return quantize_expert_blob(gate_w, up_w, down_w, 4,
+                                    args.expert_down_bits,
+                                    args.expert_group_size, quant_stats)
 
     def append_expert(layer_idx, expert_idx, blob):
         key = f"model.layers.{layer_idx}.mlp.experts.{expert_idx}"
@@ -805,11 +978,13 @@ def main():
                 kind = classify_tensor(name, has_moe=True, mtp_layer_idx=mtp_layer_idx)
                 if kind == "skip":
                     continue
+                if reuse_manifest is not None and kind in ("x_ind", "x_gup", "x_down"):
+                    continue
                 is_mtp_tensor = is_mtp(name) or get_layer_idx(name) == mtp_layer_idx
                 if kind == "f32":
                     resident_dict[name] = f_in.get_tensor(name).to(torch.float32).numpy()
                 elif kind == "q":
-                    bits = 8 if is_mtp_tensor else 4
+                    bits = 8 if is_mtp_tensor else args.resident_bits
                     handle = f_in.get_slice(name)
                     if len(handle.get_shape()) == 2:
                         q, scales = quantize_tensor_rows(handle, bits, quant_stats,
@@ -870,10 +1045,28 @@ def main():
 
     # Finalization is intentionally separate from the append journal.  If a
     # process dies here, state and the original append offsets still resume.
-    final_manifest = repack_experts(experts_work_path, final_experts_path, manifest)
-    if not validate_manifest_blobs(final_experts_path, final_manifest,
-                                   os.path.getsize(final_experts_path)):
-        raise RuntimeError("final expert repack validation failed")
+    if reuse_manifest is not None:
+        atomic_link_or_copy_file(reuse_experts_path, final_experts_path)
+        final_manifest = reuse_manifest
+        if (not os.path.samefile(reuse_experts_path, final_experts_path) and
+                not validate_manifest_blobs(final_experts_path, final_manifest,
+                                            os.path.getsize(final_experts_path))):
+            raise RuntimeError("copied expert container fails validation")
+    else:
+        if manifest_is_dense(manifest, committed_bytes):
+            # Offsets are authoritative at runtime; numeric layer order is not
+            # a container invariant. A hard link publishes validated dense
+            # append bytes atomically without temporarily doubling a 20+ GB
+            # expert store merely to reorder identical blobs. The append
+            # journal remains linked until manifest publication, so an
+            # interrupted finalization is still resumable.
+            atomic_link_or_copy_file(experts_work_path, final_experts_path)
+            final_manifest = manifest
+        else:
+            final_manifest = repack_experts(experts_work_path, final_experts_path, manifest)
+        if not validate_manifest_blobs(final_experts_path, final_manifest,
+                                       os.path.getsize(final_experts_path)):
+            raise RuntimeError("final expert repack validation failed")
     atomic_copy_file(resident_path, final_resident_path)
     atomic_copy_file(cfg_path, os.path.join(args.outdir, "config.json"))
     if generation_cfg_path and os.path.exists(generation_cfg_path):

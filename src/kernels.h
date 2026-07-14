@@ -25,14 +25,16 @@ static inline float hsum256(__m256 v){            /* somma orizzontale di 8 floa
 extern int g_cuda_enabled;
 #endif
 
-/* tensore [O,I] in uno di tre formati:
+/* tensore [O,I] in uno di cinque formati:
  *   fmt=0 F32   -> qf
  *   fmt=1 INT8  -> q8 (1 byte/param) + scala per riga
  *   fmt=2 INT4  -> q4 (2 valori per byte, impacchettati) + scala per riga
+ *   fmt=4 INT4G -> q4 + una scala per gruppo contiguo di qgroup pesi
  * INT4 e' cio' che fa stare la densa residente nei 15 GB (0.5 byte/param). */
-/* fmt: 0 F32, 1 INT8, 2 INT4 (2/byte), 3 INT2 (4/byte). q4 ospita sia int4 che int2 packed. */
+/* fmt: 0 F32, 1 INT8, 2 INT4-row, 3 INT2-row, 4 INT4-grouped.
+ * q4 ospita tutti i formati packed. */
 typedef struct {
-    int fmt; float *qf; int8_t *q8; uint8_t *q4; float *s; int O, I;
+    int fmt; float *qf; int8_t *q8; uint8_t *q4; float *s; int O, I, qgroup;
 #ifdef COLI_CUDA
     ColiCudaTensor *cuda;
 #endif
@@ -44,6 +46,8 @@ static inline int64_t qt_bytes(const QT *t){    /* byte residenti del tensore */
     if(t->fmt==0) return n*4;
     if(t->fmt==1) return n + (int64_t)t->O*4;
     if(t->fmt==3) return (int64_t)t->O*((t->I+3)/4) + (int64_t)t->O*4;
+    if(t->fmt==4) return (int64_t)t->O*((t->I+1)/2) +
+                         (int64_t)t->O*((t->I+t->qgroup-1)/t->qgroup)*4;
     return (int64_t)t->O*((t->I+1)/2) + (int64_t)t->O*4;
 }
 
@@ -108,6 +112,34 @@ static inline void matmul_i4(float *y, const float *x, const uint8_t *q4, const 
                 a += xs[i]*(float)lo + xs[i+1]*(float)hi; }
             if(i<I){ uint8_t byte=w[i>>1]; int lo=(int)(byte&0xF)-8; a += xs[i]*(float)lo; }
             y[(int64_t)s*O+o]=a*sc; } }
+}
+
+/* Groupwise q4. Keeping each scale beside only qgroup weights prevents one
+ * outlier from coarsening an entire 512/2048-wide expert row. The accelerated
+ * path below uses integer dot products; this float-input path is also needed
+ * by the selective MoE-down validation mode. */
+static inline void matmul_i4_grouped(float *y, const float *x, const uint8_t *q4,
+                                     const float *scale, int group, int S, int I, int O){
+    int rb=(I+1)/2, groups=(I+group-1)/group;
+    #pragma omp parallel for schedule(static)
+    for(int o=0;o<O;o++){
+        const uint8_t *w=q4+(int64_t)o*rb;
+        const float *sc=scale+(int64_t)o*groups;
+        for(int s=0;s<S;s++){
+            const float *xs=x+(int64_t)s*I; float total=0.f;
+            for(int g=0;g<groups;g++){
+                int begin=g*group, end=begin+group; if(end>I)end=I;
+                float part=0.f;
+                for(int i=begin;i<end;i++){
+                    uint8_t byte=w[i>>1];
+                    int v=(i&1)?(int)(byte>>4)-8:(int)(byte&15)-8;
+                    part+=xs[i]*(float)v;
+                }
+                total+=part*sc[g];
+            }
+            y[(int64_t)s*O+o]=total;
+        }
+    }
 }
 
 /* y[S,O] = x[S,I] @ W^T con W int2 impacchettato (4 valori/byte) + scala[O]. nibble 2-bit -> [-2,1]. */
@@ -293,6 +325,25 @@ static inline void matmul_i4_idot(float *y, const int8_t *xq, const float *sx, c
         for(int s=0;s<S;s++) y[(int64_t)s*O+o]=(float)dot_i4i8(w,xq+(int64_t)s*I,I)*sc*sx[s]; }
 }
 
+static inline void matmul_i4_grouped_idot(float *y, const int8_t *xq, const float *sx,
+                                          const uint8_t *q4, const float *scale,
+                                          int group, int S, int I, int O){
+    int rb=(I+1)/2, groups=(I+group-1)/group;
+    #pragma omp parallel for schedule(static)
+    for(int o=0;o<O;o++){
+        const uint8_t *w=q4+(int64_t)o*rb;
+        const float *sc=scale+(int64_t)o*groups;
+        for(int s=0;s<S;s++){
+            const int8_t *xs=xq+(int64_t)s*I; float total=0.f;
+            for(int g=0;g<groups;g++){
+                int begin=g*group, n=group; if(begin+n>I)n=I-begin;
+                total+=(float)dot_i4i8(w+(begin>>1),xs+begin,n)*sc[g];
+            }
+            y[(int64_t)s*O+o]=total*sx[s];
+        }
+    }
+}
+
 static inline void matmul_qt_impl(float *y, const float *x, QT *w, int S, int g_idot, int g_i4s){
 #ifdef COLI_CUDA
     if(g_cuda_enabled && w->cuda_eligible && !w->cuda_failed && !omp_in_parallel()){
@@ -305,17 +356,19 @@ static inline void matmul_qt_impl(float *y, const float *x, QT *w, int S, int g_
     }
 #endif
     if(w->fmt==0){ matmul(y,x,w->qf,S,w->I,w->O); return; }
-    if(g_idot && (w->fmt==1 || (w->fmt==2 && S>=g_i4s))){
+    if(g_idot && (w->fmt==1 || ((w->fmt==2 || w->fmt==4) && S>=g_i4s))){
         int I=w->I;
         int8_t *xq=malloc((size_t)S*I); float sxb[64]; float *sx=S<=64?sxb:malloc(S*sizeof(float));
         for(int s=0;s<S;s++) sx[s]=qrow_i8(x+(int64_t)s*I, xq+(int64_t)s*I, I);
         if(w->fmt==1) matmul_q_idot(y,xq,sx,w->q8,w->s,S,I,w->O);
+        else if(w->fmt==4) matmul_i4_grouped_idot(y,xq,sx,w->q4,w->s,w->qgroup,S,I,w->O);
         else matmul_i4_idot(y,xq,sx,w->q4,w->s,S,I,w->O);
         free(xq); if(sx!=sxb) free(sx);
         return;
     }
     if(w->fmt==1) matmul_q(y,x,w->q8,w->s,S,w->I,w->O);
     else if(w->fmt==3) matmul_i2(y,x,w->q4,w->s,S,w->I,w->O);
+    else if(w->fmt==4) matmul_i4_grouped(y,x,w->q4,w->s,w->qgroup,S,w->I,w->O);
     else matmul_i4(y,x,w->q4,w->s,S,w->I,w->O);
 }
 

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "group32_arithmetic_a_seed11",
+      "profile": "think",
+      "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+      "seed": 11,
+      "max_tokens": 512,
+      "thinking_budget": 256,
+      "require": ["7 red", "4 blue", "11"],
+      "repetition_limit": 0.45
+    },
+    {
+      "id": "group32_arithmetic_b_seed11",
+      "profile": "think",
+      "prompt": "There are seven blue balls and five red balls in a box. Remove three blue balls and add two red balls. State the final red count, blue count, and total, then verify the arithmetic briefly.",
+      "seed": 11,
+      "max_tokens": 512,
+      "thinking_budget": 256,
+      "require": ["7 red", "4 blue", "11"],
+      "repetition_limit": 0.45
+    }
+  ]
+}

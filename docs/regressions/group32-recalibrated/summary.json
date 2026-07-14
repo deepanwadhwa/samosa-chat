@@ -1,0 +1,10 @@
+{
+  "runs": [
+    {
+      "id": "group32_arithmetic_a_seed11_budget1024",
+      "passed": true,
+      "result": "docs/regressions/group32-recalibrated/group32_arithmetic_a_seed11_budget1024/result.json"
+    }
+  ],
+  "schema": 1
+}

@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "model": "qwen/qwen3.6-35b-a3b",
+  "provider": "AkashML",
+  "provider_quantization": "fp8",
+  "defaults": {
+    "max_tokens": 8192,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "presence_penalty": 1.5
+  },
+  "cases": [
+    {
+      "id": "upstream_arithmetic_a_seed11",
+      "variant": "A",
+      "seed": 11,
+      "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    },
+    {
+      "id": "upstream_arithmetic_b_seed11",
+      "variant": "B",
+      "seed": 11,
+      "prompt": "There are seven blue balls and five red balls in a box. Remove three blue balls and add two red balls. State the final red count, blue count, and total, then verify the arithmetic briefly.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    },
+    {
+      "id": "upstream_arithmetic_a_seed29",
+      "variant": "A",
+      "seed": 29,
+      "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    },
+    {
+      "id": "upstream_arithmetic_b_seed29",
+      "variant": "B",
+      "seed": 29,
+      "prompt": "There are seven blue balls and five red balls in a box. Remove three blue balls and add two red balls. State the final red count, blue count, and total, then verify the arithmetic briefly.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    },
+    {
+      "id": "upstream_arithmetic_a_seed47",
+      "variant": "A",
+      "seed": 47,
+      "prompt": "A box has 5 red and 7 blue balls. Three blue balls are removed, then two red balls are added. How many balls and what colors remain? Show a brief check.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    },
+    {
+      "id": "upstream_arithmetic_b_seed47",
+      "variant": "B",
+      "seed": 47,
+      "prompt": "There are seven blue balls and five red balls in a box. Remove three blue balls and add two red balls. State the final red count, blue count, and total, then verify the arithmetic briefly.",
+      "require_regex": [
+        "(?:\\b7\\W{0,12}red\\b|\\bred\\b\\D{0,24}\\b7\\b)",
+        "(?:\\b4\\W{0,12}blue\\b|\\bblue\\b\\D{0,24}\\b4\\b)",
+        "(?:\\b11\\W{0,12}(?:balls?|total)\\b|\\btotal\\b\\D{0,24}\\b11\\b)"
+      ]
+    }
+  ]
+}
