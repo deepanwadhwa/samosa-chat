@@ -248,10 +248,33 @@ so a nonzero swap figure does not by itself mean Samosa is swapping now; the
 signal to trust is green memory pressure. Durable sessions write a roughly
 63–70 MB sealed snapshot at turn end. Model data itself is read-only.
 
-The 933-token group-32 reasoning control reread 376.77 GB of expert data. That
-read amplification is a real product constraint: longer thinking can be useful,
-but it costs time and sustained SSD traffic even when memory and thermals stay
-within bounds.
+### The real wear driver is SSD reads, not swap
+
+This matters for the machine, so read it plainly. Samosa keeps memory small by
+**not** holding all 35B parameters in RAM — instead it streams each token's
+routed experts from the SSD as the model selects them. The longer an answer is,
+the more expert data it reads, and popular experts are read again and again.
+
+The numbers are not small. One 933-token group-32 **thinking** run reread
+**376 GB** of expert data from disk. By comparison, the swap traffic people
+sometimes worry about is trivial: on the reference machine the whole system —
+Samosa, editor, browser, everything — had written under ~9 GB to swap since
+boot. **Expert streaming — not swap — is what actually puts wear on your SSD**,
+and it scales with how long the model thinks.
+
+What this means for you, and how Samosa honors the "no excessive wear"
+principle:
+
+- **Longer thinking costs disk, not just time.** A quick factual answer reads a
+  little; a long chain-of-thought reads a lot. Use `thinking: off` / `--direct`
+  when you don't need reasoning.
+- Two threads are the cool default so the machine stays quiet and cool; `--fast`
+  (4 threads) is opt-in.
+- Real-model test runs are deliberately kept short — a single long reasoning
+  run can reread hundreds of gigabytes, so the project does not spray them.
+- SSD speed and endurance genuinely matter here. This is a fundamental
+  trade-off of running a 35B model in 16 GB, not a bug — but it is the one
+  resource worth being deliberate about.
 
 ## Real output from the legacy row-q4 artifact
 
