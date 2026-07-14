@@ -29,6 +29,24 @@ though every Apple Silicon Mac physically includes an integrated GPU.
 This repository is deliberately text-only. Qwen3.6 is natively multimodal,
 but Samosa's converted artifact omits the vision tower.
 
+## Design principles
+
+Every decision in this project answers to three goals, in priority order:
+
+1. **Stable on a machine like mine.** It must run safely on a fanless 16 GB
+   Apple Silicon Mac — bounded RAM, no runaway growth, and graceful limits
+   instead of crashes or swap thrash.
+2. **Actually useful for something.** It has to do real work locally — real
+   answers, real code, real multi-turn conversations — not merely load and
+   demo.
+3. **No excessive wear and tear.** Running it must not grind down the machine:
+   bounded memory to keep the system out of heavy swap, a cool two-thread
+   default, and restraint on the SSD-heavy expert streaming that dominates
+   real wear.
+
+If a feature can't hold all three, it doesn't ship as released — it stays a
+source preview until it does.
+
 ## What is available today
 
 The published package and this repository are not yet at the same release
@@ -152,6 +170,14 @@ the planned four-slot in-RAM LRU, server-side transcript index, and write
 batching are not implemented yet. API details and measured acceptance are in
 [docs/SERVE_API.md](docs/SERVE_API.md).
 
+Stopping a generation is safe for the conversation's history. A cancelled turn
+is saved only up to its last complete sentence, so an interrupted, mid-sentence
+answer cannot derail later turns; if the turn produced no complete sentence,
+the previous snapshot is kept untouched and the response reports
+`session_saved: false`. Before this fix, resuming from a mid-sentence
+truncation caused the model to imitate the cutoff and reply with only a few
+tokens before stopping. Natural, length, and repetition stops are unaffected.
+
 Every turn is preflighted against a 24,576-token total context cap: saved
 history plus the newly tokenized user turn plus the requested output ceiling
 must fit. The server rejects an oversized turn before queueing or allocating
@@ -198,23 +224,29 @@ workload-specific observations, not cross-platform guarantees.
 | selective-precision 5,000-token WebDev control | 4 | 6.47 tok/s |
 
 Historical CLI runs reported roughly 2.5–3 GB peak RSS on the legacy artifact
-and 3.2–3.9 GB on group-32 runs. In the resident app, the authoritative macOS
-physical footprint measured 2.51 GiB immediately after model load and 4.07 GiB
-after a real two-turn continuation; `footprint` independently reported
-2,566 MiB and 4,170 MiB for the same samples. The app now reports that
-physical-footprint metric, and a live Activity Monitor comparison confirmed
-the displayed value matches macOS.
+and 3.2–3.9 GB on group-32 runs. In the resident app, memory behaves in three
+stages. Fresh model load is about **2.5 GiB**. The first turn warms the expert
+cache by roughly 1.3 GB, taking the footprint to about **3.9 GiB**. After that,
+the footprint **rises with the length of the active conversation**: in one test
+it grew about 143 MB as a single chat went from 176 to 1,017 tokens, while the
+expert-cache payload stayed flat at 1.29 GB the whole time.
 
-GQA KV state grows by about 40 KiB per context token, so the 24,576-token cap
-bounds that variable component to about 960 MiB. Only one conversation state
-is loaded at a time. The allocator may retain a previous high-water mark, so
-the process is bounded rather than expected to stay flat at exactly 4.07 GiB.
-An eight-turn repeated-conversation test on the current build plateaued at
-3.91–3.92 GiB after first-turn expert-cache warm-up, confirmed by macOS
-`footprint`; an earlier build grew about 210 MB per turn until its surplus
-evicted-slab pool was fixed.
-Durable sessions write a roughly 63–70 MB sealed snapshot at turn end. Model
-data itself is read-only.
+That growth is bounded, not a leak. KV state itself is about 40 KiB per token
+across the ten attention layers; the observed footprint climb is somewhat
+higher because the allocator retains its high-water mark. For a fixed-length
+conversation the footprint plateaus — a same-length eight-turn test held at
+**3.91–3.92 GiB**. The 24,576-token context cap bounds the worst case to
+roughly **5–5.5 GiB** after a maximum-length chat, and only one conversation is
+resident at a time. An earlier build leaked about 210 MB per turn until its
+surplus evicted-slab pool was fixed.
+
+Footprint and telemetry now use the macOS physical-footprint metric
+(`TASK_VM_INFO`), which a live Activity Monitor comparison confirmed matches.
+Residual swap can linger from an earlier high-pressure period even after memory
+frees up — macOS does not shrink the swap file or page data back in on its own —
+so a nonzero swap figure does not by itself mean Samosa is swapping now; the
+signal to trust is green memory pressure. Durable sessions write a roughly
+63–70 MB sealed snapshot at turn end. Model data itself is read-only.
 
 The 933-token group-32 reasoning control reread 376.77 GB of expert data. That
 read amplification is a real product constraint: longer thinking can be useful,
