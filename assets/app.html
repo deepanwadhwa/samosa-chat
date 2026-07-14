@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Samosa Chat</title>
+  <style>
+    :root {
+      --paper: #fbf8f2;
+      --paper-2: #f4eee4;
+      --panel: rgba(255, 253, 249, .86);
+      --ink: #231a14;
+      --muted: #786c62;
+      --line: rgba(72, 48, 31, .13);
+      --brand: #b84f20;
+      --brand-dark: #813315;
+      --brand-soft: #f4d6bd;
+      --assistant: rgba(255, 255, 255, .72);
+      --user: #2b211b;
+      --user-ink: #fffaf5;
+      --danger: #a2352a;
+      --shadow: 0 20px 60px rgba(77, 42, 20, .10);
+      --radius: 22px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #15110f;
+        --paper-2: #1c1714;
+        --panel: rgba(28, 23, 20, .88);
+        --ink: #f8eee6;
+        --muted: #b7aaa0;
+        --line: rgba(255, 235, 220, .12);
+        --brand: #ef8a4d;
+        --brand-dark: #ffc09a;
+        --brand-soft: #4a2b20;
+        --assistant: rgba(42, 34, 29, .78);
+        --user: #f3dfd0;
+        --user-ink: #241812;
+        --danger: #ff8c80;
+        --shadow: 0 24px 70px rgba(0, 0, 0, .32);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 83% 12%, rgba(231, 139, 76, .12), transparent 28rem),
+        radial-gradient(circle at 14% 94%, rgba(181, 77, 32, .08), transparent 25rem),
+        var(--paper);
+      color: var(--ink);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, textarea, input, select { font: inherit; }
+    button { color: inherit; }
+
+    .shell { display: grid; grid-template-columns: 278px 1fr; height: 100%; }
+    .sidebar {
+      position: relative;
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      padding: 22px 16px 14px;
+      border-right: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper-2) 82%, transparent);
+      backdrop-filter: blur(24px);
+      z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 7px 18px; }
+    .brand img { width: 43px; height: 43px; object-fit: contain; filter: drop-shadow(0 5px 8px rgba(96, 48, 20, .16)); }
+    .brand-name { font: 700 18px/1.1 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -.025em; }
+    .brand-sub { margin-top: 4px; color: var(--muted); font-size: 11px; letter-spacing: .02em; }
+
+    .new-chat, .send, .stop {
+      border: 0;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .15s ease, background .15s ease;
+    }
+    .new-chat {
+      display: flex; justify-content: center; align-items: center; gap: 8px;
+      width: 100%; padding: 11px 14px; margin-bottom: 16px;
+      color: white; background: linear-gradient(135deg, var(--brand), #d96d30);
+      box-shadow: 0 8px 22px rgba(166, 71, 29, .20); font-weight: 650;
+    }
+    .new-chat:hover, .send:hover, .stop:hover { transform: translateY(-1px); }
+    .new-chat:active, .send:active, .stop:active { transform: translateY(0); }
+
+    .section-label { padding: 4px 8px 7px; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+    .chat-list { min-height: 0; overflow-y: auto; flex: 1; scrollbar-width: thin; }
+    .chat-item {
+      display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px;
+      width: 100%; margin: 2px 0; padding: 9px 8px 9px 11px;
+      border: 1px solid transparent; border-radius: 12px; cursor: pointer;
+      color: var(--muted); background: transparent;
+    }
+    .chat-item:hover { background: color-mix(in srgb, var(--panel) 76%, transparent); color: var(--ink); }
+    .chat-item.active { border-color: var(--line); background: var(--panel); color: var(--ink); box-shadow: 0 5px 14px rgba(77, 42, 20, .05); }
+    .chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 13px; }
+    .chat-delete { opacity: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 8px; padding: 3px 6px; }
+    .chat-item:hover .chat-delete, .chat-item.active .chat-delete { opacity: .75; }
+    .chat-delete:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); opacity: 1; }
+
+    .side-footer { border-top: 1px solid var(--line); padding: 13px 7px 0; color: var(--muted); font-size: 11px; }
+    .privacy { display: flex; align-items: center; gap: 7px; }
+    .privacy::before { content: ""; width: 7px; height: 7px; border-radius: 99px; background: #42a66b; box-shadow: 0 0 0 3px rgba(66, 166, 107, .12); }
+
+    .main { min-width: 0; position: relative; display: grid; grid-template-rows: auto 1fr auto auto; height: 100%; }
+    .topbar {
+      min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 13px 22px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 80%, transparent); backdrop-filter: blur(18px); z-index: 4;
+    }
+    .top-left { display: flex; align-items: center; min-width: 0; gap: 12px; }
+    .menu-button { display: none; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 7px 10px; cursor: pointer; }
+    .conversation-name { font-weight: 680; letter-spacing: -.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-line { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; margin-right: 5px; background: #c99a4a; }
+    .status-dot.online { background: #42a66b; }
+    .status-dot.offline { background: #cf544d; }
+    .icon-button { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 8px 11px; cursor: pointer; box-shadow: 0 4px 14px rgba(77, 42, 20, .04); }
+
+    .messages { min-height: 0; overflow-y: auto; padding: 34px max(22px, calc((100% - 820px) / 2)) 24px; scroll-behavior: smooth; }
+    .jump-latest { position: absolute; right: 24px; bottom: 143px; z-index: 5; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px rgba(40, 24, 15, .14); backdrop-filter: blur(14px); cursor: pointer; }
+    .jump-latest[hidden] { display: none; }
+    .welcome { max-width: 700px; margin: 9vh auto 0; text-align: center; }
+    .welcome img { width: 118px; height: 118px; object-fit: contain; filter: drop-shadow(0 14px 18px rgba(100, 48, 19, .15)); }
+    .welcome h1 { margin: 17px 0 7px; font-size: clamp(28px, 4vw, 40px); line-height: 1.08; letter-spacing: -.045em; }
+    .welcome p { margin: 0 auto; max-width: 520px; color: var(--muted); font-size: 16px; }
+    .prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 31px auto 0; max-width: 640px; text-align: left; }
+    .prompt-chip { border: 1px solid var(--line); border-radius: 15px; background: var(--panel); color: var(--ink); padding: 13px 15px; cursor: pointer; line-height: 1.35; box-shadow: 0 7px 24px rgba(77, 42, 20, .05); }
+    .prompt-chip:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); transform: translateY(-1px); }
+
+    .message { display: flex; gap: 12px; margin: 0 auto 24px; max-width: 820px; animation: arrive .2s ease-out; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(5px); } }
+    .message.user { justify-content: flex-end; }
+    .avatar { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; margin-top: 2px; background: var(--brand-soft); color: var(--brand-dark); font-size: 13px; font-weight: 800; }
+    .bubble { max-width: min(720px, 86%); border-radius: 18px; padding: 13px 16px; overflow-wrap: anywhere; }
+    .assistant .bubble { background: var(--assistant); border: 1px solid var(--line); box-shadow: 0 7px 26px rgba(77, 42, 20, .05); }
+    .user .bubble { background: var(--user); color: var(--user-ink); border-bottom-right-radius: 5px; white-space: pre-wrap; }
+    .response { line-height: 1.65; }
+    .response > :first-child { margin-top: 0; }
+    .response > :last-child { margin-bottom: 0; }
+    .response h1, .response h2, .response h3 { line-height: 1.25; margin: 1.15em 0 .45em; letter-spacing: -.025em; }
+    .response h1 { font-size: 1.42em; } .response h2 { font-size: 1.25em; } .response h3 { font-size: 1.1em; }
+    .response p { margin: .65em 0; }
+    .response ul, .response ol { margin: .6em 0; padding-left: 1.5em; }
+    .response code { border-radius: 6px; padding: .12em .36em; background: color-mix(in srgb, var(--ink) 8%, transparent); font: .9em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .response pre { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--paper-2) 88%, #000 4%); padding: 15px; }
+    .response pre code { padding: 0; background: transparent; }
+    .response blockquote { margin: .8em 0; padding-left: 13px; border-left: 3px solid var(--brand); color: var(--muted); }
+    .response a { color: var(--brand); text-underline-offset: 3px; }
+    .thinking { margin-bottom: 11px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: color-mix(in srgb, var(--paper-2) 70%, transparent); }
+    .thinking summary { cursor: pointer; padding: 8px 11px; font-size: 12px; font-weight: 650; }
+    .thinking-body { max-height: 260px; overflow: auto; padding: 0 11px 10px; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
+    .typing::after { content: ""; display: inline-block; width: 6px; height: 15px; margin-left: 3px; vertical-align: -2px; background: var(--brand); animation: blink .9s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .error-note { color: var(--danger); font-size: 12px; margin-top: 8px; }
+
+    .composer-wrap { padding: 9px max(18px, calc((100% - 860px) / 2)) 8px; background: linear-gradient(transparent, var(--paper) 24%); }
+    .composer {
+      display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px;
+      padding: 10px 10px 10px 16px; border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(20px);
+    }
+    textarea { width: 100%; min-height: 28px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 5px 0; color: var(--ink); background: transparent; line-height: 1.45; }
+    textarea::placeholder { color: var(--muted); }
+    .send, .stop { width: 42px; height: 42px; display: grid; place-items: center; color: white; background: var(--brand); font-weight: 800; }
+    .send:disabled { opacity: .35; cursor: default; transform: none; }
+    .stop { display: none; background: var(--danger); }
+    .generating .send { display: none; } .generating .stop { display: grid; }
+    .composer-hint { padding-top: 8px; text-align: center; color: var(--muted); font-size: 10px; }
+
+    .telemetry { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 17px; min-height: 28px; padding: 2px 20px 8px; color: var(--muted); font-size: 10px; }
+    .telemetry span { white-space: nowrap; }
+    .telemetry strong { color: var(--ink); font-weight: 650; }
+
+    .settings {
+      position: fixed; inset: 0 0 0 auto; width: min(390px, 100%); z-index: 30;
+      transform: translateX(102%); transition: transform .22s ease;
+      border-left: 1px solid var(--line); background: var(--paper); box-shadow: -20px 0 60px rgba(30, 18, 12, .15); padding: 23px;
+    }
+    .settings.open { transform: translateX(0); }
+    .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 27px; }
+    .settings h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+    .close-settings { border: 0; border-radius: 10px; background: var(--paper-2); padding: 7px 10px; cursor: pointer; }
+    .field { margin: 0 0 18px; }
+    .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 680; }
+    .field small { display: block; color: var(--muted); margin-top: 7px; font-size: 11px; line-height: 1.45; }
+    .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink); padding: 10px 11px; outline: none; }
+    .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); color: var(--muted); font-size: 12px; }
+    .local-card strong { color: var(--ink); }
+    .scrim { display: none; position: fixed; inset: 0; z-index: 20; background: rgba(20, 12, 8, .28); backdrop-filter: blur(2px); }
+    .scrim.show { display: block; }
+
+    @media (max-width: 760px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 88vw); transform: translateX(-102%); transition: transform .22s ease; box-shadow: 18px 0 50px rgba(20, 12, 8, .22); }
+      .sidebar.open { transform: translateX(0); }
+      .menu-button { display: block; }
+      .topbar { padding: 11px 14px; }
+      .messages { padding: 24px 14px 18px; }
+      .composer-wrap { padding-left: 10px; padding-right: 10px; }
+      .prompts { grid-template-columns: 1fr; }
+      .welcome { margin-top: 4vh; }
+      .welcome img { width: 92px; height: 92px; }
+      .bubble { max-width: 91%; }
+      .avatar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="/assets/samosa-chat.png" alt="">
+        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Local Qwen · private by design</div></div>
+      </div>
+      <button class="new-chat" id="newChat"><span aria-hidden="true">＋</span> New conversation</button>
+      <div class="section-label">Conversations</div>
+      <div class="chat-list" id="chatList"></div>
+      <div class="side-footer"><div class="privacy">Running only on this Mac</div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="top-left">
+          <button class="menu-button" id="menuButton" aria-label="Open conversations">☰</button>
+          <div><div class="conversation-name" id="conversationName">New conversation</div><div class="model-line"><span class="status-dot" id="statusDot"></span><span id="modelStatus">Connecting to local model…</span></div></div>
+        </div>
+        <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
+      </header>
+
+      <section class="messages" id="messages" aria-live="polite"></section>
+      <button class="jump-latest" id="jumpLatest" type="button" hidden>↓ Latest</button>
+
+      <div class="composer-wrap">
+        <form class="composer" id="composer">
+          <textarea id="prompt" rows="1" placeholder="Message your local model…" aria-label="Message"></textarea>
+          <button class="send" id="send" type="submit" aria-label="Send">↑</button>
+          <button class="stop" id="stop" type="button" aria-label="Stop generation">■</button>
+        </form>
+        <div class="composer-hint">Enter to send · Shift+Enter for a new line · responses stay on this Mac</div>
+      </div>
+
+      <footer class="telemetry">
+        <span>Mode <strong id="modeValue">Direct</strong></span>
+        <span>Speed <strong id="speedValue">—</strong></span>
+        <span>Memory <strong id="rssValue">—</strong></span>
+        <span>Closure <strong id="closureValue">—</strong></span>
+      </footer>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <aside class="settings" id="settings" aria-hidden="true">
+    <div class="settings-head"><h2>Generation settings</h2><button class="close-settings" id="closeSettings" aria-label="Close settings">Done</button></div>
+    <div class="field">
+      <label for="thinking">Thinking profile</label>
+      <select id="thinking"><option value="off">Direct</option><option value="general">General thinking</option><option value="code">Precise code / WebDev</option></select>
+      <small>General and code modes spend extra tokens reasoning before the visible answer. Direct is fastest.</small>
+    </div>
+    <div class="field">
+      <label for="maxTokens">Maximum generated tokens</label>
+      <select id="maxTokens"><option value="1024">1,024</option><option value="2048" selected>2,048</option><option value="4096">4,096</option><option value="8192">8,192</option></select>
+      <small>The model normally stops earlier. Longer ceilings can take substantially more time and SSD reads.</small>
+    </div>
+    <div class="field">
+      <label for="seed">Seed (optional)</label>
+      <input id="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Random">
+      <small>Use the same non-negative seed to reproduce a sampling path.</small>
+    </div>
+    <div class="local-card"><strong>Local-only connection</strong><br>This page talks to <code>127.0.0.1</code>. It contains no analytics, accounts, CDNs, or remote scripts.</div>
+  </aside>
+
+  <script>
+    (() => {
+      "use strict";
+      const $ = id => document.getElementById(id);
+      const els = {
+        sidebar: $("sidebar"), list: $("chatList"), messages: $("messages"), prompt: $("prompt"),
+        composer: $("composer"), send: $("send"), stop: $("stop"), name: $("conversationName"),
+        status: $("modelStatus"), dot: $("statusDot"), settings: $("settings"), scrim: $("scrim"),
+        thinking: $("thinking"), maxTokens: $("maxTokens"), seed: $("seed"), mode: $("modeValue"),
+        speed: $("speedValue"), rss: $("rssValue"), closure: $("closureValue"), jump: $("jumpLatest")
+      };
+      const STORAGE_KEY = "samosa-chat-v1";
+      let state = loadState();
+      let currentId = state.currentId;
+      let generating = false;
+      let activeAssistant = null;
+      let followOutput = true;
+
+      function makeId() {
+        const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+        return `chat-${raw.replace(/[^a-zA-Z0-9_-]/g, "-")}`.slice(0, 64);
+      }
+      function loadState() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (parsed && Array.isArray(parsed.chats)) return parsed;
+        } catch (_) {}
+        return { currentId: null, chats: [], settings: { thinking: "off", maxTokens: "2048", seed: "" } };
+      }
+      function saveState() {
+        state.currentId = currentId;
+        state.settings = { thinking: els.thinking.value, maxTokens: els.maxTokens.value, seed: els.seed.value.trim() };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+      function activeChat() { return state.chats.find(c => c.id === currentId) || null; }
+      function ensureChat() {
+        let chat = activeChat();
+        if (!chat) {
+          chat = { id: makeId(), title: "New conversation", created: Date.now(), updated: Date.now(), messages: [] };
+          state.chats.unshift(chat); currentId = chat.id; saveState();
+        }
+        return chat;
+      }
+      function newChat() {
+        if (generating) return;
+        currentId = null; ensureChat(); render(); closePanels(); els.prompt.focus();
+      }
+      function deleteChat(id) {
+        if (generating && id === currentId) return;
+        const chat = state.chats.find(c => c.id === id);
+        if (!chat || !confirm(`Delete “${chat.title}” from this browser?`)) return;
+        state.chats = state.chats.filter(c => c.id !== id);
+        if (currentId === id) currentId = state.chats[0]?.id || null;
+        saveState(); render();
+      }
+      function selectChat(id) { if (!generating) { currentId = id; saveState(); render(); closePanels(); } }
+      function titleFor(text) { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > 42 ? clean.slice(0, 42) + "…" : clean || "New conversation"; }
+      function escapeHTML(text) { return String(text).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
+      function markdown(text) {
+        const blocks = [];
+        let safe = escapeHTML(text || "").replace(/```([^\n]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+          const key = `@@CODE${blocks.length}@@`;
+          blocks.push(`<pre><code>${code.replace(/^\n|\n$/g, "")}</code></pre>`); return key;
+        });
+        safe = safe
+          .replace(/^### (.+)$/gm, "<h3>$1</h3>").replace(/^## (.+)$/gm, "<h2>$1</h2>").replace(/^# (.+)$/gm, "<h1>$1</h1>")
+          .replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>")
+          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
+        const lines = safe.split("\n"); let out = "", list = null;
+        const closeList = () => { if (list) { out += `</${list}>`; list = null; } };
+        for (const line of lines) {
+          const ul = line.match(/^[-*] (.+)$/), ol = line.match(/^\d+\. (.+)$/);
+          if (ul || ol) { const kind = ul ? "ul" : "ol"; if (list !== kind) { closeList(); out += `<${kind}>`; list = kind; } out += `<li>${(ul || ol)[1]}</li>`; }
+          else { closeList(); if (/^<(h[1-3]|blockquote|pre)/.test(line) || /^@@CODE\d+@@$/.test(line)) out += line; else if (line.trim()) out += `<p>${line}</p>`; }
+        }
+        closeList();
+        blocks.forEach((block, i) => { out = out.replace(`@@CODE${i}@@`, block); });
+        return out;
+      }
+      function welcomeHTML() {
+        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>Your model. Your Mac.</h1><p>Ask Qwen3.6 anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
+      }
+      function renderMessages() {
+        const chat = activeChat();
+        if (!chat || !chat.messages.length) { els.messages.innerHTML = welcomeHTML(); els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); }); return; }
+        els.messages.innerHTML = "";
+        for (const msg of chat.messages) appendMessageNode(msg);
+        followOutput=true; scrollBottom(false,true);
+      }
+      function appendMessageNode(msg) {
+        const row = document.createElement("article"); row.className = `message ${msg.role}`; row.dataset.messageId = msg.id;
+        if (msg.role === "assistant") {
+          row.innerHTML = `<div class="avatar">S</div><div class="bubble"><details class="thinking" ${msg.streaming && msg.reasoning ? "open" : ""} ${msg.reasoning ? "" : "hidden"}><summary>Thinking</summary><div class="thinking-body"></div></details><div class="response${msg.streaming ? " typing" : ""}"></div><div class="error-note" hidden></div></div>`;
+          row.querySelector(".thinking-body").textContent = msg.reasoning || "";
+          row.querySelector(".response").innerHTML = markdown(msg.content || "");
+          if (msg.error) { const e=row.querySelector(".error-note"); e.hidden=false; e.textContent=msg.error; }
+        } else row.innerHTML = `<div class="bubble"></div>`, row.querySelector(".bubble").textContent = msg.content;
+        els.messages.appendChild(row); return row;
+      }
+      function renderList() {
+        els.list.innerHTML = "";
+        for (const chat of [...state.chats].sort((a,b) => b.updated-a.updated)) {
+          const item = document.createElement("div"); item.className = `chat-item${chat.id === currentId ? " active" : ""}`;
+          item.innerHTML = `<button class="chat-title" style="border:0;background:transparent;color:inherit;padding:0;cursor:pointer">${escapeHTML(chat.title)}</button><button class="chat-delete" aria-label="Delete conversation">×</button>`;
+          item.querySelector(".chat-title").onclick = () => selectChat(chat.id);
+          item.querySelector(".chat-delete").onclick = e => { e.stopPropagation(); deleteChat(chat.id); };
+          els.list.appendChild(item);
+        }
+      }
+      function render() { ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; }
+      function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
+      function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
+      function resizePrompt() { els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.send.disabled=!els.prompt.value.trim()||generating; }
+      function setGenerating(value) { generating=value; document.body.classList.toggle("generating",value); els.prompt.disabled=value; els.send.disabled=value||!els.prompt.value.trim(); }
+
+      async function sendPrompt(text) {
+        if (generating || !text.trim()) return;
+        const chat=ensureChat(), user={id:makeId(),role:"user",content:text.trim()}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
+        chat.messages.push(user,assistant); chat.updated=Date.now(); if (chat.messages.length===2) chat.title=titleFor(user.content);
+        els.prompt.value=""; resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
+        if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
+        activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
+        const payload={model:"qwen3.6-35b-a3b",messages:[{role:"user",content:user.content}],conversation_id:chat.id,stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
+        const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
+        try {
+          const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+          if (!response.ok) { let detail=`Request failed (${response.status})`; try { const j=await response.json(); detail=j.error?.message||detail; } catch(_){} throw new Error(detail); }
+          if (!response.body) throw new Error("Streaming is not available in this browser.");
+          const reader=response.body.getReader(), decoder=new TextDecoder(); let pending="", done=false;
+          while (!done) {
+            const part=await reader.read(); done=part.done; pending+=decoder.decode(part.value||new Uint8Array(),{stream:!done});
+            const events=pending.split("\n\n"); pending=events.pop()||"";
+            for (const event of events) for (const line of event.split("\n")) if (line.startsWith("data: ")) consumeEvent(line.slice(6),assistant);
+          }
+          if (pending.startsWith("data: ")) consumeEvent(pending.slice(6),assistant);
+        } catch (error) {
+          assistant.error=error.message||String(error);
+        } finally {
+          assistant.streaming=false; chat.updated=Date.now(); activeAssistant=null; setGenerating(false); saveState(); updateAssistantNode(assistant); renderList(); health(); els.prompt.focus();
+        }
+      }
+      function consumeEvent(raw, assistant) {
+        if (raw === "[DONE]") return;
+        let event; try { event=JSON.parse(raw); } catch (_) { return; }
+        const choice=event.choices?.[0], delta=choice?.delta||{};
+        if (delta.reasoning) assistant.reasoning+=delta.reasoning;
+        if (delta.content) assistant.content+=delta.content;
+        if (choice?.finish_reason) {
+          const meta=event.samosa||{};
+          els.speed.textContent=meta.tokens_per_second ? `${meta.tokens_per_second.toFixed(2)} tok/s` : "—";
+          els.rss.textContent=meta.rss_gb ? `${meta.rss_gb.toFixed(2)} GB` : "—";
+          els.closure.textContent=(meta.thinking_closure||choice.finish_reason).replaceAll("_"," ");
+          if (meta.session_saved===false) assistant.error="The answer completed, but its continuation snapshot could not be saved.";
+        }
+        updateAssistantNode(assistant); scrollBottom(false);
+      }
+      function updateAssistantNode(msg) {
+        const row=els.messages.querySelector(`[data-message-id="${CSS.escape(msg.id)}"]`); if(!row)return;
+        const thinking=row.querySelector(".thinking"), response=row.querySelector(".response"), error=row.querySelector(".error-note");
+        thinking.hidden=!msg.reasoning; thinking.querySelector(".thinking-body").textContent=msg.reasoning||"";
+        response.innerHTML=markdown(msg.content||""); response.classList.toggle("typing",!!msg.streaming);
+        error.hidden=!msg.error; error.textContent=msg.error||"";
+      }
+      async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
+      async function health() {
+        try {
+          const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
+          els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
+          if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
+        } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
+      }
+      function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
+      function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
+
+      $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
+      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel;
+      els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
+      els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
+      els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
+      els.prompt.oninput=resizePrompt; els.prompt.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.composer.requestSubmit()}};
+      for(const control of [els.thinking,els.maxTokens,els.seed]) control.onchange=()=>{saveState();els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text};
+      els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
+      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); setInterval(health,5000); els.prompt.focus();
+    })();
+  </script>
+</body>
+</html>

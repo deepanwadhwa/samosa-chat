@@ -102,12 +102,15 @@ def main() -> int:
 
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
-                     (ROOT / "dist" / "MODEL_CARD.md", out / "README.md")):
+                     (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
+                     (ROOT / "assets" / "app.html", out / "app.html"),
+                     (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png")):
         if not src.exists():
             print(f"missing dist file: {src}", file=sys.stderr)
             return 1
         place(src, dst, link=False)
-        if args.repo_id != "REPO_ID_PLACEHOLDER":
+        if (args.repo_id != "REPO_ID_PLACEHOLDER" and
+                dst.name in {"install.sh", "samosa", "README.md"}):
             text = dst.read_text(encoding="utf-8")
             if "REPO_ID_PLACEHOLDER" in text:
                 dst.write_text(text.replace("REPO_ID_PLACEHOLDER", args.repo_id),

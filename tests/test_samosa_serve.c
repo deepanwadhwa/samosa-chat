@@ -34,7 +34,16 @@ int main(void){
     scheduler.active=1;assert(serve_scheduler_acquire(&scheduler,NULL)==0);
     scheduler.active=0;pthread_cond_destroy(&scheduler.cv);pthread_mutex_destroy(&scheduler.mu);
 
+    atomic_int sink_cancel;atomic_init(&sink_cancel,0);
+    ServeTokenSink special_sink={.thinking_open=1,.close_token=12,.eos_token=10,
+        .eot_token=11,.cancel=&sink_cancel};
+    assert(serve_token_sink(10,&special_sink)==1);
+    assert(serve_token_sink(11,&special_sink)==1);
+    assert(serve_token_sink(12,&special_sink)==0&&!special_sink.thinking_open);
+
     SamosaServeContext context={.started=now_s()};
+    snprintf(context.app_html_path,sizeof(context.app_html_path),"assets/app.html");
+    snprintf(context.app_logo_path,sizeof(context.app_logo_path),"assets/samosa-chat.png");
     atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
     serve_scheduler_init(&context.scheduler,2);
     SamosaHttpServer server;assert(samosa_http_server_init(&server,0,samosa_serve_handler,&context));
@@ -64,8 +73,11 @@ int main(void){
     char *models=request(server.port,"GET /v1/models HTTP/1.1\r\nHost: localhost\r\n\r\n");
     assert(strstr(models,"qwen3.6-35b-a3b"));free(models);
     char *root=request(server.port,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    assert(strstr(root,"Samosa Chat"));
+    assert(strstr(root,"Your model. Your Mac."));
+    assert(strstr(root,"/v1/chat/completions"));
     assert(strstr(root,"Content-Security-Policy: default-src 'self'"));free(root);
+    char *logo=request(server.port,"GET /assets/samosa-chat.png HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    assert(strstr(logo,"Content-Type: image/png"));free(logo);
     char *cancel=request(server.port,"POST /v1/cancel HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n");
     assert(strstr(cancel,"\"cancelled\":true"));assert(atomic_load(&context.cancel));free(cancel);
     char *missing=request(server.port,"GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n");

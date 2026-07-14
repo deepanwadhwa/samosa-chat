@@ -1,8 +1,8 @@
 <div align="center">
   <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
   <h1>Samosa Chat</h1>
-  <p><strong>Qwen3.6-35B-A3B, locally on a 16 GB Apple Silicon Mac.</strong></p>
-  <p>CPU-only on macOS &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
+  <p><strong>Qwen3.6-35B-A3B, tested locally on a 16 GB Apple Silicon Mac.</strong></p>
+  <p>Native Apple Silicon app &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
 </div>
 
 > **Foundation and model credit.** Samosa Chat is built on
@@ -20,6 +20,12 @@ model selects them. The current macOS build uses CPU SIMD and does **not** use
 Metal or the Apple GPU. In other words: no dedicated GPU is required, even
 though every Apple Silicon Mac physically includes an integrated GPU.
 
+> **Platform scope:** CPU-only does **not** mean “any laptop with 16 GB RAM.”
+> The current installer requires macOS on Apple Silicon (`arm64`) and rejects
+> other platforms. The full product has been exercised on one 16 GB M3
+> MacBook Air. Portable kernel branches exist, but Linux/x86 and Windows are
+> not supported Samosa Chat products today.
+
 This repository is deliberately text-only. Qwen3.6 is natively multimodal,
 but Samosa's converted artifact omits the vision tower.
 
@@ -31,8 +37,8 @@ level. This distinction matters:
 | surface | status | what it contains |
 |---|---|---|
 | [Hugging Face package](https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-int4) | usable CLI release | legacy whole-row int4 artifact, one-shot chat, thinking switch, exact session resume |
-| GitHub `main` | source preview | revised thinking controls, groupwise-q4 support, resident localhost server, cancellation, bounded queue, atomic-upgrade tooling, expanded tests |
-| Browser app | not implemented yet | `samosa app` on `main` starts the server and opens a technical status page, not a finished chat UI |
+| GitHub `main` | source preview | interactive local chat app, revised thinking controls, groupwise-q4, resident server, cancellation, bounded queue, atomic-upgrade tooling, expanded tests |
+| Browser app | implemented on `main` | `samosa app` opens a responsive local UI with SSE streaming, conversation history, thinking display, stop control, settings, and live telemetry |
 | Group-32 artifact | local development baseline | converted and tested on one reference Mac; not published to Hugging Face |
 
 The one-line installer therefore installs the **published CLI release**, not
@@ -85,6 +91,8 @@ in this repository includes:
   telemetry, and a repeated-token-cycle guard;
 - a dependency-free C localhost server with JSON/SSE responses, a bounded
   FIFO, cooperative cancellation, health telemetry, and clean shutdown;
+- a 32 KB framework-free local chat UI with no remote scripts, analytics, or
+  external requests, packaged with the transparent Samosa mascot;
 - an atomic, versioned installer design that verifies and smoke-tests an
   inactive release before switching it live;
 - regression tooling for output structure, task-specific correctness,
@@ -115,14 +123,14 @@ of broad benchmark parity or release-wide stability. See
 [the upstream-control report](docs/UPSTREAM_CONTROL_2026-07-14.md) and
 [regression ledger](docs/REGRESSION_LEDGER.md).
 
-## Resident server on `main`
+## Local app on `main`
 
-The server is a developer preview and is not in the current Hugging Face
-package.
+The interactive app is implemented and bounded-real tested on `main`; it is
+not in the current Hugging Face package yet.
 
 ```sh
 samosa serve          # foreground server on 127.0.0.1:8642
-samosa app            # background singleton + open the status page
+samosa app            # background singleton + open the local chat UI
 samosa serve --stop   # cooperative shutdown
 ```
 
@@ -137,10 +145,18 @@ Implemented endpoints:
 Chat completions support JSON or SSE, separate reasoning/content deltas,
 sampler controls, `thinking`, `thinking_budget`, `max_tokens`, and a sanitized
 `conversation_id`. Requests are serialized through one model with a bounded
-wait queue. Conversation snapshots are durable, but the planned four-slot
-in-RAM LRU and write batching are not implemented yet. The current root page
-is technical status only. API details and measured acceptance results are in
+wait queue. The UI streams answers and reasoning separately, can stop
+generation, stores its display transcript in browser-local storage, and shows
+tokens/s, RSS, and thinking closure. Conversation snapshots are durable, but
+the planned four-slot in-RAM LRU, server-side transcript index, and write
+batching are not implemented yet. API details and measured acceptance are in
 [docs/SERVE_API.md](docs/SERVE_API.md).
+
+A real group-32 app-path check served the UI and logo, then streamed exactly
+`Samosa app works locally.` through the browser endpoint. It stopped naturally
+at Qwen's end-of-turn token, saved its session, decoded at 5.13 tok/s on two
+threads, and peaked at 3.28 GB RSS. That check also caught and fixed an earlier
+server bug that leaked special control tokens into visible output.
 
 ## Model layout and storage
 
@@ -276,6 +292,7 @@ original Qwen checkpoint; conversion is not part of a normal user install.
 - The one-line installer contacts Hugging Face to download public release
   files; normal inference does not require a cloud account.
 - The macOS build is CPU-only. It uses NEON/SDOT and optional OpenMP, not Metal.
+- CPU-only describes the current compute backend, not cross-platform support.
 - Two threads remain the cool default; `--fast` is explicit.
 - The expert cache monitors pressure and can evict payloads before the OS is
   forced to swap.
@@ -289,13 +306,16 @@ original Qwen checkpoint; conversion is not part of a normal user install.
   isolated word-level defects such as `of ofof`; re-asking or changing the seed
   may avoid an instance but is not a complete fix.
 - The group-32 baseline is promising, not broadly validated or published.
-- The browser chat UI, in-RAM conversation slots, document chat, and web access
-  remain roadmap items.
+- In-RAM conversation slots, server-side transcript management, document chat,
+  and web access remain roadmap items. Deleting a chat in the current UI
+  removes its browser transcript but does not yet remove its server snapshot.
 - Long-context generation coverage is still thin. A stack-overflow defect above
   4,096 tokens was fixed, but the bounded >4K/>8K release regression remains
   open.
 - Only macOS on Apple Silicon has been exercised as a product. Linux paths are
   present but unvalidated; Windows is not supported by Samosa Chat.
+- Metal acceleration is not implemented. Apple GPU work is a planned measured
+  optimization; the current SSD-streaming path remains partly I/O-bound.
 - Text only: images, video, audio, tool calling, and Qwen's vision tower are not
   supported.
 - SSD speed and endurance matter because routed experts are streamed and can be

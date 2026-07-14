@@ -31,6 +31,8 @@ fi
 ENGINE="$RELEASE_DIR/bin/qwen36b"
 MODEL="$RELEASE_DIR/model"
 TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
+APP_HTML="$RELEASE_DIR/app.html"
+APP_LOGO="$RELEASE_DIR/samosa-chat.png"
 SESSION="$HOME_DIR/last_session.qws"
 PORT="${SAMOSA_PORT:-8642}"
 PID_FILE="$HOME_DIR/server.pid"
@@ -57,6 +59,7 @@ server_running() {
 serve_foreground() {
   mkdir -p "$HOME_DIR/chats"
   SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
+    SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
     exec "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER"
 }
 
@@ -68,6 +71,7 @@ start_server() {
     return 1
   fi
   nohup env SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
+    SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
     "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER" \
     >"$SERVER_LOG" 2>&1 &
   pid=$!

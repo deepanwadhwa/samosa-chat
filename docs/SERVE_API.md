@@ -17,7 +17,8 @@ samosa serve --stop   # cooperative cancellation + clean shutdown
 
 ## Endpoints
 
-- `GET /` — temporary technical landing page until the Phase A1 UI lands.
+- `GET /` — dependency-free interactive Samosa Chat application.
+- `GET /assets/samosa-chat.png` — local transparent app mascot.
 - `GET /healthz` — RSS, uptime, queue state, and last-generation speed.
 - `GET /v1/models` — OpenAI-shaped model listing.
 - `POST /v1/chat/completions` — JSON or SSE chat response.
@@ -87,9 +88,13 @@ visible instead of being silently reported as durable.
 - After acceptance: unchanged swapouts, zero throttled pages, and no macOS
   thermal/performance warning.
 
-Still required before calling the app shippable: the Phase A1 browser UI,
-in-RAM conversation slots with write batching, the bounded long-context
-regression described in `APP_TASKS.md`, exact artifact fingerprints in health
-telemetry, and the declared soak/package release checks. The server foundation
-itself is suitable for continued app development, but the page at `/` is
-intentionally still a technical status page.
+The Phase A1 browser UI now streams the real local model, separates thinking
+from visible answers, stops generation, keeps browser-local transcripts, and
+reports speed/RSS/closure telemetry. A bounded group-32 app-path check returned
+the exact requested answer in 8 generated tokens, stopped on Qwen's end-of-turn
+token, saved the session, decoded at 5.13 tok/s, and peaked at 3.28 GB RSS.
+
+Still required for the broader app program: in-RAM conversation slots with
+write batching, server-side transcript management, the bounded long-context
+regression, exact artifact fingerprints in health telemetry, and the declared
+soak/package release checks.

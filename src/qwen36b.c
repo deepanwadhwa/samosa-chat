@@ -3864,6 +3864,8 @@ typedef struct {
     const char *tokenizer_path;
     const char *snapshot;
     char chats_dir[PATH_MAX];
+    char app_html_path[PATH_MAX];
+    char app_logo_path[PATH_MAX];
     ServeScheduler scheduler;
     atomic_int cancel;
     pthread_mutex_t stats_mu;
@@ -3873,8 +3875,22 @@ typedef struct {
     int port;
 } SamosaServeContext;
 
+static int serve_static_file(int fd,const char *path,const char *content_type,
+                             const char *extra){
+    if(!path||!*path)return 0;
+    FILE *file=fopen(path,"rb");if(!file)return 0;
+    if(fseek(file,0,SEEK_END)){fclose(file);return 0;}
+    long end=ftell(file);if(end<0||end>(1<<20)){fclose(file);return 0;}
+    rewind(file);size_t length=(size_t)end;unsigned char *data=malloc(length?length:1);
+    if(!data){fclose(file);return 0;}
+    int ok=fread(data,1,length,file)==length&&!ferror(file);fclose(file);
+    if(ok)ok=samosa_http_headers(fd,200,content_type,length,extra)&&
+             (!length||samosa_send_all(fd,data,length));
+    free(data);return ok;
+}
+
 typedef struct {
-    int fd, stream, thinking_open, close_token;
+    int fd, stream, thinking_open, close_token, eos_token, eot_token;
     Tok *tokenizer;
     atomic_int *cancel;
     ServeBuffer reasoning, content;
@@ -3898,6 +3914,7 @@ static int serve_sse_piece(ServeTokenSink *sink,const char *field,
 static int serve_token_sink(int token,void *opaque){
     ServeTokenSink *sink=(ServeTokenSink *)opaque;
     if(atomic_load_explicit(sink->cancel,memory_order_relaxed))return 2;
+    if(token==sink->eos_token||token==sink->eot_token)return 1;
     if(token==sink->close_token){sink->thinking_open=0;return 0;}
     char piece[4096]; int n=tok_decode(sink->tokenizer,&token,1,piece,sizeof(piece)-1);
     if(n<=0)return 1; /* end-of-turn/end-of-text special token */
@@ -4053,7 +4070,8 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
     atomic_store(&ctx->cancel,0); g_moe_down_idot=thinking_code?0:g_idot;
     ServeTokenSink sink={.fd=fd,.stream=stream,.thinking_open=!no_thinking,
         .close_token=tok_id_of(&ctx->tokenizer,"</think>"),.tokenizer=&ctx->tokenizer,
-        .cancel=&ctx->cancel};
+        .eos_token=tok_id_of(&ctx->tokenizer,"<|im_end|>"),
+        .eot_token=tok_id_of(&ctx->tokenizer,"<|endoftext|>"),.cancel=&ctx->cancel};
     int sent=stream?samosa_http_stream_headers(fd):1;
     GenStats stats={0}; int result=1;
     if(sent)result=run_chat(ctx->model,ctx->tokenizer_path,user,system,max_tokens,
@@ -4068,14 +4086,17 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
 static int samosa_serve_handler(SamosaHttpServer *server,int fd,
                                 const SamosaHttpRequest *request,void *opaque){
     SamosaServeContext *ctx=(SamosaServeContext *)opaque;
-    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/"))
-        return samosa_http_response(fd,200,"text/html; charset=utf-8",
-            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\">"
-            "<title>Samosa Chat</title><style>body{font:16px system-ui;max-width:42rem;margin:12vh auto;"
-            "padding:1.5rem;color:#24170d}code{background:#f5eee7;padding:.15rem .35rem}</style>"
-            "<h1>Samosa Chat</h1><p>The local model server is ready.</p>"
-            "<p>The full chat interface is the next app phase. Health: <a href=/healthz><code>/healthz</code></a></p>",
-            "Content-Security-Policy: default-src 'self'; style-src 'unsafe-inline'\r\n");
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/")){
+        const char *policy="Content-Security-Policy: default-src 'self'; img-src 'self'; "
+            "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n";
+        if(serve_static_file(fd,ctx->app_html_path,"text/html; charset=utf-8",policy))return 1;
+        return samosa_http_json_error(fd,500,"app_missing","The local app asset is missing. Reinstall Samosa Chat.");
+    }
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/assets/samosa-chat.png")){
+        if(serve_static_file(fd,ctx->app_logo_path,"image/png",NULL))return 1;
+        return samosa_http_json_error(fd,404,"logo_missing","The local app logo is missing.");
+    }
     if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/healthz")){
         GenStats stats={0};int has;
         pthread_mutex_lock(&ctx->stats_mu);stats=ctx->last_stats;has=ctx->has_last_stats;pthread_mutex_unlock(&ctx->stats_mu);
@@ -4128,6 +4149,10 @@ static int run_samosa_serve(Model *model,const char *snapshot,
     if(configured)snprintf(context.chats_dir,sizeof(context.chats_dir),"%s",configured);
     else {const char *home=getenv("HOME");snprintf(context.chats_dir,sizeof(context.chats_dir),
         "%s/.samosa/chats",home?home:".");}
+    configured=getenv("SAMOSA_APP_HTML");
+    snprintf(context.app_html_path,sizeof(context.app_html_path),"%s",configured?configured:"app.html");
+    configured=getenv("SAMOSA_APP_LOGO");
+    snprintf(context.app_logo_path,sizeof(context.app_logo_path),"%s",configured?configured:"samosa-chat.png");
     if(!serve_mkdir(context.chats_dir)){fprintf(stderr,"serve: cannot create %s\n",context.chats_dir);return 2;}
     SamosaHttpServer server;
     if(!samosa_http_server_init(&server,port,samosa_serve_handler,&context)){

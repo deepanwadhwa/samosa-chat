@@ -54,13 +54,14 @@ destination() { # destination <remote-path>
     experts.bin|resident.safetensors|manifest.json|config.json|generation_config.json)
       printf '%s/model/%s\n' "$STAGE" "$1" ;;
     tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
+    app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/samosa\n' "$STAGE" ;;
     *) return 1 ;;
   esac
 }
 
-INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
+INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
 
 required_remaining=0
 for relative in $INSTALL_FILES; do
@@ -122,10 +123,48 @@ clang -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   fail "staged engine compilation failed; live release was not changed"
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
-  say "Smoke-testing the inactive release..."
-  SAMOSA_RELEASE_DIR="$STAGE" "$STAGE/bin/samosa" --max-tokens 16 \
-    "Say hello in exactly five words." ||
-    fail "staged smoke test failed; live release was not changed"
+  say "Smoke-testing the inactive local app..."
+  SMOKE_PORT=$((18000 + $$ % 10000))
+  SMOKE_LOG="$STAGE/app-smoke.log"
+  smoke_pid=""
+  stop_smoke() {
+    [ -n "$smoke_pid" ] || return 0
+    curl -fsS --max-time 5 -X POST \
+      "http://127.0.0.1:$SMOKE_PORT/v1/shutdown" >/dev/null 2>&1 || true
+    kill -TERM "$smoke_pid" >/dev/null 2>&1 || true
+    wait "$smoke_pid" >/dev/null 2>&1 || true
+  }
+  trap 'stop_smoke' EXIT HUP INT TERM
+  SAMOSA_RELEASE_DIR="$STAGE" SAMOSA_PORT="$SMOKE_PORT" \
+    "$STAGE/bin/samosa" serve >"$SMOKE_LOG" 2>&1 &
+  smoke_pid=$!
+  ready=0
+  i=0
+  while [ "$i" -lt 240 ]; do
+    if curl -fsS --max-time 2 "http://127.0.0.1:$SMOKE_PORT/healthz" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    kill -0 "$smoke_pid" >/dev/null 2>&1 || break
+    sleep 0.5
+    i=$((i + 1))
+  done
+  [ "$ready" = 1 ] || {
+    sed -n '1,120p' "$SMOKE_LOG" >&2 || true
+    fail "staged app server did not become healthy; live release was not changed"
+  }
+  curl -fsS --max-time 5 "http://127.0.0.1:$SMOKE_PORT/" |
+    grep -q 'Your model. Your Mac.' ||
+    fail "staged app UI smoke failed; live release was not changed"
+  curl -fsS --max-time 120 "http://127.0.0.1:$SMOKE_PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    --data-binary '{"messages":[{"role":"user","content":"Reply with hello."}],"thinking":"off","max_tokens":16,"seed":11}' |
+    grep -q '"choices"' ||
+    fail "staged app generation smoke failed; live release was not changed"
+  stop_smoke
+  smoke_pid=""
+  trap - EXIT HUP INT TERM
+  rm -f "$SMOKE_LOG"
 fi
 
 # Publish the immutable release directory, then atomically switch one symlink.
