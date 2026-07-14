@@ -307,6 +307,7 @@ original Qwen checkpoint; conversion is not part of a normal user install.
 - [Resident server API and acceptance](docs/SERVE_API.md)
 - [Thinking-mode diagnosis](docs/THINKING_DIAGNOSIS.md)
 - [Group-32 baseline](docs/GROUP32_BASELINE.md)
+- [Storage migration ledger](docs/STORAGE_MIGRATION_2026-07-14.md)
 - [Upstream-compatible control](docs/UPSTREAM_CONTROL_2026-07-14.md)
 - [Detailed work log](docs/WORK_LOG_2026-07-14.md)
 

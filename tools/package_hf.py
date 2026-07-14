@@ -21,6 +21,7 @@ import shutil
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+MODEL_ROOT = ROOT.parent / "samosa-models"
 
 MODEL_FILES = [
     "experts.bin",
@@ -68,9 +69,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, type=pathlib.Path)
     ap.add_argument("--snapshot", type=pathlib.Path,
-                    default=ROOT.parent / "c" / "qwen36_i4")
+                    default=MODEL_ROOT / "qwen36_group32_i8")
     ap.add_argument("--tokenizer", type=pathlib.Path,
-                    default=ROOT.parent / "c" / "tokenizer_qwen36.json")
+                    default=MODEL_ROOT / "tokenizer_qwen36.json")
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     args = ap.parse_args()
     out: pathlib.Path = args.out
