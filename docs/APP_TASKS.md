@@ -160,7 +160,7 @@ uses no framework or external request. It includes responsive conversation
 navigation, browser-local transcript persistence, SSE answer/reasoning
 streaming, stop/cancel, direct/general/code settings, seed and token ceilings,
 safe lightweight markdown rendering, and speed/RSS/closure telemetry. Together
-with the 149 KB transparent logo the served payload is 181,303 bytes. A real
+with the 149 KB transparent logo the served payload is 181,552 bytes. A real
 group-32 request returned the exact requested sentence, stopped naturally,
 saved its session, decoded at 5.13 tok/s, and peaked at 3.28 GB RSS. Open work
 inside the original acceptance is keyboard/Safari manual review, fast/cool

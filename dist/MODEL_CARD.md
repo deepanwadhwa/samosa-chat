@@ -66,7 +66,7 @@ The app provides:
 - responsive light/dark presentation with no framework, CDN, analytics, or
   external script.
 
-The complete UI and logo total 181,303 bytes in this release.
+The complete UI and logo total 181,552 bytes in this release.
 
 ## Command line and local API
 
