@@ -1,9 +1,12 @@
-# Samosa Chat
+<div align="center">
+  <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
+  <h1>Samosa Chat</h1>
+  <p><strong>A capable local AI for the Mac you already own.</strong></p>
+  <p>Qwen3.6-35B-A3B &nbsp;·&nbsp; 16 GB Apple Silicon &nbsp;·&nbsp; No cloud, account, telemetry, or GPU</p>
+</div>
 
-<p align="center"><img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="220"></p>
-
-Run **Qwen3.6-35B-A3B** (int4, text-only) locally on a **16 GB Apple Silicon
-Mac**. No cloud, no account, no telemetry, no GPU.
+Samosa Chat runs **Qwen3.6-35B-A3B** (int4, text-only) locally on a **16 GB
+Apple Silicon Mac**.
 
 Samosa Chat is a dependency-free C inference engine and localhost app server.
 The current group-32 development baseline keeps approximately 3.0 GB of dense
