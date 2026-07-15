@@ -25,6 +25,9 @@ pipeline_tag: text-generation
 > [Qwen/Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) by the
 > Qwen team. This is an independent, unofficial Apache-2.0 text-only
 > conversion. It is not affiliated with or endorsed by either upstream team.
+>
+> **What Samosa is, beyond those two.** It is not a wrapper around someone
+> else's runtime — see [what Samosa adds](#what-samosa-adds) below.
 
 > **This repository hosts the model that powers Samosa Chat.** These are the
 > group-32 model files used by [Samosa Chat](https://github.com/deepanwadhwa/samosa-chat),
@@ -38,6 +41,33 @@ engine. You use it from the terminal (`samosa "your question"`), which is the
 normal way, or through a local browser app (`samosa app`), which is currently a
 demo. Everything stays on the Mac: no account, no telemetry, and no remote
 request during inference. The server binds only to `127.0.0.1`.
+
+## What Samosa adds
+
+Qwen's checkpoint and the colibrì runtime are the starting point, not the
+product. Samosa is a separate inference engine written against them:
+
+- **A Qwen3.6 engine in C**, covering the 30 Gated DeltaNet layers, the 10
+  gated attention layers, the shared/routed MoE path, the tokenizer, and the
+  chat template.
+- **The group-32 format and its converter** — a shard-by-shard conversion of
+  the original checkpoint into a manifest-based expert container. Group-32
+  gives every 32 weights their own int4 scale instead of one scale per whole
+  matrix row, which is what makes the output quality hold up.
+- **A byte-budgeted expert cache** with LRU eviction, per-layer floors,
+  reusable slabs, memory-pressure monitoring, and I/O telemetry — the piece
+  that lets a 35B model run in 16 GB by streaming experts from SSD.
+- **Sealed, resumable conversations** (`QWSESS01`): geometry-checked,
+  SHA-256-sealed, atomically written, and byte-exact on resume.
+- **A dependency-free local server and browser app** in C: JSON/SSE, a bounded
+  queue, cancellation, health telemetry, and clean shutdown.
+- **An atomic installer** that verifies every byte, compiles and smoke-tests an
+  inactive release, and switches only on success — rolling back otherwise.
+- **The tests around all of it**: quantized kernels, KV math, sessions, server
+  behaviour, stop conditions, the wrapper, installer rollback, and PATH setup.
+
+Full source and detail:
+[github.com/deepanwadhwa/samosa-chat](https://github.com/deepanwadhwa/samosa-chat)
 
 ## Supported hardware
 

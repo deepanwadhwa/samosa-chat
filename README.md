@@ -24,6 +24,15 @@
 > [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B), created and
 > released by the Qwen team. Samosa Chat is an independent, unofficial,
 > Apache-2.0 project. It is not affiliated with or endorsed by either team.
+>
+> **What Samosa is, beyond those two.** It is not a wrapper around someone
+> else's runtime. Samosa is its own Qwen3.6 inference engine in C — the 30
+> Gated DeltaNet layers, the 10 attention layers, and the routed-expert path —
+> plus the group-32 quantization format and its converter, a byte-budgeted
+> expert cache, sealed conversations that resume exactly, a local server and
+> browser app, an atomic installer that verifies and rolls back, and the test
+> suite around all of it. The full list is in
+> [what Samosa adds on top](#what-samosa-adds-on-top).
 
 ## What it looks like
 
@@ -247,10 +256,10 @@ Every decision follows these three goals, in this order:
 A feature is only called "released" once it meets all three. Until then it
 stays in this repository as source.
 
-## What Samosa adds on top of Qwen and colibrì
+## What Samosa adds on top
 
-The Qwen model and the colibrì runtime are the starting point. This repository
-adds:
+The Qwen model and the colibrì runtime are the starting point, not the product.
+Samosa is a separate engine written against them. This repository adds:
 
 - A Qwen3.6 text engine written in C. It covers the 30 Gated DeltaNet layers,
   the 10 gated attention layers, the shared and routed expert path, the
