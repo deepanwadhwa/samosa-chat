@@ -38,6 +38,18 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
     fi
   else
     [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "aarch64" ] || fail "only x86_64 and aarch64 architectures are supported on Linux"
+    if [ "$ARCH" = "x86_64" ]; then
+      if ! grep -qw avx2 /proc/cpuinfo; then
+        say "WARNING: This CPU does not support the AVX2 instruction set."
+        say "Without AVX2, Samosa Chat will run on the scalar math path,"
+        say "which is approximately 7.6x slower than vectorized execution."
+        if [ "${SAMOSA_ALLOW_SLOW_CPU:-0}" = 1 ]; then
+          say "Proceeding anyway because SAMOSA_ALLOW_SLOW_CPU=1 is set."
+        else
+          fail "Installation aborted. Set SAMOSA_ALLOW_SLOW_CPU=1 and re-run to proceed."
+        fi
+      fi
+    fi
     RAM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
     RAM_GB=$(( RAM_KB / 1048576 ))
     [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this system has ${RAM_GB} GB)"
@@ -48,6 +60,25 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
 fi
 
 mkdir -p "$HOME_DIR" "$RELEASES_DIR" "$LAUNCHER_DIR"
+
+if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ] && [ "$(uname -s)" = "Linux" ]; then
+  dev=$(df -P "$HOME_DIR" 2>/dev/null | awk 'NR==2 {print $1}')
+  if [ -b "$dev" ] || [ -c "$dev" ] || echo "$dev" | grep -q '^/dev/'; then
+    real_dev=$(readlink -f "$dev")
+    dev_name=$(basename "$real_dev")
+    base_dev=$(echo "$dev_name" | sed 's/[0-9]*$//')
+    if echo "$dev_name" | grep -q '^nvme'; then
+      base_dev=$(echo "$dev_name" | sed -E 's/p[0-9]+$//')
+    fi
+    if [ -f "/sys/block/$base_dev/queue/rotational" ]; then
+      rotational=$(cat "/sys/block/$base_dev/queue/rotational")
+      if [ "$rotational" = 1 ]; then
+        fail "Samosa Chat cannot run on an HDD (rotational drive) because the random 16 KB expert streaming reads will take minutes per token. An SSD (preferably NVMe) is required."
+      fi
+    fi
+  fi
+fi
+
 MANIFEST_NEXT="$HOME_DIR/.release-manifest.next.tsv"
 
 say "Fetching release manifest..."

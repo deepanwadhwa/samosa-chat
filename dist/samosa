@@ -5,7 +5,7 @@
 #   samosa --continue "and DNSSEC?"         follow up on the last conversation
 #   samosa --think "hard logic puzzle"      general reasoning profile
 #   samosa --think-code "build a page"      precise coding/WebDev profile
-#   samosa --fast "..."                     use all performance cores (runs warmer)
+#   samosa --fast "..."                     adaptive thermal thread scaling (faster, runs warmer)
 #   samosa --seed N "..."                   reproducible sampling
 #   samosa --max-tokens N "..."             override the safety ceiling
 #   samosa --thinking-budget N "..."         cap internal reasoning before the answer
@@ -238,7 +238,7 @@ doctor() {
     if [ -z "$mount_type" ]; then
       mount_type=$(awk -v m="$(df -P "$MODEL" 2>/dev/null | awk 'NR==2 {print $6}')" '$2==m {print $3}' /proc/mounts 2>/dev/null)
     fi
-    if [ "$mount_type" = "virtiofs" ] || [ "$mount_type" = "9p" ] || echo "$mount_device" | grep -q -E 'virtiofs|9p'; then
+    if [ "$mount_type" = "virtiofs" ] || [ "$mount_type" = "9p" ] || [ "$mount_type" = "fakeowner" ] || [ "$mount_type" = "osxfs" ] || [ "$mount_type" = "grpcfuse" ] || echo "$mount_device" | grep -q -E 'virtiofs|9p|host|grpcfuse'; then
       echo "WARNING:   model is mounted via ${mount_type:-9p/virtiofs} ($mount_device). This causes a 10x slowdown. Use a named Docker volume instead."
     fi
   else
@@ -287,38 +287,8 @@ while [ $# -gt 0 ]; do
     --think)    PROFILE="think" ;;
     --think-code) PROFILE="think-code" ;;
     --fast)
-      if [ "$(uname -s)" = "Darwin" ]; then
-        OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu)
-      else
-        if [ -f /sys/devices/cpu_core/cpus ]; then
-          pcore_range=$(cat /sys/devices/cpu_core/cpus)
-          count=0
-          IFS=','
-          for part in $pcore_range; do
-            case "$part" in
-              *-*)
-                start=${part%-*}
-                end=${part#*-}
-                count=$((count + end - start + 1))
-                ;;
-              *)
-                count=$((count + 1))
-                ;;
-            esac
-          done
-          OMP_NUM_THREADS=$((count / 2))
-          [ "$OMP_NUM_THREADS" -gt 0 ] || OMP_NUM_THREADS=1
-        else
-          if command -v nproc >/dev/null 2>&1; then
-            logical=$(nproc)
-          else
-            logical=$(grep -c ^processor /proc/cpuinfo || echo 2)
-          fi
-          OMP_NUM_THREADS=$((logical / 2))
-          [ "$OMP_NUM_THREADS" -gt 0 ] || OMP_NUM_THREADS=1
-        fi
-      fi
-      export OMP_NUM_THREADS
+      SAMOSA_FAST=1
+      export SAMOSA_FAST
       ;;
     --seed)
       shift

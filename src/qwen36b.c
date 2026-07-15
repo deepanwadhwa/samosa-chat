@@ -28,6 +28,7 @@
 #include <mach/mach.h>
 #include <malloc/malloc.h>
 #include <sys/sysctl.h>
+#include <notify.h>
 #endif
 #ifdef _OPENMP
 #include <omp.h>
@@ -3132,6 +3133,220 @@ static int choose_controlled_token(const float *logit, int vocab, GenOptions *o,
     return token;
 }
 
+static void adjust_threads(Model *m, int step_index) {
+#if defined(_OPENMP)
+    // 1. If OMP_NUM_THREADS is explicitly set, never override it.
+    if (getenv("OMP_NUM_THREADS")) {
+        return;
+    }
+    // 2. Only adapt if SAMOSA_FAST=1 is explicitly requested.
+    const char *fast_env = getenv("SAMOSA_FAST");
+    if (!fast_env || strcmp(fast_env, "1") != 0) {
+        return;
+    }
+
+    // Static variables to track the dynamic state
+    static int initialized = 0;
+    static int current_threads = 0;
+    static int cool_default = 0;
+    static int max_threads = 0;
+    static int consecutive_green = 0;
+    static int consecutive_critical = 0;
+    static int in_container = -1;
+
+    if (!initialized) {
+        // Detect container status
+        in_container = 0;
+        if (access("/.dockerenv", F_OK) == 0) {
+            in_container = 1;
+        } else {
+            FILE *f_cg = fopen("/proc/self/cgroup", "r");
+            if (f_cg) {
+                char line[256];
+                while (fgets(line, sizeof(line), f_cg)) {
+                    if (strstr(line, "docker") || strstr(line, "containerd")) {
+                        in_container = 1;
+                        break;
+                    }
+                }
+                fclose(f_cg);
+            }
+        }
+
+        // Determine thread boundaries
+        int physical_cores = 1;
+#ifdef __APPLE__
+        int pcores = 0; size_t pl = sizeof(pcores);
+        if (!sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &pl, NULL, 0) && pcores > 0) {
+            physical_cores = pcores;
+        } else {
+            physical_cores = 4; // conservative default P-cores for Apple Silicon
+        }
+#else
+        int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        int smt = 0;
+        FILE *f_smt = fopen("/sys/devices/system/cpu/smt/active", "r");
+        if (f_smt) {
+            char status[16] = {0};
+            if (fscanf(f_smt, "%15s", status) == 1) {
+                if (strcmp(status, "1") == 0 || strcmp(status, "active") == 0) {
+                    smt = 1;
+                }
+            }
+            fclose(f_smt);
+        } else {
+            FILE *f_sib = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
+            if (f_sib) {
+                char sib[64] = {0};
+                if (fgets(sib, sizeof(sib), f_sib)) {
+                    if (strchr(sib, ',') || strchr(sib, '-')) smt = 1;
+                }
+                fclose(f_sib);
+            } else {
+#if defined(__x86_64__)
+                smt = 1;
+#else
+                smt = 0;
+#endif
+            }
+        }
+        physical_cores = smt ? (logical / 2) : logical;
+#endif
+        if (physical_cores < 1) physical_cores = 1;
+
+        // Check cgroup cpu limit to avoid exceeding quota
+        int cgroup_threads = 0;
+        FILE *f_cpu = fopen("/sys/fs/cgroup/cpu.max", "r");
+        if (f_cpu) {
+            char quota_str[64];
+            long long quota = -1, period = -1;
+            if (fscanf(f_cpu, "%59s %lld", quota_str, &period) == 2) {
+                if (strcmp(quota_str, "max") != 0) {
+                    quota = atoll(quota_str);
+                    if (quota > 0 && period > 0) {
+                        cgroup_threads = (int)((quota + period - 1) / period);
+                    }
+                }
+            }
+            fclose(f_cpu);
+        }
+
+        cool_default = physical_cores / 2;
+        if (cool_default < 1) cool_default = 1;
+        max_threads = physical_cores;
+        if (cgroup_threads > 0 && cgroup_threads < max_threads) {
+            max_threads = cgroup_threads;
+            if (cool_default > max_threads) cool_default = max_threads;
+        }
+
+        if (in_container) {
+            /* Container: the guest cannot see the host's thermal sensors, so the
+             * adaptive loop has no signal to close on.  Stay at the cool default
+             * rather than pinning every core: Windows/Linux delivery is Docker
+             * (see docs/TASKS_WINDOWS.md), so this path routinely runs on thin
+             * laptops where "all cores, no feedback" is exactly the case --fast
+             * is supposed to protect against.  OMP_NUM_THREADS remains the
+             * explicit override for anyone who wants max on a cooled machine. */
+            current_threads = cool_default;
+            omp_set_num_threads(current_threads);
+            fprintf(stderr, "[threads] --fast: no thermal visibility in a container; "
+                            "holding the cool default (threads=%d, max=%d). "
+                            "Set OMP_NUM_THREADS=%d to override on a well-cooled machine.\n",
+                    current_threads, max_threads, max_threads);
+            fflush(stderr);
+        } else {
+            // Start at the cool default
+            current_threads = cool_default;
+            omp_set_num_threads(current_threads);
+            fprintf(stderr, "[threads] adaptive thermal control initialized: cool=%d max=%d\n", cool_default, max_threads);
+            fflush(stderr);
+        }
+        initialized = 1;
+    }
+
+    // In container, we do not adapt
+    if (in_container) {
+        return;
+    }
+
+    // Only sample/adapt every 4 tokens
+    if (step_index <= 0 || step_index % 4 != 0) {
+        return;
+    }
+
+    // Obtain thermal status
+    // 0 = normal (green), 1 = warning/fair, >= 2 = serious/critical
+    int thermal_level = 0; 
+#ifdef __APPLE__
+    int token;
+    uint64_t notify_state = 0;
+    if (notify_register_check("com.apple.system.thermalpressurelevel", &token) == NOTIFY_STATUS_OK) {
+        notify_get_state(token, &notify_state);
+        thermal_level = (int)notify_state;
+    }
+#else
+    // Linux thermal zone temp in millidegrees C
+    int max_temp = 0;
+    for (int zone = 0; zone < 10; zone++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%d/temp", zone);
+        FILE *f_t = fopen(path, "r");
+        if (f_t) {
+            int temp = 0;
+            if (fscanf(f_t, "%d", &temp) == 1) {
+                if (temp > max_temp) max_temp = temp;
+            }
+            fclose(f_t);
+        }
+    }
+    /* UNVALIDATED THRESHOLDS.  85 C / 75 C and the 4-sample / 16-token cadence
+     * below are reasoned defaults, not measured ones: E-H3 (the threads ->
+     * sustained tok/s -> thermal-pressure curve, docs/TASKS_HARDWARE.md) has not
+     * been run, so nothing here is tuned against real hardware.  They are
+     * deliberately conservative — the controller can only move between
+     * cool_default and max_threads, so a wrong threshold costs throughput, never
+     * safety.  Do not present this loop as tuned until E-H3 exists, and re-run it
+     * after H2 (SIMD dispatch): 7.6x less CPU time per token will move the curve. */
+    if (max_temp > 0) {
+        if (max_temp >= 85000) thermal_level = 2;       /* serious */
+        else if (max_temp >= 75000) thermal_level = 1;  /* fair */
+        else thermal_level = 0;                         /* normal */
+    }
+#endif
+
+    // Adaptation logic
+    if (thermal_level >= 2) {
+        consecutive_green = 0;
+        consecutive_critical++;
+        if (consecutive_critical >= 1) { // Immediate back-off
+            if (current_threads > cool_default) {
+                current_threads--;
+                omp_set_num_threads(current_threads);
+                fprintf(stderr, "[threads] thermal pressure detected (%d); backing off to %d threads\n", thermal_level, current_threads);
+                fflush(stderr);
+            }
+            consecutive_critical = 0;
+        }
+    } else if (thermal_level == 0) {
+        consecutive_critical = 0;
+        consecutive_green++;
+        if (consecutive_green >= 4) { // Requires 16 tokens of normal temperature to scale up
+            if (current_threads < max_threads) {
+                current_threads++;
+                omp_set_num_threads(current_threads);
+                fprintf(stderr, "[threads] thermal normal; ramping up to %d threads\n", current_threads);
+                fflush(stderr);
+            }
+            consecutive_green = 0;
+        }
+    } else {
+        // Warning/fair level: keep current thread count stable
+        consecutive_green = 0;
+        consecutive_critical = 0;
+    }
+#endif
+}
+
 static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
                      TokenSink sink, void *sink_ctx, GenOptions *options,
                      GenStats *stats) {
@@ -3169,6 +3384,7 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     int cancelled=0;
     
     for (int s = 0; s < n_new; s++) {
+        adjust_threads(m, s);
         if (options && options->cancel_flag &&
             atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
             cancelled=1;
@@ -3472,6 +3688,7 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     int repetition_stopped = 0;
     int cancelled = 0;
     for (int s = 0; s < n_new; s++) {
+        adjust_threads(m, s);
         if (options && options->cancel_flag &&
             atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
             cancelled=1;
@@ -4549,9 +4766,34 @@ int main(int argc, char **argv) {
             if (pcores > 0) {
                 threads = pcores / 2;
             } else {
-                // 3. Fallback: physical cores = logical cores / 2
                 int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
-                int physical = logical / 2;
+                int smt = 0;
+                FILE *f_smt = fopen("/sys/devices/system/cpu/smt/active", "r");
+                if (f_smt) {
+                    char status[16] = {0};
+                    if (fscanf(f_smt, "%15s", status) == 1) {
+                        if (strcmp(status, "1") == 0 || strcmp(status, "active") == 0) {
+                            smt = 1;
+                        }
+                    }
+                    fclose(f_smt);
+                } else {
+                    FILE *f_sib = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
+                    if (f_sib) {
+                        char sib[64] = {0};
+                        if (fgets(sib, sizeof(sib), f_sib)) {
+                            if (strchr(sib, ',') || strchr(sib, '-')) smt = 1;
+                        }
+                        fclose(f_sib);
+                    } else {
+#if defined(__x86_64__)
+                        smt = 1;
+#else
+                        smt = 0;
+#endif
+                    }
+                }
+                int physical = smt ? (logical / 2) : logical;
                 if (physical < 1) physical = 1;
                 threads = physical / 2;
             }
