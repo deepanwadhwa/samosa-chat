@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    # macOS 14+ runners are Apple Silicon, matching the only supported target.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm the runner is Apple Silicon
+        run: |
+          uname -m
+          test "$(uname -m)" = "arm64" || { echo "expected an arm64 runner"; exit 1; }
+
+      - name: Install libomp (needed by the multithreaded build)
+        run: brew install libomp
+
+      # Optional: without NumPy the converter quantization tests skip cleanly,
+      # so a failure here must not fail the build.
+      - name: Install NumPy (so the converter tests run instead of skipping)
+        continue-on-error: true
+        run: python3 -m pip install --break-system-packages numpy
+
+      - name: Build (portable)
+        run: make
+
+      - name: Build (multithreaded)
+        run: make omp
+
+      # The suite is self-contained: it stubs the engine and the network, and
+      # uses tiny fixtures rather than the 24 GB model, so it runs on a clean
+      # runner with no download.
+      - name: Test
+        run: make test

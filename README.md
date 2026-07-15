@@ -3,6 +3,19 @@
   <h1>Samosa Chat</h1>
   <p><strong>Run Qwen3.6-35B-A3B as a local chat app on a 16 GB Apple Silicon Mac.</strong></p>
   <p>Runs on the CPU &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
+
+  <p>
+    <a href="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml"><img src="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml/badge.svg" alt="CI: build and tests"></a>
+    <a href="https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-model-FFD21E" alt="Hugging Face model"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white" alt="macOS on Apple Silicon">
+    <img src="https://img.shields.io/badge/RAM-16%20GB-orange" alt="16 GB RAM">
+    <img src="https://img.shields.io/badge/GPU-not%20required-success" alt="No GPU required">
+    <img src="https://img.shields.io/badge/engine-C-555555?logo=c&logoColor=white" alt="Written in C">
+    <img src="https://img.shields.io/badge/model-35B%20total%20%2F%203B%20active-8A2BE2" alt="35B total, 3B active">
+  </p>
 </div>
 
 > **Credit.** Samosa Chat is built on [colibrì](https://github.com/JustVugg/colibri)
@@ -293,7 +306,7 @@ model that reconstructs the original Qwen weights with measurably less error
 than the older format. It is what the app runs, and it is the published release:
 [deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32](https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32).
 Its quality is measured on one reference machine and one reasoning control, not
-across a broad benchmark suite — see [What is not done yet](#what-is-not-done-yet).
+across a broad benchmark suite — see [Known limitations](#known-limitations).
 
 ## What we tried that did not work
 
@@ -487,24 +500,72 @@ steps are in [docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md).
 - Real-model test runs are kept short because one long run can read hundreds of
   gigabytes from the SSD.
 
-## What is not done yet
+## Roadmap
 
-- Group-32 is published and is what the app runs, but its quality evidence is
-  still thin: one reference machine, one reasoning control, and no broad
-  benchmark suite. It is not proven across many machines or task types.
-- Some app features are still planned: keeping recent conversations in RAM
-  instead of reading them from disk each turn, managing transcripts on the
-  server, chatting over a document, and web access. Deleting a chat in the app
-  removes it from the browser but does not yet delete its saved file on disk.
-- Long-answer coverage is still thin. A crash above 4,096 tokens was fixed, but
-  the planned test for very long answers is not written yet.
-- Only macOS on Apple Silicon has been tested as a product. Linux code paths
-  exist but are unverified. Windows is not supported.
-- There is no Metal (GPU) support yet. It is a planned optimization. For now,
-  part of the work is limited by SSD read speed.
-- Text only. No images, video, audio, tool calling, or Qwen's vision part.
-- SSD speed and lifespan matter, because expert weights are streamed and reread
-  many times during long answers.
+Nothing here is promised or dated. This is what the project wants to become,
+roughly in order of how much it would change things.
+
+### Run on any machine with 16 GB of RAM
+
+Today this is macOS on Apple Silicon only, and that is the single biggest limit
+on who can use Samosa. **The goal is that anyone with 16 GB of RAM can run it —
+Windows, Linux, and Intel machines included.**
+
+The math is not the blocker: the engine is plain C and already carries portable
+AVX2 kernels next to the Apple NEON ones. The real work is everything around
+them — the installer refuses non-Apple-Silicon systems today, memory planning
+and the memory-pressure watcher call macOS-specific APIs (`sysctl`, Mach), and
+no other platform has been tested as a product. None of that is fundamental;
+it just has not been done.
+
+### Vision
+
+Qwen3.6 is natively multimodal, but Samosa's converter deliberately drops the
+vision tower and converts only the text half of the model. That was a scope and
+memory decision, not a limitation of the idea: the engine has no vision runtime,
+and a 16 GB budget had no room to keep an image encoder resident.
+
+**The goal is to add image input back.** It means building a vision encoder
+alongside the language engine — roughly "colibrì, but for vision": an image
+encoder, patch embedding, and a projector into the language model's space.
+The tokenizer still carries Qwen's image and video tokens, so the language side
+is already ready for it.
+
+### Metal (Apple GPU)
+
+The engine is CPU-only today. Metal should help, but it is not free speed: much
+of a long answer is spent streaming expert weights from the SSD, and a GPU does
+not make those reads faster. The plan is to move the expert matrix multiplies to
+Metal while CPU threads keep feeding them from disk, then measure end-to-end
+tokens/sec, SSD reads, memory, thermals, and battery — not just an isolated fast
+matmul. The CPU path stays as the correctness fallback.
+
+### A more mature app
+
+The web app is a demo. To become a real interface it needs conversations kept in
+RAM instead of re-read from disk each turn, transcript management on the server,
+and deleting a chat should remove its saved snapshot, not just the browser copy.
+Chatting over a document and web access are wanted after that.
+
+### Real quality evidence
+
+Group-32 is measured on one machine against one reasoning control. It needs a
+proper benchmark suite, comparison against upstream across task types, and a
+bounded test for very long answers (a crash above 4,096 tokens was fixed, but
+the regression test for it is not written yet).
+
+## Known limitations
+
+- **macOS on Apple Silicon only.** Linux code paths exist but are unverified.
+  Windows is not supported. See the roadmap above.
+- **Text only.** No images, video, audio, or tool calling.
+- **No GPU acceleration.** Part of every answer is limited by SSD read speed.
+- **Quality evidence is thin.** Group-32 is proven on one reference machine and
+  one reasoning control, not across many machines or task types.
+- **SSD wear is real.** Expert weights are streamed and reread many times during
+  long answers. See [SSD wear](#ssd-wear-the-one-thing-to-be-deliberate-about).
+- Deleting a chat in the app removes it from the browser but does not yet delete
+  its saved file on disk.
 
 ## More documentation
 
