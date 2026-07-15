@@ -18,6 +18,8 @@ themselves are one-line titles; the specs are where the work is defined.
 | #5 Documents | [docs/TASKS_DOCUMENTS.md](docs/TASKS_DOCUMENTS.md) | `issue-5-documents` |
 | — Hardware/perf | [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) | cross-cutting |
 
+User-facing docs: [INSTALL](docs/INSTALL.md) · [USAGE](docs/USAGE.md) · [PERFORMANCE](docs/PERFORMANCE.md) · [DESIGN](docs/DESIGN.md) · [ROADMAP](docs/ROADMAP.md)
+
 App-level plan: [docs/APP_TASKS.md](docs/APP_TASKS.md) (phases A2/A3 are
 superseded in part — see ISSUE_TASKS.md). Serve API: [docs/SERVE_API.md](docs/SERVE_API.md).
 
