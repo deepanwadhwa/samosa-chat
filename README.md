@@ -97,7 +97,7 @@ Both come from the same install. Full reference: **[docs/USAGE.md](docs/USAGE.md
 | | Terminal | Web app |
 |---|---|---|
 | | `samosa "your question"` | `samosa app` → <http://127.0.0.1:8642> |
-| | **the normal way to use it** | **a demo** — the nicest way to watch answers stream |
+| | **the normal way to use it** | **a demo** — streams tokens, shows the model's reasoning |
 
 ```sh
 samosa "explain how a hash table handles collisions"
@@ -140,25 +140,24 @@ extrapolated. Full detail: **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)**.
 | Windows, x86_64 (Docker/WSL2) | **1.26 tok/s** | one ASUS Zenbook, i7-1260P, 16 GB |
 | Linux, x86_64 (Docker) | *not yet measured* | build + tests green on Debian 12, Ubuntu 26.04 |
 
-**macOS is the fast path. Linux and Windows work, and are ~4–5x slower — for a
-known, fixable reason.** The build passes no `-march`, so on x86 the AVX2 kernels
-are compiled out and the engine runs a scalar loop, measured **7.6x slower**. The
-Zenbook above *has* AVX2 and gets none of it. The fix is runtime CPU dispatch,
-tracked as [G10/H2](docs/TASKS_HARDWARE.md).
+**macOS is the fast path; x86 is currently ~4–5x slower.** The build passes no
+`-march`, so the AVX2 kernels are compiled out on x86 and the engine falls back
+to a scalar loop — 7.6x slower, measured. Runtime CPU dispatch fixes it, and is
+the next thing on the roadmap ([G10/H2](docs/TASKS_HARDWARE.md)).
 
-Output is identical everywhere: the same prompt and seed returns the same tokens
-on macOS/NEON, arm64 Linux, and x86_64 Linux, at the same ~3.84 GB footprint.
-Only speed differs.
+Behaviour is identical on every platform: the same prompt and seed returns the
+same tokens on macOS/NEON, arm64 Linux, and x86_64 Linux, at the same ~3.84 GB
+footprint. Only speed differs.
 
-**Memory:** ~2.5 GiB fresh, plateauing at ~3.9–4.2 GiB warmed. Bounded, and it
-does not grow with conversation length.
+**Memory:** ~2.5 GiB fresh, ~3.9–4.2 GiB warmed. Bounded — it does not grow with
+conversation length.
 
-**Storage is the bottleneck, not the CPU.** On the M3, **70% of decode is waiting
-on the SSD and only 30% is matmul** — which is why a GPU would buy at most ~1.4x
-here, and why a host bind mount instead of a named Docker volume costs ~6x.
-Reads do **not** wear out your SSD (endurance is consumed by writes); the real
-costs are time, power, and heat. That is explained properly in
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md#ssd-speed-the-one-thing-to-be-deliberate-about).
+**Storage is the bottleneck, not the CPU.** On the M3, **70% of decode is spent
+waiting on the SSD and 30% on maths.** That is why an NVMe drive matters, why a
+host bind mount instead of a named Docker volume costs ~6x, and why a GPU would
+buy at most ~1.4x here. Reads do not wear out your SSD — endurance is spent by
+writes — so the real costs are time, power, and heat:
+[the details](docs/PERFORMANCE.md#ssd-speed-the-one-thing-to-be-deliberate-about).
 
 ## Build from source
 
@@ -168,17 +167,19 @@ make omp      # multithreaded (macOS: brew install libomp first)
 make test     # the full suite — no model download needed
 ```
 
-`make test` covers the expert cache, long-context KV math, the repetition guard,
-the thinking wind-down, quantized math, the server, the CLI wrapper, installer
-rollback, output structure, route analysis, and the converter layout. CI runs it
-on macOS and Ubuntu, plus a Debian container leg that catches userland
-differences the Ubuntu runner misses.
+The suite is self-contained — it stubs the engine and the network and uses tiny
+fixtures, so it runs on a clean machine with no 24 GB download. It covers the
+expert cache, long-context KV math, the repetition guard, the thinking
+wind-down, quantized math, the server, the CLI wrapper, installer rollback,
+output structure, route analysis, and the converter layout.
 
-An earlier harness had a serious false positive: it reported 14 of 15 passes
-using substring checks, while 0 of 15 answers actually closed their `</think>`
-block. Structural closing, natural versus forced endings, repetition, model stop,
-and task correctness are now scored separately. There is still not enough
-evidence to publish a general benchmark score — the planned steps are in
+CI runs it on macOS and Ubuntu, plus a Debian container leg — Debian and Ubuntu
+ship different `awk` and libc behaviour, and the container leg catches what the
+Ubuntu runner cannot see.
+
+Answer quality is scored on structure, stop reason, repetition, and correctness
+separately, rather than by matching substrings. There is not yet enough evidence
+to publish a general benchmark score; the plan for getting there is in
 [docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md).
 
 ## Privacy and machine safety
@@ -212,18 +213,17 @@ Full detail and reasoning: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Known limitations
 
-- **x86 runs the scalar math path, ~4–5x slower than macOS.** Measured 1.26 tok/s
-  on an i7-1260P versus 5–7 on the M3. Fixable: [G10/H2](docs/TASKS_HARDWARE.md).
-- **Linux and Windows are verified to work, not verified to be fast.** Build,
-  tests, and a real chat are confirmed; sustained/soak behaviour is not measured.
+- **x86 is ~4–5x slower than macOS** — 1.26 tok/s on an i7-1260P against 5–7 on
+  the M3, because the AVX2 kernels are not compiled in yet
+  ([G10/H2](docs/TASKS_HARDWARE.md)).
+- **Linux and Windows speed is measured on one machine each.** Sustained and
+  long-running behaviour on those platforms has not been measured.
 - **Text only.** No images, video, audio, or tool calling — yet.
-- **No GPU acceleration**, and it would help less than you would expect: decode
-  is 70% SSD wait, so even a perfect GPU is bounded to ~1.4x, and 24 GB of
-  experts do not fit in a typical laptop GPU anyway.
-- **Quality evidence is thin.** Group-32 is proven on one reference machine and
-  one reasoning control, not across many machines or task types.
-- Deleting a chat in the app removes it from the browser but does not yet delete
-  its saved file on disk.
+- **No GPU acceleration.** Decode is 70% SSD wait, which caps any GPU near
+  1.4x, and 24 GB of experts do not fit in a typical laptop GPU.
+- **Quality is measured on one machine and one reasoning control**, not across
+  many machines or task types.
+- Deleting a chat in the app removes it from the browser but not yet from disk.
 
 ## More documentation
 

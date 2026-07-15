@@ -170,9 +170,9 @@ samosa --max-tokens 2048 "write a long explanation"
 samosa doctor
 ```
 
-**The browser app is a demo** at this point. It works, and it is the nicest way
-to watch answers stream and see the model's reasoning, but it exists to show the
-engine off rather than as a polished interface. `samosa app` starts one resident
+**The browser app is a demo.** It works, and it streams answers and shows the
+model's reasoning, but it exists to demonstrate the engine rather than as a
+polished interface. `samosa app` starts one resident
 local model process and opens it; `samosa serve --stop` stops it. It provides:
 
 - token-by-token answer streaming;

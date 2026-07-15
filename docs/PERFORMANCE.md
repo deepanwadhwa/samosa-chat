@@ -15,20 +15,19 @@ is extrapolated.
 | **Windows, x86_64** | Docker (WSL2) | **1.26 tok/s** | one ASUS Zenbook, i7-1260P, 16 GB, Docker CE inside WSL2 |
 | Linux/macOS, arm64 | Docker | ~0.9 tok/s | penalised by a host bind mount; use a named volume |
 
-**macOS is the fast path. Linux and Windows work, and today they are ~4–5x
-slower — for a reason we understand and can fix.**
+**macOS is the fast path; x86 is currently ~4–5x slower.**
 
-The engine's vectorised kernels are selected at compile time, and the build does
-not pass `-march`, so on x86 the AVX2 kernels are never compiled in and the
-engine falls back to a scalar loop — measured **7.6x slower** than the vectorised
-path on identical hardware. The Zenbook above *has* AVX2; the build throws it
-away. That is tracked as **G10 / H2** ([docs/TASKS_HARDWARE.md](TASKS_HARDWARE.md)),
-and the fix is runtime CPU dispatch rather than a compiler flag, because one
-Docker image has to run on many different CPUs.
+The vectorised kernels are selected at compile time, and the build passes no
+`-march`. On x86 the AVX2 kernels are therefore never compiled in and the engine
+falls back to a scalar loop — **7.6x slower** than the vectorised path on
+identical hardware, measured. The Zenbook above has AVX2 and does not use it.
 
-So the honest summary: **on Apple Silicon this is a usable chat app. On x86 it is
-a working one.** A short factual answer is fine; a long reasoning answer at
-1.26 tok/s is a coffee break. If that matters to you, wait for H2.
+The fix is runtime CPU dispatch rather than a compiler flag, since one Docker
+image must run on many different CPUs. Tracked as **G10 / H2**
+([TASKS_HARDWARE.md](TASKS_HARDWARE.md)).
+
+At 1.26 tok/s a short factual answer takes seconds and a long reasoning answer
+takes minutes.
 
 **"Runs on the CPU" does not mean it runs on any 16 GB laptop.** What it needs:
 
@@ -102,15 +101,13 @@ themselves are read-only.
 
 ## SSD speed: the one thing to be deliberate about
 
-This is the most important part for understanding the performance and resource footprint of your machine, so it is stated plainly.
-
 Samosa keeps its memory footprint small by **not** holding all 35B parameters in RAM. Instead, it reads each token's expert weights from the SSD as the model chooses them. The longer an answer is, the more expert data it reads.
 
 The amount of data read is large. One 933-token thinking answer read **376 GB** of expert data from the SSD.
 
-### Does this wear out the SSD? No — and the comparison people reach for is backwards
+### SSD endurance
 
-376 GB sounds alarming. It is worth knowing why it is not.
+Streaming 376 GB per answer does not shorten the drive's life.
 
 **SSD lifespan is consumed by writes, not reads.** Flash endurance is rated in
 **TBW** (Terabytes *Written*, per the JEDEC JESD218 standard) or **DWPD** (Drive
@@ -118,27 +115,25 @@ The amount of data read is large. One 933-token thinking answer read **376 GB** 
 manufacturer rates a drive for reads, because program/erase cycles are what wear
 out NAND cells. Reads consume approximately zero drive life.
 
-The honest caveat: *read disturb* is a real physical effect — reading a block
+*Read disturb* is a real physical effect — reading a block
 slightly perturbs neighbouring cells, and the controller refreshes the block after
 a threshold, which is a write. But those thresholds are on the order of tens of
 thousands to millions of reads **of the same block**. 376 GB spread over a 20.9 GB
 file is about 18 reads per byte. It is orders of magnitude away from mattering.
 
-For perspective, swap is the thing people usually worry about, and it is the
-opposite way round: over that same session the whole system — Samosa, editor,
-browser, everything — wrote under about 9 GB to swap. Those **9 GB of writes
-consume more drive life than the 376 GB of reads do.** The big number is the
-harmless one.
+Swap is the useful comparison, and it runs the opposite way. Over that same
+session the whole system — Samosa, editor, browser, everything — wrote under
+about 9 GB to swap. Those **9 GB of writes consume more drive life than the
+376 GB of reads do.**
 
-*How we know:* from the definition of the endurance rating, not from a measurement
-on the reference machine — Apple Silicon's internal NVMe does not expose SMART
-endurance counters to userspace, so `Data Units Written` / `Percentage Used`
-cannot be read there. On a Linux machine with `smartctl -A /dev/nvme0`, a long
-generation moves `Data Units Read` by hundreds of GB while leaving
-`Data Units Written` and `Percentage Used` essentially unchanged. If you run
-Samosa on such a machine, you can check this yourself.
+Source: the definition of the endurance rating, not a measurement on the
+reference machine — Apple Silicon's internal NVMe does not expose SMART
+endurance counters, so `Data Units Written` and `Percentage Used` cannot be read
+there. On Linux, `smartctl -A /dev/nvme0` before and after a long generation
+shows `Data Units Read` rising by hundreds of GB while `Data Units Written` and
+`Percentage Used` stay flat.
 
-The genuine resource considerations are:
+What streaming does cost:
 - **SSD Speed:** This is the single biggest driver of Samosa's performance. High-speed native NVMe storage (2.3+ GB/s) streams at **5–7 tokens/second**. Slower storage paths (like a Docker virtiofs host bind mount at ~0.5 GB/s) drop this to **~0.9 tokens/second**. SATA SSDs or HDDs are severely bottlenecked or unusable.
 - **Power and Heat:** Streaming hundreds of gigabytes per generation keeps the CPU and storage controller active, which drains battery and generates heat.
 - **Page Cache Eviction:** Heavy read operations evict other files from the OS page cache, which can temporarily slow down other active applications.
