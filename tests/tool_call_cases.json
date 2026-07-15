@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "model": "qwen/qwen3.6-35b-a3b",
+  "provider": "AkashML",
+  "provider_quantization": "fp8",
+  "defaults": {
+    "max_tokens": 4096,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "presence_penalty": 1.5
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "web_search",
+        "description": "Search the web for a query and return relevant snippets.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string", "description": "The search query to run."}
+          },
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fetch_url",
+        "description": "Fetch the content of a specific URL.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {"type": "string", "description": "The URL to fetch."}
+          },
+          "required": ["url"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_document",
+        "description": "Read the contents of a local document at a given path.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "The path to the document file."}
+          },
+          "required": ["path"]
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "tool_search_1",
+      "prompt": "Find the current stock price of Apple Inc. on Google.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_2",
+      "prompt": "Search for the latest news about the Artemis space mission.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_3",
+      "prompt": "What is the capital of France? Look it up online to verify.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_4",
+      "prompt": "Find the release date and specs of NVIDIA RTX 5090.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_5",
+      "prompt": "Who won the most recent Super Bowl? Search the web.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_6",
+      "prompt": "Search for the documentation of Python 3.12's new features.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_search_7",
+      "prompt": "Find the schedule for the next solar eclipse.",
+      "expected_tool": "web_search",
+      "required_args": ["query"]
+    },
+    {
+      "id": "tool_fetch_1",
+      "prompt": "Fetch the contents of https://en.wikipedia.org/wiki/Python_(programming_language) to summarize it.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_fetch_2",
+      "prompt": "Read the text from the web page at https://news.ycombinator.com.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_fetch_3",
+      "prompt": "Go to https://github.com/trending and fetch the trending repositories.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_fetch_4",
+      "prompt": "Please retrieve the HTML content of http://example.com.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_fetch_5",
+      "prompt": "Fetch the article at https://blog.mozilla.org/en/products/firefox/new-firefox/.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_fetch_6",
+      "prompt": "Open the link http://www.google.com and fetch the landing page content.",
+      "expected_tool": "fetch_url",
+      "required_args": ["url"]
+    },
+    {
+      "id": "tool_document_1",
+      "prompt": "Open the local file at docs/ISSUE_TASKS.md and read it.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_2",
+      "prompt": "Read the local configuration file at config/settings.json.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_3",
+      "prompt": "Please read the text inside our project's README.md file.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_4",
+      "prompt": "Read the contents of the document located at /var/log/syslog.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_5",
+      "prompt": "Open the report file at data/report.pdf and extract its text.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_6",
+      "prompt": "Read the local script src/qwen36b.c to find the main function.",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    },
+    {
+      "id": "tool_document_7",
+      "prompt": "Can you open and read the file at docs/SERVE_API.md?",
+      "expected_tool": "read_document",
+      "required_args": ["path"]
+    }
+  ]
+}

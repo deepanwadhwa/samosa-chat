@@ -1,0 +1,2402 @@
+[
+  {
+    "case_id": "tool_document_1",
+    "seed": 11,
+    "prompt": "Open the local file at docs/ISSUE_TASKS.md and read it.",
+    "expected_tool": "read_document",
+    "elapsed_s": 3.117842749999909,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/ISSUE_TASKS.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 471,
+      "completion_tokens": 256,
+      "total_tokens": 727,
+      "cost": 0.00032194,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00032194,
+        "upstream_inference_prompt_cost": 6.594e-05,
+        "upstream_inference_completions_cost": 0.000256
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 209,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_1",
+    "seed": 29,
+    "prompt": "Open the local file at docs/ISSUE_TASKS.md and read it.",
+    "expected_tool": "read_document",
+    "elapsed_s": 2.0855528750016674,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/ISSUE_TASKS.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 471,
+      "completion_tokens": 147,
+      "total_tokens": 618,
+      "cost": 0.00021294,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00021294,
+        "upstream_inference_prompt_cost": 6.594e-05,
+        "upstream_inference_completions_cost": 0.000147
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 102,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_1",
+    "seed": 47,
+    "prompt": "Open the local file at docs/ISSUE_TASKS.md and read it.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.8580583749990183,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/ISSUE_TASKS.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 471,
+      "completion_tokens": 153,
+      "total_tokens": 624,
+      "cost": 0.00021894,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00021894,
+        "upstream_inference_prompt_cost": 6.594e-05,
+        "upstream_inference_completions_cost": 0.000153
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 108,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_2",
+    "seed": 11,
+    "prompt": "Read the local configuration file at config/settings.json.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.6254485829995247,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "config/settings.json"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 465,
+      "completion_tokens": 109,
+      "total_tokens": 574,
+      "cost": 0.0001741,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001741,
+        "upstream_inference_prompt_cost": 6.51e-05,
+        "upstream_inference_completions_cost": 0.000109
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 83,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_2",
+    "seed": 29,
+    "prompt": "Read the local configuration file at config/settings.json.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.3460152090010524,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "config/settings.json"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 465,
+      "completion_tokens": 135,
+      "total_tokens": 600,
+      "cost": 0.0002001,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002001,
+        "upstream_inference_prompt_cost": 6.51e-05,
+        "upstream_inference_completions_cost": 0.000135
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 103,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_2",
+    "seed": 47,
+    "prompt": "Read the local configuration file at config/settings.json.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.7949030409999978,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "config/settings.json"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 465,
+      "completion_tokens": 123,
+      "total_tokens": 588,
+      "cost": 0.0001881,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001881,
+        "upstream_inference_prompt_cost": 6.51e-05,
+        "upstream_inference_completions_cost": 0.000123
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 99,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_3",
+    "seed": 11,
+    "prompt": "Please read the text inside our project's README.md file.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.9442187089989602,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "README.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 144,
+      "total_tokens": 611,
+      "cost": 0.00020938,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00020938,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000144
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 121,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_3",
+    "seed": 29,
+    "prompt": "Please read the text inside our project's README.md file.",
+    "expected_tool": "read_document",
+    "elapsed_s": 3.1568587080000725,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "README.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 265,
+      "total_tokens": 732,
+      "cost": 0.00033038,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00033038,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000265
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 238,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_3",
+    "seed": 47,
+    "prompt": "Please read the text inside our project's README.md file.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.5053959580000082,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "README.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 122,
+      "total_tokens": 589,
+      "cost": 0.00018738,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00018738,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000122
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 92,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_4",
+    "seed": 11,
+    "prompt": "Read the contents of the document located at /var/log/syslog.",
+    "expected_tool": "read_document",
+    "elapsed_s": 2.4420365000005404,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "/var/log/syslog"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 176,
+      "total_tokens": 645,
+      "cost": 0.00024166,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00024166,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000176
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 145,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_4",
+    "seed": 29,
+    "prompt": "Read the contents of the document located at /var/log/syslog.",
+    "expected_tool": "read_document",
+    "elapsed_s": 2.200345790999563,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "/var/log/syslog"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 185,
+      "total_tokens": 654,
+      "cost": 0.00025066,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00025066,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000185
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 160,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_4",
+    "seed": 47,
+    "prompt": "Read the contents of the document located at /var/log/syslog.",
+    "expected_tool": "read_document",
+    "elapsed_s": 2.377022542001214,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "/var/log/syslog"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 187,
+      "total_tokens": 656,
+      "cost": 0.00025266,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00025266,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000187
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 164,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_5",
+    "seed": 11,
+    "prompt": "Open the report file at data/report.pdf and extract its text.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.528968332999284,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "data/report.pdf"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 468,
+      "completion_tokens": 101,
+      "total_tokens": 569,
+      "cost": 0.00016652,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00016652,
+        "upstream_inference_prompt_cost": 6.552e-05,
+        "upstream_inference_completions_cost": 0.000101
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 83,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_5",
+    "seed": 29,
+    "prompt": "Open the report file at data/report.pdf and extract its text.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.5053568749990518,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "data/report.pdf"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 468,
+      "completion_tokens": 113,
+      "total_tokens": 581,
+      "cost": 0.00017852,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00017852,
+        "upstream_inference_prompt_cost": 6.552e-05,
+        "upstream_inference_completions_cost": 0.000113
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 81,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_5",
+    "seed": 47,
+    "prompt": "Open the report file at data/report.pdf and extract its text.",
+    "expected_tool": "read_document",
+    "elapsed_s": 5.295761833000142,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "data/report.pdf"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 468,
+      "completion_tokens": 353,
+      "total_tokens": 821,
+      "cost": 0.00041852,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00041852,
+        "upstream_inference_prompt_cost": 6.552e-05,
+        "upstream_inference_completions_cost": 0.000353
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 349,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_6",
+    "seed": 11,
+    "prompt": "Read the local script src/qwen36b.c to find the main function.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.1636896669988346,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "src/qwen36b.c"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 72,
+      "total_tokens": 544,
+      "cost": 0.00013808,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00013808,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 7.2e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 38,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_6",
+    "seed": 29,
+    "prompt": "Read the local script src/qwen36b.c to find the main function.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.8569922499991662,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "src/qwen36b.c"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 197,
+      "total_tokens": 669,
+      "cost": 0.00026308,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00026308,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 0.000197
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 164,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_6",
+    "seed": 47,
+    "prompt": "Read the local script src/qwen36b.c to find the main function.",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.5047907089992805,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "src/qwen36b.c"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 101,
+      "total_tokens": 573,
+      "cost": 0.00016708,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00016708,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 0.000101
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 72,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_7",
+    "seed": 11,
+    "prompt": "Can you open and read the file at docs/SERVE_API.md?",
+    "expected_tool": "read_document",
+    "elapsed_s": 2.1070348329994886,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/SERVE_API.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 139,
+      "total_tokens": 608,
+      "cost": 0.00020466,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00020466,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000139
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 98,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_7",
+    "seed": 29,
+    "prompt": "Can you open and read the file at docs/SERVE_API.md?",
+    "expected_tool": "read_document",
+    "elapsed_s": 4.022121957999843,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/SERVE_API.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 192,
+      "total_tokens": 661,
+      "cost": 0.00025766,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00025766,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000192
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 166,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_document_7",
+    "seed": 47,
+    "prompt": "Can you open and read the file at docs/SERVE_API.md?",
+    "expected_tool": "read_document",
+    "elapsed_s": 1.814557915999103,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "read_document",
+      "arguments": {
+        "path": "docs/SERVE_API.md"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 132,
+      "total_tokens": 601,
+      "cost": 0.00019766,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00019766,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000132
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 90,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_1",
+    "seed": 11,
+    "prompt": "Fetch the contents of https://en.wikipedia.org/wiki/Python_(programming_language) to summarize it.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 2.341013291999843,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://en.wikipedia.org/wiki/Python_(programming_language)"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 475,
+      "completion_tokens": 135,
+      "total_tokens": 610,
+      "cost": 0.0002015,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002015,
+        "upstream_inference_prompt_cost": 6.65e-05,
+        "upstream_inference_completions_cost": 0.000135
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 100,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_1",
+    "seed": 29,
+    "prompt": "Fetch the contents of https://en.wikipedia.org/wiki/Python_(programming_language) to summarize it.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.908397375000277,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://en.wikipedia.org/wiki/Python_(programming_language)"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 475,
+      "completion_tokens": 117,
+      "total_tokens": 592,
+      "cost": 0.0001835,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001835,
+        "upstream_inference_prompt_cost": 6.65e-05,
+        "upstream_inference_completions_cost": 0.000117
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 78,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_1",
+    "seed": 47,
+    "prompt": "Fetch the contents of https://en.wikipedia.org/wiki/Python_(programming_language) to summarize it.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 2.7532808750002005,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://en.wikipedia.org/wiki/Python_(programming_language)"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 475,
+      "completion_tokens": 124,
+      "total_tokens": 599,
+      "cost": 0.0001905,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001905,
+        "upstream_inference_prompt_cost": 6.65e-05,
+        "upstream_inference_completions_cost": 0.000124
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 91,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_2",
+    "seed": 11,
+    "prompt": "Read the text from the web page at https://news.ycombinator.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.194427333000931,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://news.ycombinator.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 96,
+      "total_tokens": 568,
+      "cost": 0.00016208,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00016208,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 9.6e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 64,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_2",
+    "seed": 29,
+    "prompt": "Read the text from the web page at https://news.ycombinator.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.1450434590005898,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://news.ycombinator.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 89,
+      "total_tokens": 561,
+      "cost": 0.00015508,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00015508,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 8.9e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 58,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_2",
+    "seed": 47,
+    "prompt": "Read the text from the web page at https://news.ycombinator.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.1838165000008303,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://news.ycombinator.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 87,
+      "total_tokens": 559,
+      "cost": 0.00015308,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00015308,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 8.7e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 50,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_3",
+    "seed": 11,
+    "prompt": "Go to https://github.com/trending and fetch the trending repositories.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.2821677909996652,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://github.com/trending"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 133,
+      "total_tokens": 602,
+      "cost": 0.00019866,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00019866,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000133
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 102,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_3",
+    "seed": 29,
+    "prompt": "Go to https://github.com/trending and fetch the trending repositories.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 4.540694041999814,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://github.com/trending"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 296,
+      "total_tokens": 765,
+      "cost": 0.00036166,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00036166,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000296
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 297,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_3",
+    "seed": 47,
+    "prompt": "Go to https://github.com/trending and fetch the trending repositories.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.18944808300148,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://github.com/trending"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 111,
+      "total_tokens": 580,
+      "cost": 0.00017666,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00017666,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000111
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 92,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_4",
+    "seed": 11,
+    "prompt": "Please retrieve the HTML content of http://example.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 2.247594583999671,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://example.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 466,
+      "completion_tokens": 131,
+      "total_tokens": 597,
+      "cost": 0.00019624,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00019624,
+        "upstream_inference_prompt_cost": 6.524e-05,
+        "upstream_inference_completions_cost": 0.000131
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 88,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_4",
+    "seed": 29,
+    "prompt": "Please retrieve the HTML content of http://example.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.6831913749992964,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://example.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 466,
+      "completion_tokens": 149,
+      "total_tokens": 615,
+      "cost": 0.00021424,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00021424,
+        "upstream_inference_prompt_cost": 6.524e-05,
+        "upstream_inference_completions_cost": 0.000149
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 115,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_4",
+    "seed": 47,
+    "prompt": "Please retrieve the HTML content of http://example.com.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 2.3341504580002947,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://example.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 466,
+      "completion_tokens": 154,
+      "total_tokens": 620,
+      "cost": 0.00021924,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00021924,
+        "upstream_inference_prompt_cost": 6.524e-05,
+        "upstream_inference_completions_cost": 0.000154
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 122,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_5",
+    "seed": 11,
+    "prompt": "Fetch the article at https://blog.mozilla.org/en/products/firefox/new-firefox/.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 0.9000287500002742,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://blog.mozilla.org/en/products/firefox/new-firefox/"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 73,
+      "total_tokens": 545,
+      "cost": 0.00013908,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00013908,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 7.3e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 36,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_5",
+    "seed": 29,
+    "prompt": "Fetch the article at https://blog.mozilla.org/en/products/firefox/new-firefox/.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.0761670829997456,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://blog.mozilla.org/en/products/firefox/new-firefox/"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 101,
+      "total_tokens": 573,
+      "cost": 0.00016708,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00016708,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 0.000101
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 63,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_5",
+    "seed": 47,
+    "prompt": "Fetch the article at https://blog.mozilla.org/en/products/firefox/new-firefox/.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.8169495410002128,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "https://blog.mozilla.org/en/products/firefox/new-firefox/"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 472,
+      "completion_tokens": 138,
+      "total_tokens": 610,
+      "cost": 0.00020408,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00020408,
+        "upstream_inference_prompt_cost": 6.608e-05,
+        "upstream_inference_completions_cost": 0.000138
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 92,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_6",
+    "seed": 11,
+    "prompt": "Open the link http://www.google.com and fetch the landing page content.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.6116072080003505,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://www.google.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 139,
+      "total_tokens": 609,
+      "cost": 0.0002048,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002048,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000139
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 106,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_6",
+    "seed": 29,
+    "prompt": "Open the link http://www.google.com and fetch the landing page content.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 1.7269439169995167,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://www.google.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 170,
+      "total_tokens": 640,
+      "cost": 0.0002358,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002358,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.00017
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 144,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_fetch_6",
+    "seed": 47,
+    "prompt": "Open the link http://www.google.com and fetch the landing page content.",
+    "expected_tool": "fetch_url",
+    "elapsed_s": 3.2413314590012305,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "fetch_url",
+      "arguments": {
+        "url": "http://www.google.com"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 293,
+      "total_tokens": 763,
+      "cost": 0.0003588,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0003588,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000293
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 256,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_1",
+    "seed": 11,
+    "prompt": "Find the current stock price of Apple Inc. on Google.",
+    "expected_tool": "web_search",
+    "elapsed_s": 3.4341077909994056,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Apple Inc AAPL current stock price"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 273,
+      "total_tokens": 740,
+      "cost": 0.00033838,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00033838,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000273
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 241,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_1",
+    "seed": 29,
+    "prompt": "Find the current stock price of Apple Inc. on Google.",
+    "expected_tool": "web_search",
+    "elapsed_s": 4.285086083000351,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Apple Inc. stock price"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 126,
+      "total_tokens": 593,
+      "cost": 0.00019138,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00019138,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000126
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 95,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_1",
+    "seed": 47,
+    "prompt": "Find the current stock price of Apple Inc. on Google.",
+    "expected_tool": "web_search",
+    "elapsed_s": 2.4874689170010242,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Apple Inc stock price"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 202,
+      "total_tokens": 669,
+      "cost": 0.00026738,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00026738,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000202
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 170,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_2",
+    "seed": 11,
+    "prompt": "Search for the latest news about the Artemis space mission.",
+    "expected_tool": "web_search",
+    "elapsed_s": 5.880304541999067,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "latest news about Artemis space mission"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 248,
+      "total_tokens": 715,
+      "cost": 0.00031338,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00031338,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000248
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 229,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_2",
+    "seed": 29,
+    "prompt": "Search for the latest news about the Artemis space mission.",
+    "expected_tool": "web_search",
+    "elapsed_s": 3.6468472500000644,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Artemis space mission latest news"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 322,
+      "total_tokens": 789,
+      "cost": 0.00038738,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00038738,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000322
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 286,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_2",
+    "seed": 47,
+    "prompt": "Search for the latest news about the Artemis space mission.",
+    "expected_tool": "web_search",
+    "elapsed_s": 4.211485207999431,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "latest news about Artemis space mission"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 116,
+      "total_tokens": 583,
+      "cost": 0.00018138,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00018138,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000116
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 92,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_3",
+    "seed": 11,
+    "prompt": "What is the capital of France? Look it up online to verify.",
+    "expected_tool": "web_search",
+    "elapsed_s": 3.186476290999053,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "capital of France"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 284,
+      "total_tokens": 753,
+      "cost": 0.00034966,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00034966,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000284
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 254,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_3",
+    "seed": 29,
+    "prompt": "What is the capital of France? Look it up online to verify.",
+    "expected_tool": "web_search",
+    "elapsed_s": 3.113493374999962,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "capital of France"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 250,
+      "total_tokens": 719,
+      "cost": 0.00031566,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00031566,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.00025
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 223,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_3",
+    "seed": 47,
+    "prompt": "What is the capital of France? Look it up online to verify.",
+    "expected_tool": "web_search",
+    "elapsed_s": 3.5722716249983932,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "capital of France"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 469,
+      "completion_tokens": 293,
+      "total_tokens": 762,
+      "cost": 0.00035866,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00035866,
+        "upstream_inference_prompt_cost": 6.566e-05,
+        "upstream_inference_completions_cost": 0.000293
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 261,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_4",
+    "seed": 11,
+    "prompt": "Find the release date and specs of NVIDIA RTX 5090.",
+    "expected_tool": "web_search",
+    "elapsed_s": 1.144524208999428,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "NVIDIA RTX 5090 release date and specs"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 77,
+      "total_tokens": 547,
+      "cost": 0.0001428,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001428,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 7.7e-05
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 42,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_4",
+    "seed": 29,
+    "prompt": "Find the release date and specs of NVIDIA RTX 5090.",
+    "expected_tool": "web_search",
+    "elapsed_s": 1.436554583000543,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "NVIDIA RTX 5090 release date specs"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 112,
+      "total_tokens": 582,
+      "cost": 0.0001778,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0001778,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000112
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 78,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_4",
+    "seed": 47,
+    "prompt": "Find the release date and specs of NVIDIA RTX 5090.",
+    "expected_tool": "web_search",
+    "elapsed_s": 2.770315333000326,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "NVIDIA RTX 5090 release date specs"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 215,
+      "total_tokens": 685,
+      "cost": 0.0002808,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002808,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000215
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 175,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_5",
+    "seed": 11,
+    "prompt": "Who won the most recent Super Bowl? Search the web.",
+    "expected_tool": "web_search",
+    "elapsed_s": 13.255341416999727,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Who won the most recent Super Bowl?"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 982,
+      "total_tokens": 1449,
+      "cost": 0.00104738,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00104738,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000982
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 810,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_5",
+    "seed": 29,
+    "prompt": "Who won the most recent Super Bowl? Search the web.",
+    "expected_tool": "web_search",
+    "elapsed_s": 7.043443665999803,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "who won the most recent Super Bowl"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 626,
+      "total_tokens": 1093,
+      "cost": 0.00069138,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00069138,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000626
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 507,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_5",
+    "seed": 47,
+    "prompt": "Who won the most recent Super Bowl? Search the web.",
+    "expected_tool": "web_search",
+    "elapsed_s": 7.049246000000494,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "most recent Super Bowl winner"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 467,
+      "completion_tokens": 681,
+      "total_tokens": 1148,
+      "cost": 0.00074638,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00074638,
+        "upstream_inference_prompt_cost": 6.538e-05,
+        "upstream_inference_completions_cost": 0.000681
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 579,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_6",
+    "seed": 11,
+    "prompt": "Search for the documentation of Python 3.12's new features.",
+    "expected_tool": "web_search",
+    "elapsed_s": 2.1985290840002563,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Python 3.12 new features documentation What's new in Python 3.12"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 210,
+      "total_tokens": 680,
+      "cost": 0.0002758,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002758,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.00021
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 156,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_6",
+    "seed": 29,
+    "prompt": "Search for the documentation of Python 3.12's new features.",
+    "expected_tool": "web_search",
+    "elapsed_s": 4.868837665999308,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Python 3.12 what's new features documentation"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 361,
+      "total_tokens": 831,
+      "cost": 0.0004268,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0004268,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000361
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 322,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_6",
+    "seed": 47,
+    "prompt": "Search for the documentation of Python 3.12's new features.",
+    "expected_tool": "web_search",
+    "elapsed_s": 2.315207207999265,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "Python 3.12 what's new documentation"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 470,
+      "completion_tokens": 155,
+      "total_tokens": 625,
+      "cost": 0.0002208,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0002208,
+        "upstream_inference_prompt_cost": 6.58e-05,
+        "upstream_inference_completions_cost": 0.000155
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 128,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_7",
+    "seed": 11,
+    "prompt": "Find the schedule for the next solar eclipse.",
+    "expected_tool": "web_search",
+    "elapsed_s": 8.444679541998994,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "next solar eclipse date schedule 2024 2025"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 464,
+      "completion_tokens": 812,
+      "total_tokens": 1276,
+      "cost": 0.00087696,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00087696,
+        "upstream_inference_prompt_cost": 6.496e-05,
+        "upstream_inference_completions_cost": 0.000812
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 673,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_7",
+    "seed": 29,
+    "prompt": "Find the schedule for the next solar eclipse.",
+    "expected_tool": "web_search",
+    "elapsed_s": 1.6937602079997305,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "next solar eclipse schedule"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 464,
+      "completion_tokens": 149,
+      "total_tokens": 613,
+      "cost": 0.00021396,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00021396,
+        "upstream_inference_prompt_cost": 6.496e-05,
+        "upstream_inference_completions_cost": 0.000149
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 125,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "case_id": "tool_search_7",
+    "seed": 47,
+    "prompt": "Find the schedule for the next solar eclipse.",
+    "expected_tool": "web_search",
+    "elapsed_s": 7.208504500000345,
+    "eval": {
+      "passed": true,
+      "malformed": false,
+      "wrong_tool": false,
+      "hallucinated_args": false,
+      "tool_called": "web_search",
+      "arguments": {
+        "query": "upcoming solar eclipse schedule"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 464,
+      "completion_tokens": 527,
+      "total_tokens": 991,
+      "cost": 0.00059196,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00059196,
+        "upstream_inference_prompt_cost": 6.496e-05,
+        "upstream_inference_completions_cost": 0.000527
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 486,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  }
+]
