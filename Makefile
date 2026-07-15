@@ -12,7 +12,7 @@ omp: src/qwen36b.c src/expert_cache.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread -Xclang -fopenmp -I$(OMP_PREFIX)/include \
 	  src/qwen36b.c src/expert_cache.c -o qwen36b -lm -L$(OMP_PREFIX)/lib -lomp
 
-test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_converter_quant.py
+test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_converter_quant.py
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o test_expert_cache && ./test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o test_kv_cache && ./test_kv_cache
 	$(CC) -O1 -Isrc tests/test_repetition_guard.c -o test_repetition_guard && ./test_repetition_guard
@@ -21,6 +21,7 @@ test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guar
 	$(CC) -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c -o test_samosa_serve -lm && ./test_samosa_serve
 	sh tests/test_samosa_wrapper.sh
 	sh tests/test_atomic_install.sh
+	sh tests/test_install_path.sh
 	python3 tests/test_thinking_output.py
 	python3 tests/test_regression_gate.py
 	python3 tests/test_openrouter_control.py

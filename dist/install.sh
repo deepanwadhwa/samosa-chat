@@ -185,7 +185,11 @@ mv -f "$LAUNCHER_NEXT" "$LAUNCHER_DIR/samosa"
 mv -f "$MANIFEST_NEXT" "$HOME_DIR/release-manifest.tsv"
 
 NEEDS_NEW_SHELL=0
-if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
+# Guarded separately from SAMOSA_INSTALL_TEST on purpose. That flag also skips
+# the platform preflight and the app smoke test, both of which need a real
+# model — so anything hiding behind it could never be covered by a test. This
+# block writes to $HOME, so a test overrides HOME rather than skipping it.
+if [ "${SAMOSA_SKIP_PATH_SETUP:-0}" != 1 ]; then
   case ":$PATH:" in *":$LAUNCHER_DIR:"*) ;; *)
     # The launcher is not on PATH in this shell. Adding it to the rc file only
     # affects shells started afterwards, so the caller must be told.

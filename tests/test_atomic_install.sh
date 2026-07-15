@@ -22,7 +22,9 @@ package() {
 }
 
 install_release() {
-  SAMOSA_INSTALL_TEST=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
+  # SAMOSA_SKIP_PATH_SETUP keeps this test focused on atomicity and stops it
+  # writing to the developer's shell rc. PATH setup has its own test.
+  SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
     SAMOSA_BASE_URL="file://$REMOTE" SAMOSA_HOME="$HOME_DIR" \
     sh "$ROOT/dist/install.sh" >/dev/null
 }
