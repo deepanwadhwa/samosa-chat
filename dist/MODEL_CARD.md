@@ -52,7 +52,12 @@ validation.
 
 ```sh
 curl -fsSL https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main/install.sh | sh
-samosa app
+```
+
+Then **open a new terminal** and ask it something:
+
+```sh
+samosa "explain how DNS works"
 ```
 
 Allow roughly 30 GB free. The installer downloads into an inactive versioned
@@ -61,8 +66,34 @@ and smoke-tests it before atomically switching the live release. A corrupt or
 interrupted upgrade leaves the prior release untouched. No administrator
 rights are required.
 
-`samosa app` starts one resident local model process and opens the browser UI.
-The app provides:
+Everything installs under `~/.samosa` — the `samosa` command at
+`~/.samosa/bin/samosa`, the active release at `~/.samosa/current`, and your
+conversations at `~/.samosa/chats`. Nothing is installed system-wide. The
+installer adds `~/.samosa/bin` to `PATH` via one line in your shell rc file,
+which **only affects terminals opened afterwards** — hence the new terminal
+above. If `samosa` is still not found, either
+`export PATH="$HOME/.samosa/bin:$PATH"` in the current shell, or run it
+directly as `~/.samosa/bin/samosa "how are you"`. To uninstall, delete
+`~/.samosa` and remove that line.
+
+## Two ways to use it
+
+**The terminal is the normal way to use Samosa.**
+
+```sh
+samosa "explain how a hash table handles collisions"
+samosa --continue "and which strategy does Python use?"
+samosa --think "solve this logic puzzle"
+samosa --think-code "build a responsive settings page"
+samosa --fast "summarize this design"
+samosa --max-tokens 2048 "write a long explanation"
+samosa doctor
+```
+
+**The browser app is a demo** at this point. It works, and it is the nicest way
+to watch answers stream and see the model's reasoning, but it exists to show the
+engine off rather than as a polished interface. `samosa app` starts one resident
+local model process and opens it; `samosa serve --stop` stops it. It provides:
 
 - token-by-token answer streaming;
 - a separate collapsible thinking view;
@@ -75,18 +106,7 @@ The app provides:
 
 The complete UI and logo total 181,552 bytes in this release.
 
-## Command line and local API
-
-```sh
-samosa "explain how a hash table handles collisions"
-samosa --continue "and which strategy does Python use?"
-samosa --think "solve this logic puzzle"
-samosa --think-code "build a responsive settings page"
-samosa --fast "summarize this design"
-samosa serve
-samosa serve --stop
-samosa doctor
-```
+## Local API
 
 The resident server exposes local JSON/SSE chat completions at
 `POST /v1/chat/completions`, plus health, model discovery, cancellation, and
