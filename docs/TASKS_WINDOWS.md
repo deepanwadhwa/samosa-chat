@@ -154,7 +154,29 @@ across an 8-turn conversation; induced pressure demonstrably reclaims.
 do not assume); `-p 127.0.0.1:8642:8642` reaches the app from a Windows host
 browser; the existing socket component test still passes.
 
-### D-3 — Dockerfile and image  ~2 days
+### D-3 — Dockerfile and image  ~2 days  **THE GAP — nothing exists**
+
+**Status 2026-07-15: the architecture is proven; the packaging is absent.** A
+hand-assembled container ran `samosa serve` with the real model and answered
+"What is the capital of France?" → "Paris" **from a browser on the host**, with
+`rss_gb` 2.52 fresh / 3.84 after the turn — matching macOS. D-2's `SAMOSA_HOST`
+bind works; G6's `xdg-open` works. **The end goal is reachable.**
+
+But **no Dockerfile exists on any branch** (verified by `find` and `git log
+--diff-filter=A`), the model was bind-mounted from a developer's Mac, there is no
+`pull` path, no image, and no docs. **A user cannot do any of this today.** Full
+evidence and the required user flow:
+[../regressions/linux/docker-product-path.md](../regressions/linux/docker-product-path.md).
+
+Two things that run confirmed:
+
+- **Model placement is not a detail.** Bind-mounted through virtiofs the model
+  decoded at **0.96 tok/s** vs ~5–7 native. Named volume, not bind mount (D3).
+- **The UI says "Your model. Your Mac."** ([assets/app.html:361](../../assets/app.html#L361))
+  to a Linux/Windows user — a false claim in the product. It is coupled:
+  [install.sh:157](../../dist/install.sh#L157) smoke-tests by grepping that exact
+  string. Fix both together.
+
 
 Multi-stage: build the engine from source with gcc `-fopenmp`; runtime carries
 engine + wrapper + `app.html` + tokenizer. **Model is not in the image.**
