@@ -118,6 +118,12 @@ Then **open a new terminal** and ask it something:
 samosa "explain how DNS works"
 ```
 
+Allow roughly 30 GB free. The installer downloads into an inactive versioned
+release, verifies every byte size and SHA-256 digest, compiles the C engine,
+and smoke-tests it before atomically switching the live release. A corrupt or
+interrupted upgrade leaves the prior release untouched. No administrator
+rights are required.
+
 ### Linux and Windows
 
 Use Docker, from the GitHub repository — the installer above is macOS-only:
@@ -139,12 +145,6 @@ step-by-step, including the Docker VM memory requirement, is in the
 
 Expect ~1.3 tok/s on x86 today rather than the Mac's 5–7 — see
 [Supported hardware](#supported-hardware) for why.
-
-Allow roughly 30 GB free. The installer downloads into an inactive versioned
-release, verifies every byte size and SHA-256 digest, compiles the C engine,
-and smoke-tests it before atomically switching the live release. A corrupt or
-interrupted upgrade leaves the prior release untouched. No administrator
-rights are required.
 
 Everything installs under `~/.samosa` — the `samosa` command at
 `~/.samosa/bin/samosa`, the active release at `~/.samosa/current`, and your
