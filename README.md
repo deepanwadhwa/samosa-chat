@@ -135,37 +135,99 @@ model leaves the image part out.
 For Windows and Linux, Samosa Chat runs inside a Docker container (on Windows, this runs via Docker Desktop using a Linux VM).
 
 ### Prerequisites
-1. **Docker Desktop** (or Podman / Rancher Desktop).
-2. **Docker VM Memory Configuration**: You **MUST** increase the Docker Desktop VM's allocated RAM to **at least 6 GB** (8 GB recommended). The default ~2 GB memory limit is too small to load the model.
-   * *Windows (WSL2 backend)*: If Docker Desktop uses the default WSL2 allocation, ensure your `%USERPROFILE%\.wslconfig` has at least `memory=8GB` configured.
-3. **Storage**: At least 30 GB of free space inside the Docker virtual disk.
 
-### 1. Create a Named Docker Volume
-To get native SSD performance, the 24 GB model must live inside a named Docker volume (which lives inside the VM's ext4 virtual disk). **Never use a host bind mount (e.g. mounting from `C:\Users\...` or `/home/...`), as the file sharing layer (virtiofs/9p) will slow inference down by 10x.**
+1. **Docker Desktop** (or Podman / Rancher Desktop), and **git**.
+
+2. **Give the Docker VM at least 6 GB of RAM** (8 GB recommended). The default is
+   about 2 GB, which **cannot load the model at all** — it fails without a useful
+   error. This is the single most common way to waste an hour here.
+
+   * **Windows (WSL2 backend — the default):** the memory slider in Docker
+     Desktop's Settings does **not** apply. You must create or edit
+     `%USERPROFILE%\.wslconfig`:
+
+     ```ini
+     [wsl2]
+     memory=8GB
+     ```
+
+     Then run `wsl --shutdown` in PowerShell and restart Docker Desktop.
+   * **Windows (Hyper-V backend) / macOS:** Docker Desktop → Settings →
+     Resources → Memory.
+
+   Verify it took: `docker info --format "{{.MemTotal}}"` should report ~8e9,
+   not ~2e9.
+
+3. **Storage:** ~30 GB free **inside the Docker virtual disk**, on top of
+   whatever is already in it. The model volume alone is 24 GB. Check with
+   `docker system df`; if the disk is full, `docker builder prune` frees cache.
+
+4. **A fast internal SSD (NVMe).** Samosa streams expert weights from disk on
+   every token — storage bandwidth is the main driver of speed. See
+   [SSD speed](#ssd-speed-the-one-thing-to-be-deliberate-about).
+
+> **Windows users:** the commands below are written on one line each, so they
+> paste into **PowerShell** or **cmd** unchanged. (Multi-line shell examples
+> elsewhere in this README use `\` continuations, which are POSIX-only and will
+> fail in PowerShell.)
+
+### 1. Build the image
+
+There is no published image yet, so build it from this repository. The build
+compiles the C engine from source — the same property the native installer has:
+you run code you can read.
+
+```sh
+git clone https://github.com/deepanwadhwa/samosa-chat
+cd samosa-chat
+docker build -t samosa .
+```
+
+Takes about a minute and produces a ~90 MB image. The 24 GB model is **not** in
+the image — it goes in a volume, next.
+
+### 2. Create a named Docker volume
+To get native SSD performance, the 24 GB model must live inside a named Docker volume (which lives inside the VM's ext4 virtual disk). **Never use a host bind mount (e.g. mounting from `C:\Users\...` or `/home/...`), as the file sharing layer (virtiofs/9p) will slow inference down by about 6x — measured.**
 
 ```sh
 docker volume create samosa-model
 ```
 
-### 2. Pull the Model Weights
-Run the pull command to download the 24 GB Qwen-35B quantized weights directly into the persistent volume:
+### 3. Pull the model weights
+Downloads the 24 GB group-32 weights into the volume, verifying every file by
+size and SHA-256 against the release manifest. **Interrupted downloads resume** —
+just re-run the same command. Expect roughly 20 minutes on a fast connection.
+
 ```sh
-docker run --rm -v samosa-model:/model ghcr.io/deepanwa/samosa pull
+docker run --rm -v samosa-model:/model samosa pull
 ```
 
-### 3. Start the Server
-Start Samosa in serve mode. Samosa's API loopback binding is protected inside the container's network namespace, so you publish the port to the host's localhost only:
+### 4. Start the server
+The engine binds loopback by default; inside the container that is the
+container's own namespace, so the image sets `SAMOSA_BIND=0.0.0.0` and you
+publish the port to the host's **localhost only**:
+
 ```sh
-docker run -d --name samosa \
-  -p 127.0.0.1:8642:8642 \
-  -v samosa-model:/model \
-  --memory=8g \
-  ghcr.io/deepanwa/samosa serve
+docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=8g samosa serve
 ```
 
-### 4. Chat in your Browser
-Once the server is running, open the web app in your browser on the host machine:
+**Publish it as `-p 127.0.0.1:8642:8642`, not `-p 8642:8642`.** The second form
+binds your machine's `0.0.0.0` and exposes the model server to your whole
+network.
+
+### 5. Chat in your browser
 * http://127.0.0.1:8642
+
+Check the install at any time with `docker exec samosa samosa doctor`.
+
+### Known limitation on x86 machines
+
+Today the image compiles without `-march`, so on x86 CPUs the vectorised (AVX2)
+kernels are not compiled in and the engine falls back to a scalar path measured
+**7.6x slower** than the vectorised one. It is correct, just slow. The fix
+(runtime CPU dispatch) is tracked as **G10 / H2** in
+[docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md). Expect a working chat, not the
+speeds quoted for the reference Mac.
 
 
 ## Chat in your terminal
@@ -190,7 +252,7 @@ The rest of the options:
 ```sh
 samosa --think "solve this logic puzzle"                # general reasoning
 samosa --think-code "build a responsive settings page"  # precise coding profile
-samosa --fast "summarize this design"                   # all cores, runs warmer
+samosa --fast "summarize this design"                   # adaptive threads, runs warmer
 samosa --seed 11 "give me a deterministic sample"       # reproducible sampling
 samosa --max-tokens 2048 "write a long explanation"     # change the ceiling
 samosa --thinking-budget 512 "..."                      # cap internal reasoning
@@ -199,13 +261,15 @@ samosa doctor                                           # check the installation
 
 An answer can run up to 8,192 new tokens. That is an outer ceiling, not a target
 — the model usually stops earlier on its own when it emits its end-of-turn
-token. Two threads is the default so the Mac stays cool; `--fast` uses all
-performance cores and runs warmer.
+token. Two threads is the default so the Mac stays cool; `--fast` enables
+adaptive thermal thread scaling — it uses more cores when the machine
+has thermal headroom, and backs off when it gets hot.
 
 By default the model answers directly. `--think` and `--think-code` turn on
-reasoning, which is slower and reads a lot more from your SSD — see
-[SSD wear](#ssd-wear-the-one-thing-to-be-deliberate-about) before using them
-heavily.
+reasoning, which is slower and consumes more battery/power because it does
+many more SSD read passes. Use direct mode unless you need deep thinking
+to get results faster and keep the machine cooler. See
+[SSD speed](#ssd-speed-the-one-thing-to-be-deliberate-about) for details.
 
 A conversation is capped at 24,576 tokens total (saved history + your new
 message + the answer ceiling). Samosa checks this before it runs and stops
@@ -285,7 +349,7 @@ Every decision follows these three goals, in this order:
    conversations. Not a demo that only loads.
 3. **It must not wear out the machine.** Keep memory bounded so the system does
    not swap heavily. Use two threads by default so the Mac stays cool. Be
-   careful with the SSD reads that cause the real wear (explained below).
+   deliberate with the heavy SSD read passes that drain battery/power and generate heat (explained below).
 
 A feature is only called "released" once it meets all three. Until then it
 stays in this repository as source.
@@ -461,37 +525,53 @@ swapping now. The signal to trust is green memory pressure.
 Each saved turn writes a 63–70 MB sealed file to disk. The model files
 themselves are read-only.
 
-## SSD wear: the one thing to be deliberate about
+## SSD speed: the one thing to be deliberate about
 
-This is the most important part for the health of your machine, so it is stated
-plainly.
+This is the most important part for understanding the performance and resource footprint of your machine, so it is stated plainly.
 
-Samosa keeps memory small by **not** holding all 35B parameters in RAM. Instead
-it reads each token's expert weights from the SSD as the model needs them. The
-longer an answer is, the more expert data it reads. The same popular experts get
-read again and again.
+Samosa keeps its memory footprint small by **not** holding all 35B parameters in RAM. Instead, it reads each token's expert weights from the SSD as the model chooses them. The longer an answer is, the more expert data it reads.
 
-The amount is large. One 933-token thinking answer read **376 GB** of expert
-data from the SSD. For comparison, swap — which people often worry about — is
-tiny here: over the same session the whole system (Samosa, editor, browser, all
-of it) wrote under about 9 GB to swap since the machine booted.
+The amount of data read is large. One 933-token thinking answer read **376 GB** of expert data from the SSD.
 
-So the reads from expert streaming, not swap, are what actually wear the SSD,
-and the amount scales with how long the model thinks.
+### Does this wear out the SSD? No — and the comparison people reach for is backwards
+
+Reading 376 GB sounds alarming, so this section used to say that expert streaming
+is what wears the drive. **That was wrong, and it is corrected here.**
+
+**SSD lifespan is consumed by writes, not reads.** Flash endurance is rated in
+**TBW** (Terabytes *Written*, per the JEDEC JESD218 standard) or **DWPD** (Drive
+*Writes* Per Day). Every published endurance figure is a write figure — no
+manufacturer rates a drive for reads, because program/erase cycles are what wear
+out NAND cells. Reads consume approximately zero drive life.
+
+The honest caveat: *read disturb* is a real physical effect — reading a block
+slightly perturbs neighbouring cells, and the controller refreshes the block after
+a threshold, which is a write. But those thresholds are on the order of tens of
+thousands to millions of reads **of the same block**. 376 GB spread over a 20.9 GB
+file is about 18 reads per byte. It is orders of magnitude away from mattering.
+
+Which inverts the swap comparison this section used to make. Over that same
+session the whole system — Samosa, editor, browser, everything — wrote under about
+9 GB to swap. Those **9 GB of writes consume more drive life than the 376 GB of
+reads do.** The scary number was the wrong number.
+
+*How we know:* from the definition of the endurance rating, not from a measurement
+on the reference machine — Apple Silicon's internal NVMe does not expose SMART
+endurance counters to userspace, so `Data Units Written` / `Percentage Used`
+cannot be read there. On a Linux machine with `smartctl -A /dev/nvme0`, a long
+generation moves `Data Units Read` by hundreds of GB while leaving
+`Data Units Written` and `Percentage Used` essentially unchanged. If you run
+Samosa on such a machine, you can check this yourself.
+
+The genuine resource considerations are:
+- **SSD Speed:** This is the single biggest driver of Samosa's performance. High-speed native NVMe storage (2.3+ GB/s) streams at **5–7 tokens/second**. Slower storage paths (like a Docker virtiofs host bind mount at ~0.5 GB/s) drop this to **~0.9 tokens/second**. SATA SSDs or HDDs are severely bottlenecked or unusable.
+- **Power and Heat:** Streaming hundreds of gigabytes per generation keeps the CPU and storage controller active, which drains battery and generates heat.
+- **Page Cache Eviction:** Heavy read operations evict other files from the OS page cache, which can temporarily slow down other active applications.
 
 What this means for you:
-
-- **Longer thinking costs disk reads, not just time.** A short factual answer
-  reads little. A long chain of thought reads a lot. Use direct mode
-  (`thinking: off` in the app, `--direct` on the command line) when you do not
-  need step-by-step reasoning.
-- Two threads is the default so the Mac stays cool. `--fast` (4 threads) is
-  something you choose on purpose.
-- Real-model test runs are kept short on purpose, because one long thinking run
-  can read hundreds of gigabytes.
-- SSD speed and lifespan genuinely matter here. This is the basic trade-off of
-  running a 35B model in 16 GB of RAM. It is not a bug. It is the one resource
-  worth spending on purpose.
+- **SSD speed matters enormously.** Run Samosa on a fast internal NVMe drive (or a native Docker volume), never on a slow host shared mount or external SATA SSD.
+- **Use direct mode for efficiency.** A short factual answer reads very little. A long reasoning turn reads a lot. Use direct mode (`thinking: off` in the app, `--direct` on the command line) when you do not need step-by-step reasoning to conserve battery and keep the machine cool.
+- **The default is 2 threads** so the machine stays cool. `--fast` turns on adaptive thermal thread control to scale up performance safely when thermal headroom allows.
 
 ## Example output from the group-32 model
 
@@ -642,8 +722,9 @@ the regression test for it is not written yet).
 - **No GPU acceleration.** Part of every answer is limited by SSD read speed.
 - **Quality evidence is thin.** Group-32 is proven on one reference machine and
   one reasoning control, not across many machines or task types.
-- **SSD wear is real.** Expert weights are streamed and reread many times during
-  long answers. See [SSD wear](#ssd-wear-the-one-thing-to-be-deliberate-about).
+- **SSD speed is the bottleneck.** Expert weights are streamed from the SSD on
+  every token. Performance scales directly with storage bandwidth.
+  See [SSD speed](#ssd-speed-the-one-thing-to-be-deliberate-about).
 - Deleting a chat in the app removes it from the browser but does not yet delete
   its saved file on disk.
 

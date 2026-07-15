@@ -37,10 +37,20 @@ COPY assets/samosa-chat.png /release/samosa-chat.png
 RUN ln -s /model /release/model \
     && ln -s /model/tokenizer_qwen36.json /release/tokenizer_qwen36.json
 
+# Where `samosa pull` fetches the 24 GB model from.
+#
+# dist/samosa ships the literal token REPO_ID_PLACEHOLDER as its default; that
+# token is only substituted by tools/package_hf.py at Hugging Face packaging
+# time, and this image COPYs dist/samosa directly. Without this, `samosa pull`
+# resolves to .../REPO_ID_PLACEHOLDER/... and 404s on the very first command.
+# Overridable at build time: --build-arg SAMOSA_REPO_ID=owner/repo
+ARG SAMOSA_REPO_ID=deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32
+
 # Environment variables
 ENV SAMOSA_RELEASE_DIR=/release \
     SAMOSA_HOME=/samosa_home \
     SAMOSA_BIND=0.0.0.0 \
+    SAMOSA_BASE_URL=https://huggingface.co/${SAMOSA_REPO_ID}/resolve/main \
     PATH=/release/bin:$PATH
 
 WORKDIR /release

@@ -212,8 +212,9 @@ component to about 960 MiB. The allocator may retain its high-water mark, but
 chat history cannot grow KV memory beyond the cap.
 
 Long thinking is expensive: one 933-token group-32 control reread 376.77 GB of
-expert data. More output tokens can be useful, but they increase time and SSD
-traffic even when RAM and thermal pressure remain bounded.
+expert data. More output tokens can be useful, but they increase time, power
+draw, and heat even when RAM stays bounded. SSD reads do not consume drive
+endurance (TBW is write-only); the genuine cost is speed and energy.
 
 ## Privacy and storage
 
@@ -240,8 +241,17 @@ traffic even when RAM and thermal pressure remain bounded.
   work.
 - Text only: the Qwen vision tower, image/audio/video input, and tool calling
   are not included.
-- SSD speed and endurance matter for long generations because routed experts
-  are streamed and may be reread many times.
+- SSD speed is the primary performance bottleneck. Routed experts are streamed
+  from storage on every token; NVMe bandwidth directly determines tok/s. Measured:
+  2.3+ GB/s (native NVMe) gives 5-7 tok/s; ~0.5 GB/s (a Docker host bind mount
+  through virtiofs) gives ~0.9 tok/s.
+- SSD reads do **not** consume drive endurance. Flash endurance is rated in TBW
+  (Terabytes *Written*, JEDEC JESD218) and DWPD (Drive *Writes* Per Day); program/
+  erase cycles wear NAND, reads do not. Read disturb is real but its thresholds
+  are orders of magnitude beyond this workload. Stated from the endurance rating
+  definition, not from a SMART measurement on the reference machine — Apple
+  Silicon's internal NVMe does not expose endurance counters. The genuine costs of
+  streaming are speed, power, and heat.
 
 Source and detailed evidence:
 [github.com/deepanwadhwa/samosa-chat](https://github.com/deepanwadhwa/samosa-chat)
