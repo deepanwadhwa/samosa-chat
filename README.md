@@ -128,10 +128,45 @@ not need a dedicated GPU.
 The model is text only. Qwen3.6 can also read images, but Samosa's converted
 model leaves the image part out.
 
-**Where it runs.** macOS on Apple Silicon (`arm64`) only. It has been tested on
-one 16 GB M3 MacBook Air. "Runs on the CPU" does **not** mean it runs on any
-16 GB laptop. The installer refuses other systems. Linux and Windows are not
-supported.
+**Where it runs.** macOS on Apple Silicon (`arm64`) natively, or Windows and Linux via Docker Desktop (which runs a Linux VM). It has been tested natively on one 16 GB M3 MacBook Air. "Runs on the CPU" does **not** mean it runs on any 16 GB laptop. The native installer refuses other systems, but the Docker image can package the POSIX server for any platform.
+
+## Docker (Linux & Windows)
+
+For Windows and Linux, Samosa Chat runs inside a Docker container (on Windows, this runs via Docker Desktop using a Linux VM).
+
+### Prerequisites
+1. **Docker Desktop** (or Podman / Rancher Desktop).
+2. **Docker VM Memory Configuration**: You **MUST** increase the Docker Desktop VM's allocated RAM to **at least 6 GB** (8 GB recommended). The default ~2 GB memory limit is too small to load the model.
+   * *Windows (WSL2 backend)*: If Docker Desktop uses the default WSL2 allocation, ensure your `%USERPROFILE%\.wslconfig` has at least `memory=8GB` configured.
+3. **Storage**: At least 30 GB of free space inside the Docker virtual disk.
+
+### 1. Create a Named Docker Volume
+To get native SSD performance, the 24 GB model must live inside a named Docker volume (which lives inside the VM's ext4 virtual disk). **Never use a host bind mount (e.g. mounting from `C:\Users\...` or `/home/...`), as the file sharing layer (virtiofs/9p) will slow inference down by 10x.**
+
+```sh
+docker volume create samosa-model
+```
+
+### 2. Pull the Model Weights
+Run the pull command to download the 24 GB Qwen-35B quantized weights directly into the persistent volume:
+```sh
+docker run --rm -v samosa-model:/model ghcr.io/deepanwa/samosa pull
+```
+
+### 3. Start the Server
+Start Samosa in serve mode. Samosa's API loopback binding is protected inside the container's network namespace, so you publish the port to the host's localhost only:
+```sh
+docker run -d --name samosa \
+  -p 127.0.0.1:8642:8642 \
+  -v samosa-model:/model \
+  --memory=8g \
+  ghcr.io/deepanwa/samosa serve
+```
+
+### 4. Chat in your Browser
+Once the server is running, open the web app in your browser on the host machine:
+* http://127.0.0.1:8642
+
 
 ## Chat in your terminal
 
