@@ -12,10 +12,17 @@ issues, and the order to do them in.
 | [#3](https://github.com/deepanwadhwa/samosa-chat/issues/3) | Add vision capabilities | [TASKS_VISION.md](TASKS_VISION.md) | Forward pass only — weights already ship |
 | [#4](https://github.com/deepanwadhwa/samosa-chat/issues/4) | Add internet search | [TASKS_INTERNET.md](TASKS_INTERNET.md) | Extends [APP_TASKS.md](APP_TASKS.md) Phase A3 |
 | [#5](https://github.com/deepanwadhwa/samosa-chat/issues/5) | Add document intelligence | [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md) | Extends [APP_TASKS.md](APP_TASKS.md) Phase A2 |
+| — | **Hardware: best from the user's machine, honestly** | [TASKS_HARDWARE.md](TASKS_HARDWARE.md) | Cross-cutting (#1 + #2 + macOS). Not a GitHub issue |
 
 Issues #4 and #5 already have plans in [APP_TASKS.md](APP_TASKS.md) (Phases A3
 and A2). Those specs **extend and correct** that plan rather than replace it;
 read the phase in `APP_TASKS.md` first, then the spec.
+
+[TASKS_HARDWARE.md](TASKS_HARDWARE.md) answers "how does a user get the best out
+of their hardware without killing it" (asked 2026-07-15). It holds **H2 — runtime
+SIMD dispatch, the single biggest performance win in the program (7.6× measured,
+and it makes the machine cooler, not hotter)** — plus the correction of a
+published claim: **reads do not wear SSDs; writes do.**
 
 ## How to read these specs
 

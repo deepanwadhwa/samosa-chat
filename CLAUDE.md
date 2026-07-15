@@ -16,6 +16,7 @@ themselves are one-line titles; the specs are where the work is defined.
 | #3 Vision | [docs/TASKS_VISION.md](docs/TASKS_VISION.md) | `issue-3-vision` |
 | #4 Internet | [docs/TASKS_INTERNET.md](docs/TASKS_INTERNET.md) | `issue-4-internet` |
 | #5 Documents | [docs/TASKS_DOCUMENTS.md](docs/TASKS_DOCUMENTS.md) | `issue-5-documents` |
+| — Hardware/perf | [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) | cross-cutting |
 
 App-level plan: [docs/APP_TASKS.md](docs/APP_TASKS.md) (phases A2/A3 are
 superseded in part — see ISSUE_TASKS.md). Serve API: [docs/SERVE_API.md](docs/SERVE_API.md).
@@ -31,6 +32,25 @@ cache to relieve pressure that did not exist (2% hit rate, 1803 evictions). Live
 inside G2, the port's highest-risk change. Evidence:
 [docs/regressions/linux/real-model-run.md](docs/regressions/linux/real-model-run.md);
 spec: [docs/TASKS_LINUX.md](docs/TASKS_LINUX.md) **G9**.
+
+**G10 (OPEN)** — the AVX2/AVX512 kernels are **dead code in every shipped
+x86 build**. `install.sh` and the `Dockerfile` compile with `-O3` and no
+`-march`, so `__AVX2__` is undefined and [kernels.h](src/kernels.h)'s scalar
+remainder does 100% of the work. Measured **7.6× slower** (17.09 → 2.26 GFLOP/s).
+`-march=native` is *not* the fix — one image serves many CPUs — so runtime
+`cpuid` dispatch is required. **Cannot be validated on the reference Mac**: an
+amd64 container there has no AVX2/AVX512/SSE4.2. Needs real x86 hardware.
+Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H2**; evidence:
+[docs/regressions/linux/x86-dispatch.md](docs/regressions/linux/x86-dispatch.md).
+
+**Published-claim defect (OPEN)** — [README.md](README.md) and
+[dist/MODEL_CARD.md](dist/MODEL_CARD.md) state that expert-streaming *reads* wear
+the SSD. **They do not** — NAND endurance is consumed by writes (TBW/DWPD are
+write ratings). The README also calls 9 GB of swap *writes* "tiny" beside 376 GB
+of reads; those writes cause more wear than the reads do. It currently tells
+users to avoid thinking mode to protect hardware, on a false premise.
+Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H1** (owner decision —
+touches a published README and model card).
 
 **Resolved 2026-07-15:**
 

@@ -243,6 +243,47 @@ it on its 10 s cooldown indefinitely and continuously dump the expert cache.
 ratio and is closest in spirit to the macOS signal. PSI is already E-L3's leading
 candidate. **G9 must be fixed before E-L2's plateau result means anything.**
 
+### G10 — the AVX2/AVX512 kernels are dead code in every x86 build  **VERIFIED DEFECT, open**
+
+**Full evidence: [../regressions/linux/x86-dispatch.md](regressions/linux/x86-dispatch.md).
+Fix spec: [TASKS_HARDWARE.md](TASKS_HARDWARE.md) H2.** Open — no fix applied.
+
+`install.sh` and the `Dockerfile` compile with `-O3` and **no `-march`**. Verified:
+`gcc -O3` on x86-64 does **not** define `__AVX2__`. [kernels.h:66-78](../src/kernels.h#L66-L78)
+dispatches at compile time and has **no `#else`**, so on x86 neither the AVX2 nor
+the NEON branch exists, `i` stays 0, and the scalar remainder loop does **100% of
+the work**.
+
+**Measured cost — 7.6×** (`matmul_q`, I=2048 O=2048 S=1, arm64, scalar forced via
+`-U__ARM_NEON`):
+
+| Path | ms/call | GFLOP/s |
+|---|---|---|
+| NEON | 0.49 | **17.09** |
+| SCALAR | 3.70 | **2.26** |
+
+Checksums matched to five decimals — the scalar path is numerically fine, just
+slow. NEON-vs-scalar is a **proxy** for AVX2-vs-scalar; AVX2 is 256-bit against
+NEON's 128-bit, so the real x86 gap is plausibly larger.
+
+**This corrects this document's own framing.** The "restoration, not a port"
+argument above leans partly on "`kernels.h` already carries `__AVX2__` and
+`__AVX512VNNI__` paths for every hot kernel". The code is there; **the shipped
+configuration never reaches it.** Inherited kernels that never compile provide no
+coverage and no confidence. The x86 hot path is not "already written" — it is
+unreachable.
+
+**`-march=native` is not the fix.** The Docker image ([#2](TASKS_WINDOWS.md)) is
+built once for many CPUs, so `native` would `SIGILL` on older user hardware. And
+Docker is the entire Windows/Linux delivery path. Runtime `cpuid` dispatch is
+required — see [TASKS_HARDWARE.md](TASKS_HARDWARE.md) H2.
+
+**Ordering trap.** Today x86 is slow-but-scalar and probably correct. Fixing G10
+**activates AVX2/VNNI kernels that have never produced a token anywhere**, which
+makes **E-L1 mandatory rather than optional**. And E-L1 cannot run on the
+reference Mac: an amd64 container there reports no AVX2, no AVX512-VNNI, not even
+SSE4.2. **G10 needs real x86 hardware to close.**
+
 ### G7 — CI is macOS-only
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) is `runs-on:

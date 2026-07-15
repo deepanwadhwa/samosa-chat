@@ -166,15 +166,15 @@ But **no Dockerfile exists on any branch** (verified by `find` and `git log
 --diff-filter=A`), the model was bind-mounted from a developer's Mac, there is no
 `pull` path, no image, and no docs. **A user cannot do any of this today.** Full
 evidence and the required user flow:
-[../regressions/linux/docker-product-path.md](../regressions/linux/docker-product-path.md).
+[regressions/linux/docker-product-path.md](regressions/linux/docker-product-path.md).
 
 Two things that run confirmed:
 
 - **Model placement is not a detail.** Bind-mounted through virtiofs the model
   decoded at **0.96 tok/s** vs ~5–7 native. Named volume, not bind mount (D3).
-- **The UI says "Your model. Your Mac."** ([assets/app.html:361](../../assets/app.html#L361))
+- **The UI says "Your model. Your Mac."** ([assets/app.html:361](../assets/app.html#L361))
   to a Linux/Windows user — a false claim in the product. It is coupled:
-  [install.sh:157](../../dist/install.sh#L157) smoke-tests by grepping that exact
+  [install.sh:157](../dist/install.sh#L157) smoke-tests by grepping that exact
   string. Fix both together.
 
 
