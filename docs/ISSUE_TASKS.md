@@ -12,7 +12,8 @@ issues, and the order to do them in.
 | [#3](https://github.com/deepanwadhwa/samosa-chat/issues/3) | Add vision capabilities | [TASKS_VISION.md](TASKS_VISION.md) | Forward pass only — weights already ship |
 | [#4](https://github.com/deepanwadhwa/samosa-chat/issues/4) | Add internet search | [TASKS_INTERNET.md](TASKS_INTERNET.md) | Extends [APP_TASKS.md](APP_TASKS.md) Phase A3 |
 | [#5](https://github.com/deepanwadhwa/samosa-chat/issues/5) | Add document intelligence | [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md) | Extends [APP_TASKS.md](APP_TASKS.md) Phase A2 |
-| — | **Hardware: best from the user's machine, honestly** | [TASKS_HARDWARE.md](TASKS_HARDWARE.md) | Cross-cutting (#1 + #2 + macOS). Not a GitHub issue |
+| [#6](https://github.com/deepanwadhwa/samosa-chat/issues/6) | Add thermal management/control | [TASKS_HARDWARE.md](TASKS_HARDWARE.md) **H3** | **Implemented 2026-07-15** — E-H3 tuning still unrun |
+| — | **Hardware: best from the user's machine, honestly** | [TASKS_HARDWARE.md](TASKS_HARDWARE.md) | Cross-cutting (#1 + #2 + macOS). H1/H3/H4 done; **H2 is the big one** |
 
 Issues #4 and #5 already have plans in [APP_TASKS.md](APP_TASKS.md) (Phases A3
 and A2). Those specs **extend and correct** that plan rather than replace it;

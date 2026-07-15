@@ -208,7 +208,21 @@ which "does it compile on Ubuntu" will find:
   differ under busybox.
 - **libc** — glibc vs musl (G3, E-L5).
 
-### G9 — cgroup pressure signal counts page cache and over-triggers  **VERIFIED DEFECT, open**
+### G9 — cgroup pressure signal counted page cache and over-triggered  **FIXED 2026-07-15**
+
+**Fixed.** `read_cgroup_stat("file")` ([qwen36b.c:1883](../src/qwen36b.c#L1883))
+now reads reclaimable page cache from `/sys/fs/cgroup/memory.stat`, and both
+`cgroup_mem_available_gb()` and `linux_memory_pressure_level()` subtract it from
+`memory.current` before computing the ratio. Pressure is therefore measured on
+anonymous memory — matching what the macOS signal already accounted for.
+
+Confirmed on real-model runs in a container: `pressure_warn=0
+pressure_critical=0` while the engine streamed 19.34 GB of experts through the
+page cache, where the pre-fix build tripped `pressure_critical=1` during a
+*2-token* generation. **Still unverified: sustained behaviour under a long
+generation on real x86** — G9's own regime, never exercised on real hardware.
+
+The original defect, kept as the record of why the code looks the way it does:
 
 **Full evidence: [../regressions/linux/real-model-run.md](regressions/linux/real-model-run.md).**
 Found on the first real-model run on Linux (2026-07-15). Lives inside G2 — the
