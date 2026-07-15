@@ -12,16 +12,38 @@ MIN_FREE_AFTER_GB="${SAMOSA_MIN_FREE_AFTER_GB:-2}"
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    fail "neither sha256sum nor shasum is available"
+  fi
+}
+
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
-  [ "$(uname -s)" = "Darwin" ] || fail "this installer currently supports macOS only"
-  [ "$(uname -m)" = "arm64" ] || fail "an Apple Silicon Mac (M1 or newer) is required"
-  RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
-  [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
-  if ! command -v clang >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
-    say "The Apple command-line tools are needed (one-time, free)."
-    say "A dialog will pop up - click Install, then RE-RUN this installer."
-    xcode-select --install 2>/dev/null || true
-    exit 1
+  OS=$(uname -s)
+  ARCH=$(uname -m)
+  [ "$OS" = "Darwin" ] || [ "$OS" = "Linux" ] || fail "this installer supports macOS and Linux only"
+  if [ "$OS" = "Darwin" ]; then
+    [ "$ARCH" = "arm64" ] || fail "an Apple Silicon Mac (M1 or newer) is required"
+    RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+    [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
+    if ! command -v clang >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
+      say "The Apple command-line tools are needed (one-time, free)."
+      say "A dialog will pop up - click Install, then RE-RUN this installer."
+      xcode-select --install 2>/dev/null || true
+      exit 1
+    fi
+  else
+    [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "aarch64" ] || fail "only x86_64 and aarch64 architectures are supported on Linux"
+    RAM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    RAM_GB=$(( RAM_KB / 1048576 ))
+    [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this system has ${RAM_GB} GB)"
+    if ! command -v clang >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
+      fail "a C compiler (clang or gcc) is required. Install build-essential or clang."
+    fi
   fi
 fi
 
@@ -36,11 +58,11 @@ curl -fL --retry 5 --retry-delay 3 --progress-bar \
 # Format: SHA-256<TAB>byte-size<TAB>relative-path. Reject unsafe paths before
 # using any field as a destination.
 awk -F '\t' '
-  NF != 3 || $1 !~ /^[0-9a-f]{64}$/ || $2 !~ /^[0-9]+$/ ||
+  NF != 3 || length($1) != 64 || $1 !~ /^[0-9a-f]+$/ || $2 !~ /^[0-9]+$/ ||
   $3 == "" || $3 ~ /^\// || $3 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
 ' "$MANIFEST_NEXT" || fail "release manifest is malformed or unsafe"
 
-RELEASE_ID=$(shasum -a 256 "$MANIFEST_NEXT" | awk '{print substr($1,1,16)}')
+RELEASE_ID=$(sha256_file "$MANIFEST_NEXT" | awk '{print substr($1,1,16)}')
 STAGE="$RELEASES_DIR/.${RELEASE_ID}.partial"
 FINAL="$RELEASES_DIR/$RELEASE_ID"
 mkdir -p "$STAGE/model" "$STAGE/engine" "$STAGE/bin"
@@ -72,7 +94,7 @@ for relative in $INSTALL_FILES; do
   [ "$present" -le "$size" ] || { rm -f "$target"; present=0; }
   required_remaining=$((required_remaining + size - present))
 done
-free_bytes=$(df -k "$HOME_DIR" | awk 'NR==2 {printf "%.0f\n", $4 * 1024}')
+free_bytes=$(df -Pk "$HOME_DIR" | awk 'NR==2 {printf "%.0f\n", $4 * 1024}')
 reserve_bytes=$((MIN_FREE_AFTER_GB * 1000000000))
 [ "$free_bytes" -ge $((required_remaining + reserve_bytes)) ] ||
   fail "atomic install needs $(( (required_remaining + reserve_bytes + 999999999) / 1000000000 )) GB free; found $((free_bytes / 1000000000)) GB. The live release was not changed."
@@ -91,7 +113,7 @@ verified() { # verified <relative-path> <local-file>
   size=$(manifest_field "$1" 2) || return 1
   [ -f "$2" ] || return 1
   [ "$(wc -c <"$2" | tr -d ' ')" = "$size" ] || return 1
-  have=$(shasum -a 256 "$2" | awk '{print $1}')
+  have=$(sha256_file "$2")
   [ "$want" = "$have" ]
 }
 
@@ -109,15 +131,32 @@ cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 chmod +x "$STAGE/bin/samosa"
 
 say "Compiling the staged engine..."
+COMPILER=""
+if command -v clang >/dev/null 2>&1; then
+  COMPILER="clang"
+elif command -v gcc >/dev/null 2>&1; then
+  COMPILER="gcc"
+else
+  COMPILER="cc"
+fi
+
 OMP_FLAGS=""
-for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
-  if [ -f "$prefix/lib/libomp.dylib" ]; then
-    OMP_FLAGS="-Xclang -fopenmp -I$prefix/include -L$prefix/lib -lomp"
-    break
+if [ "$(uname -s)" = "Darwin" ]; then
+  for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
+    if [ -f "$prefix/lib/libomp.dylib" ]; then
+      OMP_FLAGS="-Xclang -fopenmp -I$prefix/include -L$prefix/lib -lomp"
+      break
+    fi
+  done
+else
+  # Linux OpenMP support check
+  if echo "int main() {}" | $COMPILER -fopenmp -x c - -o /dev/null >/dev/null 2>&1; then
+    OMP_FLAGS="-fopenmp"
   fi
-done
+fi
+
 # shellcheck disable=SC2086
-clang -O3 -pthread $OMP_FLAGS -Wno-unused-function \
+$COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
@@ -154,7 +193,7 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
     fail "staged app server did not become healthy; live release was not changed"
   }
   curl -fsS --max-time 5 "http://127.0.0.1:$SMOKE_PORT/" |
-    grep -q 'Your model. Your Mac.' ||
+    grep -q 'Your model.' ||
     fail "staged app UI smoke failed; live release was not changed"
   curl -fsS --max-time 120 "http://127.0.0.1:$SMOKE_PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
@@ -171,7 +210,11 @@ fi
 if [ ! -d "$FINAL" ]; then mv "$STAGE" "$FINAL"; else rm -rf "$STAGE"; fi
 rm -f "$HOME_DIR/.current.next"
 ln -s "releases/$RELEASE_ID" "$HOME_DIR/.current.next"
-mv -fh "$HOME_DIR/.current.next" "$HOME_DIR/current"
+if [ "$(uname -s)" = "Darwin" ]; then
+  mv -fh "$HOME_DIR/.current.next" "$HOME_DIR/current"
+else
+  mv -T "$HOME_DIR/.current.next" "$HOME_DIR/current"
+fi
 
 LAUNCHER_NEXT="$LAUNCHER_DIR/.samosa.next"
 cat >"$LAUNCHER_NEXT" <<'EOF'

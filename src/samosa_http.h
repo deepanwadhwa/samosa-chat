@@ -208,7 +208,18 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
     int listener=socket(AF_INET,SOCK_STREAM,0); if(listener<0)return 0;
     int one=1; setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
     struct sockaddr_in address={0}; address.sin_family=AF_INET;
-    address.sin_port=htons((uint16_t)port); address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+    address.sin_port=htons((uint16_t)port);
+    const char *host_env = getenv("SAMOSA_HOST");
+    if (host_env && *host_env) {
+        unsigned long addr = inet_addr(host_env);
+        if (addr != INADDR_NONE) {
+            address.sin_addr.s_addr = addr;
+        } else {
+            address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        }
+    } else {
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    }
     if(bind(listener,(struct sockaddr *)&address,sizeof(address)) || listen(listener,16)) {
         close(listener); return 0;
     }

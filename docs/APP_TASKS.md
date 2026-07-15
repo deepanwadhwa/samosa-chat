@@ -6,6 +6,13 @@ points at, and can reach the internet. This document is the working plan;
 every task carries acceptance criteria that are measured, not assumed, in the
 tradition of the engine's own task program.
 
+> **Phases A2 and A3 are extended and corrected by the issue task program**
+> (2026-07-15). Read [ISSUE_TASKS.md](ISSUE_TASKS.md) before starting either.
+> A2 (documents) → [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md): A2.1's
+> `textutil`/PDFKit design is macOS-only and has been replaced.
+> A3 (internet) → [TASKS_INTERNET.md](TASKS_INTERNET.md): A3.3 is blocked on an
+> unscoped API change, and A3.1's SSRF list has a correctness bug.
+
 **Ground truth this plan builds on (measured, 2026-07-13):**
 
 - Engine: `qwen36b` — one-shot CLI chat, streaming, EOS-bounded output,

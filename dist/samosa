@@ -38,7 +38,11 @@ PORT="${SAMOSA_PORT:-8642}"
 PID_FILE="$HOME_DIR/server.pid"
 SERVER_LOG="$HOME_DIR/server.log"
 CURL="${SAMOSA_CURL:-curl}"
-OPEN="${SAMOSA_OPEN:-open}"
+if [ "$(uname -s)" = "Darwin" ]; then
+  OPEN="${SAMOSA_OPEN:-open}"
+else
+  OPEN="${SAMOSA_OPEN:-xdg-open}"
+fi
 
 PROFILE="direct"
 TOKENS=""
@@ -136,7 +140,13 @@ doctor() {
   [ ! -d "$HOME_DIR/model" ] || [ "$RELEASE_DIR" = "$HOME_DIR" ] ||
     echo "legacy:    ~/.samosa/model retained from the pre-versioned installer"
   [ -f "$SESSION" ] && echo "session:   $(du -h "$SESSION" | awk '{print $1}') (samosa --continue works)" || echo "session:   none yet"
-  echo "ram:       $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+  else
+    RAM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    RAM_GB=$(( RAM_KB / 1048576 ))
+  fi
+  echo "ram:       $RAM_GB GB"
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
 
@@ -166,7 +176,40 @@ while [ $# -gt 0 ]; do
     --continue) [ -f "$SESSION" ] && RESUME=1 || echo "(no previous conversation - starting fresh)" ;;
     --think)    PROFILE="think" ;;
     --think-code) PROFILE="think-code" ;;
-    --fast)     OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu); export OMP_NUM_THREADS ;;
+    --fast)
+      if [ "$(uname -s)" = "Darwin" ]; then
+        OMP_NUM_THREADS=$(sysctl -n hw.perflevel0.physicalcpu)
+      else
+        if [ -f /sys/devices/cpu_core/cpus ]; then
+          pcore_range=$(cat /sys/devices/cpu_core/cpus)
+          count=0
+          IFS=','
+          for part in $pcore_range; do
+            case "$part" in
+              *-*)
+                start=${part%-*}
+                end=${part#*-}
+                count=$((count + end - start + 1))
+                ;;
+              *)
+                count=$((count + 1))
+                ;;
+            esac
+          done
+          OMP_NUM_THREADS=$((count / 2))
+          [ "$OMP_NUM_THREADS" -gt 0 ] || OMP_NUM_THREADS=1
+        else
+          if command -v nproc >/dev/null 2>&1; then
+            logical=$(nproc)
+          else
+            logical=$(grep -c ^processor /proc/cpuinfo || echo 2)
+          fi
+          OMP_NUM_THREADS=$((logical / 2))
+          [ "$OMP_NUM_THREADS" -gt 0 ] || OMP_NUM_THREADS=1
+        fi
+      fi
+      export OMP_NUM_THREADS
+      ;;
     --seed)
       shift
       [ $# -gt 0 ] && positive_integer "$1" || { echo "--seed requires a positive integer" >&2; exit 1; }

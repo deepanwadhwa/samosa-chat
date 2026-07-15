@@ -8,25 +8,31 @@ on:
 
 jobs:
   build-and-test:
-    # macOS 14+ runners are Apple Silicon, matching the only supported target.
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Confirm the runner is Apple Silicon
+      - name: Confirm the runner architecture
         run: |
-          uname -m
-          test "$(uname -m)" = "arm64" || { echo "expected an arm64 runner"; exit 1; }
+          uname -a
 
-      - name: Install libomp (needed by the multithreaded build)
-        run: brew install libomp
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          python3 -m pip install --break-system-packages numpy || true
 
-      # Optional: without NumPy the converter quantization tests skip cleanly,
-      # so a failure here must not fail the build.
-      - name: Install NumPy (so the converter tests run instead of skipping)
-        continue-on-error: true
-        run: python3 -m pip install --break-system-packages numpy
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libomp-dev gcc clang
+          python3 -m pip install numpy || true
 
       - name: Build (portable)
         run: make
@@ -39,3 +45,11 @@ jobs:
       # runner with no download.
       - name: Test
         run: make test
+
+      - name: Test inside Debian bookworm container (Debian validation)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace debian:bookworm-slim sh -c "
+            apt-get update && apt-get install -y make gcc libomp-dev curl python3 &&
+            make test
+          "

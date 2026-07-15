@@ -14,7 +14,7 @@ omp: src/qwen36b.c src/expert_cache.c $(ENGINE_HEADERS)
 
 test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_converter_quant.py
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o test_expert_cache && ./test_expert_cache
-	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o test_kv_cache && ./test_kv_cache
+	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o test_kv_cache -lm && ./test_kv_cache
 	$(CC) -O1 -Isrc tests/test_repetition_guard.c -o test_repetition_guard && ./test_repetition_guard
 	$(CC) -O1 -Isrc tests/test_thinking_budget.c -o test_thinking_budget && ./test_thinking_budget
 	$(CC) -O1 -Isrc tests/test_groupwise_q4.c -o test_groupwise_q4 -lm && ./test_groupwise_q4

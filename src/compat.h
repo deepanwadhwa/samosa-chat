@@ -5,11 +5,11 @@
 #ifndef COMPAT_H
 #define COMPAT_H
 
-#ifdef __APPLE__
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
 
+#ifdef __APPLE__
 /* --- posix_fadvise: assente su macOS ---
  * WILLNEED -> F_RDADVISE (readahead esplicito: stessa semantica).
  * DONTNEED -> no-op: XNU non espone un drop mirato per-range; la sua unified
@@ -44,6 +44,15 @@ static inline int compat_open_direct(const char *path){
     int fd = open(path, O_RDONLY);
     if(fd>=0) fcntl(fd, F_NOCACHE, 1);
     return fd;
+}
+#else
+/* On Linux, compat_open_direct uses O_DIRECT when available */
+static inline int compat_open_direct(const char *path){
+#ifdef O_DIRECT
+    return open(path, O_RDONLY | O_DIRECT);
+#else
+    return open(path, O_RDONLY);
+#endif
 }
 #endif /* __APPLE__ */
 
