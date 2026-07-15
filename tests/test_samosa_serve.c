@@ -89,7 +89,7 @@ int main(void){
     char *models=request(server.port,"GET /v1/models HTTP/1.1\r\nHost: localhost\r\n\r\n");
     assert(strstr(models,"qwen3.6-35b-a3b"));free(models);
     char *root=request(server.port,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    assert(strstr(root,"Your model. Your Mac."));
+    assert(strstr(root,"Your model. Your machine."));
     assert(strstr(root,"/v1/chat/completions"));
     assert(strstr(root,"Content-Security-Policy: default-src 'self'"));free(root);
     char *logo=request(server.port,"GET /assets/samosa-chat.png HTTP/1.1\r\nHost: localhost\r\n\r\n");

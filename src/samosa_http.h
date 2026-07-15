@@ -209,11 +209,18 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
     int one=1; setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
     struct sockaddr_in address={0}; address.sin_family=AF_INET;
     address.sin_port=htons((uint16_t)port);
-    const char *host_env = getenv("SAMOSA_HOST");
-    if (host_env && *host_env) {
-        unsigned long addr = inet_addr(host_env);
+    const char *bind_env = getenv("SAMOSA_BIND");
+    if (!bind_env || !*bind_env) {
+        bind_env = getenv("SAMOSA_HOST");
+    }
+    if (bind_env && *bind_env) {
+        unsigned long addr = inet_addr(bind_env);
         if (addr != INADDR_NONE) {
             address.sin_addr.s_addr = addr;
+            if (addr != htonl(INADDR_LOOPBACK)) {
+                fprintf(stderr, "[serve] custom bind: %s\n", bind_env);
+                fflush(stderr);
+            }
         } else {
             address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         }
