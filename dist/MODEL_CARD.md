@@ -26,8 +26,10 @@ pipeline_tag: text-generation
 > Qwen team. This is an independent, unofficial Apache-2.0 text-only
 > conversion. It is not affiliated with or endorsed by either upstream team.
 >
-> **What Samosa is, beyond those two.** It is not a wrapper around someone
-> else's runtime — see [what Samosa adds](#what-samosa-adds) below.
+> **What Samosa adds:** its own Qwen3.6 engine in C, the group-32 format and
+> its converter, the expert cache that fits 35B parameters into 16 GB, sealed
+> resumable conversations, a local server and app, and an atomic installer.
+> [Details](#what-samosa-adds).
 
 > **This repository hosts the model that powers Samosa Chat.** These are the
 > group-32 model files used by [Samosa Chat](https://github.com/deepanwadhwa/samosa-chat),
@@ -44,8 +46,7 @@ request during inference. The server binds only to `127.0.0.1`.
 
 ## What Samosa adds
 
-Qwen's checkpoint and the colibrì runtime are the starting point, not the
-product. Samosa is a separate inference engine written against them:
+Qwen's checkpoint and the colibrì runtime are the starting point. Samosa adds:
 
 - **A Qwen3.6 engine in C**, covering the 30 Gated DeltaNet layers, the 10
   gated attention layers, the shared/routed MoE path, the tokenizer, and the
