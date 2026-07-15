@@ -1879,6 +1879,25 @@ static void expert_prefetch(Model *m, int layer, int eid, uint8_t refine_mask) {
  * senza swap.  Misurata DOPO il caricamento dei tensori residenti, quindi il
  * residente e' gia' escluso dal disponibile. */
 #ifndef __APPLE__
+static long long read_cgroup_stat(const char *key) {
+    FILE *f = fopen("/sys/fs/cgroup/memory.stat", "r");
+    if (!f) return -1;
+    char line[256];
+    long long val = -1;
+    while (fgets(line, sizeof(line), f)) {
+        char k[64];
+        long long v;
+        if (sscanf(line, "%63s %lld", k, &v) == 2) {
+            if (strcmp(k, key) == 0) {
+                val = v;
+                break;
+            }
+        }
+    }
+    fclose(f);
+    return val;
+}
+
 static double cgroup_mem_available_gb(void) {
     long long limit = -1;
     long long current = -1;
@@ -1888,6 +1907,13 @@ static double cgroup_mem_available_gb(void) {
         fclose(f_curr);
     }
     if (current < 0) return -1.0;
+    
+    // Subtract page cache (file) as it is reclaimable
+    long long file_size = read_cgroup_stat("file");
+    if (file_size > 0 && current > file_size) {
+        current -= file_size;
+    }
+    
     FILE *f_max = fopen("/sys/fs/cgroup/memory.max", "r");
     if (f_max) {
         char buf[64];
@@ -1922,6 +1948,12 @@ static int linux_memory_pressure_level(void) {
         fclose(f_curr);
     }
     if (current > 0) {
+        // Subtract page cache (file) as it is reclaimable
+        long long file_size = read_cgroup_stat("file");
+        if (file_size > 0 && current > file_size) {
+            current -= file_size;
+        }
+        
         FILE *f_max = fopen("/sys/fs/cgroup/memory.max", "r");
         if (f_max) {
             char buf[64];
