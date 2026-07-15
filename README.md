@@ -1,8 +1,8 @@
 <div align="center">
   <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
   <h1>Samosa Chat</h1>
-  <p><strong>Run Qwen3.6-35B-A3B locally on a 16 GB Apple Silicon Mac.</strong></p>
-  <p>In your terminal, or in your browser &nbsp;·&nbsp; Runs on the CPU &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
+  <p><strong>Run Qwen3.6-35B-A3B locally on a 16 GB machine.</strong></p>
+  <p>Fast on Apple Silicon &nbsp;·&nbsp; Slower on Linux &amp; Windows via Docker &nbsp;·&nbsp; Runs on the CPU &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
 
   <p>
     <a href="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml"><img src="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml/badge.svg" alt="CI: build and tests"></a>
@@ -11,6 +11,7 @@
   </p>
   <p>
     <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white" alt="macOS on Apple Silicon">
+    <img src="https://img.shields.io/badge/Linux%20%26%20Windows-via%20Docker-2496ED?logo=docker&logoColor=white" alt="Linux and Windows via Docker">
     <img src="https://img.shields.io/badge/RAM-16%20GB-orange" alt="16 GB RAM">
     <img src="https://img.shields.io/badge/GPU-not%20required-success" alt="No GPU required">
     <img src="https://img.shields.io/badge/engine-C-555555?logo=c&logoColor=white" alt="Written in C">
@@ -45,6 +46,22 @@ loading; after that it writes at about 5–9 tokens per second.
 
 ## Install
 
+**Find your machine in this table and follow that row. The two paths are
+different — do not mix them.**
+
+| Your machine | Install path | Speed |
+|---|---|---|
+| **macOS, Apple Silicon** (M1 or newer) | [one command](#macos-apple-silicon) | 5–7 tok/s |
+| **Windows** | [Docker inside WSL2](#windows) | ~1.3 tok/s |
+| **Linux, x86_64 or arm64** | [Docker](#linux) | ~1–2 tok/s |
+| Intel Mac, or under 16 GB RAM | not supported | — |
+
+Every path downloads the same 24 GB model and needs **~30 GB free disk**.
+See [Where it runs, and how fast](#where-it-runs-and-how-fast) for why x86 is
+slower and what is being done about it.
+
+### macOS (Apple Silicon)
+
 ```sh
 curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/main/install.sh | sh
 ```
@@ -56,11 +73,96 @@ samosa "explain how DNS works"
 ```
 
 You need an Apple Silicon Mac, 16 GB of RAM, Apple's Command Line Tools (for the
-C compiler), and about 30 GB of free disk. The download is about 24 GB. The
-installer resumes interrupted downloads, checks the SHA-256 of every file,
-compiles the C engine on your machine, and smoke-tests it before switching the
-new release live. A corrupt or interrupted upgrade leaves your existing install
-untouched. It does not need administrator rights.
+C compiler), and about 30 GB of free disk. The installer resumes interrupted
+downloads, checks the SHA-256 of every file, compiles the C engine on your
+machine, and smoke-tests it before switching the new release live. A corrupt or
+interrupted upgrade leaves your existing install untouched. It does not need
+administrator rights.
+
+### Windows
+
+Samosa runs as a Linux container. You do **not** need Docker Desktop — Docker
+inside WSL2 is simpler and avoids Docker Desktop's startup problems entirely.
+
+**1. Install Ubuntu on WSL2.** In **PowerShell**:
+
+```
+wsl --install -d Ubuntu
+```
+
+Reboot, then launch **Ubuntu** from the Start menu. Your prompt changes from
+`PS C:\...>` to `you@machine:~$` — **everything below runs there, not in
+PowerShell.**
+
+> If `wsl --install` fails, virtualisation is disabled in your BIOS/UEFI. Reboot
+> into it and enable Intel VT-x / AMD-V ("SVM Mode"). Nothing else will work
+> until you do, and the error messages will not tell you this.
+
+**2. Install Docker inside Ubuntu:**
+
+```sh
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+docker run --rm hello-world
+```
+
+`sudo usermod -aG docker $USER` is the step everyone misses — without it you get
+`permission denied` on the Docker socket. `newgrp docker` applies it to the
+current shell.
+
+**3. Check you have enough memory** — still in Ubuntu:
+
+```sh
+free -g
+```
+
+Total must be **≥6**. WSL2 takes ~50% of your RAM by default, so a 16 GB laptop
+gives ~7–8 and needs nothing further. If it says 2–3, create
+`%USERPROFILE%\.wslconfig` in **Windows** (Notepad):
+
+```ini
+[wsl2]
+memory=8GB
+```
+
+then run `wsl --shutdown` in **PowerShell** and reopen Ubuntu.
+
+**4. Install and run Samosa** — in Ubuntu:
+
+```sh
+git clone https://github.com/deepanwadhwa/samosa-chat
+cd samosa-chat
+docker build -t samosa .
+docker volume create samosa-model
+docker run --rm -v samosa-model:/model samosa pull
+docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=6g samosa serve
+```
+
+The `pull` is 24 GB (~20 min) and **resumes** — if it drops, re-run the same
+line. Set `--memory` about 1 GB below what `free -g` reported.
+
+**5. Open http://127.0.0.1:8642** in your normal Windows browser. WSL2 forwards
+localhost, so it just works.
+
+`sudo service docker start` after a reboot if Docker is not running.
+
+### Linux
+
+Same as Windows from step 2 onward — install Docker, then the six commands. The
+native `curl | sh` installer supports Linux in this repository, but the copy
+published on Hugging Face is still macOS-only, so **use the Docker path** until
+that is republished.
+
+### Both Docker paths: two things that matter
+
+**Use a named volume, never a folder.** `-v samosa-model:/model` — not
+`-v /home/you/models:/model` or a Windows path. The file-sharing layer costs
+about **6x**, measured. `docker exec samosa samosa doctor` warns you if you get
+this wrong.
+
+**Publish as `-p 127.0.0.1:8642:8642`, never `-p 8642:8642`.** The second form
+binds `0.0.0.0` and exposes the model server to your whole network.
 
 ### Where Samosa is installed
 
@@ -128,107 +230,46 @@ not need a dedicated GPU.
 The model is text only. Qwen3.6 can also read images, but Samosa's converted
 model leaves the image part out.
 
-**Where it runs.** macOS on Apple Silicon (`arm64`) natively, or Windows and Linux via Docker Desktop (which runs a Linux VM). It has been tested natively on one 16 GB M3 MacBook Air. "Runs on the CPU" does **not** mean it runs on any 16 GB laptop. The native installer refuses other systems, but the Docker image can package the POSIX server for any platform.
+## Where it runs, and how fast
 
-## Docker (Linux & Windows)
+Every number below was measured, on the machine named next to it. Nothing here
+is extrapolated.
 
-For Windows and Linux, Samosa Chat runs inside a Docker container (on Windows, this runs via Docker Desktop using a Linux VM).
+| Platform | How | Measured decode | Verified on |
+|---|---|---|---|
+| **macOS, Apple Silicon** | native installer | **5–7 tok/s** | one 16 GB M3 MacBook Air (fanless), 2-thread default |
+| **Linux, x86_64** | Docker | *not yet measured* | build + test suite green on Debian 12 and Ubuntu 26.04 |
+| **Windows, x86_64** | Docker (WSL2) | **1.26 tok/s** | one ASUS Zenbook, i7-1260P, 16 GB, Docker CE inside WSL2 |
+| Linux/macOS, arm64 | Docker | ~0.9 tok/s | penalised by a host bind mount; use a named volume |
 
-### Prerequisites
+**macOS is the fast path. Linux and Windows work, and today they are ~4–5x
+slower — for a reason we understand and can fix.**
 
-1. **Docker Desktop** (or Podman / Rancher Desktop), and **git**.
+The engine's vectorised kernels are selected at compile time, and the build does
+not pass `-march`, so on x86 the AVX2 kernels are never compiled in and the
+engine falls back to a scalar loop — measured **7.6x slower** than the vectorised
+path on identical hardware. The Zenbook above *has* AVX2; the build throws it
+away. That is tracked as **G10 / H2** ([docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md)),
+and the fix is runtime CPU dispatch rather than a compiler flag, because one
+Docker image has to run on many different CPUs.
 
-2. **Give the Docker VM at least 6 GB of RAM** (8 GB recommended). The default is
-   about 2 GB, which **cannot load the model at all** — it fails without a useful
-   error. This is the single most common way to waste an hour here.
+So the honest summary: **on Apple Silicon this is a usable chat app. On x86 it is
+a working one.** A short factual answer is fine; a long reasoning answer at
+1.26 tok/s is a coffee break. If that matters to you, wait for H2.
 
-   * **Windows (WSL2 backend — the default):** the memory slider in Docker
-     Desktop's Settings does **not** apply. You must create or edit
-     `%USERPROFILE%\.wslconfig`:
+**"Runs on the CPU" does not mean it runs on any 16 GB laptop.** What it needs:
 
-     ```ini
-     [wsl2]
-     memory=8GB
-     ```
+- **CPU:** Apple Silicon, or x86_64 (AVX2 strongly recommended — without it,
+  slower still), or arm64.
+- **RAM:** 16 GB, with **≥6 GB given to the Docker VM** on Linux/Windows. The
+  ~2 GB default cannot load the model at all.
+- **Storage: an NVMe SSD.** Expert weights stream from disk on every token, so
+  storage bandwidth is the main driver of speed — a host bind mount instead of a
+  named Docker volume costs about **6x**, measured. A hard drive is unusable.
 
-     Then run `wsl --shutdown` in PowerShell and restart Docker Desktop.
-   * **Windows (Hyper-V backend) / macOS:** Docker Desktop → Settings →
-     Resources → Memory.
-
-   Verify it took: `docker info --format "{{.MemTotal}}"` should report ~8e9,
-   not ~2e9.
-
-3. **Storage:** ~30 GB free **inside the Docker virtual disk**, on top of
-   whatever is already in it. The model volume alone is 24 GB. Check with
-   `docker system df`; if the disk is full, `docker builder prune` frees cache.
-
-4. **A fast internal SSD (NVMe).** Samosa streams expert weights from disk on
-   every token — storage bandwidth is the main driver of speed. See
-   [SSD speed](#ssd-speed-the-one-thing-to-be-deliberate-about).
-
-> **Windows users:** the commands below are written on one line each, so they
-> paste into **PowerShell** or **cmd** unchanged. (Multi-line shell examples
-> elsewhere in this README use `\` continuations, which are POSIX-only and will
-> fail in PowerShell.)
-
-### 1. Build the image
-
-There is no published image yet, so build it from this repository. The build
-compiles the C engine from source — the same property the native installer has:
-you run code you can read.
-
-```sh
-git clone https://github.com/deepanwadhwa/samosa-chat
-cd samosa-chat
-docker build -t samosa .
-```
-
-Takes about a minute and produces a ~90 MB image. The 24 GB model is **not** in
-the image — it goes in a volume, next.
-
-### 2. Create a named Docker volume
-To get native SSD performance, the 24 GB model must live inside a named Docker volume (which lives inside the VM's ext4 virtual disk). **Never use a host bind mount (e.g. mounting from `C:\Users\...` or `/home/...`), as the file sharing layer (virtiofs/9p) will slow inference down by about 6x — measured.**
-
-```sh
-docker volume create samosa-model
-```
-
-### 3. Pull the model weights
-Downloads the 24 GB group-32 weights into the volume, verifying every file by
-size and SHA-256 against the release manifest. **Interrupted downloads resume** —
-just re-run the same command. Expect roughly 20 minutes on a fast connection.
-
-```sh
-docker run --rm -v samosa-model:/model samosa pull
-```
-
-### 4. Start the server
-The engine binds loopback by default; inside the container that is the
-container's own namespace, so the image sets `SAMOSA_BIND=0.0.0.0` and you
-publish the port to the host's **localhost only**:
-
-```sh
-docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=8g samosa serve
-```
-
-**Publish it as `-p 127.0.0.1:8642:8642`, not `-p 8642:8642`.** The second form
-binds your machine's `0.0.0.0` and exposes the model server to your whole
-network.
-
-### 5. Chat in your browser
-* http://127.0.0.1:8642
-
-Check the install at any time with `docker exec samosa samosa doctor`.
-
-### Known limitation on x86 machines
-
-Today the image compiles without `-march`, so on x86 CPUs the vectorised (AVX2)
-kernels are not compiled in and the engine falls back to a scalar path measured
-**7.6x slower** than the vectorised one. It is correct, just slow. The fix
-(runtime CPU dispatch) is tracked as **G10 / H2** in
-[docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md). Expect a working chat, not the
-speeds quoted for the reference Mac.
-
+The output is identical across all of them: the same prompt and seed returns the
+same tokens on macOS/NEON, arm64 Linux, and x86_64 Linux, at the same ~3.84 GB
+footprint. The difference is speed, not behaviour.
 
 ## Chat in your terminal
 
@@ -665,25 +706,39 @@ steps are in [docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md).
 Nothing here is promised or dated. This is what the project wants to become,
 roughly in order of how much it would change things.
 
-### Run on any machine with 16 GB of RAM
+### Make x86 fast (Linux and Windows now work — they are just slow)
 
-Today this is macOS on Apple Silicon only, and that is the single biggest limit
-on who can use Samosa. **The goal is that anyone with 16 GB of RAM can run it —
-Windows, Linux, and Intel machines included.**
+**This shipped.** Linux and Windows run Samosa via Docker: the build and test
+suite are green on Debian 12 and Ubuntu 26.04, and a real chat is confirmed on
+one Windows laptop (i7-1260P) under WSL2. The memory-pressure watcher, the
+thread policy, and the installer all learned Linux and cgroups along the way.
 
-The math is not the blocker: the engine is plain C and already carries portable
-AVX2 kernels next to the Apple NEON ones. The real work is everything around
-them — the installer refuses non-Apple-Silicon systems today, memory planning
-and the memory-pressure watcher call macOS-specific APIs (`sysctl`, Mach), and
-no other platform has been tested as a product. None of that is fundamental;
-it just has not been done.
+**What is left is speed, and the cause is known.** The AVX2 kernels sit right
+next to the NEON ones — but the build never passes `-march`, so on x86 they are
+compiled out and the engine runs a scalar loop, measured **7.6x slower**. The
+Zenbook above has AVX2 and gets none of it: **1.26 tok/s against 5–7 on the M3.**
+
+The fix is runtime CPU dispatch (`cpuid` at startup, not a compiler flag —
+one Docker image has to run on many CPUs). Tracked as **G10 / H2** in
+[docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md). Measured on the M3, decode is
+70% SSD wait and 30% matmul; on x86 the scalar path inverts that to ~77%
+compute, so removing it should take x86 from compute-bound back to
+storage-bound — the same regime as the Mac.
 
 ### Vision
 
-Qwen3.6 is natively multimodal, but Samosa's converter deliberately drops the
-vision tower and converts only the text half of the model. That was a scope and
-memory decision, not a limitation of the idea: the engine has no vision runtime,
-and a 16 GB budget had no room to keep an image encoder resident.
+Qwen3.6 is natively multimodal, and the engine has no vision runtime — so Samosa
+is text only today.
+
+**But the vision tower is already on your disk.** The converter *intended* to skip
+it: its filter tests for the substring `vision`, and Qwen names those tensors
+`model.visual.*`, so the filter never matched. All 27 blocks — 444 tensors,
+0.454 GB — were quantized and shipped inside `resident.safetensors`. Every
+install already has them, inert.
+
+They also work: a numerical parity check against the upstream BF16 reference
+measured **mean cosine 0.9976, min 0.9923** — the accidentally-quantized weights
+are usable as they are.
 
 **The goal is to add image input back.** It means building a vision encoder
 alongside the language engine — roughly "colibrì, but for vision": an image
@@ -716,10 +771,20 @@ the regression test for it is not written yet).
 
 ## Known limitations
 
-- **macOS on Apple Silicon only.** Linux code paths exist but are unverified.
-  Windows is not supported. See the roadmap above.
+- **x86 runs the scalar math path, ~4–5x slower than macOS.** The build does not
+  pass `-march`, so the AVX2 kernels are compiled out even on CPUs that have
+  them. Measured 1.26 tok/s on an i7-1260P versus 5–7 on the M3. Fixable, and
+  tracked as G10/H2 in [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md).
+- **Linux and Windows are verified to work, not verified to be fast.** The build,
+  the test suite, and a real chat are confirmed on Debian 12, Ubuntu 26.04, and
+  one Windows laptop under WSL2. Sustained/soak behaviour on those platforms is
+  not yet measured.
 - **Text only.** No images, video, audio, or tool calling.
-- **No GPU acceleration.** Part of every answer is limited by SSD read speed.
+- **No GPU acceleration**, and it would help less than you would expect. Measured
+  on the M3: **70% of decode is waiting on the SSD, only 30% is matmul.** Even an
+  infinitely fast GPU is bounded to about **1.4x** by that — and the 24 GB of
+  expert weights do not fit in a typical laptop GPU's memory anyway. Fixing the
+  scalar path on x86 (H2) is worth more, for far less work.
 - **Quality evidence is thin.** Group-32 is proven on one reference machine and
   one reasoning control, not across many machines or task types.
 - **SSD speed is the bottleneck.** Expert weights are streamed from the SSD on
