@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "job_id": "jss-article-metadata",
+  "name": "Journal article metadata extraction",
+  "input": {
+    "folder": "/Users/deepanwadhwa/Documents/samosa-chat",
+    "recursive": false,
+    "types": ["application/pdf"],
+    "max_file_bytes": 26214400
+  },
+  "unit": "auto",
+  "instruction": "Extract bibliographic and contact metadata from this Journal of Statistical Software article. Return ONLY the requested JSON. Use the article title page and final Affiliation block. Preserve author order. For authors, author_emails, affiliations, and universities, emit a semicolon-separated string in document order; include only email addresses and affiliations explicitly present in the article. `universities` must include only affiliations containing a university name, not research institutes. Normalize the publication month as YYYY-MM. Extract submitted_date and accepted_date as YYYY-MM-DD when printed; otherwise use null. Do not infer missing data.",
+  "reduce": {
+    "mode": "deterministic",
+    "model_fields": []
+  },
+  "inference": {
+    "thinking": "off",
+    "seed": 11,
+    "temperature": 0,
+    "max_tokens": 512,
+    "timeout_s": null
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "title",
+      "journal",
+      "publication_month",
+      "volume",
+      "issue",
+      "doi",
+      "authors",
+      "author_emails",
+      "affiliations",
+      "universities",
+      "submitted_date",
+      "accepted_date"
+    ],
+    "properties": {
+      "title": {"type": ["string", "null"]},
+      "journal": {"type": ["string", "null"]},
+      "publication_month": {"type": ["string", "null"], "maxLength": 7},
+      "volume": {"type": ["integer", "null"]},
+      "issue": {"type": ["integer", "null"]},
+      "doi": {"type": ["string", "null"]},
+      "authors": {"type": ["string", "null"]},
+      "author_emails": {"type": ["string", "null"]},
+      "affiliations": {"type": ["string", "null"]},
+      "universities": {"type": ["string", "null"]},
+      "submitted_date": {"type": ["string", "null"], "maxLength": 10},
+      "accepted_date": {"type": ["string", "null"], "maxLength": 10}
+    }
+  },
+  "output": {
+    "dir": "/Users/deepanwadhwa/Documents/samosa-chat/.jobs-output/jss-article-metadata",
+    "format": "jsonl"
+  },
+  "resources": {
+    "max_attempts": 2,
+    "run_on_battery": false,
+    "pause_when_user_active": true,
+    "min_free_gb": 10
+  }
+}
