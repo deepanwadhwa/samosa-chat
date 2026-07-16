@@ -20,6 +20,76 @@ verified security groundwork is reused, not replaced (§J3) — and sits on top 
 the document extractor from [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md) (#5) and the
 vision tower from [TASKS_VISION.md](TASKS_VISION.md) (#3, landed).
 
+## Start here — handoff preflight
+
+This card is the primary spec but **not** self-contained. Before writing code:
+
+### Read, in this order
+1. **This card**, end to end.
+2. **[ISSUE_TASKS.md](ISSUE_TASKS.md) — mandatory.** The Working Agreement
+   (branch-per-issue, definition-of-done, evidence-not-assertion, commit
+   conventions, run the RUN-FIRST experiment first) and the shared ground truth
+   (model, two quant schemes, reference machine, prefill cost). The repo's rules
+   live here.
+3. **[CLAUDE.md](../CLAUDE.md)** — non-negotiables, the two-quant-scheme model
+   facts, `build/test/run` commands, git rules. (Auto-loaded by Claude Code; read
+   it directly otherwise.)
+4. **[SERVE_API.md](SERVE_API.md)** — the exact serve request/response contract
+   F-J8 defers to. Verify field names here **before** J1.4.
+5. **[TASKS_HARDWARE.md](TASKS_HARDWARE.md)** H5/H6 (skim) — the host profile and
+   machine-safety governor J1.13 reads; both now exist in code (below).
+6. **The source the F-J findings cite** — `src/qwen36b.c`, `src/samosa_http.h`,
+   `src/kernels.h`, `src/vision.c`, `src/tok.h`. **Verify each F-J at its
+   `file:line` before building on it**, and read the serve request handler +
+   session/snapshot code: the three engine additions are specified as
+   *contracts, not C walkthroughs*.
+
+### Repo state (main @ `8b3e813`, 2026-07-16)
+- **Branch:** cut **`issue-7-jobs` from `main`**. Implementation lives there; the
+  card / `ISSUE_TASKS.md` / `CLAUDE.md` stay on `main` (Working Agreement §1).
+- **#3 vision: LANDED** on main (single-image — F-J4). **#5 documents: NOT built**
+  — no pdfium sidecar exists (grep: zero `FPDF_`/`pdfium`). The PDF path is stubbed
+  (below); build and test J1 on **images + text**, which need no sidecar.
+- **Host profiler + gated x86 SIMD merged** (`8b3e813`): `host_profile_init()` /
+  `g_host` / the `[host]` startup line exist — **J1.13 reads `g_host`**, do not
+  re-derive. (x86 AVX2/VNNI is opt-in and unvalidated; irrelevant to Jobs, just
+  don't be surprised by `[simd] path=scalar` on x86.)
+
+### The three engine additions are contracts, not code
+`samosa tokenize --count`, `GET /internal/v1/status`, `X-Samosa-Priority:
+background` (§"Engine additions") are specified by interface only. Implementing
+them is real C in `qwen36b.c` / `samosa_http.h` / `tok.h`; read those first. They
+are additive and read-only — **a run with no jobs must stay byte-identical** to
+today (the same gate #3/#4 use).
+
+### #5 PDF-metadata stub contract (define now; coordinate with whoever owns #5)
+Until the sidecar exists, J1.2's planner and J1.3's extractor need a metadata
+shape #5 has not defined. Define it as the interface J1 expects, so #5 implements
+*to it*:
+```
+extract_meta(path) -> { "text_layer": bool,
+                        "pages": [ {"index": int, "text_tokens": int, "has_raster_figure": bool}, … ] }
+```
+`needs_image` (J1.2) = `text_tokens < LOW_TEXT_TOKENS OR has_raster_figure`. Until
+the sidecar binary is on `PATH`, J1.2 (PDF inputs) and J1.3 both return
+`review_required reason:"extractor_unavailable:application/pdf"`. **This is the one
+genuine cross-issue seam — flag it to #5.**
+
+### Scaffolding to create (does not exist yet)
+- `tests/jobs/` — start with `fake_serve.py` (§Test harness).
+- A **`jobs-test`** Makefile target running `tests/jobs/*`; J1 is gated on
+  `make jobs-test` exit 0. Keep it separate from `make test` (which stubs the C
+  engine) and say which.
+
+### Do NOT touch
+- The web app / `app_html_path`: J1 is **CLI + a static `view.html` only**. The
+  interactive "Jobs tab" is J2.
+
+### Recommended first increment
+`fake_serve.py` → `samosa tokenize --count` → J1.0 → J1.1 → J1.2 → … → J1.13, each
+against its offline test, until `make jobs-test` is green → then **E-J1** on the
+real model (respecting machine-safety, HR-6/J1.13).
+
 ## Decisions locked (do not reopen)
 
 - **Durable state = append-only JSONL** with a per-job process lock and event
