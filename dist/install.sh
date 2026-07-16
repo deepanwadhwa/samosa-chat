@@ -114,7 +114,7 @@ destination() { # destination <remote-path>
   esac
 }
 
-INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
+INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
 
 required_remaining=0
 for relative in $INSTALL_FILES; do
@@ -186,9 +186,8 @@ else
   fi
 fi
 
-# shellcheck disable=SC2086
 $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
-  "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" \
+  "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" "$STAGE/engine/vision.c" \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
 

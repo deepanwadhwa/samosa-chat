@@ -34,7 +34,7 @@ test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guar
 	$(CC) -O1 -Isrc tests/test_repetition_guard.c -o test_repetition_guard && ./test_repetition_guard
 	$(CC) -O1 -Isrc tests/test_thinking_budget.c -o test_thinking_budget && ./test_thinking_budget
 	$(CC) -O1 -Isrc tests/test_groupwise_q4.c -o test_groupwise_q4 -lm && ./test_groupwise_q4
-	$(CC) -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c -o test_samosa_serve -lm && ./test_samosa_serve
+	$(CC) -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c src/vision.c -o test_samosa_serve -lm && ./test_samosa_serve
 	sh tests/test_samosa_wrapper.sh
 	sh tests/test_atomic_install.sh
 	sh tests/test_install_path.sh
