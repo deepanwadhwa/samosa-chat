@@ -41,331 +41,6 @@
 #include "vision.h"
 #define matmul_qt matmul_qt_impl
 
-#ifdef __linux__
-#include <sys/vfs.h>
-#include <sys/sysmacros.h>
-#endif
-#ifdef __APPLE__
-#include <sys/param.h>
-#include <sys/mount.h>
-#endif
-#include <dirent.h>
-
-typedef struct {
-    char tier[32];
-    int ram_gb;
-    int phys_perf_cores;
-    int smt;
-    int on_ac;
-    char storage_class[16];
-    char cpu_isa[16];
-    int thermal_visibility;
-    int container;
-} HostProfile;
-
-static HostProfile g_host;
-
-static void host_profile_init(const char *snap_path) {
-    // 1. RAM Detection
-    int ram_gb = 0;
-#ifdef __APPLE__
-    int64_t memsize = 0;
-    size_t sl = sizeof(memsize);
-    if (sysctlbyname("hw.memsize", &memsize, &sl, NULL, 0) == 0) {
-        ram_gb = (int)(memsize / 1073741824);
-    } else {
-        ram_gb = 16;
-    }
-#else
-    FILE *f_mem = fopen("/proc/meminfo", "r");
-    if (f_mem) {
-        char line[256];
-        long long total_kb = 0;
-        while (fgets(line, sizeof(line), f_mem)) {
-            if (sscanf(line, "MemTotal: %lld", &total_kb) == 1) {
-                ram_gb = (int)(total_kb / 1048576);
-                break;
-            }
-        }
-        fclose(f_mem);
-    }
-#endif
-    if (ram_gb < 1) ram_gb = 1;
-
-    // 2. Container Detection
-    int in_container = 0;
-    if (access("/.dockerenv", F_OK) == 0) {
-        in_container = 1;
-    } else {
-        FILE *f_cg = fopen("/proc/self/cgroup", "r");
-        if (f_cg) {
-            char line[256];
-            while (fgets(line, sizeof(line), f_cg)) {
-                if (strstr(line, "docker") || strstr(line, "containerd") || strstr(line, "kubepods")) {
-                    in_container = 1;
-                    break;
-                }
-            }
-            fclose(f_cg);
-        }
-    }
-    g_host.container = in_container;
-
-    // Adjust RAM count using cgroups if in container
-    if (in_container) {
-        FILE *f_max = fopen("/sys/fs/cgroup/memory.max", "r");
-        if (f_max) {
-            char limit_str[64];
-            if (fscanf(f_max, "%63s", limit_str) == 1) {
-                if (strcmp(limit_str, "max") != 0) {
-                    long long max_bytes = atoll(limit_str);
-                    if (max_bytes > 0) {
-                        int cg_ram = (int)(max_bytes / 1073741824);
-                        if (cg_ram > 0 && cg_ram < ram_gb) {
-                            ram_gb = cg_ram;
-                        }
-                    }
-                }
-            }
-            fclose(f_max);
-        }
-    }
-    g_host.ram_gb = ram_gb;
-
-    // 3. Physical Cores & SMT Detection
-    int pcores = 1;
-    int smt = 0;
-#ifdef __APPLE__
-    int pc = 0; size_t pl = sizeof(pc);
-    if (!sysctlbyname("hw.perflevel0.physicalcpu", &pc, &pl, NULL, 0) && pc > 0) {
-        pcores = pc;
-    } else {
-        pcores = 4;
-    }
-    smt = 0;
-#else
-    int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    FILE *f_smt = fopen("/sys/devices/system/cpu/smt/active", "r");
-    if (f_smt) {
-        char status[16] = {0};
-        if (fscanf(f_smt, "%15s", status) == 1) {
-            if (strcmp(status, "1") == 0 || strcmp(status, "active") == 0) {
-                smt = 1;
-            }
-        }
-        fclose(f_smt);
-    } else {
-        FILE *f_sib = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
-        if (f_sib) {
-            char sib[64] = {0};
-            if (fgets(sib, sizeof(sib), f_sib)) {
-                if (strchr(sib, ',') || strchr(sib, '-')) smt = 1;
-            }
-            fclose(f_sib);
-        } else {
-#if defined(__x86_64__)
-            smt = 1;
-#else
-            smt = 0;
-#endif
-        }
-    }
-    
-    FILE *f_pcore = fopen("/sys/devices/cpu_core/cpus", "r");
-    int intel_pcores = 0;
-    if (f_pcore) {
-        char range[128];
-        if (fgets(range, sizeof(range), f_pcore)) {
-            int count = 0;
-            char *range_copy = strdup(range);
-            if (range_copy) {
-                char *tok = strtok(range_copy, ",");
-                while (tok) {
-                    int start, end;
-                    if (sscanf(tok, "%d-%d", &start, &end) == 2) {
-                        count += (end - start + 1);
-                    } else if (sscanf(tok, "%d", &start) == 1) {
-                        count += 1;
-                    }
-                    tok = strtok(NULL, ",");
-                }
-                free(range_copy);
-                if (count > 0) intel_pcores = count / 2;
-            }
-        }
-        fclose(f_pcore);
-    }
-    
-    if (intel_pcores > 0) {
-        pcores = intel_pcores;
-    } else {
-        pcores = smt ? (logical / 2) : logical;
-    }
-#endif
-    if (pcores < 1) pcores = 1;
-    g_host.phys_perf_cores = pcores;
-    g_host.smt = smt;
-
-    // 4. AC Power Detection
-    int ac_status = 1;
-#ifdef __APPLE__
-    FILE *f_batt = popen("pmset -g batt 2>/dev/null", "r");
-    if (f_batt) {
-        char buf[256];
-        while (fgets(buf, sizeof(buf), f_batt)) {
-            if (strstr(buf, "Battery Power")) {
-                ac_status = 0;
-                break;
-            }
-        }
-        pclose(f_batt);
-    }
-#else
-    DIR *ps_dir = opendir("/sys/class/power_supply");
-    if (ps_dir) {
-        struct dirent *entry;
-        int has_ac = 0;
-        int ac_online = 0;
-        while ((entry = readdir(ps_dir))) {
-            if (entry->d_name[0] == '.') continue;
-            char ppath[256];
-            snprintf(ppath, sizeof(ppath), "/sys/class/power_supply/%s/type", entry->d_name);
-            FILE *ft = fopen(ppath, "r");
-            if (ft) {
-                char type[32] = {0};
-                if (fscanf(ft, "%31s", type) == 1) {
-                    if (strcmp(type, "Mains") == 0) {
-                        has_ac = 1;
-                        char opath[256];
-                        snprintf(opath, sizeof(opath), "/sys/class/power_supply/%s/online", entry->d_name);
-                        FILE *fo = fopen(opath, "r");
-                        if (fo) {
-                            int val = 0;
-                            if (fscanf(fo, "%d", &val) == 1 && val == 1) {
-                                ac_online = 1;
-                            }
-                            fclose(fo);
-                        }
-                    }
-                }
-                fclose(ft);
-            }
-        }
-        closedir(ps_dir);
-        if (has_ac) {
-            ac_status = ac_online;
-        }
-    }
-#endif
-    g_host.on_ac = ac_status;
-
-    // 5. Storage Class Detection
-    char storage[16] = "unknown";
-    const char *model_dir = snap_path ? snap_path : ".";
-#ifdef __linux__
-    struct statfs sfs;
-    if (statfs(model_dir, &sfs) == 0) {
-        if (sfs.f_type == 0x6a656a63) {
-            strcpy(storage, "virtiofs");
-        } else if (sfs.f_type == 0x01020304 || sfs.f_type == 0x28cd3d45) {
-            strcpy(storage, "9p");
-        }
-    }
-    
-    if (strcmp(storage, "unknown") == 0) {
-        struct stat st;
-        if (stat(model_dir, &st) == 0) {
-            int maj = major(st.st_dev);
-            int min = minor(st.st_dev);
-            char sys_path[256];
-            snprintf(sys_path, sizeof(sys_path), "/sys/dev/block/%d:%d", maj, min);
-            char real_path[PATH_MAX];
-            char *res = realpath(sys_path, real_path);
-            if (res) {
-                char *blk = strstr(real_path, "/block/");
-                if (blk) {
-                    char dev_name[64];
-                    if (sscanf(blk + 7, "%63[^/]", dev_name) == 1) {
-                        int is_nvme = (strstr(dev_name, "nvme") != NULL);
-                        char rot_path[256];
-                        snprintf(rot_path, sizeof(rot_path), "/sys/block/%s/queue/rotational", dev_name);
-                        FILE *fr = fopen(rot_path, "r");
-                        int rotational = 0;
-                        if (fr) {
-                            if (fscanf(fr, "%d", &rotational) != 1) rotational = 0;
-                            fclose(fr);
-                        }
-                        if (rotational == 1) {
-                            strcpy(storage, "hdd");
-                        } else if (is_nvme) {
-                            strcpy(storage, "nvme");
-                        } else {
-                            strcpy(storage, "sata");
-                        }
-                    }
-                }
-            }
-        }
-    }
-#elif defined(__APPLE__)
-    strcpy(storage, "nvme");
-#endif
-    strcpy(g_host.storage_class, storage);
-
-    // 6. CPU ISA Detection
-    char isa[16] = "scalar";
-#if defined(__x86_64__)
-    const char *simd_env = getenv("SAMOSA_SIMD");
-    __builtin_cpu_init();
-    if (simd_env && !strcmp(simd_env, "scalar")) {
-        strcpy(isa, "scalar");
-    } else if ((!simd_env || !strcmp(simd_env, "avx512")) &&
-               __builtin_cpu_supports("avx512vnni") && __builtin_cpu_supports("avx512bw")) {
-        strcpy(isa, "avx512");
-    } else if ((!simd_env || !strcmp(simd_env, "avx2")) && __builtin_cpu_supports("avx2")) {
-        strcpy(isa, "avx2");
-    }
-#elif defined(__ARM_NEON)
-    strcpy(isa, "neon");
-#endif
-    strcpy(g_host.cpu_isa, isa);
-
-    // 7. Thermal Visibility
-    g_host.thermal_visibility = !in_container;
-
-    // 8. Tier Classification
-    char tier_name[32] = "unknown";
-    if (in_container) {
-        strcpy(tier_name, "container-blind");
-    } else if (pcores < 2 || ram_gb < 8) {
-        strcpy(tier_name, "constrained");
-    } else {
-#ifdef __APPLE__
-        if (pcores <= 4) {
-            strcpy(tier_name, "reference-fanless");
-        } else {
-            strcpy(tier_name, "desktop-cooled");
-        }
-#else
-        if (pcores > 4) {
-            strcpy(tier_name, "desktop-cooled");
-        } else {
-            strcpy(tier_name, "unknown");
-        }
-#endif
-    }
-    strcpy(g_host.tier, tier_name);
-
-    // Print Host Capability Profile line
-    fprintf(stderr, "[host] tier=%s ram=%dGB pcores=%d smt=%s ac=%s storage=%s isa=%s thermal=%s container=%s\n",
-            g_host.tier, g_host.ram_gb, g_host.phys_perf_cores,
-            g_host.smt ? "on" : "off", g_host.on_ac ? "yes" : "no",
-            g_host.storage_class, g_host.cpu_isa,
-            g_host.thermal_visibility ? "visible" : "blind",
-            g_host.container ? "yes" : "no");
-    fflush(stderr);
-}
-
 static int g_direct = 0;
 static int g_idot = 1;
 static int g_stateful_idot = 1;
@@ -3546,36 +3221,101 @@ static void adjust_threads(Model *m, int step_index) {
     static int max_threads = 0;
     static int consecutive_green = 0;
     static int consecutive_critical = 0;
+    static int in_container = -1;
 
     if (!initialized) {
-        cool_default = g_host.phys_perf_cores / 2;
-        if (cool_default < 1) cool_default = 1;
-        max_threads = g_host.phys_perf_cores;
-        
-        // Respect cgroup limit if in container
-        if (g_host.container) {
-            int cgroup_threads = 0;
-            FILE *f_cpu = fopen("/sys/fs/cgroup/cpu.max", "r");
-            if (f_cpu) {
-                char quota_str[64];
-                long long quota = -1, period = -1;
-                if (fscanf(f_cpu, "%59s %lld", quota_str, &period) == 2) {
-                    if (strcmp(quota_str, "max") != 0) {
-                        quota = atoll(quota_str);
-                        if (quota > 0 && period > 0) {
-                            cgroup_threads = (int)((quota + period - 1) / period);
-                        }
+        // Detect container status
+        in_container = 0;
+        if (access("/.dockerenv", F_OK) == 0) {
+            in_container = 1;
+        } else {
+            FILE *f_cg = fopen("/proc/self/cgroup", "r");
+            if (f_cg) {
+                char line[256];
+                while (fgets(line, sizeof(line), f_cg)) {
+                    if (strstr(line, "docker") || strstr(line, "containerd")) {
+                        in_container = 1;
+                        break;
                     }
                 }
-                fclose(f_cpu);
-            }
-            if (cgroup_threads > 0 && cgroup_threads < max_threads) {
-                max_threads = cgroup_threads;
-                if (cool_default > max_threads) cool_default = max_threads;
+                fclose(f_cg);
             }
         }
 
-        if (g_host.container) {
+        // Determine thread boundaries
+        int physical_cores = 1;
+#ifdef __APPLE__
+        int pcores = 0; size_t pl = sizeof(pcores);
+        if (!sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &pl, NULL, 0) && pcores > 0) {
+            physical_cores = pcores;
+        } else {
+            physical_cores = 4; // conservative default P-cores for Apple Silicon
+        }
+#else
+        int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        int smt = 0;
+        FILE *f_smt = fopen("/sys/devices/system/cpu/smt/active", "r");
+        if (f_smt) {
+            char status[16] = {0};
+            if (fscanf(f_smt, "%15s", status) == 1) {
+                if (strcmp(status, "1") == 0 || strcmp(status, "active") == 0) {
+                    smt = 1;
+                }
+            }
+            fclose(f_smt);
+        } else {
+            FILE *f_sib = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
+            if (f_sib) {
+                char sib[64] = {0};
+                if (fgets(sib, sizeof(sib), f_sib)) {
+                    if (strchr(sib, ',') || strchr(sib, '-')) smt = 1;
+                }
+                fclose(f_sib);
+            } else {
+#if defined(__x86_64__)
+                smt = 1;
+#else
+                smt = 0;
+#endif
+            }
+        }
+        physical_cores = smt ? (logical / 2) : logical;
+#endif
+        if (physical_cores < 1) physical_cores = 1;
+
+        // Check cgroup cpu limit to avoid exceeding quota
+        int cgroup_threads = 0;
+        FILE *f_cpu = fopen("/sys/fs/cgroup/cpu.max", "r");
+        if (f_cpu) {
+            char quota_str[64];
+            long long quota = -1, period = -1;
+            if (fscanf(f_cpu, "%59s %lld", quota_str, &period) == 2) {
+                if (strcmp(quota_str, "max") != 0) {
+                    quota = atoll(quota_str);
+                    if (quota > 0 && period > 0) {
+                        cgroup_threads = (int)((quota + period - 1) / period);
+                    }
+                }
+            }
+            fclose(f_cpu);
+        }
+
+        cool_default = physical_cores / 2;
+        if (cool_default < 1) cool_default = 1;
+        max_threads = physical_cores;
+        if (cgroup_threads > 0 && cgroup_threads < max_threads) {
+            max_threads = cgroup_threads;
+            if (cool_default > max_threads) cool_default = max_threads;
+        }
+
+        if (in_container) {
+            /* Container: the guest cannot see the host's thermal sensors, so the
+             * adaptive loop has no signal to close on.  Stay at the cool default
+             * rather than pinning every core: Windows/Linux delivery is Docker
+             * (see docs/TASKS_WINDOWS.md), so this path routinely runs on thin
+             * laptops where "all cores, no feedback" is exactly the case --fast
+             * is supposed to protect against.  OMP_NUM_THREADS remains the
+             * explicit override for anyone who wants max on a cooled machine. */
             current_threads = cool_default;
             omp_set_num_threads(current_threads);
             fprintf(stderr, "[threads] --fast: no thermal visibility in a container; "
@@ -3584,6 +3324,7 @@ static void adjust_threads(Model *m, int step_index) {
                     current_threads, max_threads, max_threads);
             fflush(stderr);
         } else {
+            // Start at the cool default
             current_threads = cool_default;
             omp_set_num_threads(current_threads);
             fprintf(stderr, "[threads] adaptive thermal control initialized: cool=%d max=%d\n", cool_default, max_threads);
@@ -3592,7 +3333,8 @@ static void adjust_threads(Model *m, int step_index) {
         initialized = 1;
     }
 
-    if (g_host.container) {
+    // In container, we do not adapt
+    if (in_container) {
         return;
     }
 
@@ -3626,6 +3368,14 @@ static void adjust_threads(Model *m, int step_index) {
             fclose(f_t);
         }
     }
+    /* UNVALIDATED THRESHOLDS.  85 C / 75 C and the 4-sample / 16-token cadence
+     * below are reasoned defaults, not measured ones: E-H3 (the threads ->
+     * sustained tok/s -> thermal-pressure curve, docs/TASKS_HARDWARE.md) has not
+     * been run, so nothing here is tuned against real hardware.  They are
+     * deliberately conservative — the controller can only move between
+     * cool_default and max_threads, so a wrong threshold costs throughput, never
+     * safety.  Do not present this loop as tuned until E-H3 exists, and re-run it
+     * after H2 (SIMD dispatch): 7.6x less CPU time per token will move the curve. */
     if (max_temp > 0) {
         if (max_temp >= 85000) thermal_level = 2;       /* serious */
         else if (max_temp >= 75000) thermal_level = 1;  /* fair */
@@ -5221,53 +4971,103 @@ static int run_samosa_serve(Model *model,const char *snapshot,
 }
 
 int main(int argc, char **argv) {
-    const char *snap_env = getenv("SNAP");
-    const char *snap_detect = snap_env;
-    if (!snap_detect) {
-        for (int i = 1; i < argc; i++) {
-            if (argv[i][0] != '-') {
-                snap_detect = argv[i];
-                break;
-            }
-        }
-    }
-    host_profile_init(snap_detect);
-    simd_init();
-
 #if defined(_OPENMP)
     if (!getenv("OMP_NUM_THREADS")) {
-        int threads = 1;
-        if (strcmp(g_host.tier, "reference-fanless") == 0) {
-            threads = 2; // Strict comfort default for fanless reference class
-        } else if (strcmp(g_host.tier, "constrained") == 0) {
-            threads = 1;
-        } else {
-            threads = g_host.phys_perf_cores / 2;
-            if (threads < 1) threads = 1;
-            
-            // Respect cgroup limits on threads if we are in container
-            if (g_host.container) {
-                int cgroup_threads = 0;
-                FILE *f_cpu = fopen("/sys/fs/cgroup/cpu.max", "r");
-                if (f_cpu) {
-                    char quota_str[64];
-                    long long quota = -1, period = -1;
-                    if (fscanf(f_cpu, "%59s %lld", quota_str, &period) == 2) {
-                        if (strcmp(quota_str, "max") != 0) {
-                            quota = atoll(quota_str);
-                            if (quota > 0 && period > 0) {
-                                cgroup_threads = (int)((quota + period - 1) / period);
-                            }
-                        }
+#ifdef __APPLE__
+        /* Default: META' dei P-core (2 su questo M3) — scelta esplicita
+         * dell'utente (2026-07-12) per un telaio fanless piu' fresco al tatto:
+         * ~7.3 tok/s invece dei ~9.5 a 4 thread.  La pressione termica OS resta
+         * a zero in entrambi i casi; e' una preferenza di comfort, non un limite
+         * del silicio.  OMP_NUM_THREADS resta l'override esplicito (es. =4 per
+         * la velocita' piena). */
+        int pcores = 0; size_t pl = sizeof(pcores);
+        if (!sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &pl, NULL, 0) && pcores > 0) {
+            int cool = pcores / 2; if (cool < 1) cool = 1;
+            omp_set_num_threads(cool);
+        }
+#else
+        int threads = 0;
+        // 1. Check cgroup CPU quota
+        FILE *f_cpu = fopen("/sys/fs/cgroup/cpu.max", "r");
+        if (f_cpu) {
+            char quota_str[64];
+            long long quota = -1, period = -1;
+            if (fscanf(f_cpu, "%59s %lld", quota_str, &period) == 2) {
+                if (strcmp(quota_str, "max") != 0) {
+                    quota = atoll(quota_str);
+                    if (quota > 0 && period > 0) {
+                        threads = (int)((quota + period - 1) / period);
                     }
-                    fclose(f_cpu);
-                }
-                if (cgroup_threads > 0 && cgroup_threads < threads) {
-                    threads = cgroup_threads;
                 }
             }
+            fclose(f_cpu);
         }
+        
+        if (threads <= 0) {
+            // 2. Check P-cores on Intel hybrid Linux
+            FILE *f_pcore = fopen("/sys/devices/cpu_core/cpus", "r");
+            int pcores = 0;
+            if (f_pcore) {
+                char range[128];
+                if (fgets(range, sizeof(range), f_pcore)) {
+                    int count = 0;
+                    char *range_copy = strdup(range);
+                    if (range_copy) {
+                        char *tok = strtok(range_copy, ",");
+                        while (tok) {
+                            int start, end;
+                            if (sscanf(tok, "%d-%d", &start, &end) == 2) {
+                                count += (end - start + 1);
+                            } else if (sscanf(tok, "%d", &start) == 1) {
+                                count += 1;
+                            }
+                            tok = strtok(NULL, ",");
+                        }
+                        free(range_copy);
+                        if (count > 0) pcores = count / 2;
+                    }
+                }
+                fclose(f_pcore);
+            }
+            
+            if (pcores > 0) {
+                threads = pcores / 2;
+            } else {
+                int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
+                int smt = 0;
+                FILE *f_smt = fopen("/sys/devices/system/cpu/smt/active", "r");
+                if (f_smt) {
+                    char status[16] = {0};
+                    if (fscanf(f_smt, "%15s", status) == 1) {
+                        if (strcmp(status, "1") == 0 || strcmp(status, "active") == 0) {
+                            smt = 1;
+                        }
+                    }
+                    fclose(f_smt);
+                } else {
+                    FILE *f_sib = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
+                    if (f_sib) {
+                        char sib[64] = {0};
+                        if (fgets(sib, sizeof(sib), f_sib)) {
+                            if (strchr(sib, ',') || strchr(sib, '-')) smt = 1;
+                        }
+                        fclose(f_sib);
+                    } else {
+#if defined(__x86_64__)
+                        smt = 1;
+#else
+                        smt = 0;
+#endif
+                    }
+                }
+                int physical = smt ? (logical / 2) : logical;
+                if (physical < 1) physical = 1;
+                threads = physical / 2;
+            }
+        }
+        if (threads < 1) threads = 1;
         omp_set_num_threads(threads);
+#endif
     }
 #endif
     const char *snap = getenv("SNAP");
