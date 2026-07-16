@@ -742,5 +742,171 @@ class TestRunReduceIntegration(unittest.TestCase):
         self.assertEqual(len(reduced2), 1)
 
 
+class TestChunking(unittest.TestCase):
+    """J1.2/J1.3 — chunk units carry char ranges and extraction slices them."""
+
+    def _write(self, n):
+        f = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+        for i in range(n):
+            f.write("Line %d: some words here to fill the available space.\n" % i)
+        f.close()
+        return f.name
+
+    def test_chunks_carry_ranges_and_cover_file(self):
+        path = self._write(4000)
+        try:
+            meta = {'input_sha256': 'bb', 'media_type': 'text/plain',
+                    'input_path': path, 'size': os.path.getsize(path),
+                    'text_tokens': 50000}  # force over budget
+            units = samosa_jobs.plan_units(meta, 'auto', 23040)
+            self.assertGreater(len(units), 1)
+            self.assertEqual(units[0]['char_start'], 0)
+            with open(path) as fh:
+                total = len(fh.read())
+            self.assertEqual(units[-1]['char_end'], total)  # last chunk reaches EOF
+            for u in units:
+                self.assertLess(u['char_start'], u['char_end'])
+            for a, b in zip(units, units[1:]):
+                self.assertLessEqual(b['char_start'], a['char_end'])  # overlap, no gap
+        finally:
+            os.unlink(path)
+
+    def test_extract_slices_only_the_chunk(self):
+        path = self._write(200)
+        try:
+            with open(path) as fh:
+                text = fh.read()
+            unit = {'unit_id': 'x#c0', 'chunk_index': 0, 'char_start': 10,
+                    'char_end': 50, 'granularity': 'chunk'}
+            meta = {'media_type': 'text/plain', 'input_path': path, 'input_sha256': 'x'}
+            out = samosa_jobs.extract_unit(unit, meta)
+            self.assertEqual(out['text'], text[10:50])
+        finally:
+            os.unlink(path)
+
+
+class TestSplitUnit(unittest.TestCase):
+    """J1.4 — split_text_unit halves a text unit; refuses non-text / minimal."""
+
+    def _txt(self, content):
+        f = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+        f.write(content)
+        f.close()
+        return f.name
+
+    def test_split_whole_text_unit(self):
+        path = self._txt("alpha beta gamma\n" * 100)  # 1700 chars
+        try:
+            unit = {'unit_id': 'sha', 'granularity': 'file',
+                    'plan_reason': 'fits_budget', 'reduce_group': None}
+            item = {'input_sha256': 'sha', 'input_path': path, 'media_type': 'text/plain'}
+            halves = samosa_jobs.split_text_unit(unit, item)
+            self.assertEqual(len(halves), 2)
+            self.assertEqual(halves[0]['char_start'], 0)
+            self.assertEqual(halves[0]['char_end'], halves[1]['char_start'])  # contiguous
+            self.assertEqual(halves[1]['char_end'], os.path.getsize(path))
+            self.assertTrue(all(h['reduce_group'] == 'sha' for h in halves))
+            self.assertTrue(all(h['plan_reason'] == 'context_split' for h in halves))
+        finally:
+            os.unlink(path)
+
+    def test_minimal_is_irreducible(self):
+        path = self._txt("too small to split")  # < MIN_SPLIT_CHARS
+        try:
+            unit = {'unit_id': 'sha', 'granularity': 'file', 'reduce_group': None}
+            item = {'input_sha256': 'sha', 'input_path': path, 'media_type': 'text/plain'}
+            self.assertIsNone(samosa_jobs.split_text_unit(unit, item))
+        finally:
+            os.unlink(path)
+
+    def test_non_text_not_split(self):
+        unit = {'unit_id': 'sha', 'granularity': 'single_image'}
+        item = {'input_sha256': 'sha', 'input_path': '/x.png', 'media_type': 'image/png'}
+        self.assertIsNone(samosa_jobs.split_text_unit(unit, item))
+
+
+class TestRunContextSplit(unittest.TestCase):
+    """J1.4 wiring — a `400 context_limit` splits the unit and re-enqueues it."""
+
+    def setUp(self):
+        self.server, self.port = fake_serve.start_server(0)
+        self.serve_url = f'http://127.0.0.1:{self.port}'
+        fake_serve.set_behavior(hang_seconds=0, fail_count=0, fail_counter=0,
+                                return_429=False, return_400_context_limit=False,
+                                context_limit_count=0, context_limit_counter=0)
+        fake_serve.set_status(interactive_active=False, last_interactive_ts=None)
+        fake_serve.reset_request_count()
+
+        self.tmp = tempfile.mkdtemp()
+        self.inputs = os.path.join(self.tmp, 'inputs')
+        os.makedirs(self.inputs)
+        with open(os.path.join(self.inputs, 'small.txt'), 'w') as f:
+            f.write("Merchant Test Store total 42.50 USD.\n" * 20)  # ~740 chars, 1 unit
+
+        self._env = {'SAMOSA_JOBS_DIR': os.path.join(self.tmp, 'jobs'),
+                     'SAMOSA_SERVE_URL': self.serve_url}
+        self._old_env = {k: os.environ.get(k) for k in self._env}
+        os.environ.update(self._env)
+        self._orig_gate = samosa_jobs.gate_check
+        self._orig_tok = samosa_jobs.get_tokenizer_cmd
+        samosa_jobs.gate_check = lambda job, url: (True, None)
+        samosa_jobs.get_tokenizer_cmd = lambda: None
+
+    def tearDown(self):
+        samosa_jobs.gate_check = self._orig_gate
+        samosa_jobs.get_tokenizer_cmd = self._orig_tok
+        for k, v in self._old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.server.shutdown()
+        import shutil as _sh
+        _sh.rmtree(self.tmp, ignore_errors=True)
+
+    def _job(self):
+        job = {
+            'schema_version': 1, 'job_id': 'ctx-split', 'name': 'Context split',
+            'input': {'folder': self.inputs, 'types': ['text/plain'],
+                      'max_file_bytes': 26214400},
+            'instruction': 'Extract. Return ONLY JSON.',
+            'output_schema': {'type': 'object', 'properties': {
+                'merchant': {'type': ['string', 'null']},
+                'total': {'type': ['number', 'null']}}},
+            'resources': {'max_attempts': 2, 'run_on_battery': True, 'min_free_gb': 0},
+        }
+        validated, errors = samosa_jobs.validate_job(job)
+        self.assertEqual(errors, [])
+        return validated
+
+    def test_context_limit_splits_and_completes(self):
+        import pathlib
+        job = self._job()
+        job_dir = pathlib.Path(self._env['SAMOSA_JOBS_DIR']) / 'ctx-split'
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        fake_serve.set_behavior(context_limit_count=1)  # only the whole-file POST 400s
+        rc = samosa_jobs._run_job(job, job_dir)
+        self.assertEqual(rc, 0)
+
+        log = samosa_jobs.EventLog(job_dir / 'events.jsonl')
+        log.load()
+
+        splits = [e for e in log.events if e['type'] == 'item_split']
+        self.assertEqual(len(splits), 1)                     # the whole-file unit split
+        pieces = [e for e in log.events if e['type'] == 'item_planned'
+                  and e.get('plan_reason') == 'context_split']
+        self.assertEqual(len(pieces), 2)
+        completes = [e for e in log.events if e['type'] == 'item_complete']
+        self.assertEqual(len(completes), 2)                  # both pieces completed
+        self.assertFalse([e for e in log.events if e['type'] == 'item_review_required'])
+        # one document, reduced from the two pieces
+        reduced = [e for e in log.events if e['type'] == 'doc_reduced']
+        self.assertEqual(len(reduced), 1)
+        self.assertEqual(reduced[0]['validation'], 'passed')
+        # 1 rejected whole-file POST + 2 piece POSTs
+        self.assertEqual(fake_serve.get_request_count(), 3)
+
+
 if __name__ == '__main__':
     unittest.main()

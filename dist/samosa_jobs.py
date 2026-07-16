@@ -734,6 +734,7 @@ def _plan_text_chunks(sha, path, total_tokens, budget, tokenizer_cmd):
         offset += len(l)
 
     while pos < total_chars:
+        chunk_start = pos
         end = min(pos + chunk_chars, total_chars)
         # Find line boundary
         best_line = 0
@@ -743,6 +744,12 @@ def _plan_text_chunks(sha, path, total_tokens, budget, tokenizer_cmd):
             else:
                 break
 
+        # The chunk covers [chunk_start, chunk_end) aligned to a line boundary.
+        chunk_end = line_offsets[best_line] + len(lines[best_line])
+        if chunk_end <= chunk_start:
+            chunk_end = end  # Prevent a zero-width chunk
+        chunk_end = min(chunk_end, total_chars)
+
         unit_id = f"{sha}#c{chunk_idx}"
         units.append({
             'unit_id': unit_id,
@@ -750,15 +757,19 @@ def _plan_text_chunks(sha, path, total_tokens, budget, tokenizer_cmd):
             'granularity': 'chunk',
             'plan_reason': 'over_context',
             'chunk_index': chunk_idx,
+            'char_start': chunk_start,
+            'char_end': chunk_end,
             'reduce_group': sha,
         })
         chunk_idx += 1
 
-        # Advance past end, with overlap
-        next_pos = line_offsets[best_line] + len(lines[best_line])
-        if next_pos <= pos:
-            next_pos = end  # Prevent infinite loop
-        pos = max(next_pos - overlap_chars, pos + 1)
+        # Once a chunk reaches the end, stop — otherwise the overlap pull-back
+        # would spawn a run of 1-char-advancing chunks over the tail.
+        if chunk_end >= total_chars:
+            break
+
+        # Advance to the next chunk, keeping a small overlap for continuity.
+        pos = max(chunk_end - overlap_chars, pos + 1)
 
     return units
 
@@ -805,16 +816,64 @@ def extract_unit(unit, input_meta):
         try:
             with open(path, 'r', errors='replace') as f:
                 text = f.read()
-            # If this is a chunk, extract the relevant portion
-            chunk_idx = unit.get('chunk_index')
-            if chunk_idx is not None:
-                # For now, return full text — the model call will handle context
-                pass
+            # A chunk unit carries the char range the planner assigned (J1.2);
+            # send only that slice so the split actually bounds the context.
+            if unit.get('chunk_index') is not None:
+                start = unit.get('char_start')
+                end = unit.get('char_end')
+                if start is not None and end is not None:
+                    text = text[start:end]
             return {'text': text}
         except OSError as e:
             return {'error': f'read_failed:{e}'}
 
     return {'error': f'unsupported_type:{media_type}'}
+
+
+# Minimum char span still worth splitting; below this a context_limit is
+# treated as irreducible (J1.4).
+MIN_SPLIT_CHARS = 200
+
+
+def split_text_unit(unit, item):
+    """Halve a text unit's char range on a line boundary, for a `400
+    context_limit` retry (J1.4). Returns two chunk units, or None if the unit is
+    not splittable text or is already minimal (→ context_limit_irreducible)."""
+    if item.get('media_type') != 'text/plain':
+        return None
+    sha = item['input_sha256']
+    start = unit.get('char_start', 0)
+    end = unit.get('char_end')
+    try:
+        with open(item['input_path'], 'r', errors='replace') as f:
+            text = f.read()
+    except OSError:
+        return None
+    if end is None:
+        end = len(text)
+    if end - start < MIN_SPLIT_CHARS:
+        return None
+
+    mid = (start + end) // 2
+    nl = text.find('\n', mid, end)          # snap to the next line boundary
+    if nl == -1 or nl <= start or nl >= end - 1:
+        nl = mid
+    else:
+        nl += 1
+
+    def _piece(cs, ce):
+        return {
+            'unit_id': f"{sha}#c{cs}_{ce}",   # stable across re-runs (idempotent)
+            'input_sha256': sha,
+            'granularity': 'chunk',
+            'plan_reason': 'context_split',
+            'chunk_index': cs,                # ordered by char position
+            'char_start': cs,
+            'char_end': ce,
+            'reduce_group': sha,
+        }
+
+    return [_piece(start, nl), _piece(nl, end)]
 
 
 # ---------------------------------------------------------------------------
@@ -1018,7 +1077,10 @@ class EventLog:
     def get_terminal_units(self):
         """Get set of unit_ids that have reached a terminal state."""
         terminal = set()
-        terminal_types = {'item_complete', 'item_review_required', 'item_failed'}
+        # item_split resolves the original unit: it is replaced by its pieces,
+        # which carry their own planned + terminal events (J1.4 split).
+        terminal_types = {'item_complete', 'item_review_required', 'item_failed',
+                          'item_split'}
         for evt in self.events:
             uid = evt.get('unit_id')
             if uid and evt['type'] in terminal_types:
@@ -1228,6 +1290,7 @@ def _gather_group_results(group_units, job_dir, event_log):
     that produced output); status/errors come from the unit's last terminal event.
     Ordered deterministically by page/chunk index then unit_id (J1.11)."""
     status_by_uid = {}
+    split_uids = set()
     for e in event_log.events:
         uid = e.get('unit_id')
         if not uid:
@@ -1239,11 +1302,17 @@ def _gather_group_results(group_units, job_dir, event_log):
             status_by_uid[uid] = ('review_required', list(e.get('reasons', [])))
         elif t == 'item_failed':
             status_by_uid[uid] = ('failed', [e.get('error', 'failed')])
+        elif t == 'item_split':
+            split_uids.add(uid)  # replaced by its pieces; not a page of its own
 
     items_dir = Path(job_dir) / 'results' / 'items'
     results = []
+    seen = set()
     for u in group_units:
         uid = u['unit_id']
+        if uid in split_uids or uid in seen:
+            continue
+        seen.add(uid)
         status, errors = status_by_uid.get(uid, ('failed', ['no_terminal_event']))
         safe_uid = uid.replace('#', '_').replace('/', '_')
         rec_path = items_dir / f"{safe_uid}.json"
@@ -1257,14 +1326,19 @@ def _gather_group_results(group_units, job_dir, event_log):
             'unit_id': uid,
             'page_index': u.get('page_index'),
             'chunk_index': u.get('chunk_index'),
+            'char_start': u.get('char_start'),
             'record': record,
             'status': status,
             'errors': errors,
         })
 
     def _order(r):
-        idx = r['page_index'] if r['page_index'] is not None else r['chunk_index']
-        return (0 if idx is not None else 1, idx if idx is not None else 0, r['unit_id'])
+        # char_start orders text chunks (incl. runtime splits); page_index orders
+        # PDF pages. A group is homogeneous, so one key applies.
+        for k in ('char_start', 'page_index', 'chunk_index'):
+            if r.get(k) is not None:
+                return (0, r[k], r['unit_id'])
+        return (1, 0, r['unit_id'])
 
     results.sort(key=_order)
     return results
@@ -1529,27 +1603,61 @@ def write_merged_output(job, job_dir, event_log):
     """Write results/output.jsonl or output.csv."""
     fmt = job.get('output', {}).get('format', 'jsonl')
     items_dir = Path(job_dir) / 'results' / 'items'
+    docs_dir = Path(job_dir) / 'results' / 'documents'
     results_dir = Path(job_dir) / 'results'
 
-    # Collect completed unit results, ordered by input_path
-    completed = []
+    # A split file that was reduced becomes ONE document row; its per-chunk/page
+    # units are folded in, never emitted individually (J1.11). Whole-file inputs
+    # (no doc_reduced) emit their unit record.
+    reduced = {}        # input_sha256 -> doc_reduced event
+    input_path_by_sha = {}
     for evt in event_log.events:
-        if evt['type'] == 'item_complete':
-            uid = evt.get('unit_id', '')
-            safe_uid = uid.replace('#', '_').replace('/', '_')
-            result_file = items_dir / f"{safe_uid}.json"
-            if result_file.exists():
-                try:
-                    record = json.loads(result_file.read_text())
-                    completed.append({
-                        'input_sha256': evt.get('input_sha256', ''),
-                        'input_path': evt.get('input_path', ''),
-                        **record,
-                    })
-                except (json.JSONDecodeError, OSError):
-                    pass
+        if evt['type'] == 'doc_reduced':
+            reduced[evt.get('input_sha256')] = evt
+        sha = evt.get('input_sha256')
+        if sha and evt.get('input_path'):
+            input_path_by_sha.setdefault(sha, evt['input_path'])
 
-    # Sort by input_path
+    completed = []
+
+    # One record per passed reduced document.
+    for sha, dev in reduced.items():
+        if dev.get('validation') != 'passed':
+            continue
+        doc_file = docs_dir / f"{sha}.json"
+        if doc_file.exists():
+            try:
+                record = json.loads(doc_file.read_text())
+                completed.append({
+                    'input_sha256': sha,
+                    'input_path': input_path_by_sha.get(sha, ''),
+                    **record,
+                })
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    # One record per passed whole-file unit not belonging to a reduced document.
+    for evt in event_log.events:
+        if evt['type'] != 'item_complete':
+            continue
+        sha = evt.get('input_sha256', '')
+        if sha in reduced:
+            continue  # covered by the document row above
+        uid = evt.get('unit_id', '')
+        safe_uid = uid.replace('#', '_').replace('/', '_')
+        result_file = items_dir / f"{safe_uid}.json"
+        if result_file.exists():
+            try:
+                record = json.loads(result_file.read_text())
+                completed.append({
+                    'input_sha256': sha,
+                    'input_path': evt.get('input_path', ''),
+                    **record,
+                })
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    # Deterministic order by input_path (one row per document/whole-file input).
     completed.sort(key=lambda r: r.get('input_path', ''))
 
     # Honor the job's configured output.dir; fall back to the job's results/ dir.
@@ -1916,12 +2024,17 @@ def _run_job(job, job_dir):
 
     print(f"[jobs] {len(all_units)} units planned, {len(pending)} pending")
 
-    # Process units
+    # Process units. A worklist (not a fixed loop) so a `400 context_limit` split
+    # can re-enqueue the smaller pieces in the same run (J1.4).
     processed_count = 0
     review_count = 0
     failed_count = 0
 
-    for unit, item in pending:
+    worklist = list(pending)
+    wi = 0
+    while wi < len(worklist):
+        unit, item = worklist[wi]
+        wi += 1
         uid = unit['unit_id']
 
         # Gate check before each unit
@@ -1994,13 +2107,30 @@ def _run_job(job, job_dir):
             wall_seconds = time.perf_counter() - _call_t0
 
             if err == 'context_limit':
-                # Split and re-enqueue — for now, mark as review
-                event_log.append('item_review_required',
-                                 unit_id=uid,
-                                 input_sha256=item['input_sha256'],
-                                 input_path=item['input_path'],
-                                 reasons=['context_limit_irreducible'])
-                review_count += 1
+                # Split on a line boundary and re-enqueue the pieces (J1.4); if
+                # the unit is already minimal / not splittable text, it is
+                # irreducible and goes to review.
+                halves = split_text_unit(unit, item)
+                if halves:
+                    for h in halves:
+                        event_log.append('item_planned',
+                                         unit_id=h['unit_id'],
+                                         input_sha256=h['input_sha256'],
+                                         granularity=h['granularity'],
+                                         plan_reason=h['plan_reason'])
+                        unit_by_group.setdefault(item['input_sha256'], []).append(h)
+                        worklist.append((h, item))
+                    event_log.append('item_split', unit_id=uid,
+                                     input_sha256=item['input_sha256'],
+                                     into=[h['unit_id'] for h in halves])
+                    print(f"[jobs] split {uid} on context_limit -> {len(halves)} pieces")
+                else:
+                    event_log.append('item_review_required',
+                                     unit_id=uid,
+                                     input_sha256=item['input_sha256'],
+                                     input_path=item['input_path'],
+                                     reasons=['context_limit_irreducible'])
+                    review_count += 1
                 success = True
                 break
             elif err == 'queue_full':

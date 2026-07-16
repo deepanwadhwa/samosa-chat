@@ -31,6 +31,8 @@ _BEHAVIOR = {         # special behaviors
     'fail_counter': 0,     # current fail counter
     'return_429': False,
     'return_400_context_limit': False,
+    'context_limit_count': 0,   # return 400 context_limit this many times then succeed
+    'context_limit_counter': 0,
 }
 _REQUEST_COUNT = 0
 _REQUEST_LOCK = threading.Lock()
@@ -119,6 +121,20 @@ class FakeServeHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+
+        # Check for context_limit_count (400 context_limit N times then succeed)
+        if _BEHAVIOR.get('context_limit_count', 0) > 0:
+            _BEHAVIOR['context_limit_counter'] = _BEHAVIOR.get('context_limit_counter', 0) + 1
+            if _BEHAVIOR['context_limit_counter'] <= _BEHAVIOR['context_limit_count']:
+                body = json.dumps({
+                    'error': {'message': 'Context limit', 'type': 'invalid_request_error', 'code': 'context_limit'}
+                }).encode()
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
 
         # Check for fail_count (500 N times then succeed)
         if _BEHAVIOR.get('fail_count', 0) > 0:
