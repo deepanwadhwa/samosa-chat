@@ -30,6 +30,8 @@
 #define DEFAULT_MAX_BYTES (20UL * 1024UL * 1024UL)
 #define MAX_PAGE_CHARS 2000000
 #define MAX_JSON_BYTES (16UL * 1024UL * 1024UL)
+#define RENDER_LONG_EDGE 768
+#define MAX_RENDER_PIXELS (RENDER_LONG_EDGE * RENDER_LONG_EDGE)
 #define CPU_SECONDS 15
 #define WALL_SECONDS 20
 
@@ -134,6 +136,18 @@ static int read_block(void *opaque, unsigned long position, unsigned char *out,
         if (n <= 0)
             return 0;
         done += (size_t)n;
+    }
+    return 1;
+}
+
+static int write_all(int fd, const void *data, size_t length) {
+    const unsigned char *cursor = data;
+    while (length) {
+        ssize_t written = write(fd, cursor, length);
+        if (written <= 0)
+            return 0;
+        cursor += written;
+        length -= (size_t)written;
     }
     return 1;
 }
@@ -283,8 +297,105 @@ static unsigned long estimate_tokens(const char *text) {
     return count;
 }
 
+static int render_ppm(FPDF_DOCUMENT document, int page_number,
+                      const char *output_path, const char **error) {
+    FPDF_PAGE page = NULL;
+    FPDF_BITMAP bitmap = NULL;
+    unsigned char *rgb = NULL;
+    unsigned char *pixels;
+    float page_width, page_height, scale;
+    int width, height, stride, fd = -1, y, x;
+    char header[64];
+    int header_len;
+    int output_created = 0;
+
+    if (page_number < 1 || page_number > FPDF_GetPageCount(document)) {
+        *error = "page_out_of_range";
+        return 0;
+    }
+    page = FPDF_LoadPage(document, page_number - 1);
+    if (!page) {
+        *error = "pdf_page_error";
+        return 0;
+    }
+    page_width = FPDF_GetPageWidthF(page);
+    page_height = FPDF_GetPageHeightF(page);
+    if (page_width <= 0 || page_height <= 0) {
+        *error = "pdf_page_error";
+        goto done;
+    }
+    scale = (float)RENDER_LONG_EDGE / (page_width > page_height ? page_width : page_height);
+    width = (int)(page_width * scale + 0.5f);
+    height = (int)(page_height * scale + 0.5f);
+    if (width < 1 || height < 1 || width > RENDER_LONG_EDGE || height > RENDER_LONG_EDGE ||
+        (uintmax_t)width * (uintmax_t)height > MAX_RENDER_PIXELS) {
+        *error = "render_size_limit";
+        goto done;
+    }
+    bitmap = FPDFBitmap_Create(width, height, 0);
+    if (!bitmap) {
+        *error = "out_of_memory";
+        goto done;
+    }
+    FPDFBitmap_FillRect(bitmap, 0, 0, width, height, FPDF_ARGB(255, 255, 255, 255));
+    FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
+    pixels = FPDFBitmap_GetBuffer(bitmap);
+    stride = FPDFBitmap_GetStride(bitmap);
+    if (!pixels || stride < width * 4) {
+        *error = "render_failed";
+        goto done;
+    }
+    rgb = malloc((size_t)width * 3);
+    if (!rgb) {
+        *error = "out_of_memory";
+        goto done;
+    }
+    fd = open(output_path, O_WRONLY | O_CREAT | O_EXCL
+#ifdef O_CLOEXEC
+              | O_CLOEXEC
+#endif
+#ifdef O_NOFOLLOW
+              | O_NOFOLLOW
+#endif
+              , 0600);
+    if (fd < 0) {
+        *error = (errno == EEXIST) ? "output_exists" : "output_unavailable";
+        goto done;
+    }
+    output_created = 1;
+    header_len = snprintf(header, sizeof(header), "P6\n%d %d\n255\n", width, height);
+    if (header_len < 0 || !write_all(fd, header, (size_t)header_len)) {
+        *error = "output_write_failed";
+        goto done;
+    }
+    for (y = 0; y < height; ++y) {
+        const unsigned char *row = pixels + (size_t)y * stride;
+        for (x = 0; x < width; ++x) {
+            rgb[x * 3] = row[x * 4 + 2];
+            rgb[x * 3 + 1] = row[x * 4 + 1];
+            rgb[x * 3 + 2] = row[x * 4];
+        }
+        if (!write_all(fd, rgb, (size_t)width * 3)) {
+            *error = "output_write_failed";
+            goto done;
+        }
+    }
+done:
+    if (fd >= 0 && close(fd) != 0 && !*error)
+        *error = "output_write_failed";
+    if (*error && output_created)
+        unlink(output_path);
+    free(rgb);
+    if (bitmap)
+        FPDFBitmap_Destroy(bitmap);
+    if (page)
+        FPDF_ClosePage(page);
+    return !*error;
+}
+
 static void usage(void) {
-    fputs("usage: samosa-extract --json FILE.pdf\n", stderr);
+    fputs("usage: samosa-extract --json FILE.pdf\n"
+          "       samosa-extract --render-ppm FILE.pdf PAGE OUTPUT.ppm\n", stderr);
 }
 
 int main(int argc, char **argv) {
@@ -292,10 +403,25 @@ int main(int argc, char **argv) {
     FPDF_FILEACCESS access;
     FPDF_DOCUMENT document = NULL;
     Buffer pages = {0}, document_text = {0}, output = {0};
-    const char *error = NULL;
+    const char *error = NULL, *input_path, *render_path = NULL;
     int page_count, page_index, text_layer = 0;
+    int render_page = 0;
+    char *end = NULL;
 
-    if (argc != 3 || strcmp(argv[1], "--json") != 0) {
+    if (argc == 3 && strcmp(argv[1], "--json") == 0) {
+        input_path = argv[2];
+    } else if (argc == 5 && strcmp(argv[1], "--render-ppm") == 0) {
+        long page;
+        errno = 0;
+        page = strtol(argv[3], &end, 10);
+        if (errno || !end || *end || page < 1 || page > INT_MAX) {
+            usage();
+            return 64;
+        }
+        input_path = argv[2];
+        render_page = (int)page;
+        render_path = argv[4];
+    } else {
         usage();
         return 64;
     }
@@ -303,7 +429,7 @@ int main(int argc, char **argv) {
         put_error("sandbox_limit_unavailable");
         return 70;
     }
-    if (!open_input(argv[2], &input, &error)) {
+    if (!open_input(input_path, &input, &error)) {
         put_error(error);
         return 65;
     }
@@ -329,6 +455,21 @@ int main(int argc, char **argv) {
         FPDF_DestroyLibrary();
         close(input.fd);
         return 65;
+    }
+    if (render_page) {
+        if (!render_ppm(document, render_page, render_path, &error)) {
+            put_error(error);
+            FPDF_CloseDocument(document);
+            FPDF_DestroyLibrary();
+            close(input.fd);
+            return 65;
+        }
+        printf("{\"ok\":true,\"page\":%d,\"format\":\"image/x-portable-pixmap\"}\n", render_page);
+        FPDF_CloseDocument(document);
+        FPDF_DestroyLibrary();
+        close(input.fd);
+        alarm(0);
+        return 0;
     }
     if (!buf_put(&pages, "[")) error = "output_too_large";
     for (page_index = 0; !error && page_index < page_count; ++page_index) {

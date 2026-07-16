@@ -26,7 +26,19 @@ fi
 error_file=$(mktemp "${TMPDIR:-/tmp}/samosa-extract-error.XXXXXX")
 bad_file=$(mktemp "${TMPDIR:-/tmp}/samosa-extract-bad.XXXXXX")
 link_file="$bad_file.link"
-trap 'rm -f "$error_file" "$bad_file" "$link_file"' EXIT HUP INT TERM
+render_dir=$(mktemp -d "${TMPDIR:-/tmp}/samosa-extract-render.XXXXXX")
+render_file="$render_dir/page.ppm"
+trap 'rm -rf "$error_file" "$bad_file" "$link_file" "$render_dir"' EXIT HUP INT TERM
+
+render_out=$("$EXTRACTOR" --render-ppm "$FIXTURE" 1 "$render_file")
+printf '%s' "$render_out" | grep -F '"format":"image/x-portable-pixmap"' >/dev/null
+[ "$(dd if="$render_file" bs=2 count=1 2>/dev/null)" = P6 ]
+[ "$(wc -c <"$render_file" | tr -d ' ')" -gt 1000 ]
+if "$EXTRACTOR" --render-ppm "$FIXTURE" 1 "$render_file" >"$error_file" 2>&1; then
+  echo "samosa-extract overwrote an existing rendered page" >&2
+  exit 1
+fi
+grep -F 'output_exists' "$error_file" >/dev/null
 
 if "$EXTRACTOR" --json /dev/null >"$error_file" 2>&1; then
   echo "samosa-extract accepted a non-regular file" >&2

@@ -25,6 +25,18 @@ ingestion caller must calculate the exact model-token count with its loaded
 tokenizer before deciding whether input fits context; it must not treat this
 estimate as a budget authority.
 
+For the scanned-page/vision seam, the sidecar can render one page to a bounded
+PPM image that the existing `stb_image` decoder accepts:
+
+```sh
+samosa-extract --render-ppm file.pdf 3 /secure/job-temp/page-3.ppm
+```
+
+The page number is one-based. The output must not already exist; it is created
+mode `0600` and capped to a 768-pixel long edge (at most 768² pixels). Successful
+rendering reports a small JSON acknowledgement on standard output. The caller
+owns the temporary directory and must delete the rendered image after inference.
+
 Failures are also JSON, for example `{"ok":false,"error":"pdf_encrypted"}`.
 The stable failure classes include unavailable/invalid input, encrypted or
 malformed PDFs, page/text/output limits, and the wall timeout.

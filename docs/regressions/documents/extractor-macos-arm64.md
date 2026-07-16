@@ -31,7 +31,23 @@ samosa-extract: PASS
 
 The test covers successful text extraction, non-regular input rejection,
 malformed input, symlink rejection, the configurable downward-only input-size
-limit, and successful execution under `sandbox-exec` with `(deny network*)`.
+limit, successful execution under `sandbox-exec` with `(deny network*)`, and
+PPM rendering with no overwrite of an existing output file.
+
+Manual render check:
+
+```sh
+./samosa-extract --render-ppm v109i02.pdf 1 /tmp/page-1.ppm
+file /tmp/page-1.ppm
+```
+
+```text
+{"ok":true,"page":1,"format":"image/x-portable-pixmap"}
+Netpbm image data, size = 543 x 768, rawbits, pixmap
+```
+
+The output was mode `0600`, 1.2 MiB. It is within the existing vision decoder's
+4 MiB HTTP-body cap and its PNM/PPM decoder support.
 
 The four user-provided JSS PDFs were evaluated locally but are not committed:
 
