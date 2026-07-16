@@ -1369,12 +1369,70 @@ def _make_reduce_model_call(job, serve_url):
             'max_tokens': inf.get('max_tokens', 512),
             'stream': False,
         }
+        call_started = time.perf_counter()
         resp, err = call_serve(body, serve_url)
+        model_call.wall_seconds += time.perf_counter() - call_started
         if err:
             return None
         return resp.get('choices', [{}])[0].get('message', {}).get('content', '')
 
+    model_call.wall_seconds = 0.0
     return model_call
+
+
+def _recover_orphans(job, job_dir, event_log, all_units):
+    """Recovery step 4 — an artifact + provenance present with NO terminal event
+    (a crash in the window between rename and the event append) is reconciled by
+    re-validating and appending the missing event, not silently reprocessed.
+    Absence of an event does not imply absence of output."""
+    items_dir = Path(job_dir) / 'results' / 'items'
+    if not items_dir.exists():
+        return
+    terminal = event_log.get_terminal_units()
+    schema = job['output_schema']
+    domain_rules = job.get('validation', {}).get('domain_rules')
+    recovered = 0
+    for unit, item in all_units:
+        uid = unit['unit_id']
+        if uid in terminal:
+            continue
+        safe_uid = uid.replace('#', '_').replace('/', '_')
+        rec_path = items_dir / f"{safe_uid}.json"
+        prov_path = items_dir / f"{safe_uid}.provenance.json"
+        if not (rec_path.exists() and prov_path.exists()):
+            continue
+        try:
+            record = json.loads(rec_path.read_text())
+            provenance = json.loads(prov_path.read_text())
+            if (not isinstance(provenance, dict)
+                    or provenance.get('unit_id') != uid):
+                raise ValueError('invalid provenance')
+        except (json.JSONDecodeError, OSError, ValueError):
+            # Not usable — drop both and let the unit re-run as READY.
+            rec_path.unlink(missing_ok=True)
+            prov_path.unlink(missing_ok=True)
+            continue
+        model_call_seconds = provenance.get('wall_seconds')
+        validation = validate_output(json.dumps(record), schema, domain_rules)
+        if validation['status'] == 'passed':
+            event_log.append('item_complete', unit_id=uid,
+                             input_sha256=item['input_sha256'],
+                             input_path=item['input_path'],
+                             artifact=uid, validation='passed',
+                             model_call_seconds=model_call_seconds)
+        else:
+            review_dir = Path(job_dir) / 'results' / 'review'
+            review_dir.mkdir(parents=True, exist_ok=True)
+            atomic_write(review_dir / rec_path.name,
+                         json.dumps(record, indent=2))
+            event_log.append('item_review_required', unit_id=uid,
+                             input_sha256=item['input_sha256'],
+                             input_path=item['input_path'],
+                             reasons=validation['errors'],
+                             model_call_seconds=model_call_seconds)
+        recovered += 1
+    if recovered:
+        print(f"[jobs] recovered {recovered} orphaned artifact(s) with no terminal event")
 
 
 def _reduce_completed_groups(job, job_dir, event_log, unit_by_group, serve_url):
@@ -1400,6 +1458,7 @@ def _reduce_completed_groups(job, job_dir, event_log, unit_by_group, serve_url):
         units_results = _gather_group_results(group_units, job_dir, event_log)
 
         mc = None
+        model_call_seconds = 0.0
         if needs_model:
             ok, reason = gate_check(job, serve_url)
             while not ok:
@@ -1413,6 +1472,8 @@ def _reduce_completed_groups(job, job_dir, event_log, unit_by_group, serve_url):
 
         merged, validation, method = reduce_units(
             units_results, schema, reduce_config, model_call=mc)
+        if mc is not None:
+            model_call_seconds = mc.wall_seconds
 
         docs_dir = Path(job_dir) / 'results' / 'documents'
         docs_dir.mkdir(parents=True, exist_ok=True)
@@ -1423,7 +1484,8 @@ def _reduce_completed_groups(job, job_dir, event_log, unit_by_group, serve_url):
                          input_sha256=group_sha,
                          artifact=doc_path.name,
                          validation=validation['status'],
-                         method=method)
+                         method=method,
+                         model_call_seconds=model_call_seconds)
         print(f"[jobs] reduced {group_sha[:12]}: {validation['status']} ({method})")
 
 
@@ -1435,34 +1497,118 @@ def render_view_html(job, events, job_dir):
     """Render results/view.html — fully escaped, self-contained."""
     items_dir = Path(job_dir) / 'results' / 'items'
 
-    # Gather unit states
+    # Rebuild per-unit rows without losing discovery/planning metadata when a
+    # later state event becomes authoritative.
+    input_paths = {
+        evt.get('input_sha256'): evt.get('input_path', '')
+        for evt in events
+        if evt['type'] == 'item_discovered' and evt.get('input_sha256')
+    }
     units = {}
     for evt in events:
         uid = evt.get('unit_id')
-        if uid:
-            units[uid] = evt
+        if not uid:
+            continue
+        row = units.setdefault(uid, {'unit_id': uid})
+        for field in ('input_sha256', 'input_path', 'granularity',
+                      'page_index', 'chunk_index'):
+            if evt.get(field) is not None:
+                row[field] = evt[field]
+        if evt['type'].startswith('item_'):
+            row['state_event'] = evt
+    for row in units.values():
+        if not row.get('input_path'):
+            row['input_path'] = input_paths.get(row.get('input_sha256'), '')
 
     # Count stats
     total = len(units)
-    passed = sum(1 for u in units.values() if u['type'] == 'item_complete')
-    review = sum(1 for u in units.values() if u['type'] == 'item_review_required')
-    failed = sum(1 for u in units.values() if u['type'] == 'item_failed')
+    passed = sum(1 for u in units.values()
+                 if u.get('state_event', {}).get('type') == 'item_complete')
+    review = sum(1 for u in units.values()
+                 if u.get('state_event', {}).get('type') == 'item_review_required')
+    failed = sum(1 for u in units.values()
+                 if u.get('state_event', {}).get('type') == 'item_failed')
 
-    # Compute times
+    # Wall time: first → last event.
     timestamps = [evt.get('ts', '') for evt in events if evt.get('ts')]
-    wall_time = ''
+    wall_range = ''
+    wall_seconds = None
     if len(timestamps) >= 2:
-        wall_time = f"{timestamps[0]} → {timestamps[-1]}"
+        wall_range = f"{timestamps[0]} → {timestamps[-1]}"
+        try:
+            t0 = datetime.fromisoformat(timestamps[0].replace('Z', '+00:00'))
+            t1 = datetime.fromisoformat(timestamps[-1].replace('Z', '+00:00'))
+            wall_seconds = (t1 - t0).total_seconds()
+        except (ValueError, TypeError):
+            pass
+
+    # Active inference time: sum every recorded model call, including retries,
+    # context-limit calls, and model reduction. For older logs that predate the
+    # event field, fall back to the final per-unit provenance.
+    active_seconds = 0.0
+    units_with_event_timing = set()
+    for evt in events:
+        w = evt.get('model_call_seconds')
+        if isinstance(w, (int, float)) and not isinstance(w, bool):
+            active_seconds += w
+            if evt.get('unit_id'):
+                units_with_event_timing.add(evt['unit_id'])
+    for uid in units:
+        if uid in units_with_event_timing:
+            continue
+        safe_uid = uid.replace('#', '_').replace('/', '_')
+        prov_path = items_dir / f"{safe_uid}.provenance.json"
+        if prov_path.exists():
+            try:
+                p = json.loads(prov_path.read_text())
+                w = p.get('wall_seconds')
+                if isinstance(w, (int, float)) and not isinstance(w, bool):
+                    active_seconds += w
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def _fmt(secs):
+        return f"{secs:.1f}s" if isinstance(secs, (int, float)) else "—"
 
     job_name = html_escape(job.get('name', job.get('job_id', 'unknown')))
 
-    rows_html = []
-    # Sort by unit_id for deterministic order
+    # REVIEW_REQUIRED queue first (each reason shown).
+    review_rows = []
     for uid in sorted(units.keys()):
-        evt = units[uid]
-        state = evt['type'].replace('item_', '')
-        input_path = html_escape(evt.get('input_path', evt.get('input_sha256', '')))
-        granularity = html_escape(evt.get('granularity', ''))
+        row = units[uid]
+        evt = row.get('state_event', {})
+        if evt.get('type') != 'item_review_required':
+            continue
+        reasons = html_escape(', '.join(evt.get('reasons', [])))
+        review_rows.append(
+            f'<tr><td>{html_escape(uid)}</td>'
+            f'<td>{html_escape(row.get("input_path", row.get("input_sha256", "")))}</td>'
+            f'<td>{reasons}</td></tr>'
+        )
+    review_section = ''
+    if review_rows:
+        review_section = (
+            '<h2 class="review">Needs review (' + str(review) + ')</h2>'
+            '<table><tr><th>Unit ID</th><th>Input</th><th>Reasons</th></tr>'
+            + ''.join(review_rows) + '</table>'
+        )
+
+    # Full per-item table with links to result / provenance.
+    rows_html = []
+    for uid in sorted(units.keys()):
+        row = units[uid]
+        evt = row.get('state_event', {})
+        state = evt.get('type', 'unknown').replace('item_', '')
+        input_path = html_escape(row.get('input_path', row.get('input_sha256', '')))
+        granularity = html_escape(row.get('granularity', ''))
+        safe_uid = uid.replace('#', '_').replace('/', '_')
+        artifact_links = []
+        if (items_dir / f"{safe_uid}.json").exists():
+            artifact_links.append(
+                f'<a href="{html_escape(f"items/{safe_uid}.json")}">result</a>')
+        if (items_dir / f"{safe_uid}.provenance.json").exists():
+            artifact_links.append(
+                f'<a href="{html_escape(f"items/{safe_uid}.provenance.json")}">prov</a>')
         reasons = ''
         if 'reasons' in evt:
             reasons = html_escape(', '.join(evt['reasons']))
@@ -1470,8 +1616,9 @@ def render_view_html(job, events, job_dir):
             reasons = html_escape(str(evt['error']))
         rows_html.append(
             f'<tr><td>{html_escape(uid)}</td><td>{input_path}</td>'
-            f'<td>{granularity}</td><td>{html_escape(state)}</td>'
-            f'<td>{reasons}</td></tr>'
+            f'<td>{granularity}</td><td class="{html_escape(state)}">{html_escape(state)}</td>'
+            f'<td>{reasons}</td>'
+            f'<td>{" · ".join(artifact_links)}</td></tr>'
         )
 
     view_html = f"""<!DOCTYPE html>
@@ -1480,8 +1627,9 @@ def render_view_html(job, events, job_dir):
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2em; background: #f5f5f5; color: #333; }}
 h1 {{ font-size: 1.4em; }}
+h2 {{ font-size: 1.1em; margin-top: 1.5em; }}
 .summary {{ background: #fff; padding: 1em; border-radius: 8px; margin-bottom: 1em; box-shadow: 0 1px 3px rgba(0,0,0,.1); }}
-table {{ border-collapse: collapse; width: 100%; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); }}
+table {{ border-collapse: collapse; width: 100%; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 1em; }}
 th, td {{ text-align: left; padding: 0.5em 1em; border-bottom: 1px solid #eee; font-size: 0.9em; }}
 th {{ background: #fafafa; font-weight: 600; }}
 .review {{ color: #d97706; font-weight: 600; }}
@@ -1493,10 +1641,13 @@ th {{ background: #fafafa; font-weight: 600; }}
 <div class="summary">
 <p><strong>Total:</strong> {total} &nbsp; <span class="passed">Passed: {passed}</span> &nbsp;
 <span class="review">Review: {review}</span> &nbsp; <span class="failed">Failed: {failed}</span></p>
-<p><strong>Wall time:</strong> {html_escape(wall_time)}</p>
+<p><strong>Wall time:</strong> {_fmt(wall_seconds)} <span style="color:#999">({html_escape(wall_range)})</span></p>
+<p><strong>Active inference time:</strong> {_fmt(active_seconds)}</p>
 </div>
+{review_section}
+<h2>All items</h2>
 <table>
-<tr><th>Unit ID</th><th>Input</th><th>Granularity</th><th>State</th><th>Details</th></tr>
+<tr><th>Unit ID</th><th>Input</th><th>Granularity</th><th>State</th><th>Details</th><th>Artifacts</th></tr>
 {''.join(rows_html)}
 </table>
 </body></html>"""
@@ -1694,6 +1845,58 @@ def get_jobs_root():
         return Path(env)
     home = os.environ.get('HOME', '.')
     return Path(home) / '.samosa' / 'jobs'
+
+
+def _planned_event_fields(unit):
+    """Persist enough planner state to reconstruct dynamically split units."""
+    fields = {
+        'unit_id': unit['unit_id'],
+        'input_sha256': unit['input_sha256'],
+        'granularity': unit['granularity'],
+        'plan_reason': unit['plan_reason'],
+    }
+    for name in ('page_index', 'chunk_index', 'char_start', 'char_end',
+                 'reduce_group'):
+        if unit.get(name) is not None:
+            fields[name] = unit[name]
+    return fields
+
+
+def _restore_logged_units(event_log, items_by_sha, existing_ids):
+    """Rebuild units that were created at runtime by context-limit splitting.
+
+    Older logs did not persist char ranges, so recover them from the stable
+    ``<sha>#c<start>_<end>`` unit id when possible.
+    """
+    restored = []
+    for evt in event_log.events:
+        if evt['type'] != 'item_planned':
+            continue
+        uid = evt.get('unit_id')
+        sha = evt.get('input_sha256')
+        if not uid or uid in existing_ids or sha not in items_by_sha:
+            continue
+        unit = {
+            name: evt[name]
+            for name in ('unit_id', 'input_sha256', 'granularity', 'plan_reason',
+                         'page_index', 'chunk_index', 'char_start', 'char_end',
+                         'reduce_group')
+            if evt.get(name) is not None
+        }
+        if unit.get('plan_reason') == 'context_split':
+            match = re.search(r'#c(\d+)_(\d+)$', uid)
+            if match:
+                unit.setdefault('char_start', int(match.group(1)))
+                unit.setdefault('char_end', int(match.group(2)))
+                unit.setdefault('chunk_index', unit['char_start'])
+            unit.setdefault('reduce_group', sha)
+        if (unit.get('granularity') == 'chunk'
+                and (unit.get('char_start') is None
+                     or unit.get('char_end') is None)):
+            continue
+        existing_ids.add(uid)
+        restored.append((unit, items_by_sha[sha]))
+    return restored
 
 
 def get_serve_url():
@@ -2004,12 +2207,19 @@ def _run_job(job, job_dir):
                 for e in event_log.events
             )
             if not already_planned:
-                event_log.append('item_planned',
-                                 unit_id=u['unit_id'],
-                                 input_sha256=u['input_sha256'],
-                                 granularity=u['granularity'],
-                                 plan_reason=u['plan_reason'])
+                event_log.append('item_planned', **_planned_event_fields(u))
             all_units.append((u, item))
+
+    # Units created by a previous run's server-driven context split are not
+    # produced by the original planner. Restore them from the durable log so an
+    # interrupted child resumes instead of being stranded.
+    items_by_sha = {item['input_sha256']: item for item in new_items}
+    existing_ids = {unit['unit_id'] for unit, _item in all_units}
+    all_units.extend(_restore_logged_units(event_log, items_by_sha, existing_ids))
+
+    # Recovery step 4: reconcile any artifact written just before a crash lost
+    # its terminal event, so we neither reprocess it nor lose the output.
+    _recover_orphans(job, job_dir, event_log, all_units)
 
     # Group split-file units for J1.9 reduction (reduce_group == input_sha256)
     unit_by_group = {}
@@ -2114,22 +2324,21 @@ def _run_job(job, job_dir):
                 if halves:
                     for h in halves:
                         event_log.append('item_planned',
-                                         unit_id=h['unit_id'],
-                                         input_sha256=h['input_sha256'],
-                                         granularity=h['granularity'],
-                                         plan_reason=h['plan_reason'])
+                                         **_planned_event_fields(h))
                         unit_by_group.setdefault(item['input_sha256'], []).append(h)
                         worklist.append((h, item))
                     event_log.append('item_split', unit_id=uid,
                                      input_sha256=item['input_sha256'],
-                                     into=[h['unit_id'] for h in halves])
+                                     into=[h['unit_id'] for h in halves],
+                                     model_call_seconds=wall_seconds)
                     print(f"[jobs] split {uid} on context_limit -> {len(halves)} pieces")
                 else:
                     event_log.append('item_review_required',
                                      unit_id=uid,
                                      input_sha256=item['input_sha256'],
                                      input_path=item['input_path'],
-                                     reasons=['context_limit_irreducible'])
+                                     reasons=['context_limit_irreducible'],
+                                     model_call_seconds=wall_seconds)
                     review_count += 1
                 success = True
                 break
@@ -2141,7 +2350,8 @@ def _run_job(job, job_dir):
             elif err:
                 if attempt < max_attempts:
                     event_log.append('item_retry_wait', unit_id=uid,
-                                     attempt=attempt, error=err)
+                                     attempt=attempt, error=err,
+                                     model_call_seconds=wall_seconds)
                     # Poll status until inference_busy is false
                     for _ in range(30):
                         st = get_serve_status(serve_url)
@@ -2152,7 +2362,8 @@ def _run_job(job, job_dir):
                     continue
                 else:
                     event_log.append('item_failed', unit_id=uid,
-                                     attempt=attempt, error=err)
+                                     attempt=attempt, error=err,
+                                     model_call_seconds=wall_seconds)
                     failed_count += 1
                     break
 
@@ -2187,7 +2398,8 @@ def _run_job(job, job_dir):
                                  input_sha256=item['input_sha256'],
                                  input_path=item['input_path'],
                                  artifact=uid,
-                                 validation=validation['status'])
+                                 validation=validation['status'],
+                                 model_call_seconds=wall_seconds)
                 processed_count += 1
             else:
                 # Copy to review/
@@ -2201,7 +2413,8 @@ def _run_job(job, job_dir):
                 event_log.append('item_review_required', unit_id=uid,
                                  input_sha256=item['input_sha256'],
                                  input_path=item['input_path'],
-                                 reasons=validation['errors'])
+                                 reasons=validation['errors'],
+                                 model_call_seconds=wall_seconds)
                 review_count += 1
 
             success = True

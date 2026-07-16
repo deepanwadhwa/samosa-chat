@@ -907,6 +907,225 @@ class TestRunContextSplit(unittest.TestCase):
         # 1 rejected whole-file POST + 2 piece POSTs
         self.assertEqual(fake_serve.get_request_count(), 3)
 
+    def test_interrupted_context_split_resumes_unfinished_piece(self):
+        import pathlib
+        job = self._job()
+        job_dir = pathlib.Path(self._env['SAMOSA_JOBS_DIR']) / 'ctx-split'
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        fake_serve.set_behavior(context_limit_count=1)
+        original_call = samosa_jobs.call_serve
+        calls = 0
+
+        def stop_before_second_piece(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise RuntimeError('simulated process death')
+            return original_call(*args, **kwargs)
+
+        samosa_jobs.call_serve = stop_before_second_piece
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'simulated process death'):
+                samosa_jobs._run_job(job, job_dir)
+        finally:
+            samosa_jobs.call_serve = original_call
+
+        self.assertEqual(fake_serve.get_request_count(), 2)
+        fake_serve.set_behavior(context_limit_count=0)
+        self.assertEqual(samosa_jobs._run_job(job, job_dir), 0)
+        self.assertEqual(fake_serve.get_request_count(), 3)
+
+        log = samosa_jobs.EventLog(job_dir / 'events.jsonl')
+        log.load()
+        pieces = [e for e in log.events
+                  if e['type'] == 'item_planned'
+                  and e.get('plan_reason') == 'context_split']
+        self.assertEqual(len(pieces), 2)
+        self.assertTrue(all('char_start' in e and 'char_end' in e
+                            for e in pieces))
+        completes = [e for e in log.events if e['type'] == 'item_complete']
+        self.assertEqual(len(completes), 2)
+        reduced = [e for e in log.events if e['type'] == 'doc_reduced']
+        self.assertEqual(len(reduced), 1)
+
+
+class TestOrphanRecovery(unittest.TestCase):
+    """J1.6 recovery step 4 — an artifact with no terminal event is reconciled,
+    not reprocessed (absence of an event != absence of output)."""
+
+    def setUp(self):
+        self.server, self.port = fake_serve.start_server(0)
+        self.serve_url = f'http://127.0.0.1:{self.port}'
+        fake_serve.set_behavior(hang_seconds=0, fail_count=0, fail_counter=0,
+                                return_429=False, return_400_context_limit=False,
+                                context_limit_count=0, context_limit_counter=0)
+        fake_serve.set_status(interactive_active=False, last_interactive_ts=None)
+        fake_serve.reset_request_count()
+        self.tmp = tempfile.mkdtemp()
+        self.inputs = os.path.join(self.tmp, 'inputs')
+        os.makedirs(self.inputs)
+        self.path = os.path.join(self.inputs, 'r.txt')
+        with open(self.path, 'w') as f:
+            f.write("Merchant X total 1 USD.\n")
+        self._env = {'SAMOSA_JOBS_DIR': os.path.join(self.tmp, 'jobs'),
+                     'SAMOSA_SERVE_URL': self.serve_url}
+        self._old_env = {k: os.environ.get(k) for k in self._env}
+        os.environ.update(self._env)
+        self._orig_gate = samosa_jobs.gate_check
+        self._orig_tok = samosa_jobs.get_tokenizer_cmd
+        samosa_jobs.gate_check = lambda job, url: (True, None)
+        samosa_jobs.get_tokenizer_cmd = lambda: None
+
+    def tearDown(self):
+        samosa_jobs.gate_check = self._orig_gate
+        samosa_jobs.get_tokenizer_cmd = self._orig_tok
+        for k, v in self._old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.server.shutdown()
+        import shutil as _sh
+        _sh.rmtree(self.tmp, ignore_errors=True)
+
+    def test_orphaned_artifact_reconciled_no_repost(self):
+        import pathlib
+        with open(self.path, 'rb') as f:
+            sha = samosa_jobs.sha256_bytes(f.read())
+        job_dir = pathlib.Path(self._env['SAMOSA_JOBS_DIR']) / 'orphan'
+        items = job_dir / 'results' / 'items'
+        items.mkdir(parents=True)
+        # Artifact + provenance on disk (rename succeeded)...
+        (items / f'{sha}.json').write_text(json.dumps({'merchant': 'X', 'total': 1}))
+        (items / f'{sha}.provenance.json').write_text(json.dumps({'unit_id': sha, 'wall_seconds': 3.0}))
+        # ...but the terminal event was never appended (crash window).
+        log = samosa_jobs.EventLog(job_dir / 'events.jsonl')
+        log.append('job_created', job_id='orphan', job_sha256='x')
+        log.append('item_discovered', input_sha256=sha, input_path=self.path, media_type='text/plain')
+        log.append('item_planned', unit_id=sha, input_sha256=sha, granularity='file', plan_reason='fits_budget')
+        log.append('item_ingested', unit_id=sha)
+        log.append('item_running', unit_id=sha, attempt=1)
+
+        job = {
+            'schema_version': 1, 'job_id': 'orphan', 'name': 'Orphan',
+            'input': {'folder': self.inputs, 'types': ['text/plain'], 'max_file_bytes': 26214400},
+            'instruction': 'x', 'output_schema': {'type': 'object', 'properties': {
+                'merchant': {'type': ['string', 'null']}, 'total': {'type': ['number', 'null']}}},
+            'resources': {'max_attempts': 2, 'run_on_battery': True, 'min_free_gb': 0},
+        }
+        job, errs = samosa_jobs.validate_job(job)
+        self.assertEqual(errs, [])
+
+        rc = samosa_jobs._run_job(job, job_dir)
+        self.assertEqual(rc, 0)
+
+        log.load()
+        completes = [e for e in log.events if e['type'] == 'item_complete' and e.get('unit_id') == sha]
+        self.assertEqual(len(completes), 1)                  # missing event appended
+        self.assertEqual(fake_serve.get_request_count(), 0)  # never re-POSTed
+        # the stored record is untouched
+        self.assertEqual(json.loads((items / f'{sha}.json').read_text())['merchant'], 'X')
+
+    def test_orphaned_review_artifact_restores_review_copy(self):
+        import pathlib
+        with open(self.path, 'rb') as f:
+            sha = samosa_jobs.sha256_bytes(f.read())
+        job_dir = pathlib.Path(self._env['SAMOSA_JOBS_DIR']) / 'orphan'
+        items = job_dir / 'results' / 'items'
+        items.mkdir(parents=True)
+        (items / f'{sha}.json').write_text(json.dumps({'merchant': 'X'}))
+        (items / f'{sha}.provenance.json').write_text(
+            json.dumps({'unit_id': sha, 'wall_seconds': 3.0}))
+
+        log = samosa_jobs.EventLog(job_dir / 'events.jsonl')
+        log.append('job_created', job_id='orphan', job_sha256='x')
+        log.append('item_discovered', input_sha256=sha, input_path=self.path,
+                   media_type='text/plain')
+        log.append('item_planned', unit_id=sha, input_sha256=sha,
+                   granularity='file', plan_reason='fits_budget')
+        log.append('item_running', unit_id=sha, attempt=1)
+
+        job = {
+            'schema_version': 1, 'job_id': 'orphan', 'name': 'Orphan',
+            'input': {'folder': self.inputs, 'types': ['text/plain'],
+                      'max_file_bytes': 26214400},
+            'instruction': 'x',
+            'output_schema': {
+                'type': 'object', 'required': ['merchant', 'total'],
+                'properties': {
+                    'merchant': {'type': ['string', 'null']},
+                    'total': {'type': ['number', 'null']},
+                },
+            },
+            'resources': {'max_attempts': 2, 'run_on_battery': True,
+                          'min_free_gb': 0},
+        }
+        job, errs = samosa_jobs.validate_job(job)
+        self.assertEqual(errs, [])
+
+        self.assertEqual(samosa_jobs._run_job(job, job_dir), 0)
+        log.load()
+        reviews = [e for e in log.events
+                   if e['type'] == 'item_review_required'
+                   and e.get('unit_id') == sha]
+        self.assertEqual(len(reviews), 1)
+        self.assertIn('missing_required_field:total', reviews[0]['reasons'])
+        self.assertEqual(reviews[0]['model_call_seconds'], 3.0)
+        self.assertTrue((job_dir / 'results' / 'review' / f'{sha}.json').exists())
+        self.assertEqual(fake_serve.get_request_count(), 0)
+
+
+class TestView(unittest.TestCase):
+    """J1.12 — static view: review-first, active-inference time, escaping."""
+
+    def test_review_first_active_time_and_escaping(self):
+        import pathlib
+        with tempfile.TemporaryDirectory() as td:
+            job_dir = pathlib.Path(td)
+            items = job_dir / 'results' / 'items'
+            items.mkdir(parents=True)
+            (items / 'aaa.provenance.json').write_text(json.dumps({'wall_seconds': 2.5}))
+            (items / 'bbb.provenance.json').write_text(json.dumps({'wall_seconds': 1.5}))
+            events = [
+                {'type': 'job_created', 'ts': '2026-07-16T18:00:00Z'},
+                {'type': 'item_discovered', 'input_sha256': 'aaa',
+                 'input_path': '/x/ok.txt', 'ts': '2026-07-16T18:00:01Z'},
+                {'type': 'item_planned', 'unit_id': 'aaa', 'input_sha256': 'aaa',
+                 'granularity': 'file', 'ts': '2026-07-16T18:00:02Z'},
+                {'type': 'item_retry_wait', 'unit_id': 'aaa', 'attempt': 1,
+                 'error': 'timeout', 'model_call_seconds': 1.25,
+                 'ts': '2026-07-16T18:00:03Z'},
+                {'type': 'item_complete', 'unit_id': 'aaa', 'ts': '2026-07-16T18:00:05Z',
+                 'input_path': '/x/ok.txt', 'model_call_seconds': 2.5},
+                {'type': 'item_discovered', 'input_sha256': 'bbb',
+                 'input_path': '<img src=x onerror=alert(1)>.jpg',
+                 'ts': '2026-07-16T18:00:06Z'},
+                {'type': 'item_planned', 'unit_id': 'bbb', 'input_sha256': 'bbb',
+                 'granularity': 'single_image', 'ts': '2026-07-16T18:00:07Z'},
+                {'type': 'item_review_required', 'unit_id': 'bbb', 'ts': '2026-07-16T18:00:10Z',
+                 'input_path': '<img src=x onerror=alert(1)>.jpg',
+                 'reasons': ['unparseable']},
+                {'type': 'doc_reduced', 'input_sha256': 'doc',
+                 'validation': 'passed', 'method': 'model',
+                 'model_call_seconds': 0.75, 'ts': '2026-07-16T18:00:10Z'},
+            ]
+            path = samosa_jobs.render_view_html({'name': 'View test', 'job_id': 'v'},
+                                                events, str(job_dir))
+            out = pathlib.Path(path).read_text()
+
+            # Hostile filename escaped; raw tag absent (J1.12 / HR-10).
+            self.assertIn('&lt;img', out)
+            self.assertNotIn('<img src=x', out)
+            # Active inference = retry 1.25 + success 2.5 + legacy provenance
+            # fallback 1.5 + model reduction .75 = 6.0s; wall = 10s.
+            self.assertIn('6.0s', out)
+            self.assertIn('10.0s', out)
+            self.assertIn('single_image', out)
+            # REVIEW_REQUIRED queue is shown before the full item table.
+            self.assertIn('Needs review', out)
+            self.assertLess(out.index('Needs review'), out.index('All items'))
+
 
 if __name__ == '__main__':
     unittest.main()
