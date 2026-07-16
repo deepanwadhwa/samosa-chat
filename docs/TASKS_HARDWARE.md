@@ -159,7 +159,22 @@ turned out to be the wrong scary number.
 
 ## H2 — Runtime SIMD dispatch on x86 (fixes G10)  ~3–4 days  **Biggest single win**
 
-**Status: open. This is the highest-value work in the program.**
+**Status (2026-07-16): IMPLEMENTED but x86 UNVALIDATED — blocked on hardware. Do
+not ship the x86 SIMD path.** The runtime `cpuid` dispatch, per-target AVX2/VNNI
+kernels, `simd_init()`, and the host profiler landed on branch `tasks-hardware`
+(uncommitted). On the reference M3 Air, `make test` is green and the **NEON +
+scalar paths are validated**; the arm64 math is unchanged (verified by
+`git diff`). **The AVX2 and AVX512-VNNI kernels have never executed anywhere** —
+Rosetta / Docker on this Mac exposes no AVX2 to `__builtin_cpu_supports`, so the
+mandatory token-parity gate below **could not be run**. The `-mavx2` cross-compile
+in the implementer's report proves the code *compiles*, not that it *runs* (its
+own log shows `[simd] path=scalar`). Evidence and the exact blocker:
+[regressions/hardware/simd-dispatch-verification.md](regressions/hardware/simd-dispatch-verification.md).
+To keep `main` shippable, the x86 AVX2/VNNI path is **gated off by default** —
+opt-in via `SAMOSA_SIMD=avx2`/`avx512`; a stock x86 build runs the known-good
+scalar path (zero regression), so nothing unvalidated ships. **This stays open
+until the gate runs on real x86; closing it = validate, then flip the default
+back to auto-select.** The design and acceptance below are unchanged and correct.
 
 ### The defect
 

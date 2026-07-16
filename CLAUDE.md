@@ -35,15 +35,23 @@ inside G2, the port's highest-risk change. Evidence:
 [docs/regressions/linux/real-model-run.md](docs/regressions/linux/real-model-run.md);
 spec: [docs/TASKS_LINUX.md](docs/TASKS_LINUX.md) **G9**.
 
-**G10 (OPEN)** — the AVX2/AVX512 kernels are **dead code in every shipped
-x86 build**. `install.sh` and the `Dockerfile` compile with `-O3` and no
-`-march`, so `__AVX2__` is undefined and [kernels.h](src/kernels.h)'s scalar
-remainder does 100% of the work. Measured **7.6× slower** (17.09 → 2.26 GFLOP/s).
-`-march=native` is *not* the fix — one image serves many CPUs — so runtime
-`cpuid` dispatch is required. **Cannot be validated on the reference Mac**: an
-amd64 container there has no AVX2/AVX512/SSE4.2. Needs real x86 hardware.
-Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H2**; evidence:
-[docs/regressions/linux/x86-dispatch.md](docs/regressions/linux/x86-dispatch.md).
+**G10 (OPEN — dispatch implemented 2026-07-16, x86 validation blocked)** — the
+AVX2/AVX512 kernels were **dead code in every shipped x86 build** (no `-march`, so
+`__AVX2__` undefined; [kernels.h](src/kernels.h)'s scalar remainder did 100% of
+the work; measured **7.6× slower**, 17.09 → 2.26 GFLOP/s). Runtime `cpuid`
+dispatch + per-target AVX2/VNNI kernels + `simd_init()` + a host profiler now
+exist on branch `tasks-hardware` (**uncommitted**), and `__attribute__((target))`
+makes the AVX2 bodies compile without `-march`. On the reference M3 Air, `make
+test` is green and the **NEON + scalar paths are validated** (arm64 math
+unchanged). **But the AVX2/VNNI kernels have never executed anywhere** — the Mac
+exposes no AVX2/AVX512/SSE4.2 (Rosetta/amd64 container), so H2's mandatory
+token-parity gate could not run. So the x86 AVX2/VNNI path is **gated off by
+default** (opt-in `SAMOSA_SIMD=avx2`/`avx512`) — `main` ships the known-good scalar
+path on x86, zero regression. G10 stays **OPEN** until validated on real x86 (then
+flip the default back to auto-select). Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md)
+**H2**; evidence: [docs/regressions/linux/x86-dispatch.md](docs/regressions/linux/x86-dispatch.md)
+(the defect) and [docs/regressions/hardware/simd-dispatch-verification.md](docs/regressions/hardware/simd-dispatch-verification.md)
+(verification + blocker).
 
 **Published-claim defect (OPEN)** — [README.md](README.md) and
 [dist/MODEL_CARD.md](dist/MODEL_CARD.md) state that expert-streaming *reads* wear

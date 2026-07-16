@@ -238,6 +238,15 @@ doctor() {
     if [ -z "$mount_type" ]; then
       mount_type=$(awk -v m="$(df -P "$MODEL" 2>/dev/null | awk 'NR==2 {print $6}')" '$2==m {print $3}' /proc/mounts 2>/dev/null)
     fi
+    # Magic number detection to bypass overlay layers
+    if [ -d "$MODEL" ]; then
+      stat_type=$(stat -f -c %t "$MODEL" 2>/dev/null || true)
+      if [ "$stat_type" = "6a656a63" ]; then
+        mount_type="virtiofs"
+      elif [ "$stat_type" = "1020304" ] || [ "$stat_type" = "01020304" ] || [ "$stat_type" = "28cd3d45" ]; then
+        mount_type="9p"
+      fi
+    fi
     if [ "$mount_type" = "virtiofs" ] || [ "$mount_type" = "9p" ] || [ "$mount_type" = "fakeowner" ] || [ "$mount_type" = "osxfs" ] || [ "$mount_type" = "grpcfuse" ] || echo "$mount_device" | grep -q -E 'virtiofs|9p|host|grpcfuse'; then
       echo "WARNING:   model is mounted via ${mount_type:-9p/virtiofs} ($mount_device). This causes a 10x slowdown. Use a named Docker volume instead."
     fi

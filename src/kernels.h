@@ -59,6 +59,168 @@ static inline void matmul(float *y, const float *x, const float *W, int S, int I
 }
 
 /* y[S,O] = x[S,I] @ W^T con W quantizzato int8 per-riga + scala[O] (dequant-on-use) */
+#if defined(__x86_64__)
+#include <immintrin.h>
+
+#ifndef __AVX2__
+__attribute__((target("avx2")))
+static inline float hsum256(__m256 v){            /* somma orizzontale di 8 float */
+    __m128 lo=_mm256_castps256_ps128(v), hi=_mm256_extractf128_ps(v,1);
+    lo=_mm_add_ps(lo,hi); __m128 sh=_mm_movehl_ps(lo,lo); lo=_mm_add_ps(lo,sh);
+    sh=_mm_shuffle_ps(lo,lo,1); lo=_mm_add_ss(lo,sh); return _mm_cvtss_f32(lo);
+}
+#endif
+
+/* --- matmul_q Target Implementations --- */
+__attribute__((target("avx2,fma")))
+static void matmul_q_avx2(float *y, const float *x, const int8_t *q, const float *scale, int S, int I, int O){
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const int8_t *w=q+(int64_t)o*I; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            __m256 acc=_mm256_setzero_ps();
+            for(;i+8<=I;i+=8){ __m256i wi=_mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i*)(w+i)));
+                acc=_mm256_fmadd_ps(_mm256_loadu_ps(xs+i), _mm256_cvtepi32_ps(wi), acc); }
+            a=hsum256(acc);
+            for(;i<I;i++) a+=xs[i]*(float)w[i]; y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void matmul_q_scalar(float *y, const float *x, const int8_t *q, const float *scale, int S, int I, int O){
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const int8_t *w=q+(int64_t)o*I; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            for(;i<I;i++) a+=xs[i]*(float)w[i]; y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void (*g_matmul_q)(float*, const float*, const int8_t*, const float*, int, int, int) = matmul_q_scalar;
+
+/* --- matmul_i4 Target Implementations --- */
+__attribute__((target("avx2,fma")))
+static void matmul_i4_avx2(float *y, const float *x, const uint8_t *q4, const float *scale, int S, int I, int O){
+    int rb=(I+1)/2;
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const uint8_t *w=q4+(int64_t)o*rb; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            const __m128i m4=_mm_set1_epi8(0x0F); const __m256i b8=_mm256_set1_epi32(8);
+            __m256 acc=_mm256_setzero_ps();
+            for(;i+16<=I;i+=16){ __m128i by=_mm_loadl_epi64((const __m128i*)(w+(i>>1)));   /* 8 byte=16 nibble */
+                __m128i lo=_mm_and_si128(by,m4), hi=_mm_and_si128(_mm_srli_epi16(by,4),m4);
+                __m128i nib=_mm_unpacklo_epi8(lo,hi);                                       /* nibble in ordine */
+                __m256 w0=_mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_cvtepu8_epi32(nib),b8));
+                __m256 w1=_mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_srli_si128(nib,8)),b8));
+                acc=_mm256_fmadd_ps(_mm256_loadu_ps(xs+i),   w0, acc);
+                acc=_mm256_fmadd_ps(_mm256_loadu_ps(xs+i+8), w1, acc); }
+            a=hsum256(acc);
+            for(;i+1<I;i+=2){ uint8_t byte=w[i>>1]; int lo=(int)(byte&0xF)-8, hi=(int)(byte>>4)-8;
+                a += xs[i]*(float)lo + xs[i+1]*(float)hi; }
+            if(i<I){ uint8_t byte=w[i>>1]; int lo=(int)(byte&0xF)-8; a += xs[i]*(float)lo; }
+            y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void matmul_i4_scalar(float *y, const float *x, const uint8_t *q4, const float *scale, int S, int I, int O){
+    int rb=(I+1)/2;
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const uint8_t *w=q4+(int64_t)o*rb; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            for(;i+1<I;i+=2){ uint8_t byte=w[i>>1]; int lo=(int)(byte&0xF)-8, hi=(int)(byte>>4)-8;
+                a += xs[i]*(float)lo + xs[i+1]*(float)hi; }
+            if(i<I){ uint8_t byte=w[i>>1]; int lo=(int)(byte&0xF)-8; a += xs[i]*(float)lo; }
+            y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void (*g_matmul_i4)(float*, const float*, const uint8_t*, const float*, int, int, int) = matmul_i4_scalar;
+
+/* --- matmul_i4_grouped Target Implementations --- */
+__attribute__((target("avx2,fma")))
+static void matmul_i4_grouped_avx2(float *y, const float *x, const uint8_t *q4, const float *scale, int group, int S, int I, int O){
+    int rb=(I+1)/2, groups=(I+group-1)/group;
+    #pragma omp parallel for schedule(static)
+    for(int o=0;o<O;o++){
+        const uint8_t *w=q4+(int64_t)o*rb;
+        const float *sc=scale+(int64_t)o*groups;
+        for(int s=0;s<S;s++){
+            const float *xs=x+(int64_t)s*I; float total=0.f;
+            for(int g=0;g<groups;g++){
+                int begin=g*group, end=begin+group; if(end>I)end=I;
+                float part=0.f;
+                for(int i=begin;i<end;i++){
+                    uint8_t byte=w[i>>1];
+                    int v=(i&1)?(int)(byte>>4)-8:(int)(byte&15)-8;
+                    part+=xs[i]*(float)v;
+                }
+                total+=part*sc[g];
+            }
+            y[(int64_t)s*O+o]=total;
+        }
+    }
+}
+
+static void matmul_i4_grouped_scalar(float *y, const float *x, const uint8_t *q4, const float *scale, int group, int S, int I, int O){
+    int rb=(I+1)/2, groups=(I+group-1)/group;
+    #pragma omp parallel for schedule(static)
+    for(int o=0;o<O;o++){
+        const uint8_t *w=q4+(int64_t)o*rb;
+        const float *sc=scale+(int64_t)o*groups;
+        for(int s=0;s<S;s++){
+            const float *xs=x+(int64_t)s*I; float total=0.f;
+            for(int g=0;g<groups;g++){
+                int begin=g*group, end=begin+group; if(end>I)end=I;
+                float part=0.f;
+                for(int i=begin;i<end;i++){
+                    uint8_t byte=w[i>>1];
+                    int v=(i&1)?(int)(byte>>4)-8:(int)(byte&15)-8;
+                    part+=xs[i]*(float)v;
+                }
+                total+=part*sc[g];
+            }
+            y[(int64_t)s*O+o]=total;
+        }
+    }
+}
+
+static void (*g_matmul_i4_grouped)(float*, const float*, const uint8_t*, const float*, int, int, int, int) = matmul_i4_grouped_scalar;
+
+/* --- matmul_i2 Target Implementations --- */
+__attribute__((target("avx2,fma")))
+static void matmul_i2_avx2(float *y, const float *x, const uint8_t *q2, const float *scale, int S, int I, int O){
+    int rb=(I+3)/4;
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const uint8_t *w=q2+(int64_t)o*rb; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            const __m128i m2=_mm_set1_epi8(0x03); const __m256i b2=_mm256_set1_epi32(2);
+            __m256 acc=_mm256_setzero_ps();
+            for(;i+16<=I;i+=16){ __m128i by=_mm_cvtsi32_si128(*(const int*)(w+(i>>2)));    /* 4 byte=16 valori */
+                __m128i p0=_mm_and_si128(by,m2), p1=_mm_and_si128(_mm_srli_epi16(by,2),m2);
+                __m128i p2=_mm_and_si128(_mm_srli_epi16(by,4),m2), p3=_mm_and_si128(_mm_srli_epi16(by,6),m2);
+                __m128i lo=_mm_unpacklo_epi8(p0,p1), hi=_mm_unpacklo_epi8(p2,p3);
+                __m128i nib=_mm_unpacklo_epi16(lo,hi);                                      /* 16 valori in ordine */
+                __m256 w0=_mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_cvtepu8_epi32(nib),b2));
+                __m256 w1=_mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_srli_si128(nib,8)),b2));
+                acc=_mm256_fmadd_ps(_mm256_loadu_ps(xs+i),   w0, acc);
+                acc=_mm256_fmadd_ps(_mm256_loadu_ps(xs+i+8), w1, acc); }
+            a=hsum256(acc);
+            for(;i<I;i++){ uint8_t byte=w[i>>2]; int sh=(i&3)*2; a += xs[i]*(float)((int)((byte>>sh)&3)-2); }
+            y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void matmul_i2_scalar(float *y, const float *x, const uint8_t *q2, const float *scale, int S, int I, int O){
+    int rb=(I+3)/4;
+    #pragma omp parallel for schedule(static)
+    for (int o=0;o<O;o++){ const uint8_t *w=q2+(int64_t)o*rb; float sc=scale[o];
+        for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
+            for(;i<I;i++){ uint8_t byte=w[i>>2]; int sh=(i&3)*2; a += xs[i]*(float)((int)((byte>>sh)&3)-2); }
+            y[(int64_t)s*O+o]=a*sc; } }
+}
+
+static void (*g_matmul_i2)(float*, const float*, const uint8_t*, const float*, int, int, int) = matmul_i2_scalar;
+
+/* --- Dispatch Pointer Macro Overrides --- */
+#define matmul_q g_matmul_q
+#define matmul_i4 g_matmul_i4
+#define matmul_i4_grouped g_matmul_i4_grouped
+#define matmul_i2 g_matmul_i2
+
+#else
+
 static inline void matmul_q(float *y, const float *x, const int8_t *q, const float *scale, int S, int I, int O){
     #pragma omp parallel for schedule(static)
     for (int o=0;o<O;o++){ const int8_t *w=q+(int64_t)o*I; float sc=scale[o];
@@ -78,7 +240,6 @@ static inline void matmul_q(float *y, const float *x, const int8_t *q, const flo
             for(;i<I;i++) a+=xs[i]*(float)w[i]; y[(int64_t)s*O+o]=a*sc; } }
 }
 
-/* y[S,O] = x[S,I] @ W^T con W int4 impacchettato (2 valori/byte) + scala[O]. */
 static inline void matmul_i4(float *y, const float *x, const uint8_t *q4, const float *scale, int S, int I, int O){
     int rb=(I+1)/2;
     #pragma omp parallel for schedule(static)
@@ -114,10 +275,6 @@ static inline void matmul_i4(float *y, const float *x, const uint8_t *q4, const 
             y[(int64_t)s*O+o]=a*sc; } }
 }
 
-/* Groupwise q4. Keeping each scale beside only qgroup weights prevents one
- * outlier from coarsening an entire 512/2048-wide expert row. The accelerated
- * path below uses integer dot products; this float-input path is also needed
- * by the selective MoE-down validation mode. */
 static inline void matmul_i4_grouped(float *y, const float *x, const uint8_t *q4,
                                      const float *scale, int group, int S, int I, int O){
     int rb=(I+1)/2, groups=(I+group-1)/group;
@@ -142,7 +299,6 @@ static inline void matmul_i4_grouped(float *y, const float *x, const uint8_t *q4
     }
 }
 
-/* y[S,O] = x[S,I] @ W^T con W int2 impacchettato (4 valori/byte) + scala[O]. nibble 2-bit -> [-2,1]. */
 static inline void matmul_i2(float *y, const float *x, const uint8_t *q2, const float *scale, int S, int I, int O){
     int rb=(I+3)/4;
     #pragma omp parallel for schedule(static)
@@ -181,6 +337,8 @@ static inline void matmul_i2(float *y, const float *x, const uint8_t *q2, const 
             y[(int64_t)s*O+o]=a*sc; } }
 }
 
+#endif
+
 #if defined(__AVX512VNNI__) && defined(__AVX512BW__)
 #define IDOT_KERNEL "avx512-vnni"
 #elif defined(__AVX2__)
@@ -203,6 +361,176 @@ static inline float qrow_i8(const float *x, int8_t *q, int I){
     for(int i=0;i<I;i++) q[i]=(int8_t)lrintf(x[i]*inv);
     return s;
 }
+
+#if defined(__x86_64__)
+
+__attribute__((target("avx2")))
+static inline int hsum256_i32(__m256i v){
+    __m128i lo=_mm256_castsi256_si128(v), hi=_mm256_extracti128_si256(v,1);
+    lo=_mm_add_epi32(lo,hi); lo=_mm_hadd_epi32(lo,lo); lo=_mm_hadd_epi32(lo,lo);
+    return _mm_cvtsi128_si32(lo);
+}
+
+/* --- dot_i8i8 Target Implementations --- */
+__attribute__((target("avx512vnni,avx512bw,avx2,fma")))
+static int32_t dot_i8i8_vnni(const int8_t *w, const int8_t *x, int I){
+    int32_t sum=0; int i=0;
+    __m512i acc=_mm512_setzero_si512();
+    for(;i+64<=I;i+=64){
+        __m512i wv=_mm512_loadu_si512((const void*)(w+i));
+        __m512i xv=_mm512_loadu_si512((const void*)(x+i));
+        __mmask64 neg=_mm512_movepi8_mask(wv);
+        __m512i xs=_mm512_mask_sub_epi8(xv,neg,_mm512_setzero_si512(),xv);
+        acc=_mm512_dpbusd_epi32(acc,_mm512_abs_epi8(wv),xs);
+    }
+    sum=_mm512_reduce_add_epi32(acc);
+    for(;i<I;i++) sum+=(int32_t)w[i]*x[i];
+    return sum;
+}
+
+__attribute__((target("avx2,fma")))
+static int32_t dot_i8i8_avx2(const int8_t *w, const int8_t *x, int I){
+    int32_t sum=0; int i=0;
+    __m256i acc=_mm256_setzero_si256(); const __m256i ones=_mm256_set1_epi16(1);
+    for(;i+32<=I;i+=32){
+        __m256i wv=_mm256_loadu_si256((const __m256i*)(w+i));
+        __m256i xv=_mm256_loadu_si256((const __m256i*)(x+i));
+        __m256i p=_mm256_maddubs_epi16(_mm256_sign_epi8(wv,wv),_mm256_sign_epi8(xv,wv));
+        acc=_mm256_add_epi32(acc,_mm256_madd_epi16(p,ones));
+    }
+    sum=hsum256_i32(acc);
+    for(;i<I;i++) sum+=(int32_t)w[i]*x[i];
+    return sum;
+}
+
+static int32_t dot_i8i8_scalar(const int8_t *w, const int8_t *x, int I){
+    int32_t sum=0;
+    for(int i=0;i<I;i++) sum+=(int32_t)w[i]*x[i];
+    return sum;
+}
+
+static int32_t (*g_dot_i8i8)(const int8_t*, const int8_t*, int) = dot_i8i8_scalar;
+
+/* --- dot_i4i8 Target Implementations --- */
+__attribute__((target("avx512vnni,avx512bw,avx2,fma")))
+static int32_t dot_i4i8_vnni(const uint8_t *w4, const int8_t *x, int I){
+    int32_t sum=0; int i=0;
+    const __m256i m4v=_mm256_set1_epi8(0x0F);
+    const __m512i b8v=_mm512_set1_epi8(8);
+    const __m512i xidx=_mm512_setr_epi64(0,1,4,5,2,3,6,7);
+    __m512i acc=_mm512_setzero_si512();
+    for(;i+64<=I;i+=64){
+        __m256i by=_mm256_loadu_si256((const __m256i*)(w4+(i>>1)));
+        __m256i lo=_mm256_and_si256(by,m4v), hi=_mm256_and_si256(_mm256_srli_epi16(by,4),m4v);
+        __m256i z0=_mm256_unpacklo_epi8(lo,hi), z1=_mm256_unpackhi_epi8(lo,hi);
+        __m512i wv=_mm512_sub_epi8(_mm512_inserti64x4(_mm512_castsi256_si512(z0),z1,1),b8v);
+        __m512i xv=_mm512_permutexvar_epi64(xidx,_mm512_loadu_si512((const void*)(x+i)));
+        __mmask64 neg=_mm512_movepi8_mask(wv);
+        __m512i xs=_mm512_mask_sub_epi8(xv,neg,_mm512_setzero_si512(),xv);
+        acc=_mm512_dpbusd_epi32(acc,_mm512_abs_epi8(wv),xs);
+    }
+    sum=_mm512_reduce_add_epi32(acc);
+    for(;i+1<I;i+=2){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]+((int)(b>>4)-8)*x[i+1]; }
+    if(i<I){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]; }
+    return sum;
+}
+
+__attribute__((target("avx2,fma")))
+static int32_t dot_i4i8_avx2(const uint8_t *w4, const int8_t *x, int I){
+    int32_t sum=0; int i=0;
+    const __m128i m4=_mm_set1_epi8(0x0F); const __m256i b8=_mm256_set1_epi8(8);
+    const __m256i ones=_mm256_set1_epi16(1);
+    __m256i acc=_mm256_setzero_si256();
+    for(;i+32<=I;i+=32){
+        __m128i by=_mm_loadu_si128((const __m128i*)(w4+(i>>1)));
+        __m128i lo=_mm_and_si128(by,m4), hi=_mm_and_si128(_mm_srli_epi16(by,4),m4);
+        __m128i n0=_mm_unpacklo_epi8(lo,hi), n1=_mm_unpackhi_epi8(lo,hi);
+        __m256i wv=_mm256_sub_epi8(_mm256_set_m128i(n1,n0),b8);
+        __m256i xv=_mm256_loadu_si256((const __m256i*)(x+i));
+        __m256i p=_mm256_maddubs_epi16(_mm256_sign_epi8(wv,wv),_mm256_sign_epi8(xv,wv));
+        acc=_mm256_add_epi32(acc,_mm256_madd_epi16(p,ones));
+    }
+    sum=hsum256_i32(acc);
+    for(;i+1<I;i+=2){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]+((int)(b>>4)-8)*x[i+1]; }
+    if(i<I){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]; }
+    return sum;
+}
+
+static int32_t dot_i4i8_scalar(const uint8_t *w4, const int8_t *x, int I){
+    int32_t sum=0; int i=0;
+    for(;i+1<I;i+=2){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]+((int)(b>>4)-8)*x[i+1]; }
+    if(i<I){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]; }
+    return sum;
+}
+
+static int32_t (*g_dot_i4i8)(const uint8_t*, const int8_t*, int) = dot_i4i8_scalar;
+
+/* --- Dispatch Pointer Macro Overrides --- */
+#define dot_i8i8 g_dot_i8i8
+#define dot_i4i8 g_dot_i4i8
+
+static inline void simd_init(void) {
+    static int initialized = 0;
+    if (initialized) return;
+    const char *force = getenv("SAMOSA_SIMD");
+    __builtin_cpu_init();
+    if (force && !strcmp(force, "scalar")) {
+        fprintf(stderr, "[simd] path=scalar (forced)\n");
+        fflush(stderr);
+        initialized = 1;
+        return;
+    }
+    /* x86 AVX2/VNNI kernels are UNVALIDATED — never token-parity-tested on real
+     * x86 (see docs/regressions/hardware/simd-dispatch-verification.md). They are
+     * OPT-IN until validated: the default below is the known-good scalar path, so
+     * a stock x86 build behaves exactly as it does today. Flip this default only
+     * after H2's parity gate passes on real x86. */
+    if (force && !strcmp(force, "avx512") &&
+        __builtin_cpu_supports("avx512vnni") && __builtin_cpu_supports("avx512bw")) {
+        g_matmul_q = matmul_q_avx2;
+        g_matmul_i4 = matmul_i4_avx2;
+        g_matmul_i4_grouped = matmul_i4_grouped_avx2;
+        g_matmul_i2 = matmul_i2_avx2;
+        g_dot_i8i8 = dot_i8i8_vnni;
+        g_dot_i4i8 = dot_i4i8_vnni;
+        fprintf(stderr, "[simd] path=avx512 (opt-in, UNVALIDATED)\n");
+    } else if (force && !strcmp(force, "avx2") && __builtin_cpu_supports("avx2")) {
+        g_matmul_q = matmul_q_avx2;
+        g_matmul_i4 = matmul_i4_avx2;
+        g_matmul_i4_grouped = matmul_i4_grouped_avx2;
+        g_matmul_i2 = matmul_i2_avx2;
+        g_dot_i8i8 = dot_i8i8_avx2;
+        g_dot_i4i8 = dot_i4i8_avx2;
+        fprintf(stderr, "[simd] path=avx2 (opt-in, UNVALIDATED)\n");
+    } else if (force && (!strcmp(force, "avx2") || !strcmp(force, "avx512"))) {
+        fprintf(stderr, "[simd] path=scalar (%s requested but unavailable on this CPU)\n", force);
+    } else {
+        fprintf(stderr, "[simd] path=scalar (x86 SIMD gated pending validation; opt in with SAMOSA_SIMD=avx2)\n");
+    }
+    fflush(stderr);
+    initialized = 1;
+}
+
+#else
+
+static inline void simd_init(void) {
+#if defined(__ARM_NEON)
+    static int initialized = 0;
+    if (!initialized) {
+        fprintf(stderr, "[simd] path=neon\n");
+        fflush(stderr);
+        initialized = 1;
+    }
+#else
+    static int initialized = 0;
+    if (!initialized) {
+        fprintf(stderr, "[simd] path=scalar\n");
+        fflush(stderr);
+        initialized = 1;
+    }
+#endif
+}
+
 
 #ifdef __AVX2__
 static inline int hsum256_i32(__m256i v){
@@ -309,6 +637,8 @@ static inline int32_t dot_i4i8(const uint8_t *w4, const int8_t *x, int I){
     if(i<I){ uint8_t b=w4[i>>1]; sum+=((int)(b&0xF)-8)*x[i]; }
     return sum;
 }
+
+#endif
 
 static inline void matmul_q_idot(float *y, const int8_t *xq, const float *sx, const int8_t *q,
                                  const float *scale, int S, int I, int O){

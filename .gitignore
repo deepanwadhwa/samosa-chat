@@ -9,4 +9,5 @@ test_groupwise_q4
 test_repetition_guard
 test_samosa_serve
 test_thinking_budget
+test_simd_dispatch
 __pycache__/
