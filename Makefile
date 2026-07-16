@@ -20,9 +20,37 @@ else
 endif
 NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
 ENGINE_HEADERS := $(wildcard src/*.h)
+PDFIUM_DIR ?=
+PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
+
+# PDFium is deliberately optional: the engine's normal build remains
+# dependency-free.  The installer supplies a SHA-pinned platform artifact and
+# invokes this target with PDFIUM_DIR set to its unpacked root.
+ifeq ($(strip $(PDFIUM_DIR)),)
+PDFIUM_READY :=
+else
+PDFIUM_READY := $(PDFIUM_DIR)/include/fpdfview.h $(PDFIUM_LIBRARY)
+endif
 
 samosa-engine: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread src/qwen36b.c src/expert_cache.c src/vision.c -o qwen36b -lm
+
+samosa-extract: src/samosa_extract.c $(PDFIUM_READY)
+	@if [ -z "$(PDFIUM_DIR)" ]; then \
+	  echo "PDFium support unavailable: set PDFIUM_DIR to an unpacked PDFium artifact" >&2; exit 2; \
+	fi
+	@if [ -z "$(PDFIUM_LIBRARY)" ]; then \
+	  echo "PDFium support unavailable: no libpdfium shared library under $(PDFIUM_DIR)/lib" >&2; exit 2; \
+	fi
+	$(CC) -O2 -Wall -Wextra -Werror -std=c11 -I$(PDFIUM_DIR)/include \
+	  src/samosa_extract.c $(PDFIUM_LIBRARY) \
+	  -Wl,-rpath,$(PDFIUM_DIR)/lib -o samosa-extract
+	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+	  install_name_tool -change ./libpdfium.dylib @rpath/libpdfium.dylib samosa-extract; \
+	fi
+
+extract-test: samosa-extract tests/test_samosa_extract.sh tests/fixtures/documents/hello.pdf
+	SAMOSA_EXTRACT=./samosa-extract sh tests/test_samosa_extract.sh
 
 omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
@@ -46,4 +74,4 @@ test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guar
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
 clean:
-	rm -f qwen36b test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
+	rm -f qwen36b samosa-extract test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve

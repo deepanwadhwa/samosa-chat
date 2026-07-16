@@ -1,4 +1,5 @@
 qwen36b
+samosa-extract
 test_expert_cache
 test_kv_cache
 *.qws
