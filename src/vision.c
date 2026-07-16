@@ -85,22 +85,59 @@ static const int b64_index[256] = {
 };
 
 static unsigned char *base64_decode(const char *data, size_t input_length, size_t *output_length) {
-    if (input_length == 0 || input_length % 4 != 0) return NULL;
-    *output_length = input_length / 4 * 3;
-    if (data[input_length - 1] == '=') (*output_length)--;
-    if (data[input_length - 2] == '=') (*output_length)--;
+    if (input_length == 0) return NULL;
+    
+    // Count actual base64 characters
+    size_t valid_len = 0;
+    for (size_t i = 0; i < input_length; i++) {
+        if (data[i] == '=' || b64_index[(unsigned char)data[i]] != 0 || data[i] == 'A') {
+            valid_len++;
+        }
+    }
+    if (valid_len == 0) return NULL;
+    
+    size_t pad = 0;
+    if (valid_len % 4 != 0) {
+        pad = 4 - (valid_len % 4);
+    }
+    size_t virtual_len = valid_len + pad;
+    *output_length = (virtual_len / 4) * 3;
+    
+    // Deduct padding
+    if (valid_len > 0 && data[input_length - 1] == '=') (*output_length)--;
+    if (valid_len > 1 && data[input_length - 2] == '=') (*output_length)--;
+    if (pad == 1) (*output_length)--;
+    if (pad == 2) (*output_length) -= 2;
+    
     unsigned char *decoded = malloc(*output_length);
     if (!decoded) return NULL;
-    for (size_t i = 0, j = 0; i < input_length;) {
-        uint32_t sextet_a = data[i] == '=' ? 0 & i++ : b64_index[(unsigned char)data[i++]];
-        uint32_t sextet_b = data[i] == '=' ? 0 & i++ : b64_index[(unsigned char)data[i++]];
-        uint32_t sextet_c = data[i] == '=' ? 0 & i++ : b64_index[(unsigned char)data[i++]];
-        uint32_t sextet_d = data[i] == '=' ? 0 & i++ : b64_index[(unsigned char)data[i++]];
-        uint32_t triple = (sextet_a << 3 * 6) + (sextet_b << 2 * 6) + (sextet_c << 1 * 6) + (sextet_d << 0 * 6);
-        if (j < *output_length) decoded[j++] = (triple >> 2 * 8) & 0xFF;
-        if (j < *output_length) decoded[j++] = (triple >> 1 * 8) & 0xFF;
-        if (j < *output_length) decoded[j++] = (triple >> 0 * 8) & 0xFF;
+    
+    uint32_t sextet[4] = {0};
+    size_t out_idx = 0;
+    int s_idx = 0;
+    
+    for (size_t i = 0; i < input_length; i++) {
+        unsigned char c = data[i];
+        if (c == '=' || b64_index[c] != 0 || c == 'A') {
+            sextet[s_idx++] = (c == '=') ? 0 : b64_index[c];
+            if (s_idx == 4) {
+                uint32_t triple = (sextet[0] << 18) + (sextet[1] << 12) + (sextet[2] << 6) + sextet[3];
+                if (out_idx < *output_length) decoded[out_idx++] = (triple >> 16) & 0xFF;
+                if (out_idx < *output_length) decoded[out_idx++] = (triple >> 8) & 0xFF;
+                if (out_idx < *output_length) decoded[out_idx++] = triple & 0xFF;
+                s_idx = 0;
+            }
+        }
     }
+    if (s_idx > 0) {
+        // Pad the rest with 0
+        while (s_idx < 4) sextet[s_idx++] = 0;
+        uint32_t triple = (sextet[0] << 18) + (sextet[1] << 12) + (sextet[2] << 6) + sextet[3];
+        if (out_idx < *output_length) decoded[out_idx++] = (triple >> 16) & 0xFF;
+        if (out_idx < *output_length) decoded[out_idx++] = (triple >> 8) & 0xFF;
+        if (out_idx < *output_length) decoded[out_idx++] = triple & 0xFF;
+    }
+    
     return decoded;
 }
 
