@@ -52,6 +52,9 @@ samosa-extract: src/samosa_extract.c $(PDFIUM_READY)
 extract-test: samosa-extract tests/test_samosa_extract.sh tests/fixtures/documents/hello.pdf
 	SAMOSA_EXTRACT=./samosa-extract sh tests/test_samosa_extract.sh
 
+document-installer-test: tests/test_document_installer.sh
+	sh tests/test_document_installer.sh
+
 omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o qwen36b -lm $(OMP_LDFLAGS)

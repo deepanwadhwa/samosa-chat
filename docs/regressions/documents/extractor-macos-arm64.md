@@ -73,6 +73,19 @@ PDFium.
 `tests/test_package_pdfium.py` verifies that release packaging refuses a partial
 platform set and records every supported artifact in `release-manifest.tsv`.
 
+```sh
+PDFIUM_MAC_ARM64_ARCHIVE=/tmp/pdfium-mac-arm64.45AEFQ/pdfium-mac-arm64.tgz \
+  make document-installer-test
+```
+
+```text
+document installer: PASS
+```
+
+This created a minimal checksum-verified release, ran the real installer,
+extracted the committed PDF fixture with the installed sidecar through its
+relative rpath, and confirmed `qwen36b` had no `libpdfium` load command.
+
 ## Limit result
 
 This macOS kernel returned `EINVAL` when setting finite `RLIMIT_AS` and

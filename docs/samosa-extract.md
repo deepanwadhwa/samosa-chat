@@ -81,3 +81,13 @@ the inactive release, compiles `samosa-extract`, and stores its shared library
 under that release's `lib/` directory. The normal engine binary gains no PDFium
 dependency. An older release manifest without the artifact simply has no PDF
 capability; it never substitutes a host PDF tool.
+
+For the real installer path on macOS arm64, run:
+
+```sh
+PDFIUM_MAC_ARM64_ARCHIVE=/path/to/pdfium-mac-arm64.tgz make document-installer-test
+```
+
+It builds a tiny verified release fixture, runs the actual installer, checks the
+relative library path by extracting a PDF from the installed release, and checks
+that `qwen36b` did not gain a PDFium dependency.
