@@ -1,0 +1,6 @@
+Receipt
+Merchant: JOE'S COFFEE HOUSE
+Date: 2026-07-10
+Subtotal: 7.75 USD
+Tax: 0.62 USD
+Total: 8.37 USD

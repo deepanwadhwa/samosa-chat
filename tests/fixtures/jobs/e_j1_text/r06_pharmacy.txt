@@ -1,0 +1,5 @@
+GREEN LEAF PHARMACY
+Date 2026-04-12
+Medicines subtotal: 12.60 USD
+Tax: 1.01 USD
+Total charged: 13.61 USD
