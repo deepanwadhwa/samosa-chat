@@ -62,12 +62,19 @@ throughout. No OOM, no thermal issue on this small run.
   `<job_dir>/results/output.jsonl` and never reads `job['output']['dir']` (it
   reads only `format`). The user's configured output directory is silently
   unused. The records *are* produced (in the job dir), so this is a location bug,
-  not data loss.
+  not data loss. **FIXED** `c85ed3e` (regression test `TestMergedOutput`).
 - **B2 — provenance timing is null.** `prefill_seconds`/`decode_seconds` are
   `None` in every provenance record. Serve's `usage` carries token counts
   (captured: `input_tokens`/`output_tokens`) but no timing, and the runner does
   not fall back to wall-clock as the card specifies. Cost numbers above are shell
-  `time`, not from provenance.
+  `time`, not from provenance. **FIXED (offline)** — `derive_timing()` now records
+  the runner's measured `wall_seconds` on every call and, when serve reports
+  `samosa.tokens_per_second`, splits it into `decode_seconds` (from the decode
+  rate) and `prefill_seconds` (the wall-clock remainder; loopback overhead is
+  negligible against real prefill). When the rate is absent, prefill/decode stay
+  `null` rather than being fabricated. Unit-tested (`TestDeriveTiming`,
+  `TestCallServe`); the **real-model** provenance timing is still to be confirmed
+  in the full E-J1 run.
 
 ## Verdict
 

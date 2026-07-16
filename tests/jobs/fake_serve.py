@@ -34,6 +34,7 @@ _BEHAVIOR = {         # special behaviors
 }
 _REQUEST_COUNT = 0
 _REQUEST_LOCK = threading.Lock()
+_LAST_HEADERS = {}    # headers of the most recent POST /v1/chat/completions
 
 
 def set_canned(body_hash, response):
@@ -83,6 +84,9 @@ class FakeServeHandler(BaseHTTPRequestHandler):
         if self.path != '/v1/chat/completions':
             self.send_error(404)
             return
+
+        global _LAST_HEADERS
+        _LAST_HEADERS = {k: v for k, v in self.headers.items()}
 
         length = int(self.headers.get('Content-Length', 0))
         raw = self.rfile.read(length)
@@ -162,6 +166,10 @@ def start_server(port=0):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, actual_port
+
+
+def get_last_headers():
+    return dict(_LAST_HEADERS)
 
 
 def get_request_count():

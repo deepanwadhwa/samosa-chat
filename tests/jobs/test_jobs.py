@@ -9,7 +9,9 @@ import unittest
 
 # Add dist/ to path so we can import samosa_jobs
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'dist'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 import samosa_jobs
+import fake_serve
 
 
 class TestPlanner(unittest.TestCase):
@@ -457,6 +459,174 @@ class TestReduce(unittest.TestCase):
             units, self.SCHEMA, {'mode': 'deterministic', 'model_fields': []})
         self.assertEqual(validation['status'], 'review_required')
         self.assertTrue(any('missing_pages' in e for e in validation['errors']))
+
+    # --- J1.9 model reduce path ---
+
+    NARRATIVE_SCHEMA = {
+        'type': 'object',
+        'properties': {
+            'name': {'type': ['string', 'null']},
+            'total': {'type': ['number', 'null']},
+            'summary': {'type': ['string', 'null']},
+        }
+    }
+
+    def test_model_fields_one_call_scalars_deterministic(self):
+        """model_fields:['summary'] -> exactly one model call for summary; scalars merged deterministically."""
+        calls = []
+
+        def fake_model_call(payload, fields):
+            calls.append((payload, fields))
+            return '{"summary":"Two receipts totalling 30."}'
+
+        units = [
+            {'record': {'name': 'Alice', 'total': 10, 'summary': 'p1'}, 'status': 'passed', 'errors': []},
+            {'record': {'name': 'Alice', 'total': 20, 'summary': 'p2'}, 'status': 'passed', 'errors': []},
+        ]
+        merged, validation, method = samosa_jobs.reduce_units(
+            units, self.NARRATIVE_SCHEMA,
+            {'mode': 'deterministic', 'model_fields': ['summary']},
+            model_call=fake_model_call)
+
+        self.assertEqual(method, 'model')
+        self.assertEqual(len(calls), 1)                       # exactly one model POST
+        self.assertEqual(calls[0][1], ['summary'])            # only the narrative field
+        self.assertEqual(merged['name'], 'Alice')             # scalar deterministic
+        self.assertEqual(merged['summary'], 'Two receipts totalling 30.')
+        # total conflicts (10 vs 20) -> deterministic conflict still detected
+        self.assertIsNone(merged['total'])
+        self.assertTrue(any('reduce_conflict:total' in e for e in validation['errors']))
+        # payload carries page status/provenance so the model cannot silently drop a page
+        self.assertEqual(len(calls[0][0]), 2)
+        self.assertTrue(all('status' in p for p in calls[0][0]))
+
+    def test_mode_model_sends_whole_set(self):
+        """mode:'model' routes every field through the model."""
+        seen_fields = []
+
+        def fake_model_call(payload, fields):
+            seen_fields.append(fields)
+            return '{"name":"Alice","total":30,"summary":"merged"}'
+
+        units = [
+            {'record': {'name': 'Alice', 'total': 10, 'summary': 'p1'}, 'status': 'passed', 'errors': []},
+            {'record': {'name': 'Bob', 'total': 20, 'summary': 'p2'}, 'status': 'passed', 'errors': []},
+        ]
+        merged, validation, method = samosa_jobs.reduce_units(
+            units, self.NARRATIVE_SCHEMA, {'mode': 'model', 'model_fields': []},
+            model_call=fake_model_call)
+
+        self.assertEqual(method, 'model')
+        self.assertEqual(len(seen_fields), 1)
+        self.assertEqual(set(seen_fields[0]), {'name', 'total', 'summary'})
+        self.assertEqual(merged['total'], 30)                 # from model, not deterministic conflict
+
+    def test_model_reduce_unavailable_when_no_callable(self):
+        """A model reduce with no injected callable flags review, never fabricates."""
+        units = [
+            {'record': {'name': 'Alice', 'total': 10, 'summary': 'p1'}, 'status': 'passed', 'errors': []},
+        ]
+        merged, validation, method = samosa_jobs.reduce_units(
+            units, self.NARRATIVE_SCHEMA, {'mode': 'model', 'model_fields': []},
+            model_call=None)
+        self.assertEqual(method, 'model')
+        self.assertEqual(validation['status'], 'review_required')
+        self.assertIn('model_reduce_unavailable', validation['errors'])
+        self.assertIsNone(merged['summary'])
+
+
+class TestDeriveTiming(unittest.TestCase):
+    """B2 — provenance timing: serve stats when present, else runner wall-clock."""
+
+    def test_tps_present_splits_prefill_decode(self):
+        resp = {'samosa': {'tokens_per_second': 10.0}, 'usage': {'completion_tokens': 21}}
+        t = samosa_jobs.derive_timing(resp, wall_seconds=5.0)
+        self.assertEqual(t['wall_seconds'], 5.0)
+        self.assertEqual(t['decode_seconds'], 2.0)   # (21-1)/10
+        self.assertEqual(t['prefill_seconds'], 3.0)  # 5.0 - 2.0
+
+    def test_no_samosa_records_wall_only(self):
+        resp = {'usage': {'completion_tokens': 50}}
+        t = samosa_jobs.derive_timing(resp, wall_seconds=12.5)
+        self.assertEqual(t['wall_seconds'], 12.5)
+        self.assertIsNone(t['prefill_seconds'])
+        self.assertIsNone(t['decode_seconds'])
+
+    def test_completion_one_cannot_split(self):
+        resp = {'samosa': {'tokens_per_second': 10.0}, 'usage': {'completion_tokens': 1}}
+        t = samosa_jobs.derive_timing(resp, wall_seconds=4.0)
+        self.assertIsNone(t['decode_seconds'])
+        self.assertIsNone(t['prefill_seconds'])
+
+    def test_zero_tps_is_ignored(self):
+        resp = {'samosa': {'tokens_per_second': 0}, 'usage': {'completion_tokens': 50}}
+        t = samosa_jobs.derive_timing(resp, wall_seconds=4.0)
+        self.assertIsNone(t['decode_seconds'])
+
+    def test_prefill_clamped_nonnegative(self):
+        # decode derived larger than wall -> prefill clamped to 0, never negative
+        resp = {'samosa': {'tokens_per_second': 1.0}, 'usage': {'completion_tokens': 101}}
+        t = samosa_jobs.derive_timing(resp, wall_seconds=5.0)
+        self.assertEqual(t['decode_seconds'], 100.0)
+        self.assertEqual(t['prefill_seconds'], 0.0)
+
+
+class TestCallServe(unittest.TestCase):
+    """J1.4 — model call: headers, error-code mapping, oversize short-circuit."""
+
+    def setUp(self):
+        self.server, self.port = fake_serve.start_server(0)
+        self.serve_url = f'http://127.0.0.1:{self.port}'
+        fake_serve.set_behavior(hang_seconds=0, fail_count=0, fail_counter=0,
+                                return_429=False, return_400_context_limit=False)
+        fake_serve.reset_request_count()
+
+    def tearDown(self):
+        self.server.shutdown()
+
+    def _body(self):
+        return {'messages': [{'role': 'user', 'content': 'extract'}]}
+
+    def test_success_returns_dict(self):
+        resp, err = samosa_jobs.call_serve(self._body(), self.serve_url)
+        self.assertIsNone(err)
+        self.assertIn('choices', resp)
+
+    def test_background_header_sent(self):
+        samosa_jobs.call_serve(self._body(), self.serve_url, is_background=True)
+        headers = {k.lower(): v for k, v in fake_serve.get_last_headers().items()}
+        self.assertEqual(headers.get('x-samosa-priority'), 'background')
+
+    def test_no_background_header_when_disabled(self):
+        samosa_jobs.call_serve(self._body(), self.serve_url, is_background=False)
+        headers = {k.lower(): v for k, v in fake_serve.get_last_headers().items()}
+        self.assertNotIn('x-samosa-priority', headers)
+
+    def test_oversize_body_short_circuits_no_post(self):
+        big = {'messages': [{'role': 'user', 'content': 'x' * (5 * 1024 * 1024)}]}
+        fake_serve.reset_request_count()
+        resp, err = samosa_jobs.call_serve(big, self.serve_url)
+        self.assertIsNone(resp)
+        self.assertEqual(err, 'image_too_large')
+        self.assertEqual(fake_serve.get_request_count(), 0)  # F-J5: no POST
+
+    def test_429_maps_to_queue_full(self):
+        fake_serve.set_behavior(return_429=True)
+        resp, err = samosa_jobs.call_serve(self._body(), self.serve_url)
+        self.assertIsNone(resp)
+        self.assertEqual(err, 'queue_full')
+
+    def test_400_maps_to_context_limit(self):
+        fake_serve.set_behavior(return_400_context_limit=True)
+        resp, err = samosa_jobs.call_serve(self._body(), self.serve_url)
+        self.assertIsNone(resp)
+        self.assertEqual(err, 'context_limit')
+
+    def test_500_surfaces_error(self):
+        fake_serve.set_behavior(fail_count=1)
+        resp, err = samosa_jobs.call_serve(self._body(), self.serve_url)
+        self.assertIsNone(resp)
+        self.assertEqual(err, '500')
 
 
 if __name__ == '__main__':

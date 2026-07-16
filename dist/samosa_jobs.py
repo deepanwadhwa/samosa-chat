@@ -898,6 +898,36 @@ def call_serve(body, serve_url, timeout=None, is_background=True):
         return None, f'request_error:{e}'
 
 
+def derive_timing(resp, wall_seconds):
+    """B2 — provenance timing: serve stats when present, else runner wall-clock.
+
+    Serve carries no explicit prefill/decode seconds in its response; the only
+    timing it exposes is ``samosa.tokens_per_second`` (the decode rate). Combined
+    with the completion-token count that yields ``decode_seconds``; the remainder
+    of the measured wall-clock is attributed to prefill (loopback HTTP overhead is
+    negligible against the minutes a real prefill costs). When the decode rate is
+    absent, the split cannot be recovered honestly, so only the measured total
+    (``wall_seconds``) is recorded and prefill/decode stay ``null`` rather than
+    being fabricated. ``wall_seconds`` is always the runner's own measurement.
+    """
+    timing = {
+        'wall_seconds': round(wall_seconds, 3),
+        'prefill_seconds': None,
+        'decode_seconds': None,
+    }
+    samosa = (resp or {}).get('samosa') or {}
+    usage = (resp or {}).get('usage') or {}
+    tps = samosa.get('tokens_per_second')
+    completion = usage.get('completion_tokens')
+    if (isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0
+            and isinstance(completion, int) and not isinstance(completion, bool)
+            and completion > 1):
+        decode_s = (completion - 1) / tps
+        timing['decode_seconds'] = round(decode_s, 3)
+        timing['prefill_seconds'] = round(max(0.0, wall_seconds - decode_s), 3)
+    return timing
+
+
 def get_serve_status(serve_url):
     """GET /internal/v1/status. Returns dict or None."""
     url = f"{serve_url}/internal/v1/status"
@@ -1049,53 +1079,136 @@ class JobLock:
 # J1.9 — Page reduction
 # ---------------------------------------------------------------------------
 
-def reduce_units(units_results, schema, reduce_config):
+# Conservative char budget for a single model-reduce call; the server's
+# `400 context_limit` (F-J9) remains the ultimate authority. When the serialized
+# reducer payload exceeds this, the set is reduced hierarchically (in batches).
+REDUCE_PAYLOAD_CHAR_BUDGET = 40000
+
+
+def _det_merge_field(fname, units_results):
+    """Deterministic scalar merge for one field: (value, conflict?)."""
+    values = []
+    for ur in units_results:
+        rec = ur.get('record')
+        if rec and fname in rec and rec[fname] is not None:
+            values.append(rec[fname])
+    if not values:
+        return None, False
+    if len(set(json.dumps(v, sort_keys=True) for v in values)) == 1:
+        return values[0], False
+    return None, True  # conflict
+
+
+def _missing_pages(units_results):
+    """Units with no usable record — must never be papered over (J1.9)."""
+    missing = []
+    for ur in units_results:
+        if ur.get('status') == 'review_required' and 'unparseable' in ur.get('errors', []):
+            missing.append(ur.get('unit_id', '?'))
+        elif ur.get('status') == 'failed':
+            missing.append(ur.get('unit_id', '?'))
+    return missing
+
+
+def _reduce_payload(units_results):
+    """Reducer input always carries page status + provenance so a model reduce
+    cannot silently drop pages (J1.9)."""
+    payload = []
+    for i, ur in enumerate(units_results):
+        entry = {
+            'page': ur.get('page_index', ur.get('unit_id', i)),
+            'status': ur.get('status', 'passed'),
+            'record': ur.get('record') or {},
+        }
+        if ur.get('errors'):
+            entry['reasons'] = ur['errors']
+        payload.append(entry)
+    return payload
+
+
+def _model_reduce(payload, fields, model_call, _depth=0):
+    """Call the model over the page-status payload for the narrative `fields`.
+    Reduces hierarchically when the payload would exceed the context ceiling.
+    Returns a record dict, or None if the model call failed."""
+    if (len(json.dumps(payload)) > REDUCE_PAYLOAD_CHAR_BUDGET
+            and len(payload) > 1 and _depth < 8):
+        mid = len(payload) // 2
+        partials = []
+        for half in (payload[:mid], payload[mid:]):
+            rec = _model_reduce(half, fields, model_call, _depth + 1)
+            partials.append({
+                'page': 'batch',
+                'status': 'passed' if rec is not None else 'review_required',
+                'record': rec or {},
+            })
+        return _model_reduce(partials, fields, model_call, _depth + 1)
+
+    content = model_call(payload, fields)
+    if content is None:
+        return None
+    # Reuse the J1.5 string-aware scanner to recover the JSON object.
+    val = validate_output(content, {'type': 'object',
+                                     'properties': {f: {} for f in fields}})
+    return val.get('record')
+
+
+def reduce_units(units_results, schema, reduce_config, model_call=None):
     """Merge split-file page/chunk units into a single document record.
+
+    `model_call(payload, fields) -> content_str | None` is injected so the model
+    path is testable offline; when a model reduce is required but no `model_call`
+    is provided the document is flagged for review rather than fabricated.
     Returns (merged_record, validation, method)."""
     mode = reduce_config.get('mode', 'deterministic')
     model_fields = reduce_config.get('model_fields', [])
     properties = schema.get('properties', {})
 
-    if mode == 'deterministic' and not model_fields:
-        # Pure deterministic merge
-        merged = {}
-        errors = []
-        for fname in properties:
-            values = []
-            for ur in units_results:
-                rec = ur.get('record')
-                if rec and fname in rec and rec[fname] is not None:
-                    values.append(rec[fname])
-            if not values:
+    # Which fields does the model own? mode:"model" sends the whole set; otherwise
+    # only the named narrative `model_fields` use the model, scalars stay deterministic.
+    model_field_set = set(properties) if mode == 'model' else set(model_fields)
+
+    merged = {}
+    errors = []
+
+    # Deterministic scalar merge for every field the model does NOT own.
+    for fname in properties:
+        if fname in model_field_set:
+            continue
+        value, conflict = _det_merge_field(fname, units_results)
+        merged[fname] = value
+        if conflict:
+            errors.append(f"reduce_conflict:{fname}")
+
+    # Missing/failed pages are surfaced, never hidden.
+    missing = _missing_pages(units_results)
+    if missing:
+        errors.append(f"missing_pages:{','.join(missing)}")
+
+    # Carry the union of page-level review reasons.
+    all_reasons = []
+    for ur in units_results:
+        all_reasons.extend(ur.get('errors', []))
+
+    method = 'deterministic'
+    if model_field_set:
+        method = 'model'
+        if model_call is None:
+            for fname in model_field_set:
                 merged[fname] = None
-            elif len(set(json.dumps(v, sort_keys=True) for v in values)) == 1:
-                merged[fname] = values[0]
+            errors.append('model_reduce_unavailable')
+        else:
+            model_record = _model_reduce(
+                _reduce_payload(units_results), sorted(model_field_set), model_call)
+            if model_record is None:
+                for fname in model_field_set:
+                    merged[fname] = None
+                errors.append('model_reduce_failed')
             else:
-                merged[fname] = None
-                errors.append(f"reduce_conflict:{fname}")
+                for fname in model_field_set:
+                    merged[fname] = model_record.get(fname)
 
-        # Check for failed/unparseable pages
-        missing_pages = []
-        for ur in units_results:
-            if ur.get('status') in ('review_required',) and 'unparseable' in ur.get('errors', []):
-                missing_pages.append(ur.get('unit_id', '?'))
-            elif ur.get('status') == 'failed':
-                missing_pages.append(ur.get('unit_id', '?'))
-
-        if missing_pages:
-            errors.append(f"missing_pages:{','.join(missing_pages)}")
-
-        # Carry page-level review reasons
-        all_reasons = []
-        for ur in units_results:
-            all_reasons.extend(ur.get('errors', []))
-
-        status = 'review_required' if errors or all_reasons else 'passed'
-        validation = {'status': status, 'errors': errors}
-        return merged, validation, 'deterministic'
-
-    # Model reduce would go here (J1.9 extended)
-    return None, {'status': 'review_required', 'errors': ['reduce_mode_unsupported']}, mode
+    status = 'review_required' if errors or all_reasons else 'passed'
+    return merged, {'status': status, 'errors': errors}, method
 
 
 # ---------------------------------------------------------------------------
@@ -1510,12 +1623,15 @@ def cmd_preview(args):
         print("error: could not build request body", file=sys.stderr)
         return 2
 
+    _call_t0 = time.perf_counter()
     resp, err = call_serve(body, serve_url, timeout=300)
+    wall_seconds = time.perf_counter() - _call_t0
     if err:
         print(f"error: serve call failed: {err}", file=sys.stderr)
         return 2
 
     content = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
+    usage = resp.get('usage', {})
     validation = validate_output(content, job['output_schema'],
                                   job.get('validation', {}).get('domain_rules'))
 
@@ -1525,6 +1641,9 @@ def cmd_preview(args):
         'input_sha256': input_meta['input_sha256'],
         'input_path': input_meta['input_path'],
         'media_type': input_meta['media_type'],
+        'input_tokens': usage.get('prompt_tokens'),
+        'output_tokens': usage.get('completion_tokens'),
+        **derive_timing(resp, wall_seconds),
         'validation': validation['status'],
         'runner_version': RUNNER_VERSION,
     }
@@ -1721,7 +1840,9 @@ def _run_job(job, job_dir):
                 est_tokens = item.get('size', 0) // 4 + inf.get('max_tokens', 512)
                 timeout = max(120, 30 + est_tokens * 0.5)  # Conservative
 
+            _call_t0 = time.perf_counter()
             resp, err = call_serve(body, serve_url, timeout=timeout)
+            wall_seconds = time.perf_counter() - _call_t0
 
             if err == 'context_limit':
                 # Split and re-enqueue — for now, mark as review
@@ -1774,6 +1895,7 @@ def _run_job(job, job_dir):
                 'attempt': attempt,
                 'input_tokens': usage.get('prompt_tokens'),
                 'output_tokens': usage.get('completion_tokens'),
+                **derive_timing(resp, wall_seconds),
                 'validation': validation['status'],
                 'runner_version': RUNNER_VERSION,
             }
