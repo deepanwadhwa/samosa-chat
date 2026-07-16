@@ -47,6 +47,13 @@ SOURCE_FILES = [
     "repetition_guard.h",
     "thinking_budget.h",
     "samosa_http.h",
+    "samosa_extract.c",
+]
+
+PDFIUM_ARCHIVES = [
+    "pdfium-mac-arm64.tgz",
+    "pdfium-linux-x64.tgz",
+    "pdfium-linux-arm64.tgz",
 ]
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -76,6 +83,8 @@ def main() -> int:
     ap.add_argument("--tokenizer", type=pathlib.Path,
                     default=MODEL_ROOT / "tokenizer_qwen36.json")
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
+    ap.add_argument("--pdfium-dir", type=pathlib.Path,
+                    help="directory containing all SHA-reviewed PDFium archives")
     args = ap.parse_args()
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -102,6 +111,15 @@ def main() -> int:
             return 1
         place(src, out / "engine" / name, link=False)
         staged.append(out / "engine" / name)
+
+    if args.pdfium_dir:
+        for name in PDFIUM_ARCHIVES:
+            src = args.pdfium_dir / name
+            if not src.is_file():
+                print(f"missing PDFium archive: {src}", file=sys.stderr)
+                return 1
+            place(src, out / "pdfium" / name, link=False)
+            staged.append(out / "pdfium" / name)
 
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),

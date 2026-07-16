@@ -70,6 +70,9 @@ Passed on this machine. The optional PDFium target is intentionally outside
 the short-lived sidecar. The resident engine was not rebuilt or linked against
 PDFium.
 
+`tests/test_package_pdfium.py` verifies that release packaging refuses a partial
+platform set and records every supported artifact in `release-manifest.tsv`.
+
 ## Limit result
 
 This macOS kernel returned `EINVAL` when setting finite `RLIMIT_AS` and

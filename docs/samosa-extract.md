@@ -73,5 +73,11 @@ PDFIUM_DIR=/path/to/pdfium make extract-test
 ```
 
 The release installer will fetch the platform-specific, manifest-pinned
-artifact. That packaging work is deliberately separate from this development
-build so the normal engine binary gains no PDFium dependency.
+artifact whenever the release manifest includes it. `tools/package_hf.py`
+accepts `--pdfium-dir`; that directory must contain the reviewed macOS-arm64,
+Linux-x64, and Linux-arm64 archives before it will package any of them. The
+installer verifies the archive through the release manifest, unpacks it inside
+the inactive release, compiles `samosa-extract`, and stores its shared library
+under that release's `lib/` directory. The normal engine binary gains no PDFium
+dependency. An older release manifest without the artifact simply has no PDF
+capability; it never substitutes a host PDF tool.
