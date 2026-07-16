@@ -156,6 +156,43 @@ Positioned precisely: **not an autonomous agent.** A *bounded workflow engine* �
 folder in, repeatable task, checkpointed progress, deterministic validation,
 reviewable artifacts out. Agentic behavior is deferred (§Non-goals).
 
+**Why the bounded shape is also the UX decision (recorded 2026-07-16).** A
+plan→tool→observe→replan agent loop is the worst possible shape for this engine:
+every turn re-prefills a growing context at ~14–24 tok/s, so a 10-step LLM-planned
+job pays hours of prefill overhead before any useful work, on plans a 35B-A3B q4
+model produces unreliably. The map-shaped job — N inputs × one bounded model call
+each, deterministic reduce — is the only shape where "slow but local and
+unmetered" wins. Generality comes from **more intents on the same shape** (and
+deterministic post-actions over validated fields, e.g. rename-by-extracted-date),
+never from runtime planning. Pitch wording must match (HR-7): not "the model
+breaks the request into steps" — honest phrase: **"Samosa turns your description
+into a reviewable job definition, then executes it deterministically."**
+Reviewable-and-repeatable is the claim hosted agents cannot make; lead with it.
+The plain-English entry point is real but lives at *definition time*
+(`suggest-job`, §J2), one supervised model call the user edits and previews —
+not at runtime.
+
+**The actor split (recorded 2026-07-16) — who does what; do not blur these:**
+
+| Actor | Does | Never does |
+|---|---|---|
+| **Runner** (`samosa_jobs.py` — deterministic Python, no AI) | Reads files, magic-byte typing, hashing, planning units, building prompts, validation, joins/merges, the event log | Judgment calls; nothing here consults the model |
+| **Intent author** (a human, at development time) | Decomposes a task class into its shape **once** — e.g. Reconcile = extract-each → deterministic join on declared match rule → exception report — tests it, ships it as a template | — |
+| **Qwen, definition time** (`suggest-job`, one supervised call) | Intent *selection* + parameter *filling*: maps the user's English onto a shipped intent, proposes schema/rules; user edits and previews | Inventing a new workflow shape |
+| **Qwen, runtime** | Answers one bounded, pre-built prompt per unit (read this receipt, summarize this page) | Touching raw files, choosing tools, planning, deciding what "done" means |
+
+The model never reads the filesystem — by the time it is involved, the runner
+has prepared one tidy prompt (instruction + schema + extracted text or one
+decoded image). Task *understanding* flows: human author → shape (once) → Qwen
+matches words to a shape and fills blanks (per job) → deterministic code
+executes (per run). Corollary: **a request that fits no shipped intent gets an
+honest "no job shape for that yet" — never an improvised plan.** The intent
+library growing is the generality roadmap; a confidently wrong plan discovered
+eight hours later is the failure mode this split exists to prevent. Pitch
+accordingly: "Samosa recognizes which of its proven workflows fits your
+request, configures it from your description, and shows you the plan before
+running it" — not "Samosa plans the work."
+
 ## Verified codebase foundations
 
 Verified by source read, 2026-07-16 (`main`):
@@ -789,6 +826,12 @@ envelope (no OOM, thermals bounded); a measured cost table; exact commands +
 outputs pasted in. **"Correct but overnight wear too high" is a successful,
 publishable result** — it goes in the ledger and may resize J2.
 
+**E-J1's accuracy number also decides the product framing** (per the
+never-overstate rule): if per-field correctness is high, "extracts your data"
+is honest; if it is, say, ~80%, the feature must be framed as **"drafts every
+field, you confirm"** — or it will feel like it lies. Record the number and pick
+the sentence.
+
 ### E-J2 — Public-fetch politeness & extraction  ~1 day  (gates J3, after J1)
 
 Reuse E-I2 (SSRF 100% blocked for the job fetcher) and E-I3 (extraction) against
@@ -812,6 +855,34 @@ Per the program's rule (experiments resize tasks — [ISSUE_TASKS.md](ISSUE_TASK
   gated on **E-H5**) so the resource budget comes from measured tiers, not the
   ad-hoc J1.13 derivation. Also asset snapshots + prefill-only endpoint (Phase 2
   engine work, F-J3).
+
+  **J2 priority order (recorded 2026-07-16) — ranked by where user frustration
+  actually comes from, build in this order:**
+  1. **`suggest-job`** — extend `suggest-schema` into a full compiler: one
+     interactive model call turning a plain-English description into a complete
+     `job.json` (instruction + schema + domain rules + intent), which the user
+     edits and `preview`s. Hand-writing `job.json` + JSON schema is dev-grade
+     friction and the adoption killer for general users; this one command is the
+     pitched "describe the outcome" experience, supervised and cheap.
+  2. **Pre-arm time/cost estimate.** Before `arm`, print projected wall-clock
+     (exact `tokenize --count` totals × E-J1-measured prefill/decode rates),
+     battery/AC policy in effect, and unit count: "~6.4 h, run overnight."
+     Expectation-setting is the entire difference between "slow" and "broken."
+     Extend `preview` to ~3 diverse samples (new flag; J1.10's one-unit contract
+     and its locked test stay valid as the default).
+  3. **Side-by-side review view.** The review queue must show the **source next
+     to the extraction** (receipt image beside the fields) and let the user
+     correct a field and mark the unit done — the patch flows into
+     `output.jsonl`; never "fix the instruction and rerun everything." If the
+     review experience is three JSON files per item, users churn; the morning
+     review is the product, not the punishment.
+  4. Daemon/scheduler last — a job kicked off manually at night is 90% of the
+     value; launchd is polish.
+
+  **"Ask when uncertain" stays asynchronous in J2**: REVIEW_REQUIRED is the
+  ask-when-uncertain surface. A job that blocks at 2 a.m. on a mid-run prompt is
+  strictly worse than one that flags the unit and keeps going. Do not add
+  interactive mid-run questions.
 - **J3 — Public-web job input (folds in #4).** Scheduled input on the reused SSRF
   fetcher + extractor ([TASKS_INTERNET.md](TASKS_INTERNET.md)); user-provided
   public URLs (HR-1/2); polite fetch, extract, change-detect, feed only new items.
