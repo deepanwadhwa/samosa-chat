@@ -52,6 +52,7 @@ IMAGE_TOKENS = 576          # max vision tokens per rendered page
 MAX_CONTEXT = 24576         # SAMOSA_MAX_CONTEXT_TOKENS (qwen36b.c:3564)
 SYSTEM_RESERVE = 1024       # conservative reserve for system prompt overhead
 LOW_TEXT_TOKENS = 20        # a PDF page under this is treated as needs_image (§J1.2)
+MAX_JOB_INPUT_TOKENS = 8192 # hard Jobs prefill ceiling; leaves context headroom
 MAX_FILE_BYTES_DEFAULT = 26214400  # 25 MiB
 HTTP_MAX_BODY = 4 * 1024 * 1024    # 4 MiB (samosa_http.h:20)
 RUNNER_VERSION = "j1-0.1"
@@ -256,6 +257,10 @@ def validate_job(job):
         ma = res.get('max_attempts', 3)
         if not isinstance(ma, int) or ma < 1:
             errors.append("resources.max_attempts must be a positive integer")
+        mit = res.get('max_input_tokens', MAX_JOB_INPUT_TOKENS)
+        if (not isinstance(mit, int) or isinstance(mit, bool)
+                or mit < 256 or mit > MAX_JOB_INPUT_TOKENS):
+            errors.append(f"resources.max_input_tokens must be an integer in 256..{MAX_JOB_INPUT_TOKENS}")
 
     # Normalize
     normalized = copy.deepcopy(job)
@@ -277,6 +282,7 @@ def validate_job(job):
     normalized['resources'].setdefault('run_on_battery', False)
     normalized['resources'].setdefault('pause_when_user_active', True)
     normalized['resources'].setdefault('min_free_gb', 5)
+    normalized['resources'].setdefault('max_input_tokens', MAX_JOB_INPUT_TOKENS)
     normalized.setdefault('validation', {})
 
     return normalized, errors
@@ -616,16 +622,23 @@ def _file_unit(sha, reason, warning=None):
     return u
 
 
-def _page_units(sha, pages, reason):
+def _page_units(sha, pages, reason, context_budget=None):
     """One unit per PDF page; recombined by the reducer (reduce_group=sha)."""
     units = []
     for p in pages:
         idx = p['index']
+        page_reason = reason
+        if context_budget is not None:
+            page_tokens = p.get('text_tokens', 0)
+            if _page_needs_image(p):
+                page_tokens += IMAGE_TOKENS
+            if page_tokens > context_budget:
+                page_reason = 'page_over_safe_prefill_budget'
         units.append({
             'unit_id': f"{sha}#p{idx}",
             'input_sha256': sha,
             'granularity': 'page',
-            'plan_reason': reason,
+            'plan_reason': page_reason,
             'page_index': idx,
             'reduce_group': sha,
         })
@@ -669,7 +682,7 @@ def plan_units(input_meta, unit_mode, context_budget, tokenizer_cmd=None):
             text_tokens = count_tokens_file(path, tokenizer_cmd)
         if text_tokens is None:
             text_tokens = math.ceil(input_meta.get('size', 0) / 4)
-        if unit_mode == 'file':
+        if unit_mode == 'file' and text_tokens <= context_budget:
             return [_file_unit(sha, 'forced_file')]
         if text_tokens <= context_budget:
             return [_file_unit(sha, 'fits_budget')]
@@ -692,19 +705,19 @@ def plan_units(input_meta, unit_mode, context_budget, tokenizer_cmd=None):
             text_tokens = sum(p.get('text_tokens', 0) for p in pages)
         total_tokens = text_tokens + image_pages * IMAGE_TOKENS
 
-        if unit_mode == 'file':
+        if unit_mode == 'file' and total_tokens <= context_budget:
             # Honor the explicit choice, but warn: one inference sees only one
             # image (F-J4), so a multi-image doc loses the rest.
             warning = 'forced_file_multi_image' if image_pages >= 2 else None
             return [_file_unit(sha, 'forced_file', warning)]
         if unit_mode == 'page':
-            return _page_units(sha, pages, 'forced_page')
+            return _page_units(sha, pages, 'forced_page', context_budget)
 
         # auto
         if image_pages >= 2:
-            return _page_units(sha, pages, 'multi_image_pages')  # forced by F-J4
+            return _page_units(sha, pages, 'multi_image_pages', context_budget)  # forced by F-J4
         if total_tokens > context_budget:
-            return _page_units(sha, pages, 'over_context')       # forced by the cap
+            return _page_units(sha, pages, 'over_context', context_budget)
         return [_file_unit(sha, 'fits_budget')]
 
     # --- unknown type ---
@@ -967,6 +980,8 @@ def extract_unit(unit, input_meta):
     if unit.get('plan_reason') == 'extractor_unavailable':
         return {'error': input_meta.get('_pdf_extract_error',
                                         'extractor_unavailable:application/pdf')}
+    if unit.get('plan_reason') == 'page_over_safe_prefill_budget':
+        return {'error': 'unit_over_safe_prefill_budget'}
 
     if media_type.startswith('image/'):
         # Read image, encode as base64 data URI
@@ -2130,6 +2145,19 @@ def get_tokenizer_cmd():
     return cmd
 
 
+def get_prefill_budget(job):
+    """Return the Jobs input ceiling, deliberately below engine context.
+
+    The context window is a correctness limit, not a sensible unattended
+    prefill target on a laptop.  The job may lower this ceiling but can never
+    raise it beyond the conservative product maximum.
+    """
+    inference = job.get('inference', {})
+    context_budget = MAX_CONTEXT - inference.get('max_tokens', 512) - SYSTEM_RESERVE
+    configured = job.get('resources', {}).get('max_input_tokens', MAX_JOB_INPUT_TOKENS)
+    return min(context_budget, configured, MAX_JOB_INPUT_TOKENS)
+
+
 def cmd_validate(args):
     """samosa jobs validate <job.json>"""
     if len(args) < 1:
@@ -2273,8 +2301,7 @@ def cmd_preview(args):
         input_meta = items[0]
 
     # Plan
-    inf = job.get('inference', {})
-    budget = MAX_CONTEXT - inf.get('max_tokens', 512) - SYSTEM_RESERVE
+    budget = get_prefill_budget(job)
     hydrate_pdf_input(input_meta)
     units = plan_units(input_meta, job.get('unit', 'auto'), budget,
                        get_tokenizer_cmd())
@@ -2415,7 +2442,7 @@ def _run_job(job, job_dir):
 
     # Plan units
     inf = job.get('inference', {})
-    budget = MAX_CONTEXT - inf.get('max_tokens', 512) - SYSTEM_RESERVE
+    budget = get_prefill_budget(job)
     tokenizer_cmd = get_tokenizer_cmd()
 
     all_units = []

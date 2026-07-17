@@ -569,6 +569,11 @@ serve unless noted; build in order.
     - `MAX_CONTEXT = 24576` ([qwen36b.c:3564](../src/qwen36b.c#L3564)),
       `SYSTEM_RESERVE = 1024`,
       `CONTEXT_BUDGET = MAX_CONTEXT − job.inference.max_tokens − SYSTEM_RESERVE`.
+    - **Jobs prefill ceiling:** `MAX_JOB_INPUT_TOKENS = 8192`. The effective
+      planning ceiling is the smaller of this and `CONTEXT_BUDGET`; a job may
+      lower it through `resources.max_input_tokens` but may not raise it. The
+      engine context is a correctness boundary, not an unattended-laptop
+      performance target. A forced `unit:"file"` never bypasses this ceiling.
     - `LOW_TEXT_TOKENS = 20`.
   - **Text token counts are exact, not estimated.** Use `samosa tokenize --count`
     (Engine addition 1) on the extracted text and on the instruction+schema. A
@@ -592,6 +597,9 @@ serve unless noted; build in order.
     multi-image doc → 1 unit + `warning:forced_file_multi_image`.
   - Split units set `reduce_group = input_sha256`; whole-file units
     `reduce_group = null`.
+  - A PDF page that itself exceeds the Jobs prefill ceiling is not sent to the
+    model; it receives `review_required reason:"unit_over_safe_prefill_budget"`
+    until a page-text subchunker is available.
 - **Done.** Pure over metadata + the tokenizer count; deterministic; no model.
 - **Test.** `tests/jobs/test_planner.py`: (1) PNG → file/`single_image`;
   (2) **PDF 10 pages each `needs_image` → 10 units/page/`multi_image_pages`**

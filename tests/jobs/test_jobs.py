@@ -59,6 +59,31 @@ class TestPlanner(unittest.TestCase):
         self.assertEqual(len(units), 40)
         self.assertTrue(all(u['plan_reason'] == 'over_context' for u in units))
 
+    def test_safe_prefill_ceiling_pages_a_long_pdf_before_context_limit(self):
+        # 9,000 text tokens are valid in the engine's 24k context, but Jobs
+        # must never send that much in one unattended prefill.
+        pages = [{'index': i, 'text_tokens': 300, 'has_raster_figure': False}
+                 for i in range(30)]
+        units = samosa_jobs.plan_units(self._pdf(pages), 'auto', 8192)
+        self.assertEqual(len(units), 30)
+        self.assertTrue(all(u['granularity'] == 'page' for u in units))
+        self.assertTrue(all(u['plan_reason'] == 'over_context' for u in units))
+
+    def test_forced_file_cannot_bypass_safe_prefill_ceiling(self):
+        pages = [{'index': i, 'text_tokens': 300, 'has_raster_figure': False}
+                 for i in range(30)]
+        units = samosa_jobs.plan_units(self._pdf(pages), 'file', 8192)
+        self.assertEqual(len(units), 30)
+        self.assertTrue(all(u['granularity'] == 'page' for u in units))
+
+    def test_oversized_page_is_never_sent_to_the_model(self):
+        pages = [{'index': 1, 'text_tokens': 9000, 'has_raster_figure': False}]
+        meta = self._pdf(pages)
+        unit = samosa_jobs.plan_units(meta, 'page', 8192)[0]
+        self.assertEqual(unit['plan_reason'], 'page_over_safe_prefill_budget')
+        self.assertEqual(samosa_jobs.extract_unit(unit, meta)['error'],
+                         'unit_over_safe_prefill_budget')
+
     def test_pdf_forced_file_warns_multi_image(self):
         pages = [{'index': i, 'text_tokens': 5, 'has_raster_figure': True} for i in range(10)]
         units = samosa_jobs.plan_units(self._pdf(pages), 'file', self.BUDGET)
@@ -249,6 +274,16 @@ class TestValidateJob(unittest.TestCase):
         _, errors = samosa_jobs.validate_job(self._valid_job(
             inference={'max_tokens': 9000}))
         self.assertTrue(any('max_tokens' in e for e in errors))
+
+    def test_max_input_tokens_is_capped_below_context(self):
+        _, errors = samosa_jobs.validate_job(self._valid_job(
+            resources={'max_input_tokens': 9000}))
+        self.assertTrue(any('max_input_tokens' in e for e in errors))
+
+    def test_prefill_budget_defaults_to_safe_product_ceiling(self):
+        job, errors = samosa_jobs.validate_job(self._valid_job())
+        self.assertEqual(errors, [])
+        self.assertEqual(samosa_jobs.get_prefill_budget(job), 8192)
 
     def test_unknown_schema_keyword(self):
         """A typo like maxLenght must be rejected."""
