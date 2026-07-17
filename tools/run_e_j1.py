@@ -7,6 +7,13 @@ interactive session.  It records the exact jobs commands, host-safety samples,
 Jobs event timing, and strict field-by-field comparison with the supplied
 labels.  Input fixtures are intentionally separate from the harness so a
 real-image/PDF corpus can replace the starter text corpus without code changes.
+
+With no ``--job``, this runs the bundled text-receipt starter corpus.  Pass a
+validated Jobs definition with ``--job`` and its expected-record mapping with
+``--labels`` to evaluate a representative PDF or image corpus.  The harness
+copies that definition into its results directory and redirects its job state
+and merged output there; it never changes the supplied definition or existing
+Jobs artifacts.
 """
 
 from __future__ import annotations
@@ -111,6 +118,26 @@ def make_job(job_id: str, inputs: Path, output: Path) -> dict[str, object]:
     }
 
 
+def load_experiment_job(job_path: Path, inputs: Path | None, output: Path,
+                        job_id: str | None) -> tuple[dict[str, object], Path]:
+    """Load a user-supplied job and redirect only experiment-local fields."""
+    try:
+        job = json.loads(job_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"could not read job: {error}") from error
+    if not isinstance(job, dict) or not isinstance(job.get("input"), dict):
+        raise ValueError("job must be a JSON object with an input object")
+
+    source_inputs = inputs or Path(str(job["input"].get("folder", "")))
+    if not source_inputs.is_dir():
+        raise ValueError(f"input folder is missing: {source_inputs}")
+    job["input"]["folder"] = str(source_inputs.resolve())
+    job["output"] = dict(job.get("output", {}))
+    job["output"]["dir"] = str(output.resolve())
+    job["job_id"] = job_id or str(job.get("job_id", "e-j1"))
+    return job, source_inputs
+
+
 def run_command(command: list[str], env: dict[str, str], output: Path) -> dict[str, object]:
     started = time.perf_counter()
     completed = subprocess.run(command, cwd=ROOT, env=env, check=False,
@@ -188,22 +215,25 @@ def active_inference_seconds(events: list[dict[str, object]], items_dir: Path) -
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--inputs", type=Path, default=DEFAULT_INPUTS)
-    parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS)
+    parser.add_argument("--job", type=Path,
+                        help="existing Jobs definition; defaults to the text starter job")
+    parser.add_argument("--inputs", type=Path,
+                        help="override the job input folder")
+    parser.add_argument("--labels", type=Path,
+                        help="expected-record JSON; defaults to the bundled text labels")
     parser.add_argument("--results", type=Path, required=True,
                         help="new directory for this run's evidence")
     parser.add_argument("--serve-url", default="http://127.0.0.1:8642")
     parser.add_argument("--engine", type=Path, default=ROOT / "qwen36b")
     parser.add_argument("--tokenizer", type=Path, default=ROOT / "tokenizer_qwen36.json")
-    parser.add_argument("--job-id", default="e-j1-text")
+    parser.add_argument("--job-id",
+                        help="experiment-local job id (defaults to the supplied job id)")
     args = parser.parse_args()
 
     if args.results.exists():
         parser.error(f"results directory already exists: {args.results}")
     if serve_json(args.serve_url, "/healthz") is None:
         parser.error(f"serve is not healthy at {args.serve_url}")
-    if not args.inputs.is_dir() or not args.labels.is_file():
-        parser.error("inputs directory or labels file is missing")
     if not args.engine.is_file() or not args.tokenizer.is_file():
         parser.error("engine or tokenizer is missing")
 
@@ -211,8 +241,28 @@ def main() -> int:
     jobs_root = args.results / "jobs"
     output_dir = args.results / "output"
     job_path = args.results / "job.json"
-    job_path.write_text(json.dumps(make_job(args.job_id, args.inputs, output_dir), indent=2) + "\n")
-    labels = json.loads(args.labels.read_text())
+    try:
+        if args.job:
+            labels_path = args.labels or args.job.with_name(
+                f"{args.job.stem}.expected.json")
+            job, inputs = load_experiment_job(args.job, args.inputs, output_dir,
+                                              args.job_id)
+        else:
+            inputs = args.inputs or DEFAULT_INPUTS
+            labels_path = args.labels or DEFAULT_LABELS
+            if not inputs.is_dir():
+                raise ValueError(f"input folder is missing: {inputs}")
+            job = make_job(args.job_id or "e-j1-text", inputs, output_dir)
+        if not labels_path.is_file():
+            raise ValueError(f"labels file is missing: {labels_path}")
+        labels = json.loads(labels_path.read_text(encoding="utf-8"))
+        if not isinstance(labels, dict) or not labels:
+            raise ValueError("labels must be a non-empty JSON object")
+    except (ValueError, json.JSONDecodeError) as error:
+        shutil.rmtree(args.results)
+        parser.error(str(error))
+
+    job_path.write_text(json.dumps(job, indent=2) + "\n", encoding="utf-8")
 
     env = os.environ.copy()
     env.update({
@@ -222,7 +272,11 @@ def main() -> int:
         "TOKENIZER": str(args.tokenizer.resolve()),
     })
     runner = [sys.executable, str(ROOT / "dist" / "samosa_jobs.py")]
-    first_input = sorted(args.inputs.glob("*.txt"))[0]
+    first_name = sorted(labels)[0]
+    first_input = inputs / first_name
+    if not first_input.is_file():
+        shutil.rmtree(args.results)
+        parser.error(f"labeled input is missing from input folder: {first_name}")
     before = safety_sample(args.results, args.serve_url)
     preview = run_command(runner + ["preview", str(job_path), "--file", str(first_input)], env,
                           args.results / "preview.log")
@@ -237,9 +291,10 @@ def main() -> int:
         "item_complete", "item_review_required", "item_failed"}]
     report = {
         "schema_version": 1,
-        "scope": "text-only starter corpus; image/PDF and interlock acceptance remain pending",
-        "inputs": str(args.inputs.resolve()),
-        "labels": str(args.labels.resolve()),
+        "scope": ("text-only starter corpus; image/PDF and interlock acceptance remain pending"
+                  if not args.job else "user-supplied labeled Jobs corpus; interactive-interlock acceptance remains pending"),
+        "inputs": str(inputs.resolve()),
+        "labels": str(labels_path.resolve()),
         "preview": preview,
         "run": run,
         "safety_before": before,
@@ -253,13 +308,13 @@ def main() -> int:
     }
     (args.results / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (args.results / "report.md").write_text(
-        "# E-J1 text-only starter run\n\n"
+        "# E-J1 labeled Jobs run\n\n"
         f"- Preview wall time: {preview['wall_seconds']} s\n"
         f"- Run wall time: {run['wall_seconds']} s\n"
         f"- Active inference time: {report['active_inference_seconds']} s\n"
         f"- Field accuracy: {comparison['field_correct']}/{comparison['field_total']}\n"
         f"- Review required: {report['review_required']}; failed: {report['failed']}\n"
-        "- Scope: text only. Image/PDF and interactive-interlock acceptance are pending.\n"
+        f"- Scope: {report['scope']}\n"
     )
     print(json.dumps(report, indent=2))
     return 0 if preview["returncode"] == 0 and run["returncode"] == 0 else 1
