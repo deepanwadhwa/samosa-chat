@@ -81,6 +81,38 @@ The prefill is compute-dominated after the warm server cache, so its next
 candidate is E-X6/E-X7—not disk prefetch.  Full evidence is in
 [raw_w_prefill_abort.log](raw_w_prefill_abort.log).
 
+## Host-storage and swap observations (2026-07-17)
+
+The model files under `~/samosa_release_upload`,
+`~/Documents/samosa-models/qwen36_group32_i8`,
+`~/Documents/samosa-hf-group32-staging`, and `~/.samosa/current/model` are
+hard links, not separate 24 GB copies.  For example, every `experts.bin` has
+device `16777234`, inode `55519033`, size 20,942,159,872 bytes, and link count
+12; every `resident.safetensors` has inode `55521667` and the same link count.
+All four manifests have SHA-256
+`12ad73a9457e5d88b7cd4b00cae4a5c7ccb9031aa10d1111b80932d115f224d4`.
+`du` reports 22 GB for each directory when considered alone, but reports 22 GB
+for the combined set (the later hard-link directories contribute only 112 KB,
+616 KB, and 0 B respectively).  Do not delete any directory as part of an
+experiment: the active app uses `~/.samosa/current/model`; the other two
+top-level trees are release/upload/staging material and are not extra model
+payload storage.
+
+The >1 GB swap observation is global macOS state, not the model process's
+reported RSS.  `vm.swapusage` includes swapped pages from every process and
+macOS need not immediately release or shrink its swapfiles once pressure has
+passed.  The first long CLI prefill moved global swap from 246 MB to 1,477 MB,
+but the later persistent-server W-DECODE and W-PREFILL legs moved it downward
+(1,429 MB to 1,333 MB) rather than growing it.  We therefore cannot attribute
+the initial increase solely to Samosa from the data collected: the host had
+active VS Code/Codex processes and only global VM counters were sampled.
+
+There is nonetheless a real safety instrumentation gap.  On the W-PREFILL
+attempt the server's macOS physical-footprint value was 4.76 GB while
+`[stats] peak_rss` was 4.17 GB.  Future runs must record both current physical
+footprint and VM deltas, start from an otherwise idle host, and obtain the
+privileged power/thermal capture before a performance conclusion is accepted.
+
 ## Required next condition
 
 Do not rerun E-X1 until the owner confirms the machine is otherwise idle and
