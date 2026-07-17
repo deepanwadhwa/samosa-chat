@@ -1,10 +1,13 @@
 # Issue #7 — Samosa Jobs (batch, scheduled, local multimodal work)
 
-**Status: design. Nothing here is built or measured. Every performance number is
-marked _unverified_ until an experiment produces it.** Claims about the *current*
-engine, by contrast, are verified below with `file:line` evidence — that is the
-line this card holds: the codebase foundations are proven, the job system on top
-of them is not.
+**Status: J1 implementation is landed on `issue-7-jobs`; its offline suite is
+green. E-J1 acceptance is still open.** The real four-PDF sidecar/planner check
+is measured, but the first long-PDF preview hit unsafe memory pressure on the
+16-GiB reference host and exposed non-interruptible prefill; see
+[`pdf-preview-aborted-2026-07-16.md`](regressions/jobs/e-j1/pdf-preview-aborted-2026-07-16.md).
+No performance or accuracy claim is implied until the full E-J1 experiment
+completes. Claims about the *current* engine, by contrast, are verified below
+with `file:line` evidence.
 
 This card is written to be executed by an agent with **no prior context on this
 repo**. Every task states its goal, its exact interface (file formats, request
@@ -500,11 +503,13 @@ receipts/medical records → structured fields → JSON; **100 more tomorrow** h
 idempotently; **auto per-file/per-page**; **safe to leave running unattended**.
 One-shot runner (daemon = J2).
 
-**Dependency note:** the PDF/DOCX path needs the #5 pdfium sidecar. Until it
-lands, J1 runs on **images (via #3) and text/markdown**; the PDF path returns
-`review_required reason:"extractor_unavailable:application/pdf"`. E-J1 can run
-**today** on image+text inputs. The planner (J1.2) is testable today with
-synthetic PDF metadata.
+**Dependency note:** the #5 PDFium sidecar is now packaged with a capable
+release. J1 uses it for exact PDF page metadata and bounded one-page rendering;
+a release without it still returns the controlled
+`review_required reason:"extractor_unavailable:application/pdf"` result. DOCX
+remains deferred. E-J1 must resume only after the prefill-cancellation blocker
+above is addressed; it is not safe to infer long-PDF readiness from the offline
+suite alone.
 
 **Schema decision (resolved):** the explicit `output_schema` is the validation
 contract, always. Schema *suggestion* is a **separate command** (`samosa jobs
@@ -810,6 +815,14 @@ serve unless noted; build in order.
 ## Experiments — run the cheapest, most decisive one first
 
 ### E-J1 — Does the runner work on the real model?  ~1–2 days  **RUN FIRST (after J1 offline tests are green)**
+
+**Current result (2026-07-16): blocked, with a recorded negative experiment.**
+The sidecar correctly measured/planned all four supplied JSS PDFs, but a
+20,817-token whole-file preview caused heavy compression/swap on the 16-GiB
+host. Closing the client and explicit `POST /v1/cancel` did not clear the slot
+during prefill. The JSS job now forces page units; engine prefill must become
+interruptible before proceeding to the full acceptance batch. Exact commands
+and observations are in the linked regression record above.
 
 Real `samosa serve` + the real 24 GB model; full runner + `preview` over 10–20
 real inputs (images+text; PDFs if #5 landed) with a hand-labeled reference.
