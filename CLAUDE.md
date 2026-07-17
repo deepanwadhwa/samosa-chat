@@ -17,6 +17,7 @@ themselves are one-line titles; the specs are where the work is defined.
 | #4 Internet | [docs/TASKS_INTERNET.md](docs/TASKS_INTERNET.md) | `issue-4-internet` |
 | #5 Documents | [docs/TASKS_DOCUMENTS.md](docs/TASKS_DOCUMENTS.md) | `issue-5-documents` |
 | — Hardware/perf | [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) | cross-cutting |
+| — Apple Silicon experiments | [docs/TASKS_EXPERIMENTS.md](docs/TASKS_EXPERIMENTS.md) | macOS-only |
 
 User-facing docs: [INSTALL](docs/INSTALL.md) · [USAGE](docs/USAGE.md) · [PERFORMANCE](docs/PERFORMANCE.md) · [DESIGN](docs/DESIGN.md) · [ROADMAP](docs/ROADMAP.md)
 
