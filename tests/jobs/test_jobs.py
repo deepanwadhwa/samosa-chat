@@ -712,6 +712,16 @@ class TestCallServe(unittest.TestCase):
             _resp, err = samosa_jobs.call_serve(self._body(), self.serve_url, timeout=1)
         self.assertEqual(err, 'timeout')
 
+    def test_timeout_estimate_uses_pdf_page_tokens_not_pdf_bytes(self):
+        item = {
+            'size': 20_000_000,
+            'pages': [{'index': 1, 'text_tokens': 443, 'has_raster_figure': True}],
+        }
+        unit = {'granularity': 'page', 'page_index': 1}
+        estimate = samosa_jobs.estimate_unit_input_tokens(
+            unit, item, {'text': 'ignored', 'image_data_uri': 'data:image/png;base64,AA=='})
+        self.assertEqual(estimate, 443 + samosa_jobs.IMAGE_TOKENS)
+
     def test_cancel_endpoint_is_called(self):
         fake_serve.reset_cancel_count()
         self.assertTrue(samosa_jobs.request_cancel(self.serve_url))

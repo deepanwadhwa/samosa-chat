@@ -2168,6 +2168,31 @@ def get_prefill_budget(job):
     return min(context_budget, configured, MAX_JOB_INPUT_TOKENS)
 
 
+def estimate_unit_input_tokens(unit, input_meta, extraction):
+    """Estimate one request's input from its planned unit, never file bytes.
+
+    PDF page units already carry exact sidecar counts in ``input_meta.pages``;
+    using the enclosing PDF's byte size here would turn a small page into an
+    hours-long timeout. Text chunks retain a conservative character fallback
+    because they are split after the whole-file exact count is obtained.
+    """
+    text_tokens = None
+    if unit.get('granularity') == 'page':
+        page_index = unit.get('page_index')
+        for page in input_meta.get('pages', []):
+            if page.get('index') == page_index:
+                text_tokens = page.get('text_tokens')
+                break
+    elif unit.get('granularity') == 'file':
+        text_tokens = input_meta.get('text_tokens')
+
+    if not isinstance(text_tokens, int) or isinstance(text_tokens, bool) or text_tokens < 0:
+        text_tokens = math.ceil(len(extraction.get('text', '')) / 4)
+    if extraction.get('image_data_uri'):
+        text_tokens += IMAGE_TOKENS
+    return text_tokens
+
+
 def cmd_validate(args):
     """samosa jobs validate <job.json>"""
     if len(args) < 1:
@@ -2564,7 +2589,8 @@ def _run_job(job, job_dir):
             # Derive timeout
             timeout = inf.get('timeout_s')
             if timeout is None:
-                est_tokens = item.get('size', 0) // 4 + inf.get('max_tokens', 512)
+                est_tokens = (estimate_unit_input_tokens(unit, item, extraction)
+                              + inf.get('max_tokens', 512))
                 timeout = max(120, 30 + est_tokens * 0.5)  # Conservative
 
             _call_t0 = time.perf_counter()
