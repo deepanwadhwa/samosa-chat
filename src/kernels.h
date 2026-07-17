@@ -25,6 +25,15 @@ static inline float hsum256(__m256 v){            /* somma orizzontale di 8 floa
 extern int g_cuda_enabled;
 #endif
 
+/* E-X5 experiment builds only (-DSAMOSA_SCHED_RUNTIME): the hot loops take
+ * schedule(runtime) so OMP_SCHEDULE selects the policy without a rebuild.
+ * The shipping build expands to the same schedule(static) pragma as before. */
+#ifdef SAMOSA_SCHED_RUNTIME
+#define SAMOSA_OMP_FOR _Pragma("omp parallel for schedule(runtime)")
+#else
+#define SAMOSA_OMP_FOR _Pragma("omp parallel for schedule(static)")
+#endif
+
 /* tensore [O,I] in uno di cinque formati:
  *   fmt=0 F32   -> qf
  *   fmt=1 INT8  -> q8 (1 byte/param) + scala per riga
@@ -53,14 +62,14 @@ static inline int64_t qt_bytes(const QT *t){    /* byte residenti del tensore */
 
 /* y[S,O] = x[S,I] @ W^T, W[O,I] f32 */
 static inline void matmul(float *y, const float *x, const float *W, int S, int I, int O){
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for (int o=0;o<O;o++){ const float *w=W+(int64_t)o*I;
         for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; for(int i=0;i<I;i++) a+=xs[i]*w[i]; y[(int64_t)s*O+o]=a; } }
 }
 
 /* y[S,O] = x[S,I] @ W^T con W quantizzato int8 per-riga + scala[O] (dequant-on-use) */
 static inline void matmul_q(float *y, const float *x, const int8_t *q, const float *scale, int S, int I, int O){
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for (int o=0;o<O;o++){ const int8_t *w=q+(int64_t)o*I; float sc=scale[o];
         for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
 #ifdef __AVX2__
@@ -81,7 +90,7 @@ static inline void matmul_q(float *y, const float *x, const int8_t *q, const flo
 /* y[S,O] = x[S,I] @ W^T con W int4 impacchettato (2 valori/byte) + scala[O]. */
 static inline void matmul_i4(float *y, const float *x, const uint8_t *q4, const float *scale, int S, int I, int O){
     int rb=(I+1)/2;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for (int o=0;o<O;o++){ const uint8_t *w=q4+(int64_t)o*rb; float sc=scale[o];
         for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
 #ifdef __AVX2__
@@ -121,7 +130,7 @@ static inline void matmul_i4(float *y, const float *x, const uint8_t *q4, const 
 static inline void matmul_i4_grouped(float *y, const float *x, const uint8_t *q4,
                                      const float *scale, int group, int S, int I, int O){
     int rb=(I+1)/2, groups=(I+group-1)/group;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){
         const uint8_t *w=q4+(int64_t)o*rb;
         const float *sc=scale+(int64_t)o*groups;
@@ -145,7 +154,7 @@ static inline void matmul_i4_grouped(float *y, const float *x, const uint8_t *q4
 /* y[S,O] = x[S,I] @ W^T con W int2 impacchettato (4 valori/byte) + scala[O]. nibble 2-bit -> [-2,1]. */
 static inline void matmul_i2(float *y, const float *x, const uint8_t *q2, const float *scale, int S, int I, int O){
     int rb=(I+3)/4;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for (int o=0;o<O;o++){ const uint8_t *w=q2+(int64_t)o*rb; float sc=scale[o];
         for (int s=0;s<S;s++){ const float *xs=x+(int64_t)s*I; float a=0; int i=0;
 #ifdef __AVX2__
@@ -312,7 +321,7 @@ static inline int32_t dot_i4i8(const uint8_t *w4, const int8_t *x, int I){
 
 static inline void matmul_q_idot(float *y, const int8_t *xq, const float *sx, const int8_t *q,
                                  const float *scale, int S, int I, int O){
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){ const int8_t *w=q+(int64_t)o*I; float sc=scale[o];
         for(int s=0;s<S;s++) y[(int64_t)s*O+o]=(float)dot_i8i8(w,xq+(int64_t)s*I,I)*sc*sx[s]; }
 }
@@ -320,7 +329,7 @@ static inline void matmul_q_idot(float *y, const int8_t *xq, const float *sx, co
 static inline void matmul_i4_idot(float *y, const int8_t *xq, const float *sx, const uint8_t *q4,
                                   const float *scale, int S, int I, int O){
     int rb=(I+1)/2;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){ const uint8_t *w=q4+(int64_t)o*rb; float sc=scale[o];
         for(int s=0;s<S;s++) y[(int64_t)s*O+o]=(float)dot_i4i8(w,xq+(int64_t)s*I,I)*sc*sx[s]; }
 }
@@ -329,7 +338,7 @@ static inline void matmul_i4_grouped_idot(float *y, const int8_t *xq, const floa
                                           const uint8_t *q4, const float *scale,
                                           int group, int S, int I, int O){
     int rb=(I+1)/2, groups=(I+group-1)/group;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){
         const uint8_t *w=q4+(int64_t)o*rb;
         const float *sc=scale+(int64_t)o*groups;
@@ -374,7 +383,7 @@ static inline void matmul_qt_impl(float *y, const float *x, QT *w, int S, int g_
 
 static inline void quantize_rows(const float *w, int8_t *q, float *scale, int O, int I, int bits){
     int qmax=(1<<(bits-1))-1;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){ const float *wr=w+(int64_t)o*I; float amax=0;
         for(int i=0;i<I;i++){ float a=fabsf(wr[i]); if(a>amax)amax=a; }
         float s=amax/qmax; if(s<1e-8f)s=1e-8f; scale[o]=s;
@@ -385,7 +394,7 @@ static inline void quantize_rows(const float *w, int8_t *q, float *scale, int O,
 
 static inline void pack_int4(const float *w, uint8_t *q4, float *scale, int O, int I, int bits){
     int qmax=(1<<(bits-1))-1, rb=(I+1)/2;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){ const float *wr=w+(int64_t)o*I; float amax=0;
         for(int i=0;i<I;i++){ float a=fabsf(wr[i]); if(a>amax)amax=a; }
         float s=amax/qmax; if(s<1e-8f)s=1e-8f; scale[o]=s;
@@ -400,7 +409,7 @@ static inline void pack_int4(const float *w, uint8_t *q4, float *scale, int O, i
 
 static inline void pack_int2(const float *w, uint8_t *q2, float *scale, int O, int I, int bits){
     int qmax=(1<<(bits-1))-1, rb=(I+3)/4;
-    #pragma omp parallel for schedule(static)
+    SAMOSA_OMP_FOR
     for(int o=0;o<O;o++){ const float *wr=w+(int64_t)o*I; float amax=0;
         for(int i=0;i<I;i++){ float a=fabsf(wr[i]); if(a>amax)amax=a; }
         float s=amax/qmax; if(s<1e-8f)s=1e-8f; scale[o]=s;

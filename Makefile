@@ -63,6 +63,13 @@ omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o qwen36b -lm $(OMP_LDFLAGS)
 
+# E-X5 experiment build only — never shipped. Same as `omp` plus
+# -DSAMOSA_SCHED_RUNTIME, so OMP_SCHEDULE picks the hot-kernel schedule at run
+# time. Separate output name so it can never be installed by mistake.
+omp-sched-runtime: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
+	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) -DSAMOSA_SCHED_RUNTIME \
+	  src/qwen36b.c src/expert_cache.c src/vision.c -o qwen36b-sched-runtime -lm $(OMP_LDFLAGS)
+
 pagecache-residency: tools/pagecache_residency.c
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 tools/pagecache_residency.c -o pagecache-residency
 
@@ -88,4 +95,4 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
 clean:
-	rm -f qwen36b samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
+	rm -f qwen36b qwen36b-sched-runtime samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
