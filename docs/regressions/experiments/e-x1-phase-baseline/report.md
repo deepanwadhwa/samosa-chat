@@ -252,3 +252,72 @@ assistant-content SHA-256 `5b7237368368054bc8776cf861068f359d9936f2ab321cef5871d
 E-X1 is still incomplete: W-PREFILL, W-SESSION, the phase-timer overhead
 comparison, and the 12-prompt quality baseline remain to be run before the
 dependent cards can be accepted.
+
+## Clean W-PREFILL baseline — accepted under the owner's 5 GB cap (2026-07-17)
+
+The owner raised the experiment footprint cap to 5 GB.  The fixed workload was
+the committed document plus `Summarize this document in four concise bullet
+points.`, with `max_tokens=32`, `thinking=off`, `temperature=0`, and
+`seed=1729`.  Each persistent server received one warm-up followed by three
+measured requests.  The document tokenized to 2,013 prompt tokens; each run
+generated 32 tokens.  Complete telemetry and response artifacts are
+`raw_e_x1_w_prefill_{2t,4t}_{server,client,powermetrics}.log` and the adjacent
+`*_response.json` files.
+
+| Threads | Warm-up prefill tok/s | Measured prefill tok/s | Median | Physical footprint |
+|---:|---:|---:|---:|---:|
+| 2 | 12.09 | 12.06, 11.98, 11.94 | **11.98** | 4.72 GB |
+| 4 | 21.09 | 20.17, 19.94, 19.30 | **19.94** | 4.72 GB |
+
+At four threads, prefill is 66.4% faster than two threads.  Unlike W-DECODE,
+this improvement also lowers estimated CPU energy per prompt token: the 2T
+measured median is 0.695 J/token at 8.33 W mean CPU power, while the 4T median
+is 0.568 J/token at 11.33 W (18.3% lower energy/token).  These are the same
+time-aligned CPU-power estimates used for W-DECODE, not whole-machine energy.
+
+| Median phase | 2T ms/token | 4T ms/token |
+|---|---:|---:|
+| attention | 24.62 | 13.82 |
+| router | 7.45 | 3.98 |
+| resident dense | 24.69 | 14.76 |
+| expert matmul | 24.12 | 15.15 |
+| expert disk | 1.23 | 1.04 |
+| head / sampler | 0.03 | 0.03 |
+| other | 1.36 | 1.37 |
+| **phase sum** | **83.50** | **50.15** |
+| measured wall (`1 / tok/s`) | 83.47 | 50.15 |
+
+The phase sums again agree with wall time within rounding.  Warm prefill is
+compute-dominated: expert-disk time is about 1 ms/token, versus 56–60 ms/token
+in W-DECODE.  That confirms the program's split: cache/routing is the decode
+lever, while E-X6/E-X7 target the prefill compute path.
+
+All W-PREFILL legs held at 4.71–4.72 GB physical footprint, had no global-swap
+growth, and stayed Nominal according to both `powermetrics` and `pmset`.  Every
+per-run pageout delta was below 11 MiB.  This is an accepted baseline under the
+owner's 5 GB limit; it is not an authorization to change the shipping default.
+All eight W-PREFILL responses had assistant-content SHA-256
+`9ee8a5b693a1e9c1a0997b13d93b8d78871e2a91498132bf556d4a442d4cdcba`.
+
+## W-SESSION context construction — stopped at the 5 GB cap (2026-07-17)
+
+To build the required at-least-4,096-token W-SESSION snapshot, a fresh 4T
+server first accepted a 2,002-token committed-document request and saved a
+2,003-token session at 4.71 GB physical footprint.  The next request appended
+the same document plus deterministic `context0`…`context159` padding.  This
+would have produced the required long context, but the 40-second health poll
+reported **5.10 GB physical footprint**, above the owner's 5 GB cap.  The
+server was immediately interrupted; the client received an empty reply and no
+partially extended session was used.
+
+The stopped extension is in
+`raw_e_x1_w_session_4t_{server,client,powermetrics}.log` with its two response
+artifacts.  Global swap remained 1,276.94 MB, pageouts increased by only 524
+16-KiB pages (about 8.6 MiB) from the initial seed baseline through the stop,
+and thermal pressure remained Nominal.  Thus the hard stop is specifically the
+physical-footprint cap, not a swap, SSD-write, or thermal event.
+
+**Current E-X1 status:** clean W-DECODE and W-PREFILL baselines are complete.
+W-SESSION cannot be measured at the required context under the current default
+cache and 5 GB cap; the phase-timer overhead comparison and 12-prompt quality
+baseline also remain.  The dependent cards are not yet accepted.

@@ -1,0 +1,10 @@
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[serve] ready http://127.0.0.1:18660 queue=0 chats=/tmp/samosa-e-x1-w-session-4t-chats
+[session] saved /tmp/samosa-e-x1-w-session-4t-chats/session/session.qws: 2003 tokens, 147.9 MB
+[stats] prompt=2002 generated=1 stop=limit thinking=model-controlled prefill=98.112s (20.41 tok/s) decode=0.000s (0.00 tok/s) total=98.112s expert_hit=0/8471 (0.0%) expert_disk=2.288s expert_mm=30.027s peak_rss=3.63 GB physical_rss=4.71 GB
+[phase] prefill tokens=2002 wall=98.112s attn=25.661s/12.82ms_tok router=7.929s/3.96ms_tok dense=29.245s/14.61ms_tok expert_mm=30.027s/15.00ms_tok expert_disk=2.288s/1.14ms_tok head=0.034s/0.02ms_tok other=2.927s/1.46ms_tok | decode tokens=0 wall=0.000s attn=0.000s/0.00ms_tok router=0.000s/0.00ms_tok dense=0.000s/0.00ms_tok expert_mm=0.000s/0.00ms_tok expert_disk=0.000s/0.00ms_tok head=0.000s/0.32ms_tok other=0.000s/0.02ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=7815 bytes_read=16.65 GB bytes_avoided=0.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[session] resumed /tmp/samosa-e-x1-w-session-4t-chats/session/session.qws: 2003 tokens, 2002 KV rows
