@@ -76,6 +76,13 @@ if "$EXTRACTOR" --json "$bad_file" >"$error_file" 2>&1; then
 fi
 grep -F 'text_invalid_utf8' "$error_file" >/dev/null
 
+printf 'first\r\nsecond\rthird\n' >"$bad_file"
+normalized_out=$("$EXTRACTOR" --json "$bad_file")
+printf '%s' "$normalized_out" | python3 -c '
+import json, sys
+assert json.load(sys.stdin)["text"] == "first\nsecond\nthird\n"
+'
+
 printf 'PK\003\004x' >"$bad_file"
 if "$EXTRACTOR" --json "$bad_file" >"$error_file" 2>&1; then
   echo "samosa-extract silently treated a ZIP/DOCX as text" >&2

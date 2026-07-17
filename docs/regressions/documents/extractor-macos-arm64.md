@@ -35,8 +35,9 @@ limit, successful execution under `sandbox-exec` with `(deny network*)`, and
 PPM rendering with no overwrite of an existing output file.
 
 Native UTF-8 text extraction was added with a committed metadata fixture. It
-normalizes CRLF/CR to LF; binary non-PDF input, ZIP/DOCX input, and HTML all
-return specific errors rather than falling through as plain text.
+normalizes CRLF/CR to LF (covered by a direct assertion); binary non-PDF input,
+ZIP/DOCX input, and HTML all return specific errors rather than falling through
+as plain text.
 
 With the local verified `tokenizer_qwen36.json`, exact token output was also
 verified: the metadata text fixture produced 18 tokens and the PDF fixture
