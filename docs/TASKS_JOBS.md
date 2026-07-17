@@ -44,12 +44,15 @@ This card is the primary spec but **not** self-contained. Before writing code:
    session/snapshot code: the three engine additions are specified as
    *contracts, not C walkthroughs*.
 
-### Repo state (main @ `8b3e813`, 2026-07-16)
+### Repo state (main @ `f51fe39`, 2026-07-16)
 - **Branch:** cut **`issue-7-jobs` from `main`**. Implementation lives there; the
   card / `ISSUE_TASKS.md` / `CLAUDE.md` stay on `main` (Working Agreement §1).
-- **#3 vision: LANDED** on main (single-image — F-J4). **#5 documents: NOT built**
-  — no pdfium sidecar exists (grep: zero `FPDF_`/`pdfium`). The PDF path is stubbed
-  (below); build and test J1 on **images + text**, which need no sidecar.
+- **#3 vision: LANDED** on main (single-image — F-J4). **#5 PDF/text core: LANDED**
+  as `samosa-extract`: PDFium text/page metadata, bounded PPM rendering, native
+  UTF-8 text, and optional exact Qwen tokenizer counts. DOCX remains deferred;
+  HTML waits for #4's shared extractor; RTF is explicitly unsupported. The Jobs
+  adapter must use the sidecar when it is installed/on `PATH`, retaining its
+  existing controlled review result when it is absent.
 - **Host profiler + gated x86 SIMD merged** (`8b3e813`): `host_profile_init()` /
   `g_host` / the `[host]` startup line exist — **J1.13 reads `g_host`**, do not
   re-derive. (x86 AVX2/VNNI is opt-in and unvalidated; irrelevant to Jobs, just
@@ -62,18 +65,21 @@ them is real C in `qwen36b.c` / `samosa_http.h` / `tok.h`; read those first. The
 are additive and read-only — **a run with no jobs must stay byte-identical** to
 today (the same gate #3/#4 use).
 
-### #5 PDF-metadata stub contract (define now; coordinate with whoever owns #5)
-Until the sidecar exists, J1.2's planner and J1.3's extractor need a metadata
-shape #5 has not defined. Define it as the interface J1 expects, so #5 implements
-*to it*:
+### #5 PDF-metadata adapter contract
+
+`samosa-extract --json PATH --tokenizer TOKENIZER` returns `text_layer`, whole
+document `text`/`tokens`, and page objects with `{index, text, tokens,
+has_raster_figure}`. The Jobs adapter maps `tokens` to its `text_tokens` field:
+
 ```
 extract_meta(path) -> { "text_layer": bool,
                         "pages": [ {"index": int, "text_tokens": int, "has_raster_figure": bool}, … ] }
 ```
-`needs_image` (J1.2) = `text_tokens < LOW_TEXT_TOKENS OR has_raster_figure`. Until
-the sidecar binary is on `PATH`, J1.2 (PDF inputs) and J1.3 both return
-`review_required reason:"extractor_unavailable:application/pdf"`. **This is the one
-genuine cross-issue seam — flag it to #5.**
+`needs_image` (J1.2) = `text_tokens < LOW_TEXT_TOKENS OR has_raster_figure`. If
+the sidecar binary is absent, J1.2 and J1.3 retain
+`review_required reason:"extractor_unavailable:application/pdf"`; this is clean
+capability degradation, not a host-tool fallback. Page rendering uses
+`samosa-extract --render-ppm PATH PAGE OUTPUT.ppm`.
 
 ### Scaffolding to create (does not exist yet)
 - `tests/jobs/` — start with `fake_serve.py` (§Test harness).
