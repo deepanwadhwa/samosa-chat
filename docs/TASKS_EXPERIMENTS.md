@@ -84,6 +84,7 @@ E-X1 (baseline + phase timers)  ── gates everything below
 ├── E-X7 (Accelerate/AMX prefill)        code, owner note (build change); time-to-first-token
 └── E-X2 (fp16 KV)                       code; demoted to footprint/swap-safety — see its card
 E-X10 (Metal) — deferred placeholder, not scheduled
+E-X11 (MLX / llama.cpp yardstick) — independent, anytime; calibrates the target against Metal-native engines
 ```
 
 ---
@@ -579,6 +580,63 @@ scrutiny:
 
 ---
 
+## E-X11 — Yardstick: what do Metal-native engines achieve on this exact machine?  ~0.5–1 day, measurement-only
+
+**A question, not a hypothesis.** The 12–15 tok/s target is currently
+calibrated against nothing but our own CPU numbers. MLX (Apple's
+Metal-native ML framework; `mlx-lm` runs quantized MoE LLMs on Apple
+Silicon) and llama.cpp's Metal backend are the best available software for
+this hardware. One afternoon of measurement answers: **what does the
+platform actually deliver on this machine, and does a ~17 GB MoE even
+survive 16 GB?** Both outcomes are valuable: a high number means the
+platform ceiling is far away and E-X10 gains ambition; a swap-thrashing
+failure **validates Samosa's streaming architecture with a number** instead
+of an argument. Either way the target stops being calibrated in a vacuum.
+
+**Explicit framing — a yardstick, not a migration proposal.** Adopting
+either engine is a non-goal (below). Nothing measured here implies parity:
+no public model matches our exact 35B-A3B custom quant, so the comparison
+is directional and must be reported as such.
+
+**Method:**
+1. Sandboxed, outside the repo: `python3 -m venv ~/tmp-mlx &&
+   ~/tmp-mlx/bin/pip install mlx-lm`. Nothing is added to Samosa, its
+   build, or its dependencies. Delete the venv afterwards.
+2. Closest public cousin — a 4-bit MLX community quant of **Qwen3-30B-A3B**
+   (~17 GB, nearest MoE relative). Record the exact model repo and
+   revision in the evidence. Note the download is ~17 GB; get owner OK on
+   disk/bandwidth before pulling it.
+3. One small fully-resident control (e.g. a ~4B dense 4-bit quant) for a
+   clean platform-tok/s datapoint with zero memory pressure.
+4. Workload mirrors W-DECODE: ~1k-token prompt, 256 new tokens, 3 runs;
+   record `mlx_lm.generate`'s reported prompt/generation tok/s plus wall
+   clock.
+5. Optional leg: llama.cpp Metal with a GGUF of the same model — it mmaps
+   weights and can run larger-than-RAM, making it the closest analogue to
+   Samosa's own problem; its behaviour under that pressure is the most
+   informative single number in the card.
+6. **Safety telemetry is mandatory and stricter here** — this is the
+   likeliest experiment in the program to swap: watch `sysctl vm.swapusage`
+   continuously, **abort at +2 GB swap delta** (swap writes are the real
+   wear vector — H1); powermetrics thermal/power throughout; the 30B model
+   may fail to load or beachball the machine — run nothing else alongside,
+   be ready to kill it, and record a failure verbatim as the result.
+
+**Measure:** generation and prompt tok/s, peak memory, swap delta, thermal
+pressure, J/token where obtainable — same table columns as everything else.
+
+**Acceptance:** an engine × model → numbers table plus an interpretation
+paragraph: where the platform ceiling appears to be, what that implies for
+E-X10's priority, and a restatement that no migration is proposed. A
+failed-to-run outcome is a complete, publishable result.
+
+**Risks:** model mismatch invites false comparisons — never quote these
+numbers next to Samosa's without the caveat in the same sentence; a
+swapping run stresses the machine — the abort bound exists precisely so
+curiosity doesn't cost SSD life.
+
+---
+
 ## Non-goals (settled elsewhere or rejected here)
 
 - **Growing the engine expert LRU.** Measured +41% slower — settled in
@@ -597,6 +655,14 @@ scrutiny:
   heat, not speed. E-X5 measures precisely once, then the question closes.
 - **Publishing any new performance claim** before it is measured on the
   real model through the real interactive path, per the standing rules.
+- **Adopting MLX or llama.cpp as the engine.** That is replacement, not
+  optimization: a third-party framework against the product's
+  no-dependency identity, no reader for the custom groupwise-q4 /
+  row-quant formats, and no expert-aware disk streaming for the
+  larger-than-RAM case Samosa is built around. E-X11 measures them as
+  yardsticks only. Mining *ideas* is encouraged — MLX's open-source Metal
+  kernels are the reference reading for E-X10 — the engines themselves
+  stay out.
 
 ## Open questions
 
