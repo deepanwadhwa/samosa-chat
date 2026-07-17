@@ -4570,7 +4570,7 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         ? (double)(stats.generated-1)/stats.decode_s : 0.0;
     fprintf(stderr,"[stats] prompt=%d generated=%d stop=%s thinking=%s prefill=%.3fs (%.2f tok/s) "
         "decode=%.3fs (%.2f tok/s) total=%.3fs expert_hit=%llu/%llu (%.1f%%) "
-        "expert_disk=%.3fs expert_mm=%.3fs peak_rss=%.2f GB\n",
+        "expert_disk=%.3fs expert_mm=%.3fs peak_rss=%.2f GB physical_rss=%.2f GB\n",
         np,stats.generated,stats.cancelled?"cancelled":
                            stats.repetition_stopped?"repetition-guard":
                            stats.model_stopped?"model":"limit",
@@ -4578,7 +4578,7 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         stats.prefill_s,stats.prefill_s>0?np/stats.prefill_s:0.0,
         stats.decode_s,decode_tps,stats.total_s,
         (unsigned long long)m->hits,(unsigned long long)(m->hits+m->miss),100.0*hit_rate,
-        m->t_edisk,m->t_emm,peak_rss_gb());
+        m->t_edisk,m->t_emm,peak_rss_gb(),rss_gb());
     phase_print(m, &stats);
     {
         ecache_stats est; ecache_get_stats(m->ec,&est);
