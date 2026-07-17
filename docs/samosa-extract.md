@@ -14,6 +14,19 @@ not extensions: invalid UTF-8/binary input is rejected rather than silently
 treated as text. DOCX, HTML, and RTF receive explicit unavailable/unsupported
 errors until their portable extractors land; no macOS host tool is used.
 
+## Current format scope
+
+| Input | Status | Behavior |
+| --- | --- | --- |
+| PDF | Implemented | PDFium text, per-page metadata, optional exact token counts, bounded page rendering |
+| UTF-8 text / Markdown / source | Implemented | Native extraction with line-ending normalization |
+| DOCX | Deferred | Requires the planned vendored miniz ZIP reader plus XML text strip; returns `docx_extractor_unavailable` today |
+| HTML | Deferred to #4 | Will use the shared portable web extractor; returns `html_extractor_unavailable` today |
+| RTF | Unsupported | Returns `rtf_unsupported` |
+
+This is the explicit #5 boundary for now. It does not claim full document-format
+support before those remaining portable extractors are implemented and tested.
+
 A successful response has this shape:
 
 ```json

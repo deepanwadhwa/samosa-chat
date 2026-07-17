@@ -103,3 +103,11 @@ This macOS kernel returned `EINVAL` when setting finite `RLIMIT_AS` and
 last-resort alarm. A controller-side memory/wall watchdog is required on macOS;
 Linux's `RLIMIT_AS` remains the intended hard address-space limit. This is an
 open platform-sandbox task, not a claim that macOS memory capping was verified.
+
+## Deferred format scope
+
+DOCX is deliberately deferred until the portable vendored-miniz + XML-strip
+implementation can be added and tested. HTML is deferred to #4's shared
+extractor, and RTF remains explicitly unsupported. The implemented E-D1 scope
+for this branch is therefore PDF plus native UTF-8 text—not a claim that every
+document format has landed.
