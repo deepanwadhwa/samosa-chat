@@ -1,0 +1,1 @@
+{"object":"chat.completion","model":"qwen3.6-35b-a3b","choices":[{"index":0,"message":{"role":"assistant","reasoning":"","content":"Based"},"finish_reason":"length"}],"usage":{"prompt_tokens":2002,"completion_tokens":1,"total_tokens":2003},"samosa":{"thinking_closure":"natural","tokens_per_second":0.00,"rss_gb":4.71,"session_saved":true}}

@@ -253,7 +253,7 @@ E-X1 is still incomplete: W-PREFILL, W-SESSION, the phase-timer overhead
 comparison, and the 12-prompt quality baseline remain to be run before the
 dependent cards can be accepted.
 
-## Clean W-PREFILL baseline — accepted under the owner's 5 GB cap (2026-07-17)
+## W-PREFILL capture — thermal safety failure; not an accepted baseline (2026-07-17)
 
 The owner raised the experiment footprint cap to 5 GB.  The fixed workload was
 the committed document plus `Summarize this document in four concise bullet
@@ -269,8 +269,9 @@ generated 32 tokens.  Complete telemetry and response artifacts are
 | 2 | 12.09 | 12.06, 11.98, 11.94 | **11.98** | 4.72 GB |
 | 4 | 21.09 | 20.17, 19.94, 19.30 | **19.94** | 4.72 GB |
 
-At four threads, prefill is 66.4% faster than two threads.  Unlike W-DECODE,
-this improvement also lowers estimated CPU energy per prompt token: the 2T
+The captured performance data has the following shape: at four threads,
+prefill is 66.4% faster than two threads.  Unlike W-DECODE, this capture also
+shows lower estimated CPU energy per prompt token at four threads: the 2T
 measured median is 0.695 J/token at 8.33 W mean CPU power, while the 4T median
 is 0.568 J/token at 11.33 W (18.3% lower energy/token).  These are the same
 time-aligned CPU-power estimates used for W-DECODE, not whole-machine energy.
@@ -289,17 +290,26 @@ time-aligned CPU-power estimates used for W-DECODE, not whole-machine energy.
 
 The phase sums again agree with wall time within rounding.  Warm prefill is
 compute-dominated: expert-disk time is about 1 ms/token, versus 56–60 ms/token
-in W-DECODE.  That confirms the program's split: cache/routing is the decode
-lever, while E-X6/E-X7 target the prefill compute path.
+in W-DECODE.  This remains a useful diagnostic observation, but it is not a
+safe launch-performance claim.
 
-All W-PREFILL legs held at 4.71–4.72 GB physical footprint, had no global-swap
-growth, and stayed Nominal according to both `powermetrics` and `pmset`.  Every
-per-run pageout delta was below 11 MiB.  This is an accepted baseline under the
-owner's 5 GB limit; it is not an authorization to change the shipping default.
-All eight W-PREFILL responses had assistant-content SHA-256
+The memory/VM measurements were within the owner's cap: all W-PREFILL legs
+held 4.71–4.72 GB physical footprint, had no global-swap growth, and had
+per-run pageout deltas below 11 MiB.  However, a later inspection of the
+authoritative privileged traces found this statement in the prior report to be
+wrong: the thermal state was **not** Nominal throughout.  The 2T trace changed
+from Nominal at 11:35:50 to Moderate at 11:37:07 and Heavy at 11:38:13; after
+brief recovery it reached Heavy again at 11:41:37.  The 4T trace changed from
+Nominal at 11:26:10 to Moderate at 11:29:28 and Heavy at 11:30:12, then reached
+Heavy again at 11:31:49 and 11:33:33.  Under the E-X1 thermal protocol,
+W-PREFILL must remain Nominal.  Both captures therefore fail the safety gate
+and are retained only as non-accepted diagnostic evidence.  The server should
+have been stopped on the first non-Nominal sustained reading; `pmset` supplied
+no warning and was not a sufficient substitute for reading the power trace.
+All eight response contents did match, with SHA-256
 `9ee8a5b693a1e9c1a0997b13d93b8d78871e2a91498132bf556d4a442d4cdcba`.
 
-## W-SESSION context construction — stopped at the 5 GB cap (2026-07-17)
+## W-SESSION context construction — stopped at the 5 GB and thermal caps (2026-07-17)
 
 To build the required at-least-4,096-token W-SESSION snapshot, a fresh 4T
 server first accepted a 2,002-token committed-document request and saved a
@@ -312,15 +322,44 @@ partially extended session was used.
 
 The stopped extension is in
 `raw_e_x1_w_session_4t_{server,client,powermetrics}.log` with its two response
-artifacts.  Global swap remained 1,276.94 MB, pageouts increased by only 524
-16-KiB pages (about 8.6 MiB) from the initial seed baseline through the stop,
-and thermal pressure remained Nominal.  Thus the hard stop is specifically the
-physical-footprint cap, not a swap, SSD-write, or thermal event.
+artifacts.  Global swap remained 1,276.94 MB and pageouts increased by only
+524 16-KiB pages (about 8.6 MiB) from the initial seed baseline through the
+stop.  The privileged trace changed from Nominal at 11:50:15 to Moderate at
+11:51:11 and Heavy at 11:51:31.  So the immediate interrupt at 5.10 GB was
+correct, but this attempted construction also crossed the W-SESSION thermal
+limit; it is not a thermal-clean failed-memory measurement.
 
-**Current E-X1 status:** clean W-DECODE and W-PREFILL baselines are complete.
-W-SESSION cannot be measured at the required context under the current default
-cache and 5 GB cap; the 12-prompt quality baseline remains.  The dependent
-cards are not yet accepted.
+## Quality-suite archive — thermal safety failure; not an accepted baseline (2026-07-17)
+
+The deterministic assembly rule is now recorded in
+`tests/fixtures/experiments/README.md`: prompts 01, 02, 03, 05, and 08–11 each
+continued a restored source-only session seeded from the committed W-PREFILL
+document; prompts 04, 06, and 07 were standalone.  The resulting responses for
+01–11 are archived as `quality_*.json` beside this report.  Prompt 12 was not
+run because the required committed Jobs-corpus fixture is unavailable; it was
+not silently replaced by an untracked source.
+
+The runs remained below the owner's hard footprint cap, but only narrowly:
+the server reported 4.80 GB for prompts 01–03, 4.81 GB for prompt 04, a high
+point of **4.90 GB** for prompt 05, and 4.73 GB thereafter.  The privileged
+trace was Nominal at 12:01:30, Moderate at 12:02:49, Heavy at 12:03:18,
+briefly recovered to Nominal at 12:04:03, then reached Moderate at 12:04:38
+and Heavy again at 12:05:05.  The server was shut down after the archive, but
+these outputs cannot be used as E-X1's accepted quality baseline: W-PREFILL
+and quality runs are required to stay Nominal.  They are preserved to avoid
+losing reproducibility evidence and to make the protocol violation auditable.
+
+`pmset` reported no warning during these periods.  Going forward, the live
+`powermetrics` trace—not `pmset`—is the thermal gate: stop the model on the
+first sustained non-Nominal pressure, record the abort, and do not begin a
+subsequent model workload until the owner selects a cooling/retry strategy.
+
+**Current E-X1 status:** only the clean W-DECODE baseline and the phase-timer
+overhead result below have passed their recorded safety conditions.  W-PREFILL
+and quality have performance/output captures but failed the thermal gate;
+W-SESSION cannot be measured at the required context under the current cache,
+5 GB cap, and thermal protocol.  E-X1 is not accepted and all dependent cards
+remain gated.
 
 ## Phase-timer overhead guard — passes at 4T (2026-07-17)
 
@@ -333,7 +372,9 @@ noise.  The slow final control leg is retained; its server telemetry shows
 extra expert-disk time rather than a timer effect.
 
 The phase-off raw evidence is `raw_e_x1_phase_off_4t_{server,client}.log` and
-the four adjacent responses.  Its physical footprint was 4.37–4.38 GB, swap
-did not grow, thermal state remained Nominal, and its four outputs have the
-same assistant-content SHA-256 as every phase-on W-DECODE leg:
+the four adjacent responses.  Its physical footprint was 4.37–4.38 GB and swap
+did not grow.  This control did not have a dedicated archived `powermetrics`
+trace, so its result is limited to the phase-timer-overhead comparison; it does
+not independently establish a thermal-safe workload baseline.  Its four
+outputs have the same assistant-content SHA-256 as every phase-on W-DECODE leg:
 `5b7237368368054bc8776cf861068f359d9936f2ab321cef5871d5cf4a1a56d1`.

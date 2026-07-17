@@ -130,7 +130,7 @@ Wall-clock deltas below ~3% are noise on one machine; call anything <3%
 | Heat / throttling | `sudo powermetrics --samplers cpu_power,thermal -i 1000` in a second terminal during the run; record package power and "pressure level". Separately `pmset -g therm` before/after (CPU_Speed_Limit=100 means no throttle). | Thermal pressure stays **Nominal** during W-DECODE/W-PREFILL. W-SUSTAIN may reach Moderate; sustained Heavy/Serious → abort, record, shorten the run. |
 | Energy per token | mean package mW × decode_s ÷ tokens from the same powermetrics log. Joules/token is the honest efficiency metric on a fanless chassis (E-H1's metric). | Report it for every before/after. An optimization that raises J/token needs a reason. |
 | Swap writes (the real SSD wear vector — H1) | `sysctl vm.swapusage` and `vm_stat` (Pageouts) before/after each run; delta. | Swap-used delta ≈ 0; pageout delta < 100 MB per run. Larger → abort, record, investigate footprint. |
-| Footprint | `peak_rss` in `[stats]`; optionally `footprint <pid>`. | No experiment may push warmed peak_rss above ~4.5 GB (today: ~3.9–4.2). |
+| Footprint | `physical_rss` in `[stats]` (macOS physical footprint); retain legacy `peak_rss` as supplementary telemetry. | **Owner-authorized ceiling (2026-07-17): remain strictly below 5 GB physical footprint.** The earlier approximate 4.5 GB planning guard is superseded for these measurements, not a default-memory change. Abort immediately at or above 5 GB. |
 | SSD reads | Reads do not wear NAND (H1 — settled). Track `[ecache] bytes_read` for power/heat honesty, not for wear. | — |
 
 ### Quality measurement — three classes, three bars

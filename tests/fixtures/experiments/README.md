@@ -30,5 +30,23 @@ committed source for the two summary prompts.  The long-document QA prompt
 uses the repository's Jobs corpus fixture when that fixture is present; until
 then it is explicitly not run rather than substituted with an untracked file.
 
+For reproducible baseline assembly, prompts 01, 02, 03, 05, and 08 through 11
+are continuations of one saved session seeded with the complete
+`workloads/w_prefill_document.txt` source.  Restore the same source-only
+session before each prompt; do not let one prompt's answer become another
+prompt's context.  Prompts 04, 06, and 07 are standalone.  Prompt 12 is
+recorded as `not run` until the committed Jobs corpus fixture exists.  Use the
+same `--greedy --no-thinking --seed 1729` / API-equivalent controls and archive
+the response for every executed prompt.
+
 The suite is a compatibility baseline: archive exact outputs before comparing
 any numerics- or policy-changing experiment.
+
+## Safety capture
+
+For every real-model run, keep the privileged `powermetrics` thermal trace
+live-readable and treat it as the authoritative thermal gate.  `pmset` may be
+recorded as supplementary host state but does not replace the trace.  Stop the
+model and record an abort on the first sustained non-Nominal pressure for a
+workload that requires Nominal thermal state; do not start another workload
+until the owner has selected a cooling/retry strategy.
