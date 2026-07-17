@@ -319,5 +319,21 @@ physical-footprint cap, not a swap, SSD-write, or thermal event.
 
 **Current E-X1 status:** clean W-DECODE and W-PREFILL baselines are complete.
 W-SESSION cannot be measured at the required context under the current default
-cache and 5 GB cap; the phase-timer overhead comparison and 12-prompt quality
-baseline also remain.  The dependent cards are not yet accepted.
+cache and 5 GB cap; the 12-prompt quality baseline remains.  The dependent
+cards are not yet accepted.
+
+## Phase-timer overhead guard — passes at 4T (2026-07-17)
+
+The 4T W-DECODE baseline above ran with `SAMOSA_PHASE_STATS=1`; its three
+measured rates were 7.58, 7.60, and 7.62 tok/s (median **7.60**).  A fresh
+4T server repeated the same saved-session warm-up and three legs with the flag
+unset: 7.81, 7.58, and 6.98 tok/s (median **7.58**).  The 0.3% median
+difference is below the card's 2% overhead limit and is within single-machine
+noise.  The slow final control leg is retained; its server telemetry shows
+extra expert-disk time rather than a timer effect.
+
+The phase-off raw evidence is `raw_e_x1_phase_off_4t_{server,client}.log` and
+the four adjacent responses.  Its physical footprint was 4.37–4.38 GB, swap
+did not grow, thermal state remained Nominal, and its four outputs have the
+same assistant-content SHA-256 as every phase-on W-DECODE leg:
+`5b7237368368054bc8776cf861068f359d9936f2ab321cef5871d5cf4a1a56d1`.
