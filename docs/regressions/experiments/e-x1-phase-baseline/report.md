@@ -148,3 +148,51 @@ start the required capture in a separate terminal; its output can be written to
 a file for the experiment to archive.  No real-model invocation was started in
 this preflight.  This is a preflight observation only, not a performance or
 safety result.
+
+## Clean 2T W-DECODE seed attempt — stopped for physical footprint (2026-07-17)
+
+The owner started the required privileged `powermetrics` capture and confirmed
+the machine was available for the experiment.  `qwen36b` was rebuilt with
+`make omp` at commit `d809490fb0d8ffadff30380bed444d062188a7f9`; the source
+and experiment configuration were otherwise unchanged.  A fresh, local-only
+2-thread server was then started with `SAMOSA_PHASE_STATS=1`, a 2.07 GB default
+expert-cache budget, and an isolated chat directory.  As required for the
+resident-cache protocol, the committed W-DECODE context was first sent as a
+one-token request to create the reusable session.  It tokenized to 950 prompt
+tokens and saved a 951-token, 104.8 MB session.  The exact client/server
+commands, VM polls, health readings, response, and engine telemetry are in
+`raw_e_x1_clean_w_decode_2t_client.log`,
+`raw_e_x1_clean_w_decode_2t_seed_response.json`, and
+`raw_e_x1_clean_w_decode_2t_server.log` beside this report.
+
+This seed is not a W-DECODE timing result: it contains the cold session prefill
+and generated only one token.  Its phase telemetry is nevertheless captured
+verbatim in the server log: 74.838 s total / 12.69 prefill tok/s, with 19.11
+ms/token attention, 7.41 router, 24.68 dense, 22.20 expert matmul, 2.67
+expert-disk, 0.05 head, and 2.65 other.  The phase buckets sum to the recorded
+wall time within rounding.
+
+Safety telemetry was good except for the footprint guard.  Immediately before
+the seed, global swap used was 1,284.94 MB and `vm_stat` pageouts were 451,775;
+after clean shutdown they were 1,276.94 MB and 452,166.  This is no swap growth
+and 391 16-KiB pages (about 6.1 MiB) of pageouts, well inside the per-run VM
+bound.  `pmset` reported no warning and every sampled `powermetrics` thermal
+reading was Nominal.  The 75 one-second CPU-power samples while the prefill was
+active averaged 8,490.5 mW (6.94–10.45 W); that is about 636.8 J, or 0.670
+J/prompt token.  This is CPU-only prefill energy, not a decode J/token claim.
+The full privileged capture is `raw_e_x1_clean_powermetrics.log`.
+
+However, the server's macOS physical-footprint telemetry rose to **4.51 GB**;
+the engine reported the same `physical_rss=4.51 GB` beside its legacy
+`peak_rss=3.37 GB`.  The server was shut down immediately after the seed and
+before the warm-up or any measured 256-token W-DECODE leg.  This is at/just
+over the program's approximately 4.5 GB warmed-footprint guard, and continuing
+to fill the expert cache would not be responsible.  No adjustment to that
+guard or to the default cache budget is being inferred from one attempt.
+
+**Result:** E-X1 remains incomplete; no 2T/4T warm baseline table, overhead
+comparison, W-PREFILL/W-SESSION sweep, or quality baseline has been accepted.
+Consequently the seven still-pending dependent cards remain gated.  The
+positive finding is that the safety instrumentation now works end-to-end:
+physical footprint, VM deltas, thermal pressure, and CPU power were all
+captured for the first time under the real model.

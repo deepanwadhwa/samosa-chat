@@ -1,0 +1,114 @@
+2026-07-17T11:03:42-0400 pre-seed
+d809490fb0d8ffadff30380bed444d062188a7f9
+ProductName:		macOS
+ProductVersion:		26.5.1
+BuildVersion:		25F80
+vm.swapusage: total = 2048.00M  used = 1284.94M  free = 763.06M  (encrypted)
+Pages free:                                     4159.
+Pages throttled:                                   0.
+Pageouts:                                     451775.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":2.93,"context_limit_tokens":24576,"uptime_seconds":8,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}2026-07-17T11:04:00-0400 seed-poll-1
+vm.swapusage: total = 2048.00M  used = 1284.94M  free = 763.06M  (encrypted)
+Pages free:                                     3793.
+Pages throttled:                                   0.
+Pageouts:                                     451795.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.41,"context_limit_tokens":24576,"uptime_seconds":27,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}2026-07-17T11:04:16-0400 seed-poll-2
+vm.swapusage: total = 2048.00M  used = 1284.94M  free = 763.06M  (encrypted)
+Pages free:                                     4165.
+Pages throttled:                                   0.
+Pageouts:                                     451846.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.44,"context_limit_tokens":24576,"uptime_seconds":42,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}2026-07-17T11:04:35-0400 seed-poll-3
+vm.swapusage: total = 2048.00M  used = 1284.94M  free = 763.06M  (encrypted)
+Pages free:                                     3997.
+Pages throttled:                                   0.
+Pageouts:                                     451912.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.46,"context_limit_tokens":24576,"uptime_seconds":62,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}2026-07-17T11:04:56-0400 seed-poll-4
+vm.swapusage: total = 2048.00M  used = 1284.94M  free = 763.06M  (encrypted)
+Pages free:                                     4229.
+Pages throttled:                                   0.
+Pageouts:                                     451989.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.49,"context_limit_tokens":24576,"uptime_seconds":82,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}2026-07-17T11:05:24-0400 seed-poll-5
+vm.swapusage: total = 2048.00M  used = 1276.94M  free = 771.06M  (encrypted)
+Pages free:                                     5745.
+Pages throttled:                                   0.
+Pageouts:                                     452165.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.51,"context_limit_tokens":24576,"uptime_seconds":110,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":1,"tokens_per_second":0.00}}2026-07-17T11:05:36-0400 seed-complete-footprint-stop
+vm.swapusage: total = 2048.00M  used = 1276.94M  free = 771.06M  (encrypted)
+Pages free:                                     6118.
+Pages throttled:                                   0.
+Pageouts:                                     452166.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.51,"context_limit_tokens":24576,"uptime_seconds":123,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":1,"tokens_per_second":0.00}}seed response:
+{"object":"chat.completion","model":"qwen3.6-35b-a3b","choices":[{"index":0,"message":{"role":"assistant","reasoning":"","content":"Under"},"finish_reason":"length"}],"usage":{"prompt_tokens":950,"completion_tokens":1,"total_tokens":951},"samosa":{"thinking_closure":"natural","tokens_per_second":0.00,"rss_gb":4.51,"session_saved":true}}2026-07-17T11:06:04-0400 after-server-stop
+vm.swapusage: total = 2048.00M  used = 1276.94M  free = 771.06M  (encrypted)
+Pages free:                                   278363.
+Pages throttled:                                   0.
+Pageouts:                                     452166.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+69156 /bin/zsh -lc {
+  date '+%Y-%m-%dT%H:%M:%S%z after-server-stop'
+  sysctl vm.swapusage
+  vm_stat | rg 'Pages (free|throttled)|Pageouts|Swapouts'
+  pmset -g therm
+  pgrep -alf 'qwen36b.*18652' || true
+} | tee -a docs/regressions/experiments/e-x1-phase-baseline/raw_e_x1_clean_w_decode_2t_client.log
+sleep 10
+{
+  date '+%Y-%m-%dT%H:%M:%S%z ten-seconds-after-stop'
+  sysctl vm.swapusage
+  vm_stat | rg 'Pages (free|throttled)|Pageouts|Swapouts'
+  pmset -g therm
+} | tee -a docs/regressions/experiments/e-x1-phase-baseline/raw_e_x1_clean_w_decode_2t_client.log
+69158 /bin/zsh -lc {
+  date '+%Y-%m-%dT%H:%M:%S%z after-server-stop'
+  sysctl vm.swapusage
+  vm_stat | rg 'Pages (free|throttled)|Pageouts|Swapouts'
+  pmset -g therm
+  pgrep -alf 'qwen36b.*18652' || true
+} | tee -a docs/regressions/experiments/e-x1-phase-baseline/raw_e_x1_clean_w_decode_2t_client.log
+sleep 10
+{
+  date '+%Y-%m-%dT%H:%M:%S%z ten-seconds-after-stop'
+  sysctl vm.swapusage
+  vm_stat | rg 'Pages (free|throttled)|Pageouts|Swapouts'
+  pmset -g therm
+} | tee -a docs/regressions/experiments/e-x1-phase-baseline/raw_e_x1_clean_w_decode_2t_client.log
+2026-07-17T11:06:14-0400 ten-seconds-after-stop
+vm.swapusage: total = 2048.00M  used = 1276.94M  free = 771.06M  (encrypted)
+Pages free:                                   276880.
+Pages throttled:                                   0.
+Pageouts:                                     452166.
+Swapouts:                                     267142.
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
