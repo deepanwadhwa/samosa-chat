@@ -1,0 +1,29 @@
+Command:
+SNAP=/Users/deepanwadhwa/.samosa/current/model TOKENIZER=/Users/deepanwadhwa/.samosa/current/tokenizer_qwen36.json SAMOSA_PHASE_STATS=1 OMP_NUM_THREADS=2 ./qwen36b --chat "$(<tests/fixtures/experiments/workloads/w_decode_context.txt)" --no-thinking --greedy --seed 1729 --tokens 1 --save-session /tmp/samosa-e-x1-decode.qws
+
+Initial engine output:
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=1 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+
+Safety readings before the seed run:
+pmset -g batt: AC Power, InternalBattery 100%; charged
+pmset -g therm: no thermal warning or performance warning recorded
+vm.swapusage: total = 1024.00M used = 246.06M free = 777.94M (encrypted)
+vm_stat Pageouts: 446810
+
+After approximately 34 seconds, while the process was still running:
+vm.swapusage: total = 2048.00M used = 1477.00M free = 571.00M (encrypted)
+vm_stat Pageouts: 447195
+
+Action: sent SIGINT to the experiment process.  The process exited; no session
+file was created.
+
+Twenty seconds after exit:
+pmset -g therm: no thermal warning or performance warning recorded
+vm.swapusage: total = 2048.00M used = 1477.00M free = 571.00M (encrypted)
+vm_stat Pageouts: 447385
+
+powermetrics was unavailable because `sudo -n true` failed; package power and
+J/token were therefore not measured.

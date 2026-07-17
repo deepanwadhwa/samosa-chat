@@ -1,0 +1,14 @@
+Command:
+SNAP=/Users/deepanwadhwa/.samosa/current/model TOKENIZER=/Users/deepanwadhwa/.samosa/current/tokenizer_qwen36.json SAMOSA_PHASE_STATS=1 OMP_NUM_THREADS=2 ./qwen36b --chat "Reply with exactly: OK" --no-thinking --greedy --seed 1729 --tokens 2
+
+Output:
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=2 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[ecache] memory pressure WARN: released 323.1 MB
+[stats] prompt=17 generated=2 stop=model thinking=model-controlled prefill=2.807s (6.06 tok/s) decode=0.317s (3.15 tok/s) total=3.125s expert_hit=50/2495 (2.0%) expert_disk=1.523s expert_mm=0.526s peak_rss=3.15 GB
+[phase] prefill tokens=17 wall=2.807s attn=0.197s/11.59ms_tok router=0.135s/7.92ms_tok dense=0.551s/32.43ms_tok expert_mm=0.490s/28.85ms_tok expert_disk=1.358s/79.88ms_tok head=0.062s/3.67ms_tok other=0.014s/0.80ms_tok | decode tokens=1 wall=0.317s attn=0.028s/27.92ms_tok router=0.010s/9.71ms_tok dense=0.068s/68.05ms_tok expert_mm=0.035s/35.22ms_tok expert_disk=0.165s/164.81ms_tok head=0.010s/10.13ms_tok other=0.002s/1.59ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=1789 bytes_read=4.81 GB bytes_avoided=0.10 GB failed_admissions=0 pressure_warn=0 pressure_critical=1
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+OK
