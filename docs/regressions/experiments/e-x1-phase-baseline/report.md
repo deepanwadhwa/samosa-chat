@@ -113,6 +113,12 @@ attempt the server's macOS physical-footprint value was 4.76 GB while
 footprint and VM deltas, start from an otherwise idle host, and obtain the
 privileged power/thermal capture before a performance conclusion is accepted.
 
+The engine now prints `physical_rss` beside legacy `peak_rss` in every
+`[stats]` line (commit `9d0dcca`).  A real 4T W-DECODE verification produced
+`peak_rss=3.44 GB physical_rss=4.37 GB`; this confirms that macOS physical
+footprint, not the legacy `getrusage` number, is the conservative guard for
+this program.
+
 ## Required next condition
 
 Do not rerun E-X1 until the owner confirms the machine is otherwise idle and
