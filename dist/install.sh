@@ -109,12 +109,32 @@ destination() { # destination <remote-path>
     tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
     app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
+    pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/samosa\n' "$STAGE" ;;
     *) return 1 ;;
   esac
 }
 
 INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
+
+# Document extraction is an optional release capability, not a host-package
+# dependency. A PDFium archive is fetched only when the verified release
+# manifest includes both the platform artifact and its sidecar source. Keeping
+# old/source-only release fixtures valid makes capability absence explicit rather
+# than silently falling back to a system PDF tool.
+PDFIUM_ARCHIVE=""
+PDFIUM_LIBRARY=""
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64) PDFIUM_ARCHIVE="pdfium/pdfium-mac-arm64.tgz"; PDFIUM_LIBRARY="libpdfium.dylib" ;;
+  Linux:x86_64) PDFIUM_ARCHIVE="pdfium/pdfium-linux-x64.tgz"; PDFIUM_LIBRARY="libpdfium.so" ;;
+  Linux:aarch64) PDFIUM_ARCHIVE="pdfium/pdfium-linux-arm64.tgz"; PDFIUM_LIBRARY="libpdfium.so" ;;
+esac
+DOCUMENTS_ENABLED=0
+if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&1 && \
+   manifest_field "engine/samosa_extract.c" 1 >/dev/null 2>&1; then
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_extract.c $PDFIUM_ARCHIVE"
+  DOCUMENTS_ENABLED=1
+fi
 
 required_remaining=0
 for relative in $INSTALL_FILES; do
@@ -190,6 +210,31 @@ $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" "$STAGE/engine/vision.c" \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
+
+if [ "$DOCUMENTS_ENABLED" = 1 ]; then
+  command -v tar >/dev/null 2>&1 || fail "PDF support needs tar to unpack its verified release artifact"
+  PDFIUM_ROOT="$STAGE/pdfium/unpacked"
+  mkdir -p "$PDFIUM_ROOT" "$STAGE/lib"
+  tar -xzf "$STAGE/$PDFIUM_ARCHIVE" -C "$PDFIUM_ROOT" ||
+    fail "could not unpack the verified PDFium artifact"
+  [ -f "$PDFIUM_ROOT/include/fpdfview.h" ] && [ -f "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" ] ||
+    fail "verified PDFium artifact has an unexpected layout"
+  cp "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" "$STAGE/lib/$PDFIUM_LIBRARY"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    EXTRACT_RPATH='@loader_path/../lib'
+  else
+    EXTRACT_RPATH='$ORIGIN/../lib'
+  fi
+  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -I"$PDFIUM_ROOT/include" \
+    "$STAGE/engine/samosa_extract.c" "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" \
+    -Wl,-rpath,"$EXTRACT_RPATH" -o "$STAGE/bin/samosa-extract" ||
+    fail "staged document extractor compilation failed; live release was not changed"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    install_name_tool -change ./libpdfium.dylib @rpath/libpdfium.dylib "$STAGE/bin/samosa-extract" ||
+      fail "could not set the staged PDFium runtime path"
+  fi
+  chmod +x "$STAGE/bin/samosa-extract"
+fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   say "Smoke-testing the inactive local app..."
