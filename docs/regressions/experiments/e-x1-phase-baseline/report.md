@@ -190,9 +190,65 @@ over the program's approximately 4.5 GB warmed-footprint guard, and continuing
 to fill the expert cache would not be responsible.  No adjustment to that
 guard or to the default cache budget is being inferred from one attempt.
 
-**Result:** E-X1 remains incomplete; no 2T/4T warm baseline table, overhead
-comparison, W-PREFILL/W-SESSION sweep, or quality baseline has been accepted.
-Consequently the seven still-pending dependent cards remain gated.  The
-positive finding is that the safety instrumentation now works end-to-end:
-physical footprint, VM deltas, thermal pressure, and CPU power were all
-captured for the first time under the real model.
+**Result at this point:** E-X1 remained incomplete; W-PREFILL/W-SESSION,
+overhead comparison, and the quality baseline were still unrun.  The positive
+finding was that the safety instrumentation worked end-to-end: physical
+footprint, VM deltas, thermal pressure, and CPU power were all captured for
+the first time under the real model.
+
+## Clean W-DECODE baseline — accepted under the owner's 4.51 GB tolerance (2026-07-17)
+
+The owner explicitly accepted 4.51 GB as within the card's approximate 4.5 GB
+footprint guard.  The saved 951-token session from the seed attempt was copied
+before every leg, so each request began from identical context.  A fresh
+persistent server was used per thread count, then one warm-up and three
+measured requests were sent with the fixed prompt `Continue with a concise
+operational reminder.`, `max_tokens=256`, `thinking=off`, `temperature=0`, and
+`seed=1729`.  All requests reached the 256-token ceiling, yielding 255 timed
+decode steps.  Complete server, client/VM, response, and privileged-power logs
+are `raw_e_x1_w_decode_{2t,4t}_{server,client,powermetrics}.log` and the
+adjacent `*_response.json` files.
+
+| Threads | Warm-up decode tok/s | Measured decode tok/s | Median | Physical footprint |
+|---:|---:|---:|---:|---:|
+| 2 | 6.26 | 6.24, 6.26, 6.33 | **6.26** | 4.38 GB |
+| 4 | 7.64 | 7.58, 7.60, 7.62 | **7.60** | 4.38 GB |
+
+The 4T median is 21.4% faster than 2T, but still misses the 12–15 tok/s
+felt-speed gate.  It does not change the owner's default comfort policy.
+
+| Median phase | 2T ms/token | 4T ms/token |
+|---|---:|---:|
+| attention | 23.14 | 13.12 |
+| router | 7.90 | 4.56 |
+| resident dense | 28.59 | 25.53 |
+| expert matmul | 30.70 | 23.37 |
+| **expert disk** | **59.70** | **56.11** |
+| head / sampler | 8.80 | 7.88 |
+| other | 0.85 | 0.92 |
+| **phase sum** | **159.68** | **131.49** |
+| measured wall (`1 / tok/s`) | 159.74 | 131.58 |
+
+The phase totals agree with wall time to less than 0.1%.  Expert-disk stalls
+are the largest decode bucket at both thread counts; adding threads reduces
+attention, router, and expert-matmul time, but only lowers disk time by 3.59
+ms/token.  This is the first clean evidence for E-X3/E-X4/E-X8's cache and
+route-locality questions.
+
+For the 2T measured legs, CPU-power sampling windows averaged 6.58, 6.69, and
+6.79 W and produce 1.054, 1.068, and 1.072 estimated CPU J/decode-token
+(median **1.068 J/token**).  At 4T they averaged 8.94, 9.29, and 9.67 W and
+produce 1.179, 1.222, and 1.269 J/token (median **1.222 J/token**).  These are
+time-aligned `powermetrics` CPU-power estimates using the engine's decode
+duration, not total machine energy.  The 4T speed gain therefore comes with an
+estimated 14% CPU-energy-per-token increase; this is an observation, not a
+thread-policy recommendation.
+
+All measured legs held physical footprint at 4.38 GB, kept global swap at
+1,276.94 MB (zero growth), and had Nominal thermal pressure / no `pmset`
+warning.  Each pageout delta was below 8 MiB (all far below the 100 MB bound).
+The eight warm-up/measurement responses (both thread counts) had the identical
+assistant-content SHA-256 `5b7237368368054bc8776cf861068f359d9936f2ab321cef5871d5cf4a1a56d1`.
+E-X1 is still incomplete: W-PREFILL, W-SESSION, the phase-timer overhead
+comparison, and the 12-prompt quality baseline remain to be run before the
+dependent cards can be accepted.
