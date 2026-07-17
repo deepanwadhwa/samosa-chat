@@ -1,5 +1,6 @@
 qwen36b
 samosa-extract
+pagecache-residency
 test_expert_cache
 test_kv_cache
 *.qws
