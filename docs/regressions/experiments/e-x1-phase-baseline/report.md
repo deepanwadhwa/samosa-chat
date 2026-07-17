@@ -57,6 +57,30 @@ per turn, so only the latter are used as per-run phase evidence.
 See [raw_w_decode_server.log](raw_w_decode_server.log) for commands and all
 captured `[stats]`/`[phase]` lines.
 
+## W-PREFILL 4T attempt — stopped for footprint investigation
+
+The committed W-PREFILL source plus a fixed four-bullet summary instruction
+tokenized to 2,013 prompt tokens.  The 4T prefill completed in 103.208 seconds
+(19.50 tok/s) before the requested 32-token generation was cancelled.  This is
+not an accepted W-PREFILL result: at about 60 seconds, `/healthz` reported the
+server's current physical footprint at 4.71 GB (4.76 GB in the completion),
+which is above the card's ~4.5 GB guard.  The cancellation endpoint cannot
+interrupt an in-flight prefill, so the prefill completed before it took effect.
+
+There is a material instrumentation discrepancy: the same run's `[stats]`
+line reports `peak_rss=4.17 GB`, whereas `/healthz` uses macOS current physical
+footprint and reported 4.76 GB.  The latter is the more relevant safety value
+on this machine.  No further W-PREFILL, W-SESSION, W-SUSTAIN, or dependent
+experiment will run until this discrepancy and the footprint bound are
+understood.  Swap did not grow and `pmset` remained nominal, but no J/token
+measurement was possible without `powermetrics`.
+
+The phase measurement itself is useful: 13.26 ms/token attention, 4.10 router,
+15.38 dense, 15.90 expert matmul, 1.16 expert disk, 0.03 head, and 1.45 other.
+The prefill is compute-dominated after the warm server cache, so its next
+candidate is E-X6/E-X7—not disk prefetch.  Full evidence is in
+[raw_w_prefill_abort.log](raw_w_prefill_abort.log).
+
 ## Required next condition
 
 Do not rerun E-X1 until the owner confirms the machine is otherwise idle and

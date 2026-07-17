@@ -1,0 +1,21 @@
+Server/request setup used the same 4-thread persistent server as
+`raw_w_decode_server.log`, with this request body assembled from the committed
+fixture:
+
+jq -n --rawfile doc tests/fixtures/experiments/workloads/w_prefill_document.txt '{messages:[{role:"user",content:($doc + "\n\nSummarize this document in four concise bullet points.")}],max_tokens:32,thinking:"off",temperature:0,seed:1729,stream:false}' | curl -sS --max-time 180 http://127.0.0.1:18643/v1/chat/completions -H 'content-type: application/json' --data-binary @-
+
+At approximately 60 seconds, `GET /healthz` reported `rss_gb: 4.71`, above the
+E-X1 ~4.5 GB footprint guard.  The request was cancelled immediately:
+
+POST /v1/cancel -> {"cancelled":true}
+
+The cancellation is checked only in the generation loop, so the in-flight
+prefill completed before the response returned:
+
+{"object":"chat.completion","model":"qwen3.6-35b-a3b","choices":[{"index":0,"message":{"role":"assistant","reasoning":"","content":""},"finish_reason":"cancelled"}],"usage":{"prompt_tokens":2013,"completion_tokens":0,"total_tokens":2013},"samosa":{"thinking_closure":"cancelled","tokens_per_second":0.00,"rss_gb":4.76,"session_saved":null}}
+
+[stats] prompt=2013 generated=0 stop=cancelled thinking=model-controlled prefill=103.208s (19.50 tok/s) decode=0.000s (0.00 tok/s) total=103.208s expert_hit=130979/315802 (41.5%) expert_disk=58.307s expert_mm=55.532s peak_rss=4.17 GB
+[phase] prefill tokens=2013 wall=103.208s attn=26.695s/13.26ms_tok router=8.244s/4.10ms_tok dense=30.952s/15.38ms_tok expert_mm=32.014s/15.90ms_tok expert_disk=2.339s/1.16ms_tok head=0.051s/0.03ms_tok other=2.914s/1.45ms_tok | decode tokens=0 wall=0.000s attn=0.000s/0.00ms_tok router=0.000s/0.00ms_tok dense=0.000s/0.00ms_tok expert_mm=0.000s/0.00ms_tok expert_disk=0.000s/0.00ms_tok head=0.000s/0.00ms_tok other=0.000s/0.01ms_tok
+
+Safety readings: AC power, no `pmset -g therm` warning; swap used decreased
+from 1,381 MB to 1,332.94 MB.  `powermetrics` was unavailable.
