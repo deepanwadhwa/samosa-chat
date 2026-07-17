@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 #define PATCH_SIZE 16
 #define MERGE_SIZE 2
@@ -73,6 +74,7 @@ float* vision_load_base64(const char* b64_str, int* grid_t, int* grid_h, int* gr
 // Forward pass the vision tower on preprocessed patches.
 // Returns dynamically allocated embeddings of size (grid_t * grid_h * grid_w / 4) * VISION_OUT_DIM.
 // The returned number of tokens is (grid_t * grid_h * grid_w / 4).
-float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, int grid_h, int grid_w);
+float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, int grid_h, int grid_w,
+                      const atomic_int* cancel_flag);
 
 #endif

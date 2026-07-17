@@ -268,12 +268,18 @@ static void gelu_pytorch_tanh(float* out, const float* in, int size) {
     }
 }
 
-static void vision_gemm_f32(float* out, const float* in, const float* weight, const float* bias, int num_patches, int in_dim, int out_dim) {
+static int vision_cancelled(const atomic_int* cancel_flag) {
+    return cancel_flag && atomic_load_explicit(cancel_flag, memory_order_relaxed);
+}
+
+static void vision_gemm_f32(float* out, const float* in, const float* weight, const float* bias, int num_patches, int in_dim, int out_dim, const atomic_int* cancel_flag) {
     #pragma omp parallel for
     for (int p = 0; p < num_patches; p++) {
+        if (vision_cancelled(cancel_flag)) continue;
         const float* in_p = in + p * in_dim;
         float* out_p = out + p * out_dim;
         for (int o = 0; o < out_dim; o++) {
+            if (!(o & 31) && vision_cancelled(cancel_flag)) break;
             float sum = bias ? bias[o] : 0.0f;
             const float* w_row = weight + (int64_t)o * in_dim;
             for (int i = 0; i < in_dim; i++) {
@@ -284,13 +290,15 @@ static void vision_gemm_f32(float* out, const float* in, const float* weight, co
     }
 }
 
-static void vision_gemm_int8(float* out, const float* in, const void* weight, const float* scales, const float* bias, int num_patches, int in_dim, int out_dim) {
+static void vision_gemm_int8(float* out, const float* in, const void* weight, const float* scales, const float* bias, int num_patches, int in_dim, int out_dim, const atomic_int* cancel_flag) {
     const int8_t* w8 = (const int8_t*)weight;
     #pragma omp parallel for
     for (int p = 0; p < num_patches; p++) {
+        if (vision_cancelled(cancel_flag)) continue;
         const float* in_p = in + p * in_dim;
         float* out_p = out + p * out_dim;
         for (int o = 0; o < out_dim; o++) {
+            if (!(o & 31) && vision_cancelled(cancel_flag)) break;
             float sum = 0.0f;
             const int8_t* w_row = w8 + (int64_t)o * in_dim;
             for (int i = 0; i < in_dim; i++) {
@@ -419,29 +427,39 @@ static void apply_vision_rope(float* q, float* k, const float* cos_val, const fl
     }
 }
 
-float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, int grid_h, int grid_w) {
+float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, int grid_h, int grid_w,
+                      const atomic_int* cancel_flag) {
     int num_patches = grid_t * grid_h * grid_w;
     int dim = VISION_HIDDEN_SIZE;
-    
     float* hidden = malloc(num_patches * dim * sizeof(float));
+    float *cos_map = NULL, *sin_map = NULL, *hidden_tmp = NULL, *qkv = NULL;
+    float *merge_in = NULL, *merge_flat = NULL, *merge_hid = NULL, *merge_out = NULL;
+#define VISION_CANCEL_RETURN() do { \
+    free(hidden); free(cos_map); free(sin_map); free(hidden_tmp); free(qkv); \
+    free(merge_in); free(merge_flat); free(merge_hid); free(merge_out); \
+    return NULL; \
+} while (0)
     
     // 1. Patch Embed
-    vision_gemm_f32(hidden, pixel_values, vt->patch_embed_weight, vt->patch_embed_bias, num_patches, 3 * 2 * 16 * 16, dim);
+    vision_gemm_f32(hidden, pixel_values, vt->patch_embed_weight, vt->patch_embed_bias, num_patches, 3 * 2 * 16 * 16, dim, cancel_flag);
+    if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
     
     // 2. Pos Embed
     if (vt->pos_embed_weight) {
         add_pos_embed(hidden, vt->pos_embed_weight, vt->pos_embed_weight_qs, grid_h, grid_w, dim);
     }
+    if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
     
-    float* cos_map = malloc(num_patches * VISION_HEAD_DIM * sizeof(float));
-    float* sin_map = malloc(num_patches * VISION_HEAD_DIM * sizeof(float));
+    cos_map = malloc(num_patches * VISION_HEAD_DIM * sizeof(float));
+    sin_map = malloc(num_patches * VISION_HEAD_DIM * sizeof(float));
     generate_vision_rope(cos_map, sin_map, grid_h, grid_w, VISION_HEAD_DIM);
     
-    float* hidden_tmp = malloc(num_patches * dim * sizeof(float));
-    float* qkv = malloc(num_patches * dim * 3 * sizeof(float));
+    hidden_tmp = malloc(num_patches * dim * sizeof(float));
+    qkv = malloc(num_patches * dim * 3 * sizeof(float));
     
     // 3. Blocks
     for (int b = 0; b < VISION_NUM_BLOCKS; b++) {
+        if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
         // Norm1
         #pragma omp parallel for
         for (int p = 0; p < num_patches; p++) {
@@ -449,7 +467,8 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
         }
         
         // QKV
-        vision_gemm_int8(qkv, hidden_tmp, vt->block_attn_qkv_weight[b], vt->block_attn_qkv_weight_qs[b], vt->block_attn_qkv_bias[b], num_patches, dim, dim * 3);
+        vision_gemm_int8(qkv, hidden_tmp, vt->block_attn_qkv_weight[b], vt->block_attn_qkv_weight_qs[b], vt->block_attn_qkv_bias[b], num_patches, dim, dim * 3, cancel_flag);
+        if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
         
         // Self Attention
         // Here we just use standard multi-head self attention.
@@ -460,8 +479,10 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
         // Parallelize over heads
         #pragma omp parallel for
         for (int h = 0; h < VISION_NUM_HEADS; h++) {
+            if (vision_cancelled(cancel_flag)) continue;
             float* att = malloc(num_patches * sizeof(float));
             for (int p_q = 0; p_q < num_patches; p_q++) {
+                if (vision_cancelled(cancel_flag)) break;
                 float* q = qkv + p_q * dim * 3 + h * VISION_HEAD_DIM;
                 
                 // apply RoPE to Q
@@ -476,6 +497,7 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
                 }
                 
                 for (int p_k = 0; p_k < num_patches; p_k++) {
+                    if (!(p_k & 31) && vision_cancelled(cancel_flag)) break;
                     float* k = qkv + p_k * dim * 3 + dim + h * VISION_HEAD_DIM;
                     
                     // apply RoPE to K
@@ -493,6 +515,7 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
                     for (int i = 0; i < VISION_HEAD_DIM; i++) dot += q_rope[i] * k_rope[i];
                     att[p_k] = dot / sqrtf((float)VISION_HEAD_DIM);
                 }
+                if (vision_cancelled(cancel_flag)) break;
                 
                 vision_softmax_head(att, num_patches);
                 
@@ -500,6 +523,7 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
                 for (int i = 0; i < VISION_HEAD_DIM; i++) out[i] = 0.0f;
                 
                 for (int p_v = 0; p_v < num_patches; p_v++) {
+                    if (!(p_v & 31) && vision_cancelled(cancel_flag)) break;
                     float* v = qkv + p_v * dim * 3 + dim * 2 + h * VISION_HEAD_DIM;
                     float a = att[p_v];
                     for (int i = 0; i < VISION_HEAD_DIM; i++) out[i] += a * v[i];
@@ -507,10 +531,12 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
             }
             free(att);
         }
+        if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
         
         // Proj & Residual
         float* proj_out = malloc(num_patches * dim * sizeof(float));
-        vision_gemm_int8(proj_out, attn_out, vt->block_attn_proj_weight[b], vt->block_attn_proj_weight_qs[b], vt->block_attn_proj_bias[b], num_patches, dim, dim);
+        vision_gemm_int8(proj_out, attn_out, vt->block_attn_proj_weight[b], vt->block_attn_proj_weight_qs[b], vt->block_attn_proj_bias[b], num_patches, dim, dim, cancel_flag);
+        if (vision_cancelled(cancel_flag)) { free(proj_out); VISION_CANCEL_RETURN(); }
         #pragma omp parallel for
         for (int p = 0; p < num_patches * dim; p++) hidden[p] += proj_out[p];
         free(proj_out);
@@ -523,7 +549,8 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
         
         // MLP FC1 -> GELU -> FC2 & Residual
         float* mlp_hidden = malloc(num_patches * VISION_INTERMEDIATE_SIZE * sizeof(float));
-        vision_gemm_int8(mlp_hidden, hidden_tmp, vt->block_mlp_fc1_weight[b], vt->block_mlp_fc1_weight_qs[b], vt->block_mlp_fc1_bias[b], num_patches, dim, VISION_INTERMEDIATE_SIZE);
+        vision_gemm_int8(mlp_hidden, hidden_tmp, vt->block_mlp_fc1_weight[b], vt->block_mlp_fc1_weight_qs[b], vt->block_mlp_fc1_bias[b], num_patches, dim, VISION_INTERMEDIATE_SIZE, cancel_flag);
+        if (vision_cancelled(cancel_flag)) { free(mlp_hidden); VISION_CANCEL_RETURN(); }
         
         #pragma omp parallel for
         for (int p = 0; p < num_patches; p++) {
@@ -531,7 +558,8 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
         }
         
         float* mlp_out = malloc(num_patches * dim * sizeof(float));
-        vision_gemm_int8(mlp_out, mlp_hidden, vt->block_mlp_fc2_weight[b], vt->block_mlp_fc2_weight_qs[b], vt->block_mlp_fc2_bias[b], num_patches, VISION_INTERMEDIATE_SIZE, dim);
+        vision_gemm_int8(mlp_out, mlp_hidden, vt->block_mlp_fc2_weight[b], vt->block_mlp_fc2_weight_qs[b], vt->block_mlp_fc2_bias[b], num_patches, VISION_INTERMEDIATE_SIZE, dim, cancel_flag);
+        if (vision_cancelled(cancel_flag)) { free(mlp_hidden); free(mlp_out); VISION_CANCEL_RETURN(); }
         
         #pragma omp parallel for
         for (int p = 0; p < num_patches * dim; p++) hidden[p] += mlp_out[p];
@@ -541,29 +569,31 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
     }
     
     // 4. Merger
-    float* merge_in = malloc(num_patches * dim * sizeof(float));
+    merge_in = malloc(num_patches * dim * sizeof(float));
     #pragma omp parallel for
     for (int p = 0; p < num_patches; p++) {
         layernorm(merge_in + p * dim, hidden + p * dim, vt->merger_norm_weight, vt->merger_norm_bias, dim);
     }
     
     int new_num_patches = num_patches / 4;
-    float* merge_flat = malloc(new_num_patches * dim * 4 * sizeof(float));
+    merge_flat = malloc(new_num_patches * dim * 4 * sizeof(float));
     #pragma omp parallel for
     for (int p = 0; p < new_num_patches; p++) {
         memcpy(merge_flat + p * dim * 4, merge_in + (p * 4) * dim, dim * 4 * sizeof(float));
     }
     
-    float* merge_hid = malloc(new_num_patches * dim * 4 * sizeof(float));
-    vision_gemm_int8(merge_hid, merge_flat, vt->merger_fc1_weight, vt->merger_fc1_weight_qs, vt->merger_fc1_bias, new_num_patches, dim * 4, dim * 4);
+    merge_hid = malloc(new_num_patches * dim * 4 * sizeof(float));
+    vision_gemm_int8(merge_hid, merge_flat, vt->merger_fc1_weight, vt->merger_fc1_weight_qs, vt->merger_fc1_bias, new_num_patches, dim * 4, dim * 4, cancel_flag);
+    if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
     
     #pragma omp parallel for
     for (int p = 0; p < new_num_patches; p++) {
         gelu_pytorch_tanh(merge_hid + p * dim * 4, merge_hid + p * dim * 4, dim * 4);
     }
     
-    float* merge_out = malloc(new_num_patches * VISION_OUT_DIM * sizeof(float));
-    vision_gemm_int8(merge_out, merge_hid, vt->merger_fc2_weight, vt->merger_fc2_weight_qs, vt->merger_fc2_bias, new_num_patches, dim * 4, VISION_OUT_DIM);
+    merge_out = malloc(new_num_patches * VISION_OUT_DIM * sizeof(float));
+    vision_gemm_int8(merge_out, merge_hid, vt->merger_fc2_weight, vt->merger_fc2_weight_qs, vt->merger_fc2_bias, new_num_patches, dim * 4, VISION_OUT_DIM, cancel_flag);
+    if (vision_cancelled(cancel_flag)) VISION_CANCEL_RETURN();
     
     free(hidden);
     free(cos_map);
@@ -573,6 +603,6 @@ float* vision_forward(VisionTower* vt, const float* pixel_values, int grid_t, in
     free(merge_in);
     free(merge_flat);
     free(merge_hid);
-    
+#undef VISION_CANCEL_RETURN
     return merge_out;
 }

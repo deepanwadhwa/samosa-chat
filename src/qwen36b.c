@@ -3487,7 +3487,12 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     float *x_prompt = falloc((int64_t)np * m->c.hidden);
     
     if (m->vision_pixels) {
-        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w);
+        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w,
+                                           options ? options->cancel_flag : NULL);
+        if (!vision_emb) {
+            free(x_prompt);
+            x_prompt = NULL;
+        } else {
         pos_t = malloc(np * sizeof(int));
         pos_h = malloc(np * sizeof(int));
         pos_w = malloc(np * sizeof(int));
@@ -3525,13 +3530,14 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
             }
         }
         free(vision_emb);
+        }
     } else {
         for (int s = 0; s < np; s++) embed_gather_row(x_prompt + s * m->c.hidden, &m->embed, prompt[s]);
     }
     
-    int cancelled=0;
-    float *logit = prefill_with_cancel(m, x_prompt, prompt, np, 0, mrope_delta,
-                                       pos_t, pos_h, pos_w, options, &cancelled);
+    int cancelled = x_prompt == NULL;
+    float *logit = cancelled ? NULL : prefill_with_cancel(m, x_prompt, prompt, np, 0, mrope_delta,
+                                                           pos_t, pos_h, pos_w, options, &cancelled);
     if (pos_t) { free(pos_t); free(pos_h); free(pos_w); }
     double prefill_done=now_s();
     int len = np;
@@ -3866,7 +3872,12 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     int *pos_t = NULL, *pos_h = NULL, *pos_w = NULL;
     
     if (m->vision_pixels) {
-        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w);
+        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w,
+                                           options ? options->cancel_flag : NULL);
+        if (!vision_emb) {
+            free(x_cont);
+            x_cont = NULL;
+        } else {
         pos_t = malloc(n_cont * sizeof(int));
         pos_h = malloc(n_cont * sizeof(int));
         pos_w = malloc(n_cont * sizeof(int));
@@ -3909,14 +3920,15 @@ static void generate_continue(Model *m, int *hist, int hist_len,
             }
         }
         free(vision_emb);
+        }
     } else {
         for (int s = 0; s < n_cont; s++) embed_gather_row(x_cont + s * m->c.hidden, &m->embed, cont[s]);
     }
     
-    int cancelled = 0;
-    float *logit = prefill_with_cancel(m, x_cont, cont, n_cont, hist_len - 1,
-                                       mrope_delta, pos_t, pos_h, pos_w,
-                                       options, &cancelled);
+    int cancelled = x_cont == NULL;
+    float *logit = cancelled ? NULL : prefill_with_cancel(m, x_cont, cont, n_cont, hist_len - 1,
+                                                           mrope_delta, pos_t, pos_h, pos_w,
+                                                           options, &cancelled);
     if (pos_t) { free(pos_t); free(pos_h); free(pos_w); }
     double prefill_done = now_s();
     free(cont);
