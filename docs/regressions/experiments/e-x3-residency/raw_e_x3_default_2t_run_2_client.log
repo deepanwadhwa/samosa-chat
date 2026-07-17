@@ -1,0 +1,32 @@
+2026-07-17T12:34:35-0400 run-2-start
+vm.swapusage: total = 2048.00M  used = 1268.94M  free = 779.06M  (encrypted)
+Pages free:                                    12659.
+Pages throttled:                                   0.
+Pageouts:                                     462997.
+Swapouts:                                     267142.
+2026-07-17T12:34:35-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":544,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:38-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":546,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:40-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":549,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:43-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":551,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:45-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":554,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:48-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":556,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:50-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":559,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:53-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":561,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:55-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":564,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:34:58-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":566,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:00-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":569,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:03-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":571,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:05-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":574,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:08-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":576,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:10-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":579,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:13-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":581,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:15-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":584,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+2026-07-17T12:35:18-0400 run-2-monitor thermal=Nominal rss_gb=4.56 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":586,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.18}}
+run_2_curl_exit=0 aborted=0
+2026-07-17T12:35:20-0400 run-2-end
+vm.swapusage: total = 2048.00M  used = 1268.94M  free = 779.06M  (encrypted)
+Pages free:                                     4167.
+Pages throttled:                                   0.
+Pageouts:                                     463259.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.56,"context_limit_tokens":24576,"uptime_seconds":589,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":6.17}}

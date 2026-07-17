@@ -1,0 +1,33 @@
+2026-07-17T12:38:26-0400 warm-start
+vm.swapusage: total = 2048.00M  used = 1268.94M  free = 779.06M  (encrypted)
+Pages free:                                     5037.
+Pages throttled:                                   0.
+Pageouts:                                     463822.
+Swapouts:                                     267142.
+2026-07-17T12:38:27-0400 warm-monitor thermal=Nominal rss_gb=2.93 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":2.93,"context_limit_tokens":24576,"uptime_seconds":27,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:29-0400 warm-monitor thermal=Nominal rss_gb=4.60 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.60,"context_limit_tokens":24576,"uptime_seconds":29,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:32-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":32,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:34-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":34,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:37-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":37,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:39-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":39,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:42-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":42,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:44-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":45,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:47-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":47,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:49-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":50,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:52-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":52,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:54-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":55,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:57-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":57,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:38:59-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":60,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:39:02-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":62,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:39:04-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":65,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:39:07-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":67,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:39:09-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":70,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T12:39:12-0400 warm-monitor thermal=Nominal rss_gb=4.61 health={"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":72,"scheduler":{"active":true,"queued":0,"max_queue":0},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+warm_curl_exit=0 aborted=0
+2026-07-17T12:39:14-0400 warm-end
+vm.swapusage: total = 2048.00M  used = 1268.94M  free = 779.06M  (encrypted)
+Pages free:                                     3909.
+Pages throttled:                                   0.
+Pageouts:                                     464602.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.61,"context_limit_tokens":24576,"uptime_seconds":75,"scheduler":{"active":false,"queued":0,"max_queue":0},"last_generation":{"available":true,"tokens":256,"tokens_per_second":5.83}}
