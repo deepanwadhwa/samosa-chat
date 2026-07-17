@@ -55,9 +55,13 @@ both look like scoring/comparison hooks that E-X8 could reuse.
   E-X1 measures. Every "expected gain" below is an estimate until E-X1
   replaces it with a measurement.
 - Honest prediction recorded up front: E-X2–E-X7 plausibly reach ~10–12;
-  the stretch to 15 most likely requires E-X8 (speculation) or E-X9
-  (adaptive top-k), both of which are gated — one on a measured acceptance
-  rate, the other on an owner quality decision.
+  the stretch to 15 most likely requires E-X8 (speculation), E-X9
+  (adaptive top-k), or the Metal track (E-X10, reopened 2026-07-17) — all
+  gated: E-X8 on a measured acceptance rate, E-X9 on an owner quality
+  decision, E-X10 on its one-day M0 spike. The strongest path to 15+ is
+  the *combination*: E-X10 M3 (CPU drafts, GPU verifies) multiplies E-X8's
+  speculation by Metal's cheap batched verification, and M2 lowers J/token
+  so whatever speed is reached actually *sustains* on a fanless chassis.
 - **Owner decision (2026-07-17): the target is *generic felt speed*, not
   long-session speed.** "12–15" means what a user feels in an ordinary chat
   — the owner does not assume users will run very long sessions. Two
@@ -83,7 +87,8 @@ E-X1 (baseline + phase timers)  ── gates everything below
 ├── E-X6 (i8mm dispatch)                 code, bit-exact gate; time-to-first-token
 ├── E-X7 (Accelerate/AMX prefill)        code, owner note (build change); time-to-first-token
 └── E-X2 (fp16 KV)                       code; demoted to footprint/swap-safety — see its card
-E-X10 (Metal) — deferred placeholder, not scheduled
+E-X10 (Metal M-track: M0 spike → M1 prefill → M2 decode → M3 draft/verify)
+      — reopened by owner 2026-07-17; M0 runnable anytime and is the track's RUN-FIRST
 E-X11 (MLX / llama.cpp yardstick) — independent, anytime; calibrates the target against Metal-native engines
 ```
 
@@ -509,8 +514,12 @@ teacher forcing, most of the harness exists.
 **Go/no-go:** modeled end-to-end speedup ≥1.4× at measured α and union
 sizes → write a separate implementation card (KV rollback design,
 sampling-mode acceptance, cache-pressure mitigation) for owner review.
-Below that → close with the numbers; the target then rests on E-X9 or a
-lower target.
+Below that → close with the numbers; the target then rests on E-X9, the
+Metal track, or a lower target. **Publish the full α/W curve either way**,
+not just the verdict: E-X10 M3 replaces `t_verify` with a much cheaper
+GPU batched pass, so an α that fails this CPU-only gate may still fund
+CPU-draft/GPU-verify — the curve lets that cell be recomputed without
+re-measuring.
 
 **Quality:** the measurement phase has no quality surface. An eventual
 implementation is class 3 at minimum during bring-up (greedy acceptance is
@@ -556,27 +565,211 @@ improve. Verify, don't assume.
 
 ---
 
-## E-X10 — Metal prefill spike  **Deferred — not scheduled by this card**
+## E-X10 — The Metal track (M0–M3): a native GPU arm for the C engine, running the custom q4 format in place
 
-[TASKS_HARDWARE.md](TASKS_HARDWARE.md) lists GPU/Metal as the separate,
-already-planned post-release track, and nothing above depends on it. For
-when the owner opens that track, the shape that survives this program's
-scrutiny:
+**Status: reopened by the owner, 2026-07-17.** This card previously
+deferred Metal to the post-release track that
+[TASKS_HARDWARE.md](TASKS_HARDWARE.md) recorded as a non-goal. The owner
+explicitly reopened it ("can our C engine not have a parallel capability to
+unlock Apple Metal and run our custom quantization?") — the answer is yes,
+and this section is the design. The hardware card's non-goal is annotated
+as superseded. House rules unchanged: staged, opt-in, measured before
+claimed, and **M0 is the RUN-FIRST that can kill the whole track in one
+day** — a good outcome if it does.
 
-- **Target prefill, not decode.** Unified memory means the GPU shares the
-  same ~100 GB/s DRAM — it cannot raise the decode bandwidth ceiling; and
-  at S=1, ~50–100 µs of command-buffer latency × dozens of dispatches per
-  token eats the margin. Prefill GEMMs amortize both.
-- Unified memory makes it cheaper than it looks: wrap existing resident and
-  cache slabs with `newBufferWithBytesNoCopy` (16 KB-aligned) — no copies,
-  no second model in memory. A q4-group dequant-dot compute shader and
-  whole-layer encoding are the real work.
-- The dispatcher seam already exists ([kernels.h:347-357](../src/kernels.h#L347-L357)).
-- Its honest sales pitch on a fanless machine is J/token, not peak speed —
-  E-H1's metric decides whether it was worth it.
-- Prerequisite: E-X1/E-X6/E-X7 first — if AMX gets prefill where it needs
-  to be, Metal may never be worth its complexity. That would be a good
-  outcome, not a disappointment.
+### Why this is native to Samosa, not a port (three unlocks)
+
+1. **Unified memory: the GPU reads our bytes as they are.**
+   `newBufferWithBytesNoCopy` wraps memory the engine already owns as a
+   GPU-visible buffer — zero copy, no second model in RAM, no format
+   conversion. A Metal shader reads whatever byte layout it is told to:
+   teaching it `groupwise-symmetric-q4-v1` (16 packed nibbles + one f32
+   scale per 32 weights) is ~150 lines of MSL mirroring
+   [kernels.h:121-143](../src/kernels.h#L121-L143) line for line.
+   "MLX cannot read our format" is true; "the GPU cannot" was never true.
+2. **Zero build-system damage.** Metal shaders compile at runtime from a
+   source string (`newLibraryWithSource`). The MSL lives as a C string in
+   the binary: no `.metallib` artifact, no new build step, no third-party
+   code — just `-framework Metal` on the Makefile's Darwin branch, an OS
+   framework exactly like E-X7's Accelerate. The "no dependencies, no
+   build system" identity survives literally.
+3. **The expert cache anticipated this by name.**
+   [expert_cache.h:8-13](../src/expert_cache.h#L8-L13) keeps payload
+   allocation outside the module precisely to leave "mmap, malloc,
+   **Metal**, and other storage choices" open, and `payload_alignment` is
+   already a config field ([expert_cache.h:101-107](../src/expert_cache.h#L101-L107)).
+   Set it to 16384, allocate the cache budget as **one page-aligned
+   arena**, wrap the arena as a single MTLBuffer, and every slab the LRU
+   manages is GPU-addressable by offset — LRU, pressure ladder, and stats
+   all unchanged. The dispatcher already has a GPU seam to mirror
+   ([kernels.h:347-357](../src/kernels.h#L347-L357), the `COLI_CUDA` hook,
+   including its tested fall-back-to-CPU-on-failure pattern).
+
+### Target architecture (what exists after M2)
+
+**Split by tensor, not by op.** GPU owns the expert FFN — the
+bandwidth/compute hog, computed in native q4. CPU keeps attention, norms,
+router, KV, and sampler: serial, small, already fast with dotprod, and
+AMX-augmentable (E-X7). The two run as a per-layer pipeline inside **one
+command buffer per decode token**:
+
+```
+CPU: attn L → router L → write {expert offsets, k, activations} to shared args
+     → signal cpu_ready[L] ──────────────┐
+GPU:                     wait cpu_ready[L] → indirect-dispatch expert FFN(L)
+     ┌──────────────────── signal gpu_done[L]
+CPU: wait gpu_done[L] → attn L+1 …
+```
+
+- `MTLSharedEvent` wait/signal pairs are encoded per layer inside the one
+  command buffer (`encodeWaitForEvent:`/`encodeSignalEvent:` between
+  compute encoders), so dispatch overhead amortizes to **one commit per
+  token** instead of ~48.
+- The router writes expert *arena offsets* into an argument buffer and the
+  FFN launches via `dispatchThreadgroupsWithIndirectBuffer:` — no CPU→GPU
+  chatter beyond the event signal.
+- The CPU's idle window while the GPU chews layer L is exactly where
+  E-X4's prefetch reads and sampler prep belong — the tracks compound.
+- Opt-in `SAMOSA_METAL=1`; startup logs a `[metal]` line (device, unified
+  memory size, arena vs mmap mode); the CPU path remains the default and
+  the runtime fallback, mirroring `cuda_failed`.
+
+### The radical variant M0 must answer (page cache as the GPU's streaming layer)
+
+Instead of the arena: mmap `experts.bin` read-only, wrap the whole mapping
+as one no-copy MTLBuffer (21 GB of address space is nothing on arm64), and
+let the shader index experts by **file offset** — which the manifest
+already parses ([qwen36b.c:1180-1206](../src/qwen36b.c#L1180-L1206)). The
+OS page cache then does streaming and eviction, the GPU-side twin of
+E-X3's question. llama.cpp ships this exact pattern (mmap + no-copy Metal
+buffers) on Apple Silicon — precedent, not proof. **The unknown that
+decides it:** residency semantics. If Metal wires mapped pages at encode
+time, whole-file wrapping is a footprint bomb and the arena wins; M0
+measures the wired-memory delta directly. Two Apple-native garnishes
+either way:
+
+- `setPurgeableState(volatile)` on cold slabs lets the **OS** reclaim
+  cache memory under pressure without asking us — a hardware-assisted
+  version of the ecache pressure ladder
+  ([expert_cache.h:91-99](../src/expert_cache.h#L91-L99)); a reclaimed
+  slab re-enters through the existing miss path.
+- `MTLIOCommandQueue` (macOS 13+) issues SSD→buffer loads off the CPU
+  entirely — a candidate replacement for E-X4 Phase B's prefetch thread.
+
+### The physics, honestly
+
+- The GPU shares the same ~100 GB/s DRAM. It adds **zero bandwidth**; what
+  it adds is more efficient compute and CPU/GPU concurrency. At ~9.5 tok/s
+  we are far from the bandwidth ceiling, so there is real room — but no
+  claim of "GPU = faster memory" may ever appear in a report.
+- On a fanless chassis the honest metric is **J/token** (E-H1): GPU GEMM
+  burns fewer joules per FLOP than NEON, and lower J/token is what lets a
+  speed *sustain* instead of throttling away. Even tok/s parity at lower
+  J/token is a win worth shipping.
+- Decode stays sequential across layers. The only concurrency is the
+  within-token CPU/GPU overlap above and the M3 speculation pipeline —
+  never oversell it as parallel decoding.
+
+### Known costs, each with a planned measurement
+
+| Cost | Measured by | Mitigation if bad |
+|---|---|---|
+| Sync tax: ~48 event round-trips/token | M0.4 (µs per ping-pong × 48) | GPU takes consecutive layer *pairs*; or M1-only (prefill has no such tax) |
+| Metal runtime + pipeline memory vs the 4.5 GB footprint ceiling | M0 footprint delta | arena mode; smaller pipeline set |
+| GPU float reassociation ≠ CPU | class-2 quality protocol (same as E-X7) | report divergence stats; suite review |
+| Identity: ObjC enters a pure-C codebase | — | one small fenced `.m` file (or C via `objc_msgSend`) + embedded MSL string; diff stays reviewable; owner accepted the direction 2026-07-17 |
+| Driver/OS variance | log Metal feature set in `[metal]` line | claims scoped to the reference machine only, per standing rules |
+
+### M0 — the spike  ~1 day  **RUN THIS FIRST — kills or funds the entire track**
+
+Standalone `tools/metal_spike.m` (or `.c` + ObjC runtime), **zero engine
+changes**; it includes [src/kernels.h](../src/kernels.h) directly so the
+CPU reference (`matmul_i4_grouped`/`_idot`) is the exact production code.
+Six numbered measurements, all in one report:
+
+1. **Correctness.** Synthetic q4-group-32 tensors *and* one real expert
+   slab read straight from `experts.bin` via manifest offsets. GPU
+   dequant-dot vs CPU reference: report max abs/rel error. Expect f32
+   reassociation noise (~1e-6 relative), not zero — say so.
+2. **Throughput.** Expert-shaped matmuls at S ∈ {1, 8, 32, 128}: GFLOP/s
+   GPU vs NEON 1-thread and 4-thread. The S=1 cell decides whether M2 is
+   even plausible; the S≥32 cells decide M1.
+3. **Energy.** `powermetrics` during sustained loops on both sides →
+   J/GFLOP, CPU vs GPU. **Kill criterion: GPU J/GFLOP ≥ CPU ⇒ the track
+   dies here** — on a fanless machine there is no reason left. Record and
+   close.
+4. **Sync latency.** 1,000 iterations of empty-dispatch
+   `MTLSharedEvent` ping-pong → µs/round-trip → ×48 = predicted decode
+   tax. >~200 µs/round-trip ⇒ M2 redesigns to layer pairs before it starts.
+5. **No-copy arena.** `posix_memalign(16384, …)` arena +
+   `newBufferWithBytesNoCopy` (StorageModeShared): creation succeeds, GPU
+   reads the same bytes the CPU wrote.
+6. **mmap leg.** Wrap a mapped region of the real `experts.bin`; run the
+   kernel over a **cold** region; measure wired-memory and RSS delta
+   (`vm_stat`, `footprint`) and first-touch latency. This single number
+   decides arena vs whole-file for M1/M2.
+
+**Acceptance:** all six numbers in
+`docs/regressions/experiments/e-x10-m0-spike/report.md` with an explicit
+go/no-go verdict per criterion. **Safety:** standard telemetry; a
+sustained GPU loop is a new thermal profile for this chassis — watch
+pressure continuously, bound loops to minutes, abort rules apply.
+
+### M1 — GPU expert prefill  ~3–5 days  (gated on M0)
+
+Prefill has no sync-tax problem (few, large dispatches) and lands on
+time-to-first-token, which the felt-speed decision made first-class.
+
+- Per layer, the CPU builds per-expert token lists (the MoE scatter), then
+  one compute encoder per layer runs a 2D grid (expert × token-block) via
+  indirect args. Activations f32 first; f16 staging as an optional second
+  step (halves activation traffic; class-2 quality check).
+- Integrates behind `SAMOSA_METAL=1` at the MoE call site with the CPU
+  path intact as fallback.
+- **Measure:** W-PREFILL at 2T/4T vs CPU baseline **and vs E-X7** — AMX
+  and the GPU compete for prefill ownership. Run both; keep the winner;
+  record the loser's numbers. A split verdict is legal and likely: AMX
+  for resident dense + GPU for experts do not conflict.
+- **Quality:** class 2. **Acceptance:** ≥25% end-to-end prefill
+  improvement over the better CPU-only configuration, or close with data.
+
+### M2 — the single-command-buffer decode pipeline  ~1–2 weeks  (gated on M0.2 S=1, M0.4, and M1 experience)
+
+The target architecture above, built: arena (or mmap, per M0.6) expert
+buffer, per-layer event ping-pong, indirect dispatch from the router,
+double-buffered activation staging, KV and sampling untouched on the CPU.
+
+- **Measure:** W-DECODE tok/s and J/token vs CPU baseline — and sweep CPU
+  threads {1, 2, 4} with the GPU on. The most interesting cell is *fewer*
+  CPU threads + GPU: if 2T+GPU beats 4T CPU-only at lower package power,
+  that is the fanless-chassis jackpot (faster *and* cooler than today's
+  `--fast`).
+- **Quality:** class 2, full protocol.
+- **Acceptance:** decode ≥ CPU baseline at equal-or-lower J/token with a
+  clean quality run — parity-at-lower-J/token explicitly counts (it raises
+  *sustained* speed). Otherwise close with the numbers; M1 can stand alone.
+
+### M3 — CPU-drafts, GPU-verifies: the compound play  (gated on E-X8's α and M2)
+
+The division of labor each processor is built for: the CPU runs the
+serial, latency-sensitive `MOE_K=1` draft; the GPU verifies W tokens in
+one batched pass — batching is precisely where GPUs stop being
+latency-bound. The two pipeline: GPU verifies window N while the CPU
+drafts window N+1.
+
+- **The cost model shifts:** E-X8's speedup formula
+  (`(E[accepted]+1) / (W·t_draft + t_verify(W))`) was gated at CPU verify
+  cost. With `t_verify_gpu(W)` collapsed, a draft-agreement rate α that
+  fails E-X8's CPU-only gate may still fund M3 — E-X8's report must
+  therefore publish the *curve*, not just the verdict, so this cell can be
+  recomputed without re-measuring.
+- Greedy acceptance preserves token identity **when correctly
+  implemented** — prove it with token-identity runs during bring-up, never
+  assume it.
+- This is the strongest single candidate for closing the last gap to 15:
+  the multiplier (speculation) × the efficient verifier (Metal) × the
+  cache pre-warm (draft touches the experts verify needs) stack on the
+  same tokens.
 
 ---
 
