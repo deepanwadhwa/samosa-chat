@@ -1,0 +1,54 @@
+## Protocol deviation
+
+The CLI creates a new model/cache per invocation, so its engine LRU cannot
+survive a warm-up.  W-DECODE therefore used the real HTTP server path, which
+keeps one model instance and its LRU resident.  The saved 950-token context was
+created from `tests/fixtures/experiments/workloads/w_decode_context.txt`; each
+leg restored that exact `session.qws` before requesting the same one-turn
+continuation.  The model stopped naturally after 234 generated tokens, so
+decode timing uses the engine's 233 stepped tokens (`generated - 1`).
+
+Server command (2T; 4T differed only in `OMP_NUM_THREADS`, port, and chat dir):
+SNAP=/Users/deepanwadhwa/.samosa/current/model TOKENIZER=/Users/deepanwadhwa/.samosa/current/tokenizer_qwen36.json SAMOSA_CHATS_DIR=/tmp/samosa-e-x1-chats SAMOSA_PHASE_STATS=1 OMP_NUM_THREADS=2 ./qwen36b --serve --port 18642 --queue 0 --tokenizer /Users/deepanwadhwa/.samosa/current/tokenizer_qwen36.json
+
+Request command (with the original session restored before every run):
+curl -sS --max-time 120 http://127.0.0.1:18642/v1/chat/completions -H 'content-type: application/json' --data '{"messages":[{"role":"user","content":"Continue with a concise operational reminder."}],"conversation_id":"decode","max_tokens":256,"thinking":"off","temperature":0,"seed":1729,"stream":false}'
+
+### 2T warm-up
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=3.270s (296.98 tok/s) decode=37.105s (6.28 tok/s) total=40.375s expert_hit=32698/76831 (42.6%) expert_disk=15.237s expert_mm=7.755s peak_rss=4.18 GB
+[phase] prefill tokens=22 wall=3.270s attn=0.472s/21.47ms_tok router=0.165s/7.51ms_tok dense=0.583s/26.49ms_tok expert_mm=0.575s/26.14ms_tok expert_disk=1.417s/64.42ms_tok head=0.029s/1.34ms_tok other=0.027s/1.24ms_tok | decode tokens=233 wall=37.105s attn=5.354s/22.98ms_tok router=1.844s/7.92ms_tok dense=6.689s/28.71ms_tok expert_mm=7.180s/30.81ms_tok expert_disk=13.819s/59.31ms_tok head=2.017s/8.66ms_tok other=0.201s/0.86ms_tok
+
+### 2T measured runs
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.824s (343.89 tok/s) decode=36.813s (6.33 tok/s) total=39.637s expert_hit=65448/153662 (42.6%) expert_disk=29.971s expert_mm=15.473s peak_rss=4.18 GB
+[phase] prefill tokens=22 wall=2.824s attn=0.471s/21.39ms_tok router=0.163s/7.42ms_tok dense=0.557s/25.31ms_tok expert_mm=0.556s/25.29ms_tok expert_disk=1.049s/47.68ms_tok head=0.008s/0.38ms_tok other=0.019s/0.87ms_tok | decode tokens=233 wall=36.813s attn=5.336s/22.90ms_tok router=1.841s/7.90ms_tok dense=6.591s/28.29ms_tok expert_mm=7.161s/30.74ms_tok expert_disk=13.686s/58.74ms_tok head=1.999s/8.58ms_tok other=0.199s/0.86ms_tok
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=3.065s (316.83 tok/s) decode=38.141s (6.11 tok/s) total=41.205s expert_hit=98198/230493 (42.6%) expert_disk=45.930s expert_mm=23.226s peak_rss=4.18 GB
+[phase] prefill tokens=22 wall=3.065s attn=0.496s/22.54ms_tok router=0.169s/7.68ms_tok dense=0.616s/28.01ms_tok expert_mm=0.594s/27.00ms_tok expert_disk=1.149s/52.24ms_tok head=0.022s/0.99ms_tok other=0.019s/0.85ms_tok | decode tokens=233 wall=38.141s attn=5.369s/23.04ms_tok router=1.845s/7.92ms_tok dense=6.693s/28.72ms_tok expert_mm=7.159s/30.73ms_tok expert_disk=14.810s/63.56ms_tok head=2.063s/8.85ms_tok other=0.203s/0.87ms_tok
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.836s (342.41 tok/s) decode=39.587s (5.89 tok/s) total=42.423s expert_hit=130948/307324 (42.6%) expert_disk=62.393s expert_mm=31.302s peak_rss=4.18 GB
+[phase] prefill tokens=22 wall=2.836s attn=0.468s/21.26ms_tok router=0.164s/7.47ms_tok dense=0.541s/24.57ms_tok expert_mm=0.597s/27.12ms_tok expert_disk=1.035s/47.06ms_tok head=0.008s/0.39ms_tok other=0.023s/1.03ms_tok | decode tokens=233 wall=39.587s attn=5.548s/23.81ms_tok router=1.898s/8.14ms_tok dense=6.928s/29.73ms_tok expert_mm=7.479s/32.10ms_tok expert_disk=15.428s/66.21ms_tok head=2.098s/9.00ms_tok other=0.209s/0.90ms_tok
+
+### 4T warm-up
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.377s (408.51 tok/s) decode=30.856s (7.55 tok/s) total=33.233s expert_hit=32698/76831 (42.6%) expert_disk=14.471s expert_mm=5.890s peak_rss=4.17 GB
+[phase] prefill tokens=22 wall=2.377s attn=0.258s/11.71ms_tok router=0.089s/4.05ms_tok dense=0.321s/14.60ms_tok expert_mm=0.384s/17.46ms_tok expert_disk=1.270s/57.75ms_tok head=0.032s/1.46ms_tok other=0.022s/1.01ms_tok | decode tokens=233 wall=30.856s attn=3.041s/13.05ms_tok router=1.070s/4.59ms_tok dense=6.031s/25.88ms_tok expert_mm=5.506s/23.63ms_tok expert_disk=13.201s/56.66ms_tok head=1.788s/7.68ms_tok other=0.219s/0.94ms_tok
+
+### 4T measured runs
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=1.837s (528.45 tok/s) decode=30.300s (7.69 tok/s) total=32.137s expert_hit=65448/153662 (42.6%) expert_disk=28.122s expert_mm=11.719s peak_rss=4.17 GB
+[phase] prefill tokens=22 wall=1.837s attn=0.251s/11.40ms_tok router=0.086s/3.93ms_tok dense=0.291s/13.24ms_tok expert_mm=0.362s/16.44ms_tok expert_disk=0.820s/37.29ms_tok head=0.008s/0.34ms_tok other=0.019s/0.87ms_tok | decode tokens=233 wall=30.300s attn=3.035s/13.02ms_tok router=1.064s/4.57ms_tok dense=5.875s/25.22ms_tok expert_mm=5.467s/23.46ms_tok expert_disk=12.830s/55.07ms_tok head=1.811s/7.77ms_tok other=0.217s/0.93ms_tok
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=1.846s (526.13 tok/s) decode=30.575s (7.62 tok/s) total=32.420s expert_hit=98198/230493 (42.6%) expert_disk=41.787s expert_mm=17.684s peak_rss=4.17 GB
+[phase] prefill tokens=22 wall=1.846s attn=0.250s/11.38ms_tok router=0.086s/3.91ms_tok dense=0.291s/13.21ms_tok expert_mm=0.359s/16.33ms_tok expert_disk=0.834s/37.90ms_tok head=0.008s/0.34ms_tok other=0.018s/0.82ms_tok | decode tokens=233 wall=30.575s attn=3.112s/13.36ms_tok router=1.091s/4.68ms_tok dense=5.934s/25.47ms_tok expert_mm=5.606s/24.06ms_tok expert_disk=12.831s/55.07ms_tok head=1.783s/7.65ms_tok other=0.218s/0.94ms_tok
+
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=1.859s (522.39 tok/s) decode=30.807s (7.56 tok/s) total=32.666s expert_hit=130948/307324 (42.6%) expert_disk=55.968s expert_mm=23.518s peak_rss=4.17 GB
+[phase] prefill tokens=22 wall=1.859s attn=0.249s/11.34ms_tok router=0.086s/3.91ms_tok dense=0.295s/13.43ms_tok expert_mm=0.361s/16.40ms_tok expert_disk=0.841s/38.24ms_tok head=0.007s/0.32ms_tok other=0.019s/0.86ms_tok | decode tokens=233 wall=30.807s attn=3.031s/13.01ms_tok router=1.064s/4.56ms_tok dense=5.891s/25.28ms_tok expert_mm=5.473s/23.49ms_tok expert_disk=13.340s/57.25ms_tok head=1.790s/7.68ms_tok other=0.218s/0.94ms_tok
+
+Safety during the server W-DECODE legs: AC power; `pmset -g therm` reported no
+thermal or performance warning.  Swap used was 1,429 MB before server work and
+1,373 MB after it.  Pageouts rose from 448958 to 449707 pages (about 11.7 MB
+at the 16 KB page size), below the 100 MB bound.  This is still a
+**non-baseline** result because the machine was not otherwise idle and
+`powermetrics`/J-token data is unavailable.
