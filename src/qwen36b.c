@@ -723,6 +723,198 @@ static void moe_policy_report(void) {
     fputc('\n', stderr);
 }
 
+/* ---------- E-X4 A2: router-lookahead probe (measurement-only) ----------
+ *
+ * SAMOSA_PILOT_PROBE=1 measures how predictable layer L+1's routing is from
+ * layer L's state — colibri's PILOT idea (apply L+1's router to L's input),
+ * variant P1 (the exact post-attention vector L's own router consumed; zero
+ * extra norms).  Decode only (S==1): decode is the phase whose 56 ms/token
+ * expert-disk stall this whole card targets.
+ *
+ * It reads model state and writes only these counters; it never touches the
+ * routing that drives compute, so output stays byte-identical to a probe-off
+ * run (the correctness gate).  Cost is one extra router matmul per MoE layer
+ * per token — opt-in, and the recall it reports is timing-independent because
+ * routing is deterministic in the input, so a slower probed run reports the
+ * same recall a zero-overhead one would.
+ *
+ * P2 (renorm the *updated* residual with L+1's post_ln before predicting) is
+ * a narrower-window, higher-recall variant the card also wants; it must hook
+ * in step() after the residual add, a different insertion point, and is left
+ * as the next increment.  This file implements P1.
+ */
+#define PILOT_MAX_LAYERS 64
+#define PILOT_KPRIME_N 5
+static const int PILOT_KPRIMES[PILOT_KPRIME_N] = {4, 6, 8, 12, 16};
+#define PILOT_KPRIME_MAX 16
+enum { PILOT_OFF = 0, PILOT_P1 = 1, PILOT_P2 = 2 };
+typedef struct {
+    int mode;                 /* 0 off, 1 P1 */
+    int reported;
+    int pred_layer;           /* layer the current predictions target, -1 none */
+    int pred_ids[PILOT_KPRIME_MAX];
+    /* per-turn, per-layer recall accumulators */
+    uint64_t layer_dec[PILOT_MAX_LAYERS];
+    uint64_t layer_hit[PILOT_MAX_LAYERS][PILOT_KPRIME_N];
+    uint64_t layer_truth[PILOT_MAX_LAYERS];
+    int      layer_bt[PILOT_MAX_LAYERS];   /* scored layer's block_type */
+    /* persistence anchor: previous token's true top-K per layer (token t->t+1,
+     * same layer) — a free cross-check against E-X4 Phase A's 35.19%. */
+    int      prev_ids[PILOT_MAX_LAYERS][64];
+    int      prev_k[PILOT_MAX_LAYERS];
+    uint64_t persist_dec, persist_hit, persist_truth;
+} PilotProbe;
+static PilotProbe g_pilot;
+
+static void pilot_configure(const Cfg *c) {
+    const char *env = getenv("SAMOSA_PILOT_PROBE");
+    if (!env || !*env || !strcmp(env, "0")) return;
+    if (!c->has_moe) {
+        fprintf(stderr, "[pilot] probe requires an MoE checkpoint; disabled\n");
+        return;
+    }
+    if (c->n_layers > PILOT_MAX_LAYERS) {
+        fprintf(stderr, "[pilot] probe supports up to %d layers (model has %d); disabled\n",
+                PILOT_MAX_LAYERS, c->n_layers);
+        return;
+    }
+    if ((env[0] == 'P' || env[0] == 'p') && env[1] == '2') {
+        fprintf(stderr, "[pilot] P2 (residual-renorm) not yet implemented; "
+                        "using P1 (post-attention input). See E-X4 card.\n");
+    }
+    g_pilot.mode = PILOT_P1;
+    g_pilot.pred_layer = -1;
+    fprintf(stderr, "[pilot] probe enabled variant=P1 (measurement-only, decode)\n");
+}
+
+static void pilot_reset(void) {
+    if (!g_pilot.mode) return;
+    PilotProbe *p = &g_pilot;
+    p->pred_layer = -1;
+    p->reported = 0;
+    memset(p->layer_dec, 0, sizeof(p->layer_dec));
+    memset(p->layer_hit, 0, sizeof(p->layer_hit));
+    memset(p->layer_truth, 0, sizeof(p->layer_truth));
+    memset(p->prev_k, 0, sizeof(p->prev_k));
+    p->persist_dec = p->persist_hit = p->persist_truth = 0;
+}
+
+/* Called at end of mlp_moe on decode (S==1) only.  idxs[0..K-1] is this
+ * layer's trained top-K (the ground truth); x is the layer's router input. */
+static void pilot_probe_step(Model *m, Layer *l, int layer, const float *x,
+                             const int *idxs, int K) {
+    PilotProbe *p = &g_pilot;
+    if (layer >= PILOT_MAX_LAYERS) return;
+    int kcap = K < 64 ? K : 64;
+
+    /* SCORE: did the prediction stored while processing L-1 hit L's top-K? */
+    if (p->pred_layer == layer) {
+        for (int ki = 0; ki < PILOT_KPRIME_N; ki++) {
+            int kp = PILOT_KPRIMES[ki];
+            int hit = 0;
+            for (int t = 0; t < K; t++) {
+                int e = idxs[t];
+                for (int j = 0; j < kp; j++) if (p->pred_ids[j] == e) { hit++; break; }
+            }
+            p->layer_hit[layer][ki] += (uint64_t)hit;
+        }
+        p->layer_dec[layer]++;
+        p->layer_truth[layer] += (uint64_t)K;
+        p->layer_bt[layer] = l->block_type;
+    }
+
+    /* PERSISTENCE ANCHOR: L's top-K vs the previous token's L top-K. */
+    if (p->prev_k[layer] > 0) {
+        int hit = 0;
+        for (int t = 0; t < K; t++) {
+            int e = idxs[t];
+            for (int j = 0; j < p->prev_k[layer]; j++)
+                if (p->prev_ids[layer][j] == e) { hit++; break; }
+        }
+        p->persist_hit += (uint64_t)hit;
+        p->persist_truth += (uint64_t)K;
+        p->persist_dec++;
+    }
+    for (int t = 0; t < kcap; t++) p->prev_ids[layer][t] = idxs[t];
+    p->prev_k[layer] = kcap;
+
+    /* PREDICT L+1: rank its router's top-KPRIME_MAX from L's input x (P1). */
+    p->pred_layer = -1;
+    int Lnext = layer + 1;
+    if (Lnext < m->c.n_layers && m->L[Lnext].has_moe) {
+        int E = m->c.num_experts;
+        float *pl = falloc(E);
+        matmul_qt(pl, x, &m->L[Lnext].router_w, 1, g_idot, g_i4s);
+        int nsel = PILOT_KPRIME_MAX < E ? PILOT_KPRIME_MAX : E;
+        for (int r = 0; r < nsel; r++) {
+            int best = -1; float bv = -1e30f;
+            for (int e = 0; e < E; e++) {
+                int used = 0;
+                for (int j = 0; j < r; j++) if (p->pred_ids[j] == e) { used = 1; break; }
+                if (!used && pl[e] > bv) { bv = pl[e]; best = e; }
+            }
+            p->pred_ids[r] = best;
+        }
+        for (int r = nsel; r < PILOT_KPRIME_MAX; r++) p->pred_ids[r] = -1;
+        p->pred_layer = Lnext;
+        free(pl);
+    }
+}
+
+static int pilot_cmp_double(const void *a, const void *b) {
+    double x = *(const double*)a, y = *(const double*)b;
+    return (x > y) - (x < y);
+}
+
+static void pilot_report(void) {
+    PilotProbe *p = &g_pilot;
+    if (!p->mode || p->reported) return;
+    p->reported = 1;
+
+    uint64_t agg_hit[PILOT_KPRIME_N] = {0}, agg_truth = 0, agg_dec = 0;
+    uint64_t bt_hit[2][PILOT_KPRIME_N] = {{0}}, bt_truth[2] = {0}, bt_dec[2] = {0};
+    double per_layer_r8[PILOT_MAX_LAYERS]; int nlayer = 0;
+    for (int L = 0; L < PILOT_MAX_LAYERS; L++) {
+        if (!p->layer_dec[L]) continue;
+        agg_dec += p->layer_dec[L];
+        agg_truth += p->layer_truth[L];
+        int bt = p->layer_bt[L] & 1;
+        bt_dec[bt] += p->layer_dec[L];
+        bt_truth[bt] += p->layer_truth[L];
+        for (int ki = 0; ki < PILOT_KPRIME_N; ki++) {
+            agg_hit[ki] += p->layer_hit[L][ki];
+            bt_hit[bt][ki] += p->layer_hit[L][ki];
+        }
+        /* index 2 == recall@8 (PILOT_KPRIMES[2]) */
+        per_layer_r8[nlayer++] = p->layer_truth[L]
+            ? 100.0 * (double)p->layer_hit[L][2] / (double)p->layer_truth[L] : 0.0;
+    }
+    if (!agg_dec) { fprintf(stderr, "[pilot] no scored decode layers this turn\n"); return; }
+
+    fprintf(stderr, "[pilot] variant=P1 scored_layers=%llu", (unsigned long long)agg_dec);
+    for (int ki = 0; ki < PILOT_KPRIME_N; ki++)
+        fprintf(stderr, " recall@%d=%.1f%%", PILOT_KPRIMES[ki],
+                agg_truth ? 100.0 * (double)agg_hit[ki] / (double)agg_truth : 0.0);
+    if (p->persist_truth)
+        fprintf(stderr, " persist@K=%.1f%%",
+                100.0 * (double)p->persist_hit / (double)p->persist_truth);
+    fputc('\n', stderr);
+
+    qsort(per_layer_r8, nlayer, sizeof(double), pilot_cmp_double);
+    fprintf(stderr, "[pilot] per_layer recall@8 min=%.1f%% median=%.1f%% max=%.1f%%\n",
+            per_layer_r8[0], per_layer_r8[nlayer/2], per_layer_r8[nlayer-1]);
+
+    for (int bt = 0; bt < 2; bt++) {
+        if (!bt_dec[bt]) continue;
+        fprintf(stderr, "[pilot] block_type=%s layers=%llu",
+                bt ? "full_attn" : "linear_attn", (unsigned long long)bt_dec[bt]);
+        for (int ki = 0; ki < PILOT_KPRIME_N; ki++)
+            fprintf(stderr, " recall@%d=%.1f%%", PILOT_KPRIMES[ki],
+                    bt_truth[bt] ? 100.0 * (double)bt_hit[bt][ki] / (double)bt_truth[bt] : 0.0);
+        fputc('\n', stderr);
+    }
+}
+
 /* ---------- deterministic MoE route trace / replay ----------
  *
  * ROUTE_TRACE=<jsonl> records routing decisions.  ROUTE_REPLAY=<jsonl>
@@ -2240,7 +2432,8 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
                 phase_stats_env);
     }
     load_cfg(&m->c, snap);
-    
+    pilot_configure(&m->c);
+
     st_init(&m->S, snap);
     load_manifest(m, snap);
     if (m->expert_group_size && refine_mode != REFINE_OFF) {
@@ -2860,7 +3053,12 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
     }
     free(logits);
     phase_add(m, PHASE_ROUTER, router_t0);
-    
+
+    /* E-X4 A2 probe: measured outside the router timing bracket so its extra
+     * matmul never inflates the phase table.  Decode only; idxs holds this
+     * layer's trained top-K for the single token (S==1). */
+    if (g_pilot.mode && S == 1) pilot_probe_step(m, l, layer, x, idxs, K);
+
     // Prefill batch-union: unique experts list
     int *uniq = malloc((size_t)E*8u*sizeof(int));
     uint8_t *uniq_masks=malloc((size_t)E*8u);
@@ -3549,6 +3747,7 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
                      GenStats *stats) {
     Cfg *c = &m->c;
     phase_reset(m);
+    pilot_reset();
     m->max_t = np + n_new;
     
     m->K = calloc(c->n_layers, sizeof(float*));
@@ -3928,6 +4127,7 @@ static void generate_continue(Model *m, int *hist, int hist_len,
                               GenStats *stats) {
     Cfg *c = &m->c;
     phase_reset(m);
+    pilot_reset();
     if (options && options->presence_penalty > 0.f && !options->seen)
         options->seen = calloc(((size_t)c->vocab + 7) / 8, 1);
     int n_cont = 1 + n_extra;
@@ -4601,6 +4801,7 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         (unsigned long long)m->hits,(unsigned long long)(m->hits+m->miss),100.0*hit_rate,
         m->t_edisk,m->t_emm,peak_rss_gb(),rss_gb());
     phase_print(m, &stats);
+    pilot_report();
     {
         ecache_stats est; ecache_get_stats(m->ec,&est);
         fprintf(stderr,"[ecache] budget=%.2f GB payload=%.2f GB peak=%.2f GB "
