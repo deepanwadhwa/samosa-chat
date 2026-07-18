@@ -1,5 +1,6 @@
 qwen36b
 metal-spike
+qwen36b-metal
 samosa-extract
 pagecache-residency
 test_expert_cache

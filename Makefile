@@ -18,7 +18,7 @@ else
   OMP_CFLAGS := -fopenmp
   OMP_LDFLAGS :=
 endif
-NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
+NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
 ENGINE_HEADERS := $(wildcard src/*.h)
 PDFIUM_DIR ?=
 PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
@@ -81,6 +81,17 @@ metal-spike: tools/metal_spike.m src/kernels.h
 	  -fobjc-arc -pthread $(OMP_CFLAGS) -Isrc tools/metal_spike.m \
 	  -o metal-spike -framework Foundation -framework Metal -lm $(OMP_LDFLAGS)
 
+# E-X10 M1 system experiment — separate binary, opt-in again at runtime with
+# SAMOSA_METAL=1. It keeps the normal qwen36b and installer CPU-only.
+metal-omp: src/qwen36b.c src/expert_cache.c src/vision.c src/metal_expert.m $(ENGINE_HEADERS)
+	@if [ "$(UNAME_S)" != "Darwin" ]; then \
+	  echo "metal-omp requires macOS and Apple Metal" >&2; exit 2; \
+	fi
+	$(CC) -O3 -Wno-unused-function -Wno-unknown-pragmas -pthread \
+	  $(OMP_CFLAGS) -DSAMOSA_METAL -fobjc-arc \
+	  src/qwen36b.c src/expert_cache.c src/vision.c src/metal_expert.m \
+	  -o qwen36b-metal -framework Foundation -framework Metal -lm $(OMP_LDFLAGS)
+
 pagecache-residency: tools/pagecache_residency.c
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 tools/pagecache_residency.c -o pagecache-residency
 
@@ -107,4 +118,4 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
 clean:
-	rm -f qwen36b qwen36b-sched-runtime metal-spike samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
+	rm -f qwen36b qwen36b-metal qwen36b-sched-runtime metal-spike samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve

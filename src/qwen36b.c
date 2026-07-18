@@ -40,6 +40,9 @@
 #include "thinking_budget.h"
 #include "samosa_http.h"
 #include "vision.h"
+#ifdef SAMOSA_METAL
+#include "metal_expert.h"
+#endif
 #define matmul_qt matmul_qt_impl
 
 static int g_direct = 0;
@@ -49,6 +52,9 @@ static int g_expert_overlap = 0;
 static int g_idot = 1;
 static int g_stateful_idot = 1;
 static int g_moe_down_idot = 1;
+#ifdef SAMOSA_METAL
+static int g_metal_io = 0;
+#endif
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static int g_i4s = 1;
 #else
@@ -240,6 +246,9 @@ typedef struct {
     uint8_t refine_mask;
     uint8_t *slab;
     int64_t slab_cap;
+    /* Retained no-copy Metal view over slab; it follows slab ownership
+     * through scratch/cache swaps and is released before slab itself. */
+    void *metal_slab;
     uint64_t used;
 } ESlot;
 
@@ -288,6 +297,16 @@ typedef struct {
     int eslot_pool_n, eslot_pool_cap;
     uint64_t hits, miss;
     double t_edisk, t_emm;
+#ifdef SAMOSA_METAL
+    samosa_metal_expert *metal_expert;
+    int metal_routed_experts;
+    int8_t *metal_input_q;
+    float *metal_output;
+    struct {
+        uint64_t layers, fallbacks;
+        double submit, cpu_overlap, cpu_routed_overlap, wait_tail, gpu;
+    } metal_stats;
+#endif
     /* E-X1: phase timing is deliberately opt-in.  The timers are scoped by
      * generate()/generate_continue() so prefill and decode never share a
      * bucket, even though they use the same forward code. */
@@ -303,6 +322,19 @@ typedef struct {
     uint64_t seq_reads, seq_bytes;
     RefineStore refine;
 } Model;
+
+static void eslot_slab_free(ESlot *slot) {
+    if (!slot) return;
+#ifdef SAMOSA_METAL
+    if (slot->metal_slab) {
+        samosa_metal_expert_unwrap(slot->metal_slab);
+        slot->metal_slab = NULL;
+    }
+#endif
+    free(slot->slab);
+    slot->slab = NULL;
+    slot->slab_cap = 0;
+}
 
 enum { PHASE_NONE, PHASE_PREFILL, PHASE_DECODE };
 enum { PHASE_ATTN, PHASE_ROUTER, PHASE_DENSE, PHASE_EXPERT_MM,
@@ -846,19 +878,48 @@ static void *pilot_loader_main(void *arg) {
 
         Model *m = g_pilot_model;
         int E = m->c.num_experts;
-        uint8_t *slab_local[PILOT_PREFETCH_MAX]; int64_t cap_local[PILOT_PREFETCH_MAX];
+        uint8_t *slab_local[PILOT_PREFETCH_MAX];
+        int64_t cap_local[PILOT_PREFETCH_MAX];
+        uint64_t off_local[PILOT_PREFETCH_MAX];
+        size_t size_local[PILOT_PREFETCH_MAX];
         for (int i = 0; i < n; i++) {
             slab_local[i] = NULL; cap_local[i] = 0;
             int64_t off = m->expert_offsets[(int64_t)layer * E + eid_local[i]];
             int64_t sz  = m->expert_sizes[(int64_t)layer * E + eid_local[i]];
+            off_local[i] = off > 0 ? (uint64_t)off : 0;
+            size_local[i] = sz > 0 ? (size_t)sz : 0;
             if (sz <= 0) continue;
-            if (posix_memalign((void**)&slab_local[i], 4096, (size_t)sz) != 0) {
+            /* 16 KiB is Darwin's VM page size and lets the engine expose a
+             * prefetched slab to Metal without copying it later. */
+            if (posix_memalign((void**)&slab_local[i], 16384, (size_t)sz) != 0) {
                 slab_local[i] = NULL; continue;
             }
-            refine_pread_exact(m->fd_exp, slab_local[i], (uint64_t)sz, (uint64_t)off,
-                               "pilot prefetch expert blob");
             cap_local[i] = sz;
         }
+#ifdef SAMOSA_METAL
+        int loaded_by_metal = 0;
+        if (g_metal_io && m->metal_expert) {
+            void *io_buffers[PILOT_PREFETCH_MAX] = {0};
+            int wrappable = 1;
+            for (int i = 0; i < n; ++i) {
+                if (!slab_local[i]) { wrappable = 0; break; }
+                io_buffers[i] = samosa_metal_expert_wrap(
+                    m->metal_expert, slab_local[i], size_local[i]);
+                if (!io_buffers[i]) { wrappable = 0; break; }
+            }
+            if (wrappable)
+                loaded_by_metal = samosa_metal_expert_load_io(
+                    m->metal_expert, io_buffers, off_local, size_local, n);
+            for (int i = 0; i < n; ++i)
+                if (io_buffers[i]) samosa_metal_expert_unwrap(io_buffers[i]);
+        }
+        if (!loaded_by_metal)
+#endif
+            for (int i = 0; i < n; ++i)
+                if (slab_local[i])
+                    refine_pread_exact(
+                        m->fd_exp, slab_local[i], size_local[i], off_local[i],
+                        "pilot prefetch expert blob");
 
         pthread_mutex_lock(&g_pilot_mx);
         if (!g_pilot_thread_stop && g_pilot_batch.state == PPF_LOADING &&
@@ -2379,8 +2440,8 @@ static void expert_load(Model *m, int layer, int eid, uint8_t refine_mask,
     }
     
     if (!s->slab || sz > s->slab_cap) {
-        free(s->slab);
-        if (posix_memalign((void**)&s->slab, 4096, sz)) {
+        eslot_slab_free(s);
+        if (posix_memalign((void**)&s->slab, 16384, sz)) {
             fprintf(stderr, "OOM slot slab\n");
             exit(1);
         }
@@ -2585,7 +2646,7 @@ static void eslot_release(void *context, const ecache_release_event *event) {
     if (m->eslot_pool_n < m->eslot_pool_cap) {
         m->eslot_pool[m->eslot_pool_n++] = slot;
     } else {
-        free(slot->slab);
+        eslot_slab_free(slot);
         free(slot);
     }
 }
@@ -2596,7 +2657,7 @@ static uint64_t eslot_pool_trim(Model *m,int keep){
     while(m->eslot_pool_n>keep){
         ESlot *slot=m->eslot_pool[--m->eslot_pool_n];
         if(slot->slab_cap>0)released+=(uint64_t)slot->slab_cap;
-        free(slot->slab);free(slot);
+        eslot_slab_free(slot);free(slot);
     }
     return released;
 }
@@ -2749,12 +2810,72 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
                 : "legacy-row-q4",
             m->expert_group_size ? "" : " group=",
             m->expert_group_size, m->expert_down_bits);
+#ifdef SAMOSA_METAL
+    const char *metal_env = getenv("SAMOSA_METAL");
+    if (metal_env && *metal_env && strcmp(metal_env, "0")) {
+        if (m->expert_group_size != 32 || m->expert_down_bits != 4 ||
+            m->c.num_experts_per_tok != 8) {
+            fprintf(stderr,
+                    "[metal] disabled: requires group-32 q4 gate/up/down and top-k=8\n");
+        } else {
+            m->metal_expert = samosa_metal_expert_create(
+                m->c.hidden, m->c.moe_intermediate_size,
+                m->expert_group_size, m->c.num_experts_per_tok);
+            if (!m->metal_expert) {
+                fprintf(stderr, "[metal] initialization failed; using CPU experts\n");
+            } else {
+                m->metal_input_q = malloc((size_t)m->c.hidden);
+                m->metal_output = malloc((size_t)m->c.hidden * sizeof(float));
+                if (!m->metal_input_q || !m->metal_output) {
+                    fprintf(stderr, "[metal] OOM allocating decode buffers; using CPU experts\n");
+                    samosa_metal_expert_destroy(m->metal_expert);
+                    m->metal_expert = NULL;
+                    free(m->metal_input_q); m->metal_input_q = NULL;
+                    free(m->metal_output); m->metal_output = NULL;
+                } else {
+                    m->metal_routed_experts = 8;
+                    const char *split_env = getenv("SAMOSA_METAL_EXPERTS");
+                    if (split_env && *split_env) {
+                        int split = atoi(split_env);
+                        if (split >= 1 && split <= 8)
+                            m->metal_routed_experts = split;
+                        else
+                            fprintf(stderr,
+                                    "[metal] SAMOSA_METAL_EXPERTS=%s outside [1,8]; using 8\n",
+                                    split_env);
+                    }
+                    fprintf(stderr,
+                            "[metal] EXPERIMENTAL combined decode enabled device=%s "
+                            "(GPU routed=%d + CPU routed=%d/shared + SSD predictor)\n",
+                            samosa_metal_expert_device_name(m->metal_expert),
+                            m->metal_routed_experts,
+                            8 - m->metal_routed_experts);
+                }
+            }
+        }
+    }
+#else
+    if (getenv("SAMOSA_METAL") && strcmp(getenv("SAMOSA_METAL"), "0"))
+        fprintf(stderr,
+                "[metal] requested but this binary has no Metal backend; "
+                "build qwen36b-metal\n");
+#endif
     
     // Open experts file
     char exp_path[1024];
     snprintf(exp_path, sizeof(exp_path), "%s/experts.bin", snap);
     m->fd_exp = open(exp_path, O_RDONLY);
     if (m->fd_exp < 0) { perror(exp_path); exit(1); }
+#ifdef SAMOSA_METAL
+    const char *metal_io_env = getenv("SAMOSA_MTLIO");
+    if (m->metal_expert && metal_io_env && *metal_io_env &&
+        strcmp(metal_io_env, "0")) {
+        g_metal_io = samosa_metal_expert_open_io(
+            m->metal_expert, exp_path);
+        fprintf(stderr, "[metal-io] predictor reads=%s queue=concurrent depth=16\n",
+                g_metal_io ? "enabled" : "fallback-pread");
+    }
+#endif
 #ifdef __APPLE__
     m->fd_exp_direct = compat_open_direct(exp_path);
 #elif defined(O_DIRECT)
@@ -3233,11 +3354,38 @@ static void attention_deltanet(Model *m, Layer *l, int layer, float *x, int S, i
     phase_add(m, PHASE_DENSE, phase_t0);
 }
 
+static void mlp_shared_expert(Model *m, Layer *l, const float *x, int S,
+                              float *out) {
+    int D = m->c.hidden, sI = m->c.shared_expert_intermediate_size;
+    double dense_t0 = phase_start(m);
+    float *sg = falloc((int64_t)S * sI);
+    float *su = falloc((int64_t)S * sI);
+    float *shh = falloc((int64_t)S * D);
+    matmul_qt(sg, x, &l->shared_gate, S, g_idot, g_i4s);
+    matmul_qt(su, x, &l->shared_up, S, g_idot, g_i4s);
+    for (int64_t z = 0; z < (int64_t)S * sI; z++)
+        sg[z] = siluf(sg[z]) * su[z];
+    matmul_qt(shh, sg, &l->shared_down, S, g_moe_down_idot, g_i4s);
+
+    for (int s = 0; s < S; s++) {
+        const float *xs = x + (int64_t)s * D;
+        double gate_logit = 0;
+        for (int d = 0; d < D; d++)
+            gate_logit += (double)xs[d] * l->shared_gate_w[d];
+        float gate_prob = sigmoid((float)gate_logit);
+        float *os = out + (int64_t)s * D;
+        const float *shared = shh + (int64_t)s * D;
+        for (int d = 0; d < D; d++) os[d] += gate_prob * shared[d];
+    }
+    free(sg); free(su); free(shh);
+    phase_add(m, PHASE_DENSE, dense_t0);
+}
+
 static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
                     int pos_base, const int *token_ids) {
     Cfg *c = &m->c;
     int D = c->hidden, E = c->num_experts, K = c->num_experts_per_tok, I = c->moe_intermediate_size;
-    int sI = c->shared_expert_intermediate_size;
+    int shared_done = 0;
     /* Reclaim di pressione solo qui, prima di ogni lookup: mai tra un
      * ecache_get e il compute che usa il puntatore restituito. */
     ecache_service_pressure(m);
@@ -3507,8 +3655,10 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
                         pilot_ready[z].mask == mask) { pf = z; break; }
                 if (pf >= 0) {
                     ESlot *s = &m->ws[q];
-                    if (s->slab && s->slab != pilot_ready[pf].slab) free(s->slab);
+                    if (s->slab && s->slab != pilot_ready[pf].slab)
+                        eslot_slab_free(s);
                     s->slab = pilot_ready[pf].slab; s->slab_cap = pilot_ready[pf].slab_cap;
+                    s->metal_slab = NULL;
                     pilot_ready[pf].slab = NULL; /* ownership transferred */
                     expert_views(m, layer, s);
                     s->eid = eid; s->refine_mask = mask;
@@ -3534,9 +3684,104 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
                     expert_prefetch(m,layer,eid,mask);
             }
         }
-        
+
+        /*
+         * E-X10 M1: the actual three-way decode experiment.
+         *
+         * The SSD predictor has already issued layer+1 above. Bind this
+         * layer's eight cache slabs directly (no join/copy), commit routed
+         * gate/up/down to Metal, and use the CPU command interval to evaluate
+         * the shared expert. We wait before cache admission below, so an
+         * eviction can never recycle bytes still visible to the GPU.
+         */
+        int metal_done = 0;
+#ifdef SAMOSA_METAL
+        if (m->metal_expert && S == 1 && base == 0 && nu == 8 && nb == 8 &&
+            keff[0] == 8 && g_idot && g_moe_down_idot &&
+            m->refine.mode == REFINE_OFF && !seq_slots) {
+            double submit_t0 = now_s();
+            void *buffers[8] = {0};
+            float route_weights[8] = {0};
+            int can_submit = 1;
+            for (int j = 0; j < 8; ++j) {
+                ESlot *expert = use[j];
+                if (expert->g.fmt != 4 || expert->u.fmt != 4 ||
+                    expert->d.fmt != 4) {
+                    can_submit = 0; break;
+                }
+                if (!expert->metal_slab)
+                    expert->metal_slab = samosa_metal_expert_wrap(
+                        m->metal_expert, expert->slab,
+                        (size_t)expert->slab_cap);
+                if (!expert->metal_slab) {
+                    can_submit = 0; break;
+                }
+                buffers[j] = expert->metal_slab;
+                for (int kk = 0; kk < keff[0]; ++kk)
+                    if (idxs[kk] == uniq[j] &&
+                        refine_masks[kk] == uniq_masks[j]) {
+                        route_weights[j] = ws[kk];
+                        break;
+                    }
+            }
+            float input_scale = 0.f;
+            if (can_submit)
+                input_scale = qrow_i8(x, m->metal_input_q, D);
+            int gpu_experts = m->metal_routed_experts;
+            int submitted = can_submit && samosa_metal_expert_submit(
+                m->metal_expert, buffers, gpu_experts, m->metal_input_q,
+                input_scale, route_weights);
+            double submit_elapsed = now_s() - submit_t0;
+            if (submitted) {
+                double cpu_t0 = now_s();
+                mlp_shared_expert(m, l, x, S, out);
+                double cpu_elapsed = now_s() - cpu_t0;
+                shared_done = 1;
+                double cpu_routed_t0 = now_s();
+                for (int j = gpu_experts; j < 8; ++j) {
+                    ESlot *expert = use[j];
+                    matmul_qt(gg, x, &expert->g, 1, g_idot, g_i4s);
+                    matmul_qt(uu, x, &expert->u, 1, g_idot, g_i4s);
+                    for (int z = 0; z < I; ++z)
+                        gg[z] = siluf(gg[z]) * uu[z];
+                    matmul_qt(hh, gg, &expert->d, 1,
+                              g_moe_down_idot, g_i4s);
+                    float weight = route_weights[j];
+                    for (int d = 0; d < D; ++d)
+                        out[d] += weight * hh[d];
+                }
+                double cpu_routed_elapsed = now_s() - cpu_routed_t0;
+                double wait_t0 = now_s(), gpu_seconds = 0.0;
+                int completed = samosa_metal_expert_wait(
+                    m->metal_expert, m->metal_output, &gpu_seconds);
+                double wait_elapsed = now_s() - wait_t0;
+                m->metal_stats.layers++;
+                m->metal_stats.submit += submit_elapsed;
+                m->metal_stats.cpu_overlap += cpu_elapsed;
+                m->metal_stats.cpu_routed_overlap += cpu_routed_elapsed;
+                m->metal_stats.wait_tail += wait_elapsed;
+                m->metal_stats.gpu += gpu_seconds;
+                /* Only submit + the unhidden wait are on the serial critical
+                 * path. GPU time overlaps the dense/shared phase and is
+                 * reported separately instead of double-counted here. */
+                m->t_emm += submit_elapsed + cpu_routed_elapsed + wait_elapsed;
+                phase_add_s(m, PHASE_EXPERT_MM,
+                            submit_elapsed + cpu_routed_elapsed + wait_elapsed);
+                if (completed) {
+                    for (int d = 0; d < D; ++d)
+                        out[d] += m->metal_output[d];
+                    metal_done = 1;
+                } else {
+                    m->metal_stats.fallbacks++;
+                }
+            } else {
+                m->metal_stats.fallbacks++;
+            }
+        }
+#endif
+
         // Execute math
-        for (int j = 0; j < nb; j++) {
+        for (int j = 0; !metal_done && j < nb; j++) {
             int eid = uniq[base + j];
             uint8_t mask=uniq_masks[base+j]; ESlot *e = use[j];
             int nr = 0;
@@ -3582,8 +3827,10 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
              * dentro) passa all'handle; lo scratch eredita il vecchio slab
              * dell'handle per il riuso al prossimo miss. */
             uint8_t *spare_slab = slot->slab; int64_t spare_cap = slot->slab_cap;
+            void *spare_metal = slot->metal_slab;
             *slot = m->ws[q];
             m->ws[q].slab = spare_slab; m->ws[q].slab_cap = spare_cap;
+            m->ws[q].metal_slab = spare_metal;
             m->ws[q].eid = -1;
             uint64_t charged = (uint64_t)slot->slab_cap + sizeof(ESlot);
             int64_t source_size = m->expert_sizes[(size_t)layer * m->c.num_experts + slot->eid];
@@ -3597,10 +3844,13 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
                                    NULL) != ECACHE_OK) {
                 /* Restituisci lo slab caricato allo scratch e l'handle al pool. */
                 uint8_t *loaded_slab = slot->slab; int64_t loaded_cap = slot->slab_cap;
+                void *loaded_metal = slot->metal_slab;
                 slot->slab = m->ws[q].slab; slot->slab_cap = m->ws[q].slab_cap;
+                slot->metal_slab = m->ws[q].metal_slab;
                 m->ws[q].slab = loaded_slab; m->ws[q].slab_cap = loaded_cap;
+                m->ws[q].metal_slab = loaded_metal;
                 if (m->eslot_pool_n < m->eslot_pool_cap) m->eslot_pool[m->eslot_pool_n++] = slot;
-                else { free(slot->slab); free(slot); }
+                else { eslot_slab_free(slot); free(slot); }
             }
         }
     }
@@ -3614,30 +3864,7 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
     free(uniq); free(uniq_masks); free(idxs); free(ws); free(refine_masks); free(keff);
     free(xg); free(gg); free(uu); free(hh); free(rows); free(rw);
     
-    // Shared expert evaluation
-    double dense_t0 = phase_start(m);
-    float *sg = falloc((int64_t)S * sI);
-    float *su = falloc((int64_t)S * sI);
-    float *shh = falloc((int64_t)S * D);
-    matmul_qt(sg, x, &l->shared_gate, S, g_idot, g_i4s);
-    matmul_qt(su, x, &l->shared_up, S, g_idot, g_i4s);
-    for (int64_t z = 0; z < (int64_t)S * sI; z++) sg[z] = siluf(sg[z]) * su[z];
-    matmul_qt(shh, sg, &l->shared_down, S, g_moe_down_idot, g_i4s);
-    
-    // Sigmoid Gating for Shared Expert
-    for (int s = 0; s < S; s++) {
-        const float *xs = x + (int64_t)s * D;
-        double gate_logit = 0;
-        for (int d = 0; d < D; d++) gate_logit += (double)xs[d] * l->shared_gate_w[d];
-        float gate_prob = sigmoid((float)gate_logit);
-        
-        float *os = out + (int64_t)s * D;
-        const float *sh_s = shh + (int64_t)s * D;
-        for (int d = 0; d < D; d++) os[d] += gate_prob * sh_s[d];
-    }
-    
-    free(sg); free(su); free(shh);
-    phase_add(m, PHASE_DENSE, dense_t0);
+    if (!shared_done) mlp_shared_expert(m, l, x, S, out);
 }
 
 static float *step(Model *m, float *x, const int *ids, int S, int pos_base, int mrope_delta, int *pos_t_ids, int *pos_h_ids, int *pos_w_ids) {
@@ -5163,6 +5390,27 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
     phase_print(m, &stats);
     pilot_report();
     pilot_prefetch_report();
+#ifdef SAMOSA_METAL
+    if (m->metal_stats.layers) {
+        double layers = (double)m->metal_stats.layers;
+        fprintf(stderr,
+                "[metal-combined] layers=%llu fallbacks=%llu "
+                "gpu_experts=%d cpu_experts=%d submit=%.3fms/layer "
+                "cpu_shared_overlap=%.3fms/layer cpu_routed_overlap=%.3fms/layer "
+                "gpu=%.3fms/layer wait_tail=%.3fms/layer "
+                "overlap_window=%.3fms/layer\n",
+                (unsigned long long)m->metal_stats.layers,
+                (unsigned long long)m->metal_stats.fallbacks,
+                m->metal_routed_experts, 8 - m->metal_routed_experts,
+                1e3 * m->metal_stats.submit / layers,
+                1e3 * m->metal_stats.cpu_overlap / layers,
+                1e3 * m->metal_stats.cpu_routed_overlap / layers,
+                1e3 * m->metal_stats.gpu / layers,
+                1e3 * m->metal_stats.wait_tail / layers,
+                1e3 * (m->metal_stats.cpu_overlap +
+                       m->metal_stats.cpu_routed_overlap) / layers);
+    }
+#endif
     {
         ecache_stats est; ecache_get_stats(m->ec,&est);
         fprintf(stderr,"[ecache] budget=%.2f GB payload=%.2f GB peak=%.2f GB "
