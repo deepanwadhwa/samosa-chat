@@ -1,0 +1,28 @@
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[serve] ready http://127.0.0.1:18701 queue=4 chats=/tmp/samosa-e-x5-base_2t-chats
+[session] resumed /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 950 tokens, 949 KV rows
+[session] saved /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 1205 tokens, 115.2 MB
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=3.422s (283.72 tok/s) decode=39.936s (5.83 tok/s) total=43.358s expert_hit=32698/76831 (42.6%) expert_disk=18.130s expert_mm=7.740s peak_rss=3.44 GB physical_rss=4.37 GB
+[phase] prefill tokens=22 wall=3.422s attn=0.476s/21.64ms_tok router=0.166s/7.56ms_tok dense=0.652s/29.63ms_tok expert_mm=0.592s/26.90ms_tok expert_disk=1.444s/65.65ms_tok head=0.057s/2.61ms_tok other=0.035s/1.59ms_tok | decode tokens=233 wall=39.936s attn=5.358s/23.00ms_tok router=1.835s/7.88ms_tok dense=6.662s/28.59ms_tok expert_mm=7.148s/30.68ms_tok expert_disk=16.686s/71.61ms_tok head=2.053s/8.81ms_tok other=0.194s/0.83ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=43477 bytes_read=86.77 GB bytes_avoided=64.29 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[session] resumed /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 950 tokens, 949 KV rows
+[session] saved /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 1205 tokens, 115.2 MB
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.826s (343.65 tok/s) decode=39.818s (5.85 tok/s) total=42.643s expert_hit=65448/153662 (42.6%) expert_disk=35.769s expert_mm=15.418s peak_rss=3.44 GB physical_rss=4.38 GB
+[phase] prefill tokens=22 wall=2.826s attn=0.490s/22.29ms_tok router=0.164s/7.43ms_tok dense=0.538s/24.46ms_tok expert_mm=0.556s/25.27ms_tok expert_disk=1.046s/47.56ms_tok head=0.009s/0.41ms_tok other=0.022s/1.02ms_tok | decode tokens=233 wall=39.818s attn=5.351s/22.97ms_tok router=1.833s/7.87ms_tok dense=6.667s/28.62ms_tok expert_mm=7.123s/30.57ms_tok expert_disk=16.593s/71.21ms_tok head=2.056s/8.83ms_tok other=0.194s/0.83ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=87558 bytes_read=173.44 GB bytes_avoided=128.68 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[session] resumed /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 950 tokens, 949 KV rows
+[session] saved /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 1205 tokens, 115.2 MB
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.861s (339.44 tok/s) decode=40.069s (5.81 tok/s) total=42.930s expert_hit=98198/230493 (42.6%) expert_disk=53.626s expert_mm=23.112s peak_rss=3.44 GB physical_rss=4.38 GB
+[phase] prefill tokens=22 wall=2.861s attn=0.490s/22.26ms_tok router=0.165s/7.49ms_tok dense=0.549s/24.98ms_tok expert_mm=0.557s/25.34ms_tok expert_disk=1.070s/48.64ms_tok head=0.009s/0.41ms_tok other=0.020s/0.90ms_tok | decode tokens=233 wall=40.069s attn=5.362s/23.01ms_tok router=1.836s/7.88ms_tok dense=6.693s/28.72ms_tok expert_mm=7.136s/30.63ms_tok expert_disk=16.787s/72.05ms_tok head=2.061s/8.85ms_tok other=0.194s/0.83ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=131639 bytes_read=260.10 GB bytes_avoided=193.07 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[session] resumed /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 950 tokens, 949 KV rows
+[session] saved /tmp/samosa-e-x5-base_2t-chats/decode/session.qws: 1205 tokens, 115.2 MB
+[stats] prompt=971 generated=234 stop=model thinking=model-controlled prefill=2.814s (345.09 tok/s) decode=39.504s (5.90 tok/s) total=42.318s expert_hit=130948/307324 (42.6%) expert_disk=70.981s expert_mm=30.785s peak_rss=3.44 GB physical_rss=4.38 GB
+[phase] prefill tokens=22 wall=2.814s attn=0.490s/22.28ms_tok router=0.163s/7.42ms_tok dense=0.538s/24.43ms_tok expert_mm=0.556s/25.26ms_tok expert_disk=1.029s/46.79ms_tok head=0.015s/0.69ms_tok other=0.023s/1.03ms_tok | decode tokens=233 wall=39.504s attn=5.352s/22.97ms_tok router=1.834s/7.87ms_tok dense=6.630s/28.46ms_tok expert_mm=7.117s/30.55ms_tok expert_disk=16.326s/70.07ms_tok head=2.051s/8.80ms_tok other=0.194s/0.83ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=175720 bytes_read=346.77 GB bytes_avoided=257.45 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

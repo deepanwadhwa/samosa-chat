@@ -1,0 +1,131 @@
+2026-07-17T19:43:56-0400 cell-start label=base_2t bin=/Users/deepanwadhwa/Documents/samosa-chat/qwen36b sched=static threads=2 port=18701 thermal_max=Nominal
+2026-07-17T19:43:56-0400 git-sha db6cb24e6c28ac56dc536f4927ad9568cbc7d3d3
+2026-07-17T19:43:56-0400 cmd: OMP_NUM_THREADS=2 OMP_SCHEDULE=static SAMOSA_PHASE_STATS=1 SAMOSA_CHATS_DIR=/tmp/samosa-e-x5-base_2t-chats SNAP=~/.samosa/current/model TOKENIZER=~/.samosa/current/tokenizer_qwen36.json /Users/deepanwadhwa/Documents/samosa-chat/qwen36b --serve --port 18701
+2026-07-17T19:43:57-0400 pre-cell pressure=Nominal
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                   182350.
+Pages throttled:                                   0.
+Pageouts:                                     469103.
+Swapouts:                                     267142.
+2026-07-17T19:43:59-0400 server-ready pid=98954
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":2.93,"context_limit_tokens":24576,"uptime_seconds":1,"scheduler":{"active":false,"queued":0,"max_queue":4},"last_generation":{"available":false,"tokens":0,"tokens_per_second":0.00}}
+2026-07-17T19:43:59-0400 warm-start
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                     3666.
+Pages throttled:                                   0.
+Pageouts:                                     469110.
+Swapouts:                                     267142.
+2026-07-17T19:44:02-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:05-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:09-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:12-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:15-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:18-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:22-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:25-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:28-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:32-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:35-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:38-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:41-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:45-0400 warm-monitor pressure=Nominal rss_gb=4.37
+2026-07-17T19:44:45-0400 warm-end curl_exit=0
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                     3860.
+Pages throttled:                                   0.
+Pageouts:                                     469255.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.37,"context_limit_tokens":24576,"uptime_seconds":47,"scheduler":{"active":false,"queued":0,"max_queue":4},"last_generation":{"available":true,"tokens":234,"tokens_per_second":5.83}}
+dadeda90fe2f3b5f5dbe8b22110321f35b88ead08fa02d0d90ba03bdbd9ffe6a  /Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/experiments/e-x5-omp-schedule/raw_e_x5_base_2t_warm_response.json
+2026-07-17T19:44:45-0400 run_1-start
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                    10576.
+Pages throttled:                                   0.
+Pageouts:                                     469255.
+Swapouts:                                     267142.
+2026-07-17T19:44:48-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:44:51-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:44:54-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:44:58-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:01-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:04-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:08-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:11-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:14-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:17-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:21-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:24-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:27-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:30-0400 run_1-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:30-0400 run_1-end curl_exit=0
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                     4686.
+Pages throttled:                                   0.
+Pageouts:                                     469351.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.38,"context_limit_tokens":24576,"uptime_seconds":93,"scheduler":{"active":false,"queued":0,"max_queue":4},"last_generation":{"available":true,"tokens":234,"tokens_per_second":5.85}}
+502be38caecb70e29e926d83446685c5fd0af8c98042beeb043dbc524b3d73ab  /Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/experiments/e-x5-omp-schedule/raw_e_x5_base_2t_run_1_response.json
+2026-07-17T19:45:30-0400 run_2-start
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                    11437.
+Pages throttled:                                   0.
+Pageouts:                                     469351.
+Swapouts:                                     267142.
+2026-07-17T19:45:34-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:37-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:40-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:43-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:47-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:50-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:53-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:45:57-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:00-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:03-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:06-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:10-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:13-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:16-0400 run_2-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:16-0400 run_2-end curl_exit=0
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                     4406.
+Pages throttled:                                   0.
+Pageouts:                                     469442.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.38,"context_limit_tokens":24576,"uptime_seconds":139,"scheduler":{"active":false,"queued":0,"max_queue":4},"last_generation":{"available":true,"tokens":234,"tokens_per_second":5.81}}
+b181b562a124a4d2d95bbc9ca962bd45bdc63533db226fe26da7c07f31dca4a6  /Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/experiments/e-x5-omp-schedule/raw_e_x5_base_2t_run_2_response.json
+2026-07-17T19:46:16-0400 run_3-start
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                    11113.
+Pages throttled:                                   0.
+Pageouts:                                     469442.
+Swapouts:                                     267142.
+2026-07-17T19:46:20-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:23-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:26-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:29-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:33-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:36-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:39-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:42-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:46-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:49-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:52-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:55-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:46:59-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:47:02-0400 run_3-monitor pressure=Nominal rss_gb=4.38
+2026-07-17T19:47:02-0400 run_3-end curl_exit=0
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                     4269.
+Pages throttled:                                   0.
+Pageouts:                                     469544.
+Swapouts:                                     267142.
+{"status":"ok","model":"qwen3.6-35b-a3b","rss_gb":4.38,"context_limit_tokens":24576,"uptime_seconds":184,"scheduler":{"active":false,"queued":0,"max_queue":4},"last_generation":{"available":true,"tokens":234,"tokens_per_second":5.90}}
+e4187bea01f1960c1861da843d2c8f4be82200f5be0634afd995961821c0bb59  /Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/experiments/e-x5-omp-schedule/raw_e_x5_base_2t_run_3_response.json
+2026-07-17T19:47:02-0400 cell-shutdown
+vm.swapusage: total = 2048.00M  used = 1164.94M  free = 883.06M  (encrypted)
+Pages free:                                   281069.
+Pages throttled:                                   0.
+Pageouts:                                     469544.
+Swapouts:                                     267142.
+2026-07-17T19:47:05-0400 post-cell pressure=Nominal
+2026-07-17T19:57:08-0400 addendum: this cell's requests used payload {"messages":[{"role":"user","content":"Continue with a concise operational reminder."}],"max_tokens":256,"thinking":"off","temperature":0,"seed":1729,"conversation_id":"decode"} (payload logging was added to the harness after this cell ran)
