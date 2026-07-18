@@ -1,4 +1,5 @@
 qwen36b
+metal-spike
 samosa-extract
 pagecache-residency
 test_expert_cache

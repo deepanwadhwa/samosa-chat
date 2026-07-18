@@ -70,6 +70,17 @@ omp-sched-runtime: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADER
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) -DSAMOSA_SCHED_RUNTIME \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o qwen36b-sched-runtime -lm $(OMP_LDFLAGS)
 
+# E-X10 M0 experiment only — never linked into or installed as qwen36b.
+# This target is intentionally Darwin-only: it exercises Apple's Metal API
+# and compares the shader with the exact NEON/OpenMP grouped-q4 reference.
+metal-spike: tools/metal_spike.m src/kernels.h
+	@if [ "$(UNAME_S)" != "Darwin" ]; then \
+	  echo "metal-spike requires macOS and Apple Metal" >&2; exit 2; \
+	fi
+	$(CC) -O3 -Wall -Wextra -Wno-unused-function -Wno-unknown-pragmas \
+	  -fobjc-arc -pthread $(OMP_CFLAGS) -Isrc tools/metal_spike.m \
+	  -o metal-spike -framework Foundation -framework Metal -lm $(OMP_LDFLAGS)
+
 pagecache-residency: tools/pagecache_residency.c
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 tools/pagecache_residency.c -o pagecache-residency
 
@@ -96,4 +107,4 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
 clean:
-	rm -f qwen36b qwen36b-sched-runtime samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
+	rm -f qwen36b qwen36b-sched-runtime metal-spike samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve
