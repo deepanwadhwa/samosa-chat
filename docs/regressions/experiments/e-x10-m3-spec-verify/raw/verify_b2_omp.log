@@ -1,0 +1,29 @@
+[teacher] corpus=docs/regressions/experiments/e-x10-m3-spec-verify/raw/k2_corpus.json output=docs/regressions/experiments/e-x10-m3-spec-verify/raw/verify_b2_omp.qtf tokenizer=/Users/deepanwadhwa/samosa_release_upload/tokenizer_qwen36.json calibration=1
+[config] overlap=enabled (SAMOSA_OVERLAP=1, B0 step 1: readahead-ahead-of-pread)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[teacher] verification_batch=2 (EXPERIMENTAL weight-reuse probe)
+[teacher] sequence=1/3 positions=87/180
+[teacher] sequence=2/3 positions=144/180
+[teacher] sequence=3/3 positions=180/180
+[teacher] wrote=docs/regressions/experiments/e-x10-m3-spec-verify/raw/verify_b2_omp.qtf sequences=3 positions=180 calibration=1 elapsed=20.670s
+real 22.01
+user 29.81
+sys 12.99
+          4085022720  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              450584  page reclaims
+                  36  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 759  voluntary context switches
+              851794  involuntary context switches
+        510049097144  instructions retired
+        149617353755  cycles elapsed
+          4560719664  peak memory footprint

@@ -262,6 +262,16 @@ typedef struct {
     QT embed, lm_head;
     float *final_norm;
     Layer *L;
+    /* E-X10 M3: the converted checkpoint already carries one native
+     * multi-token-prediction layer.  It remains completely dormant unless
+     * SAMOSA_MTP_PROBE is set: the first experiment shadows ordinary greedy
+     * decode and measures proposal quality/cost without changing output. */
+    int has_mtp, mtp_probe_window, mtp_kv_start;
+    Layer mtp_layer;
+    QT mtp_fc;
+    float *mtp_embed_norm, *mtp_hidden_norm, *mtp_norm, *mtp_last_hidden;
+    uint64_t mtp_windows, mtp_proposed, mtp_compared, mtp_accepted;
+    double mtp_seconds;
     VisionTower vt;
     float *vision_pixels;
     int vision_grid_t, vision_grid_h, vision_grid_w;
@@ -2795,6 +2805,16 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
     }
     load_cfg(&m->c, snap);
     pilot_configure(&m->c);
+    const char *mtp_probe_env = getenv("SAMOSA_MTP_PROBE");
+    if (mtp_probe_env && *mtp_probe_env) {
+        m->mtp_probe_window = atoi(mtp_probe_env);
+        if (m->mtp_probe_window < 1 || m->mtp_probe_window > 16) {
+            fprintf(stderr,
+                    "SAMOSA_MTP_PROBE must be an integer in [1,16]\n");
+            exit(1);
+        }
+    }
+    m->mtp_kv_start = -1;
 
     st_init(&m->S, snap);
     load_manifest(m, snap);
@@ -2824,8 +2844,9 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
             if (!m->metal_expert) {
                 fprintf(stderr, "[metal] initialization failed; using CPU experts\n");
             } else {
-                m->metal_input_q = malloc((size_t)m->c.hidden);
-                m->metal_output = malloc((size_t)m->c.hidden * sizeof(float));
+                m->metal_input_q = malloc((size_t)16 * m->c.hidden);
+                m->metal_output =
+                    malloc((size_t)16 * m->c.hidden * sizeof(float));
                 if (!m->metal_input_q || !m->metal_output) {
                     fprintf(stderr, "[metal] OOM allocating decode buffers; using CPU experts\n");
                     samosa_metal_expert_destroy(m->metal_expert);
@@ -2954,6 +2975,79 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
             l->up_proj   = qt_load(m, PM("mlp.up_proj.weight"), c->moe_intermediate_size, D);
             l->down_proj = qt_load(m, PM("mlp.down_proj.weight"), D, c->moe_intermediate_size);
         }
+    }
+
+    if (m->mtp_probe_window) {
+        if (c->mtp_layers != 1) {
+            fprintf(stderr,
+                    "[mtp-probe] checkpoint reports mtp_num_hidden_layers=%d, "
+                    "expected exactly 1\n", c->mtp_layers);
+            exit(1);
+        }
+        const char *required[] = {
+            "mtp.fc.weight",
+            "mtp.pre_fc_norm_embedding.weight",
+            "mtp.pre_fc_norm_hidden.weight",
+            "mtp.norm.weight",
+            "mtp.layers.0.input_layernorm.weight",
+            "mtp.layers.0.post_attention_layernorm.weight",
+            "mtp.layers.0.self_attn.q_proj.weight",
+            "mtp.layers.0.self_attn.k_proj.weight",
+            "mtp.layers.0.self_attn.v_proj.weight",
+            "mtp.layers.0.self_attn.o_proj.weight",
+            "mtp.layers.0.self_attn.q_norm.weight",
+            "mtp.layers.0.self_attn.k_norm.weight",
+            "mtp.layers.0.mlp.gate.weight",
+            "mtp.layers.0.mlp.shared_expert.gate_proj.weight",
+            "mtp.layers.0.mlp.shared_expert.up_proj.weight",
+            "mtp.layers.0.mlp.shared_expert.down_proj.weight",
+            "mtp.layers.0.mlp.shared_expert_gate.weight"
+        };
+        for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {
+            if (!st_has(&m->S, required[i])) {
+                fprintf(stderr, "[mtp-probe] missing tensor: %s\n", required[i]);
+                exit(1);
+            }
+        }
+
+        Layer *l = &m->mtp_layer;
+        l->block_type = 1;
+        l->has_moe = 1;
+        l->has_shared = 1;
+        l->in_ln = load_float_t(m, "mtp.layers.0.input_layernorm.weight");
+        l->post_ln = load_float_t(m, "mtp.layers.0.post_attention_layernorm.weight");
+        int q_dim = c->n_heads * c->head_dim;
+        int kv_dim = c->n_kv_heads * c->head_dim;
+        l->q_proj = qt_load(m, "mtp.layers.0.self_attn.q_proj.weight", 2 * q_dim, D);
+        l->k_proj = qt_load(m, "mtp.layers.0.self_attn.k_proj.weight", kv_dim, D);
+        l->v_proj = qt_load(m, "mtp.layers.0.self_attn.v_proj.weight", kv_dim, D);
+        l->o_proj = qt_load(m, "mtp.layers.0.self_attn.o_proj.weight", D, q_dim);
+        l->q_norm = load_float_t(m, "mtp.layers.0.self_attn.q_norm.weight");
+        l->k_norm = load_float_t(m, "mtp.layers.0.self_attn.k_norm.weight");
+        l->router_w = qt_load(m, "mtp.layers.0.mlp.gate.weight",
+                              c->num_experts, D);
+        int sI = c->shared_expert_intermediate_size;
+        l->shared_gate = qt_load(m,
+            "mtp.layers.0.mlp.shared_expert.gate_proj.weight", sI, D);
+        l->shared_up = qt_load(m,
+            "mtp.layers.0.mlp.shared_expert.up_proj.weight", sI, D);
+        l->shared_down = qt_load(m,
+            "mtp.layers.0.mlp.shared_expert.down_proj.weight", D, sI);
+        l->shared_gate_w =
+            load_float_t(m, "mtp.layers.0.mlp.shared_expert_gate.weight");
+
+        m->mtp_fc = qt_load(m, "mtp.fc.weight", D, 2 * D);
+        m->mtp_embed_norm =
+            load_float_t(m, "mtp.pre_fc_norm_embedding.weight");
+        m->mtp_hidden_norm =
+            load_float_t(m, "mtp.pre_fc_norm_hidden.weight");
+        m->mtp_norm = load_float_t(m, "mtp.norm.weight");
+        m->mtp_last_hidden = falloc(D);
+        m->has_mtp = 1;
+        fprintf(stderr,
+                "[mtp-probe] EXPERIMENTAL shadow mode enabled window=%d "
+                "(native int8 head; output remains CPU baseline)\n",
+                m->mtp_probe_window);
     }
     
     // Byte-budget expert cache (T5.5): global budget + per-layer floors + LRU.
@@ -3155,6 +3249,9 @@ static void attention_gqa(Model *m, Layer *l, int layer, float *x, int S, int po
             int h = g * grp + h_in_g;
             for (int s = 0; s < S; s++) {
                 int qpos = pos_base + s;
+                int first = (layer == c->n_layers && m->mtp_kv_start >= 0)
+                          ? m->mtp_kv_start : 0;
+                if (first > qpos) first = qpos;
                 const float *qv = q + (int64_t)s * H * hd + h * hd;
 
 #ifdef _OPENMP
@@ -3162,20 +3259,20 @@ static void attention_gqa(Model *m, Layer *l, int layer, float *x, int S, int po
 #else
                 float *sc = sc_pool;
 #endif
-                for (int t = 0; t <= qpos; t++) {
+                for (int t = first; t <= qpos; t++) {
                     const float *kv = m->K[layer] + ((int64_t)g * m->max_t + t) * hd;
                     float acc = 0;
                     for (int dd = 0; dd < hd; dd++) acc += qv[dd] * kv[dd];
-                    sc[t] = acc * scale;
+                    sc[t - first] = acc * scale;
                 }
                 
-                softmax_row(sc, qpos + 1);
+                softmax_row(sc, qpos - first + 1);
                 
                 float *cx = ctx + (int64_t)s * H * hd + h * hd;
                 for (int dd = 0; dd < hd; dd++) cx[dd] = 0;
-                for (int t = 0; t <= qpos; t++) {
+                for (int t = first; t <= qpos; t++) {
                     const float *vrow = m->V[layer] + ((int64_t)g * m->max_t + t) * hd;
-                    float a = sc[t];
+                    float a = sc[t - first];
                     for (int dd = 0; dd < hd; dd++) cx[dd] += a * vrow[dd];
                 }
             }
@@ -3696,6 +3793,119 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
          */
         int metal_done = 0;
 #ifdef SAMOSA_METAL
+        /* E-X10 M3: speculative-verifier/prefill probe. Each command carries
+         * only the compact (row,expert) pairs which actually routed, while
+         * duplicate Metal handles let multiple rows reuse the same no-copy
+         * slab. This stays separate from the established S=1 split below. */
+        if (m->metal_expert && S > 1 && nb <= 64 &&
+            g_idot && g_moe_down_idot && layer < c->n_layers &&
+            m->refine.mode == REFINE_OFF && !seq_slots) {
+            void *buffers[64] = {0};
+            float *batch_output =
+                calloc((size_t)S * (size_t)D, sizeof(float));
+            int can_submit = batch_output != NULL;
+            for (int j = 0; can_submit && j < nb; ++j) {
+                ESlot *expert = use[j];
+                if (expert->g.fmt != 4 || expert->u.fmt != 4 ||
+                    expert->d.fmt != 4) {
+                    can_submit = 0; break;
+                }
+                if (!expert->metal_slab)
+                    expert->metal_slab = samosa_metal_expert_wrap(
+                        m->metal_expert, expert->slab,
+                        (size_t)expert->slab_cap);
+                if (!expert->metal_slab) {
+                    can_submit = 0; break;
+                }
+                buffers[j] = expert->metal_slab;
+            }
+            int all_completed = can_submit;
+            for (int row0 = 0; all_completed && row0 < S; row0 += 8) {
+                int nr = S - row0 < 8 ? S - row0 : 8;
+                float input_scales[16] = {0};
+                size_t pair_capacity = (size_t)nr * (size_t)K;
+                void **pair_buffers =
+                    calloc(pair_capacity, sizeof(*pair_buffers));
+                float *pair_weights =
+                    calloc(pair_capacity, sizeof(*pair_weights));
+                uint32_t *pair_rows =
+                    calloc(pair_capacity, sizeof(*pair_rows));
+                if (!pair_buffers || !pair_weights || !pair_rows) {
+                    free(pair_buffers); free(pair_weights); free(pair_rows);
+                    all_completed = 0; break;
+                }
+                int pairs = 0;
+                for (int r = 0; r < nr; ++r) {
+                    int s = row0 + r;
+                    input_scales[r] = qrow_i8(
+                        x + (int64_t)s * D,
+                        m->metal_input_q + (int64_t)r * D, D);
+                    for (int kk = 0; kk < keff[s]; ++kk) {
+                        int eid = idxs[(int64_t)s * K + kk];
+                        uint8_t mask =
+                            refine_masks[(size_t)s * K + kk];
+                        for (int j = 0; j < nb; ++j)
+                            if (eid == uniq[base + j] &&
+                                mask == uniq_masks[base + j]) {
+                                pair_buffers[pairs] = buffers[j];
+                                pair_weights[pairs] =
+                                    ws[(int64_t)s * K + kk];
+                                pair_rows[pairs] = (uint32_t)r;
+                                pairs++;
+                                break;
+                            }
+                    }
+                }
+                if (pairs == 0) {
+                    free(pair_buffers); free(pair_weights); free(pair_rows);
+                    continue;
+                }
+                double submit_t0 = now_s();
+                int submitted = samosa_metal_expert_submit_batch(
+                        m->metal_expert, pair_buffers, pairs,
+                        m->metal_input_q, input_scales, pair_weights,
+                        pair_rows, nr);
+                double submit_elapsed = now_s() - submit_t0;
+                free(pair_buffers); free(pair_weights); free(pair_rows);
+                if (!submitted) {
+                    all_completed = 0; break;
+                }
+                double cpu_t0 = now_s();
+                if (!shared_done) {
+                    mlp_shared_expert(m, l, x, S, out);
+                    shared_done = 1;
+                }
+                double cpu_elapsed = now_s() - cpu_t0;
+                double wait_t0 = now_s(), gpu_seconds = 0.0;
+                int completed = samosa_metal_expert_wait(
+                    m->metal_expert, m->metal_output, &gpu_seconds);
+                double wait_elapsed = now_s() - wait_t0;
+                m->metal_stats.layers++;
+                m->metal_stats.submit += submit_elapsed;
+                m->metal_stats.cpu_overlap += cpu_elapsed;
+                m->metal_stats.wait_tail += wait_elapsed;
+                m->metal_stats.gpu += gpu_seconds;
+                m->t_emm += submit_elapsed + wait_elapsed;
+                phase_add_s(m, PHASE_EXPERT_MM,
+                            submit_elapsed + wait_elapsed);
+                if (completed) {
+                    memcpy(batch_output + (int64_t)row0 * D,
+                           m->metal_output,
+                           (size_t)nr * D * sizeof(float));
+                } else {
+                    m->metal_stats.fallbacks++;
+                    all_completed = 0;
+                }
+            }
+            if (all_completed) {
+                for (int64_t z = 0; z < (int64_t)S * D; ++z)
+                    out[z] += batch_output[z];
+                metal_done = 1;
+            } else {
+                m->metal_stats.fallbacks++;
+            }
+            free(batch_output);
+        }
         if (m->metal_expert && S == 1 && base == 0 && nu == 8 && nb == 8 &&
             keff[0] == 8 && g_idot && g_moe_down_idot &&
             m->refine.mode == REFINE_OFF && !seq_slots) {
@@ -3867,7 +4077,9 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
     if (!shared_done) mlp_shared_expert(m, l, x, S, out);
 }
 
-static float *step(Model *m, float *x, const int *ids, int S, int pos_base, int mrope_delta, int *pos_t_ids, int *pos_h_ids, int *pos_w_ids) {
+static float *step_impl(Model *m, float *x, const int *ids, int S,
+                        int pos_base, int mrope_delta, int *pos_t_ids,
+                        int *pos_h_ids, int *pos_w_ids, int all_logits) {
     Cfg *c = &m->c;
     int D = c->hidden;
     
@@ -3923,17 +4135,116 @@ static float *step(Model *m, float *x, const int *ids, int S, int pos_base, int 
     }
     
     double head_t0 = phase_start(m);
-    float *last = falloc(D);
-    rmsnorm_row(last, x + (int64_t)(S - 1) * D, m->final_norm, D, c->eps);
-    
-    float *logit = falloc(c->vocab);
+    if (m->has_mtp)
+        memcpy(m->mtp_last_hidden, x + (int64_t)(S - 1) * D,
+               (size_t)D * sizeof(float));
+    int head_rows = all_logits ? S : 1;
+    float *last = falloc((int64_t)head_rows * D);
+    if (all_logits) {
+        for (int s = 0; s < S; s++)
+            rmsnorm_row(last + (int64_t)s * D, x + (int64_t)s * D,
+                        m->final_norm, D, c->eps);
+    } else {
+        rmsnorm_row(last, x + (int64_t)(S - 1) * D,
+                    m->final_norm, D, c->eps);
+    }
+
+    float *logit = falloc((int64_t)head_rows * c->vocab);
     /* matmul_qt dequantizza on-the-fly riga per riga (kernel int8/int4 dot);
      * niente bisogno di materializzare l'intera tabella lm_head ad ogni token. */
-    matmul_qt(logit, last, &m->lm_head, 1, g_idot, g_i4s);
+    matmul_qt(logit, last, &m->lm_head, head_rows, g_idot, g_i4s);
     phase_add(m, PHASE_HEAD, head_t0);
     
     free(x); free(nrm); free(tmp); free(last);
     return logit;
+}
+
+static float *step(Model *m, float *x, const int *ids, int S, int pos_base,
+                   int mrope_delta, int *pos_t_ids, int *pos_h_ids,
+                   int *pos_w_ids) {
+    return step_impl(m, x, ids, S, pos_base, mrope_delta,
+                     pos_t_ids, pos_h_ids, pos_w_ids, 0);
+}
+
+static float *step_all_logits(Model *m, float *x, const int *ids, int S,
+                              int pos_base, int mrope_delta) {
+    return step_impl(m, x, ids, S, pos_base, mrope_delta,
+                     NULL, NULL, NULL, 1);
+}
+
+static int mtp_argmax(const float *logit, int vocab) {
+    int best = 0;
+    float value = logit[0];
+    for (int i = 1; i < vocab; i++) {
+        if (logit[i] > value) {
+            value = logit[i];
+            best = i;
+        }
+    }
+    return best;
+}
+
+/* Run the checkpoint's native MTP layer without changing main-model state.
+ * next_token is the just-selected token at main position kv; the native head
+ * combines its embedding with the true pre-norm hidden at kv-1, writes its
+ * private attention row at kv-1, and predicts kv+1.  Later proposals feed the
+ * MTP hidden/token pair back through the same layer. */
+static int mtp_draft(Model *m, int next_token, int kv, int count,
+                     int mrope_delta, int *draft) {
+    if (!m->has_mtp || count < 1 || kv < 1) return 0;
+    Cfg *c = &m->c;
+    int D = c->hidden;
+    int layer = c->n_layers;
+    int first_pos = kv - 1;
+    if (m->mtp_kv_start < 0 || m->mtp_kv_start > first_pos)
+        m->mtp_kv_start = first_pos;
+
+    float *embedding = falloc(D);
+    float *hidden = falloc(D);
+    float *joined = falloc(2 * D);
+    float *hx = falloc(D);
+    float *nrm = falloc(D);
+    float *tmp = falloc(D);
+    float *head_row = falloc(D);
+    float *logit = falloc(c->vocab);
+    memcpy(hidden, m->mtp_last_hidden, (size_t)D * sizeof(float));
+
+    int token = next_token;
+    int made = 0;
+    double started = now_s();
+    for (int g = 0; g < count; g++) {
+        int pos = first_pos + g;
+        if (pos >= m->max_t) break;
+
+        embed_gather_row(embedding, &m->embed, token);
+        rmsnorm_row(embedding, embedding, m->mtp_embed_norm, D, c->eps);
+        if (g == 0)
+            rmsnorm_row(hidden, hidden, m->final_norm, D, c->eps);
+        rmsnorm_row(hidden, hidden, m->mtp_hidden_norm, D, c->eps);
+        memcpy(joined, embedding, (size_t)D * sizeof(float));
+        memcpy(joined + D, hidden, (size_t)D * sizeof(float));
+        matmul_qt(hx, joined, &m->mtp_fc, 1, g_idot, g_i4s);
+
+        Layer *l = &m->mtp_layer;
+        rmsnorm_row(nrm, hx, l->in_ln, D, c->eps);
+        attention_gqa(m, l, layer, nrm, 1, pos, mrope_delta,
+                      NULL, NULL, NULL, tmp);
+        for (int d = 0; d < D; d++) hx[d] += tmp[d];
+        rmsnorm_row(nrm, hx, l->post_ln, D, c->eps);
+        mlp_moe(m, l, layer, nrm, 1, tmp, pos, &token);
+        for (int d = 0; d < D; d++) hx[d] += tmp[d];
+
+        rmsnorm_row(head_row, hx, m->mtp_norm, D, c->eps);
+        matmul_qt(logit, head_row, &m->lm_head, 1, g_idot, g_i4s);
+        token = mtp_argmax(logit, c->vocab);
+        draft[made++] = token;
+        memcpy(hidden, hx, (size_t)D * sizeof(float));
+    }
+    m->mtp_seconds += now_s() - started;
+
+    free(embedding); free(hidden); free(joined); free(hx);
+    free(nrm); free(tmp); free(head_row); free(logit);
+    return made;
 }
 
 static void forward_all(Model *m, const int *full, int nfull, int *pred) {
@@ -4336,14 +4647,24 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     phase_reset(m);
     pilot_reset();
     m->max_t = np + n_new;
+    m->mtp_windows = m->mtp_proposed = m->mtp_compared = m->mtp_accepted = 0;
+    m->mtp_seconds = 0.0;
+    m->mtp_kv_start = -1;
     
-    m->K = calloc(c->n_layers, sizeof(float*));
-    m->V = calloc(c->n_layers, sizeof(float*));
+    int state_layers = c->n_layers + (m->has_mtp ? 1 : 0);
+    m->K = calloc((size_t)state_layers, sizeof(float*));
+    m->V = calloc((size_t)state_layers, sizeof(float*));
     for (int i = 0; i < c->n_layers; i++) {
         if (c->layer_type[i] == 1) {
             m->K[i] = falloc((int64_t)c->n_kv_heads * m->max_t * c->head_dim);
             m->V[i] = falloc((int64_t)c->n_kv_heads * m->max_t * c->head_dim);
         }
+    }
+    if (m->has_mtp) {
+        m->K[c->n_layers] =
+            falloc((int64_t)c->n_kv_heads * m->max_t * c->head_dim);
+        m->V[c->n_layers] =
+            falloc((int64_t)c->n_kv_heads * m->max_t * c->head_dim);
     }
     m->conv_state = calloc(c->n_layers, sizeof(float*));
     m->recurrent_state = calloc(c->n_layers, sizeof(float*));
@@ -4416,6 +4737,7 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     int model_stopped=0;
     int repetition_stopped=0;
     int cancelled=0;
+    int mtp_pending[16], mtp_pending_n=0, mtp_pending_at=0;
     
     for (int s = 0; s < n_new; s++) {
         adjust_threads(m, s);
@@ -4432,6 +4754,17 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
         free(logit);
         out[len++] = best;
         generated++;
+        if (m->has_mtp && mtp_pending_at < mtp_pending_n) {
+            m->mtp_compared++;
+            if (best == mtp_pending[mtp_pending_at]) {
+                m->mtp_accepted++;
+                mtp_pending_at++;
+            } else {
+                mtp_pending_n = mtp_pending_at = 0;
+            }
+            if (mtp_pending_at == mtp_pending_n)
+                mtp_pending_n = mtp_pending_at = 0;
+        }
         int sink_result = sink ? sink(best, sink_ctx) : 0;
         if (sink_result) {
             if (sink_result == 1) model_stopped=1;
@@ -4448,11 +4781,43 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
             break;
         }
         if (s == n_new - 1) { phase_leave(m); break; }
+        if (m->has_mtp && mtp_pending_n == 0) {
+            int made = mtp_draft(m, best, len - 1, m->mtp_probe_window,
+                                 mrope_delta, mtp_pending);
+            if (made > 0) {
+                mtp_pending_n = made;
+                mtp_pending_at = 0;
+                m->mtp_windows++;
+                m->mtp_proposed += (uint64_t)made;
+            }
+        }
         int one = best;
         float *x_one = falloc(m->c.hidden);
         embed_gather_row(x_one, &m->embed, one);
         logit = step(m, x_one, &one, 1, len - 1, mrope_delta, NULL, NULL, NULL);
         phase_leave(m);
+    }
+    if (m->has_mtp) {
+        double alpha = m->mtp_proposed
+                     ? (double)m->mtp_accepted / (double)m->mtp_proposed : 0.0;
+        double compared_match = m->mtp_compared
+                              ? (double)m->mtp_accepted /
+                                (double)m->mtp_compared : 0.0;
+        double ideal_tokens_per_step = m->mtp_windows
+            ? ((double)m->mtp_windows + (double)m->mtp_accepted) /
+              (double)m->mtp_windows : 1.0;
+        double ms = m->mtp_proposed
+                  ? 1000.0 * m->mtp_seconds / (double)m->mtp_proposed : 0.0;
+        fprintf(stderr,
+                "[mtp-probe] windows=%llu proposed=%llu compared=%llu "
+                "accepted=%llu alpha=%.4f compared_match=%.4f "
+                "ideal_tokens/verify=%.3f draft_ms/token=%.3f total_s=%.3f\n",
+                (unsigned long long)m->mtp_windows,
+                (unsigned long long)m->mtp_proposed,
+                (unsigned long long)m->mtp_compared,
+                (unsigned long long)m->mtp_accepted,
+                alpha, compared_match, ideal_tokens_per_step,
+                ms, m->mtp_seconds);
     }
     if(stats) {
         double done=now_s();
@@ -5095,6 +5460,15 @@ static int run_teacher_capture(Model *m, const char *tokenizer_path,
     json_tree_free(root); free(arena); free(corpus_bytes);
     if (requested_calibration<1 || requested_calibration>128)
         teacher_die("calibration count must be in 1..128");
+    int teacher_batch=1;
+    const char *teacher_batch_env=getenv("SAMOSA_TEACHER_BATCH");
+    if (teacher_batch_env && *teacher_batch_env) {
+        teacher_batch=atoi(teacher_batch_env);
+        if (teacher_batch<1 || teacher_batch>16)
+            teacher_die("SAMOSA_TEACHER_BATCH must be in 1..16");
+    }
+    fprintf(stderr,"[teacher] verification_batch=%d%s\n",teacher_batch,
+            teacher_batch==1?"":" (EXPERIMENTAL weight-reuse probe)");
     uint32_t calibration=(uint32_t)requested_calibration;
     if ((uint64_t)calibration>positions) calibration=(uint32_t)positions;
 
@@ -5124,31 +5498,45 @@ static int run_teacher_capture(Model *m, const char *tokenizer_path,
     for (int sequence=0;sequence<sequence_count;++sequence) {
         TeacherSequence *current=&sequences[sequence];
         teacher_state_begin(m,current->count);
-        for (int position=0;position<current->count-1;++position,++ordinal) {
-            float *x_req = falloc(m->c.hidden);
-            embed_gather_row(x_req, &m->embed, current->ids[position]);
-            float *logits=step(m, x_req, &current->ids[position], 1, position, 0, NULL, NULL, NULL);
-            int target=current->ids[position+1]; double lse; uint32_t top5[5];
-            teacher_lse_top5(logits,m->c.vocab,&lse,top5);
-            int full=teacher_is_calibration(ordinal,positions,calibration);
-            uint8_t record[56]={0};
-            teacher_put_u32(record,(uint32_t)sequence);
-            teacher_put_u32(record+4,(uint32_t)position);
-            teacher_put_u32(record+8,(uint32_t)target);
-            teacher_put_u32(record+12,full?1u:0u);
-            teacher_put_u32(record+16,full?(uint32_t)m->c.vocab:0u);
-            teacher_put_f64(record+20,(double)logits[target]);
-            teacher_put_f64(record+28,lse);
-            for (int rank=0;rank<5;++rank) teacher_put_u32(record+36+4*rank,top5[rank]);
-            teacher_write(output,&stream_sha,record,sizeof(record));
-            if (full) {
-                for (int token=0;token<m->c.vocab;++token) {
-                    uint32_t bits; memcpy(&bits,&logits[token],sizeof(bits));
-                    teacher_put_u32(encoded_logits+4*(size_t)token,bits);
+        for (int position=0;position<current->count-1;) {
+            int batch=current->count-1-position;
+            if (batch>teacher_batch) batch=teacher_batch;
+            float *x_req=falloc((int64_t)batch*m->c.hidden);
+            for (int row=0;row<batch;++row)
+                embed_gather_row(x_req+(int64_t)row*m->c.hidden,&m->embed,
+                                 current->ids[position+row]);
+            float *logits = batch==1
+                ? step(m,x_req,current->ids+position,1,position,0,NULL,NULL,NULL)
+                : step_all_logits(m,x_req,current->ids+position,batch,position,0);
+            for (int row=0;row<batch;++row,++ordinal) {
+                float *row_logits=logits+(int64_t)row*m->c.vocab;
+                int record_position=position+row;
+                int target=current->ids[record_position+1];
+                double lse; uint32_t top5[5];
+                teacher_lse_top5(row_logits,m->c.vocab,&lse,top5);
+                int full=teacher_is_calibration(ordinal,positions,calibration);
+                uint8_t record[56]={0};
+                teacher_put_u32(record,(uint32_t)sequence);
+                teacher_put_u32(record+4,(uint32_t)record_position);
+                teacher_put_u32(record+8,(uint32_t)target);
+                teacher_put_u32(record+12,full?1u:0u);
+                teacher_put_u32(record+16,full?(uint32_t)m->c.vocab:0u);
+                teacher_put_f64(record+20,(double)row_logits[target]);
+                teacher_put_f64(record+28,lse);
+                for (int rank=0;rank<5;++rank)
+                    teacher_put_u32(record+36+4*rank,top5[rank]);
+                teacher_write(output,&stream_sha,record,sizeof(record));
+                if (full) {
+                    for (int token=0;token<m->c.vocab;++token) {
+                        uint32_t bits;
+                        memcpy(&bits,&row_logits[token],sizeof(bits));
+                        teacher_put_u32(encoded_logits+4*(size_t)token,bits);
+                    }
+                    teacher_write(output,&stream_sha,encoded_logits,logits_bytes);
                 }
-                teacher_write(output,&stream_sha,encoded_logits,logits_bytes);
             }
             free(logits);
+            position+=batch;
         }
         teacher_state_end(m);
         fprintf(stderr,"[teacher] sequence=%d/%d positions=%llu/%llu\n",

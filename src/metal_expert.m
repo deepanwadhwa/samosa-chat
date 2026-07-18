@@ -8,10 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { SAMOSA_GPU_THREADS = 256, SAMOSA_GPU_SIMDGROUPS = 8 };
+enum {
+    SAMOSA_GPU_THREADS = 256, SAMOSA_GPU_SIMDGROUPS = 8,
+    SAMOSA_GPU_MAX_EXPERTS = 64, SAMOSA_GPU_MAX_ROWS = 16
+};
 
 typedef struct {
-    uint32_t D, I, group, experts;
+    uint32_t D, I, group, experts, rows;
     uint32_t gate_q, gate_s, up_q, up_s, down_q, down_s;
 } SamosaMetalParams;
 
@@ -24,31 +27,35 @@ typedef struct {
 static const char *kSamosaMetalSource =
 "#include <metal_stdlib>\n"
 "using namespace metal;\n"
-"struct Params { uint D, I, group, experts; uint gate_q, gate_s, up_q, up_s, down_q, down_s; };\n"
-"struct ExpertArgs { array<device uchar *, 8> experts [[id(0)]]; };\n"
+"struct Params { uint D, I, group, experts, rows; uint gate_q, gate_s, up_q, up_s, down_q, down_s; };\n"
+"struct ExpertArgs { array<device uchar *, 64> experts [[id(0)]]; };\n"
 "kernel void gate_up(constant ExpertArgs &a [[buffer(0)]],\n"
-" const device char *xq [[buffer(1)]], constant float &sx [[buffer(2)]],\n"
-" device float *hidden [[buffer(3)]], constant Params &p [[buffer(4)]],\n"
+" const device char *xq [[buffer(1)]], const device float *sx [[buffer(2)]],\n"
+" const device float *route [[buffer(3)]], const device uint *expert_rows [[buffer(4)]],\n"
+" device float *hidden [[buffer(5)]], constant Params &p [[buffer(6)]],\n"
 " uint2 tg [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]],\n"
 " uint simd [[simdgroup_index_in_threadgroup]]) {\n"
 " uint o=tg.x*8u+simd, e=tg.y; if(o>=p.I||e>=p.experts)return;\n"
+" uint r=expert_rows[e]; if(r>=p.rows||route[e]==0.0f)return;\n"
 " const device uchar *ep=a.experts[e];\n"
 " uint groups=p.D/p.group, rb=p.D/2u; float ga=0.0f, up=0.0f;\n"
 " for(uint g=0;g<groups;++g){ uint i=g*p.group+lane;\n"
 "  uchar gb=ep[p.gate_q+o*rb+(i>>1)];\n"
 "  uchar ub=ep[p.up_q+o*rb+(i>>1)];\n"
 "  int gw=int((i&1u)?(gb>>4):(gb&15u))-8, uw=int((i&1u)?(ub>>4):(ub&15u))-8;\n"
-"  int xv=int(xq[i]);\n"
+"  int xv=int(xq[r*p.D+i]);\n"
 "  ga+=float(gw*xv)*((const device float*)(ep+p.gate_s))[o*groups+g];\n"
 "  up+=float(uw*xv)*((const device float*)(ep+p.up_s))[o*groups+g];\n"
 " }\n"
-" float gs=simd_sum(ga)*sx, us=simd_sum(up)*sx;\n"
+" float gs=simd_sum(ga)*sx[r], us=simd_sum(up)*sx[r];\n"
 " if(lane==0u) hidden[e*p.I+o]=(gs/(1.0f+exp(-gs)))*us;\n"
 "}\n"
 "kernel void quant_hidden(const device float *hidden [[buffer(0)]], device char *hidden_q [[buffer(1)]],\n"
-" device float *hidden_s [[buffer(2)]], constant Params &p [[buffer(3)]],\n"
-" uint e [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]],\n"
+" device float *hidden_s [[buffer(2)]], const device float *route [[buffer(3)]],\n"
+" constant Params &p [[buffer(4)]], uint e [[threadgroup_position_in_grid]],\n"
+" uint tid [[thread_index_in_threadgroup]],\n"
 " threadgroup float *scratch [[threadgroup(0)]]) {\n"
+" if(e>=p.experts||route[e]==0.0f)return;\n"
 " float mx=0.0f; for(uint i=tid;i<p.I;i+=256u)mx=max(mx,abs(hidden[e*p.I+i]));\n"
 " scratch[tid]=mx; threadgroup_barrier(mem_flags::mem_threadgroup);\n"
 " for(uint w=128u;w>0u;w>>=1u){if(tid<w)scratch[tid]=max(scratch[tid],scratch[tid+w]);\n"
@@ -59,18 +66,21 @@ static const char *kSamosaMetalSource =
 "}\n"
 "kernel void down_reduce(constant ExpertArgs &a [[buffer(0)]],\n"
 " const device char *hidden_q [[buffer(1)]], const device float *hidden_s [[buffer(2)]],\n"
-" const device float *route [[buffer(3)]], device float *output [[buffer(4)]],\n"
-" constant Params &p [[buffer(5)]], uint tg [[threadgroup_position_in_grid]],\n"
+" const device float *route [[buffer(3)]], const device uint *expert_rows [[buffer(4)]],\n"
+" device float *output [[buffer(5)]], constant Params &p [[buffer(6)]],\n"
+" uint2 tg [[threadgroup_position_in_grid]],\n"
 " uint lane [[thread_index_in_simdgroup]], uint simd [[simdgroup_index_in_threadgroup]]) {\n"
-" uint o=tg*8u+simd; if(o>=p.D)return; uint groups=p.I/p.group, rb=p.I/2u;\n"
+" uint o=tg.x*8u+simd, r=tg.y; if(o>=p.D||r>=p.rows)return;\n"
+" uint groups=p.I/p.group, rb=p.I/2u;\n"
 " float sum=0.0f; for(uint e=0;e<p.experts;++e){\n"
+"  if(expert_rows[e]!=r)continue; float rw=route[e]; if(rw==0.0f)continue;\n"
 "  const device uchar *ep=a.experts[e];\n"
 "  for(uint g=0;g<groups;++g){\n"
 "  uint i=g*p.group+lane; uchar b=ep[p.down_q+o*rb+(i>>1)];\n"
 "  int w=int((i&1u)?(b>>4):(b&15u))-8;\n"
-"  sum+=float(w*int(hidden_q[e*p.I+i]))*((const device float*)(ep+p.down_s))[o*groups+g]*hidden_s[e]*route[e];\n"
+"  sum+=float(w*int(hidden_q[e*p.I+i]))*((const device float*)(ep+p.down_s))[o*groups+g]*hidden_s[e]*rw;\n"
 " }}\n"
-" float v=simd_sum(sum); if(lane==0u)output[o]=v;\n"
+" float v=simd_sum(sum); if(lane==0u)output[r*p.D+o]=v;\n"
 "}\n";
 
 @interface SamosaMetalContext : NSObject
@@ -84,6 +94,7 @@ static const char *kSamosaMetalSource =
 @property(nonatomic, strong) id<MTLBuffer> inputQ;
 @property(nonatomic, strong) id<MTLBuffer> inputScale;
 @property(nonatomic, strong) id<MTLBuffer> route;
+@property(nonatomic, strong) id<MTLBuffer> expertRows;
 @property(nonatomic, strong) id<MTLBuffer> hidden;
 @property(nonatomic, strong) id<MTLBuffer> hiddenQ;
 @property(nonatomic, strong) id<MTLBuffer> hiddenScale;
@@ -157,24 +168,33 @@ samosa_metal_expert *samosa_metal_expert_create(
         uint32_t downQ = (uint32_t)((uint64_t)hidden * intermediate / 2u);
         c.params = (SamosaMetalParams){
             (uint32_t)hidden, (uint32_t)intermediate, (uint32_t)group,
-            (uint32_t)experts, 0, gateQ, gateQ + gateS,
+            (uint32_t)experts, 1, 0, gateQ, gateQ + gateS,
             2u * gateQ + gateS, 2u * (gateQ + gateS),
             2u * (gateQ + gateS) + downQ
         };
         MTLResourceOptions shared = MTLResourceStorageModeShared;
-        c.inputQ = [c.device newBufferWithLength:(NSUInteger)hidden options:shared];
-        c.inputScale = [c.device newBufferWithLength:sizeof(float) options:shared];
-        c.route = [c.device newBufferWithLength:8u * sizeof(float) options:shared];
+        c.inputQ = [c.device newBufferWithLength:
+                    (NSUInteger)SAMOSA_GPU_MAX_ROWS * hidden options:shared];
+        c.inputScale = [c.device newBufferWithLength:
+                        SAMOSA_GPU_MAX_ROWS * sizeof(float) options:shared];
+        c.route = [c.device newBufferWithLength:
+                   SAMOSA_GPU_MAX_EXPERTS * sizeof(float) options:shared];
+        c.expertRows = [c.device newBufferWithLength:
+                        SAMOSA_GPU_MAX_EXPERTS * sizeof(uint32_t)
+                        options:shared];
         c.hidden = [c.device newBufferWithLength:
-                    (NSUInteger)experts * intermediate * sizeof(float) options:shared];
+                    (NSUInteger)SAMOSA_GPU_MAX_EXPERTS * intermediate *
+                    sizeof(float) options:shared];
         c.hiddenQ = [c.device newBufferWithLength:
-                     (NSUInteger)experts * intermediate options:shared];
+                     (NSUInteger)SAMOSA_GPU_MAX_EXPERTS * intermediate
+                     options:shared];
         c.hiddenScale = [c.device newBufferWithLength:
-                         (NSUInteger)experts * sizeof(float) options:shared];
+                         SAMOSA_GPU_MAX_EXPERTS * sizeof(float) options:shared];
         c.output = [c.device newBufferWithLength:
-                    (NSUInteger)hidden * sizeof(float) options:shared];
+                    (NSUInteger)SAMOSA_GPU_MAX_ROWS * hidden *
+                    sizeof(float) options:shared];
         if (!c.inputQ || !c.inputScale || !c.route || !c.hidden ||
-            !c.hiddenQ || !c.hiddenScale || !c.output)
+            !c.expertRows || !c.hiddenQ || !c.hiddenScale || !c.output)
             return NULL;
         samosa_metal_expert *result = calloc(1, sizeof(*result));
         if (!result) return NULL;
@@ -215,19 +235,35 @@ int samosa_metal_expert_submit(
     samosa_metal_expert *context, void *const expert_buffers[8],
     int expert_count, const int8_t *input_q, float input_scale,
     const float route[8]) {
-    if (!context || !input_q || !route ||
-        expert_count < 1 || expert_count > 8) return 0;
+    uint32_t expert_rows[8] = {0};
+    return samosa_metal_expert_submit_batch(
+        context, expert_buffers, expert_count, input_q, &input_scale, route,
+        expert_rows, 1);
+}
+
+int samosa_metal_expert_submit_batch(
+    samosa_metal_expert *context, void *const expert_buffers[],
+    int expert_count, const int8_t *input_q, const float input_scales[],
+    const float route[], const uint32_t expert_rows[], int rows) {
+    if (!context || !input_q || !input_scales || !route || !expert_rows ||
+        expert_count < 1 || expert_count > SAMOSA_GPU_MAX_EXPERTS ||
+        rows < 1 || rows > SAMOSA_GPU_MAX_ROWS) return 0;
     SamosaMetalContext *c =
         (__bridge SamosaMetalContext *)context->object;
     if (c.pending) return 0;
-    for (int i = 0; i < 8; ++i) if (!expert_buffers[i]) return 0;
-    memcpy(c.inputQ.contents, input_q, c.params.D);
-    memcpy(c.inputScale.contents, &input_scale, sizeof(input_scale));
-    memcpy(c.route.contents, route, 8u * sizeof(float));
+    for (int i = 0; i < expert_count; ++i)
+        if (!expert_buffers[i]) return 0;
+    memcpy(c.inputQ.contents, input_q, (size_t)rows * c.params.D);
+    memcpy(c.inputScale.contents, input_scales,
+           (size_t)rows * sizeof(float));
+    memcpy(c.route.contents, route, (size_t)expert_count * sizeof(float));
+    memcpy(c.expertRows.contents, expert_rows,
+           (size_t)expert_count * sizeof(uint32_t));
     SamosaMetalParams params = c.params;
     params.experts = (uint32_t)expert_count;
+    params.rows = (uint32_t)rows;
     [c.argumentEncoder setArgumentBuffer:c.expertArguments offset:0];
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < expert_count; ++i)
         [c.argumentEncoder setBuffer:buffer_from_handle(expert_buffers[i])
                              offset:0 atIndex:i];
 
@@ -235,16 +271,18 @@ int samosa_metal_expert_submit(
     id<MTLComputeCommandEncoder> gate = [command computeCommandEncoder];
     [gate setComputePipelineState:c.gatePipeline];
     [gate setBuffer:c.expertArguments offset:0 atIndex:0];
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < expert_count; ++i)
         [gate useResource:buffer_from_handle(expert_buffers[i])
                    usage:MTLResourceUsageRead];
     [gate setBuffer:c.inputQ offset:0 atIndex:1];
     [gate setBuffer:c.inputScale offset:0 atIndex:2];
-    [gate setBuffer:c.hidden offset:0 atIndex:3];
-    [gate setBytes:&params length:sizeof(params) atIndex:4];
+    [gate setBuffer:c.route offset:0 atIndex:3];
+    [gate setBuffer:c.expertRows offset:0 atIndex:4];
+    [gate setBuffer:c.hidden offset:0 atIndex:5];
+    [gate setBytes:&params length:sizeof(params) atIndex:6];
     [gate dispatchThreadgroups:
         MTLSizeMake((c.params.I + SAMOSA_GPU_SIMDGROUPS - 1) /
-                    SAMOSA_GPU_SIMDGROUPS, c.params.experts, 1)
+                    SAMOSA_GPU_SIMDGROUPS, params.experts, 1)
         threadsPerThreadgroup:MTLSizeMake(SAMOSA_GPU_THREADS, 1, 1)];
     [gate endEncoding];
 
@@ -253,29 +291,37 @@ int samosa_metal_expert_submit(
     [quant setBuffer:c.hidden offset:0 atIndex:0];
     [quant setBuffer:c.hiddenQ offset:0 atIndex:1];
     [quant setBuffer:c.hiddenScale offset:0 atIndex:2];
-    [quant setBytes:&params length:sizeof(params) atIndex:3];
+    [quant setBuffer:c.route offset:0 atIndex:3];
+    [quant setBytes:&params length:sizeof(params) atIndex:4];
     [quant setThreadgroupMemoryLength:
         SAMOSA_GPU_THREADS * sizeof(float) atIndex:0];
-    [quant dispatchThreadgroups:MTLSizeMake(c.params.experts, 1, 1)
+    [quant dispatchThreadgroups:
+        MTLSizeMake(params.experts, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(SAMOSA_GPU_THREADS, 1, 1)];
     [quant endEncoding];
 
     id<MTLComputeCommandEncoder> down = [command computeCommandEncoder];
     [down setComputePipelineState:c.downPipeline];
     [down setBuffer:c.expertArguments offset:0 atIndex:0];
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < expert_count; ++i)
         [down useResource:buffer_from_handle(expert_buffers[i])
                    usage:MTLResourceUsageRead];
     [down setBuffer:c.hiddenQ offset:0 atIndex:1];
     [down setBuffer:c.hiddenScale offset:0 atIndex:2];
     [down setBuffer:c.route offset:0 atIndex:3];
-    [down setBuffer:c.output offset:0 atIndex:4];
-    [down setBytes:&params length:sizeof(params) atIndex:5];
+    [down setBuffer:c.expertRows offset:0 atIndex:4];
+    [down setBuffer:c.output offset:0 atIndex:5];
+    [down setBytes:&params length:sizeof(params) atIndex:6];
     [down dispatchThreadgroups:
         MTLSizeMake((c.params.D + SAMOSA_GPU_SIMDGROUPS - 1) /
-                    SAMOSA_GPU_SIMDGROUPS, 1, 1)
+                    SAMOSA_GPU_SIMDGROUPS, params.rows, 1)
          threadsPerThreadgroup:MTLSizeMake(SAMOSA_GPU_THREADS, 1, 1)];
     [down endEncoding];
+    c.params = (SamosaMetalParams){
+        c.params.D, c.params.I, c.params.group, c.params.experts,
+        params.rows, c.params.gate_q, c.params.gate_s, c.params.up_q,
+        c.params.up_s, c.params.down_q, c.params.down_s
+    };
     c.pending = command;
     [command commit];
     return 1;
@@ -293,8 +339,13 @@ int samosa_metal_expert_wait(
     if (gpu_seconds)
         *gpu_seconds = command.GPUEndTime > command.GPUStartTime
             ? command.GPUEndTime - command.GPUStartTime : 0.0;
-    if (ok) memcpy(output, c.output.contents,
-                   (size_t)c.params.D * sizeof(float));
+    if (ok) {
+        SamosaMetalParams params = c.params;
+        /* The pending command may contain 1..16 rows. Store the row count in
+         * the otherwise immutable context params until wait consumes it. */
+        memcpy(output, c.output.contents,
+               (size_t)params.rows * params.D * sizeof(float));
+    }
     else fprintf(stderr, "[metal] command failed: %s\n",
                  command.error.localizedDescription.UTF8String);
     c.pending = nil;

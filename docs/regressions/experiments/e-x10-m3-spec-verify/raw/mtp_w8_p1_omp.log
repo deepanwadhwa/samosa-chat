@@ -1,0 +1,9 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=48 thinking_budget=0
+[config] overlap=enabled (SAMOSA_OVERLAP=1, B0 step 1: readahead-ahead-of-pread)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[mtp-probe] EXPERIMENTAL shadow mode enabled window=8 (native int8 head; output remains CPU baseline)
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[mtp-probe] windows=15 proposed=114 compared=47 accepted=33 alpha=0.2895 compared_match=0.7021 ideal_tokens/verify=3.200 draft_ms/token=12.338 total_s=1.407
+[stats] prompt=24 generated=48 stop=limit thinking=model-controlled prefill=2.757s (8.71 tok/s) decode=7.951s (5.91 tok/s) total=10.708s expert_hit=8260/18897 (43.7%) expert_disk=4.838s expert_mm=1.789s peak_rss=3.83 GB physical_rss=5.44 GB
+[ecache] budget=2.07 GB payload=1.72 GB peak=1.73 GB entries=656 evictions=9981 bytes_read=21.54 GB bytes_avoided=16.70 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=0 wasted_prefetch_bytes=0.00 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

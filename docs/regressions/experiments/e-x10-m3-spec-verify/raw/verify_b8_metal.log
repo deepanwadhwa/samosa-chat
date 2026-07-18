@@ -1,0 +1,30 @@
+[teacher] corpus=docs/regressions/experiments/e-x10-m3-spec-verify/raw/k2_corpus.json output=docs/regressions/experiments/e-x10-m3-spec-verify/raw/verify_b8_metal.qtf tokenizer=/Users/deepanwadhwa/samosa_release_upload/tokenizer_qwen36.json calibration=1
+[config] overlap=enabled (SAMOSA_OVERLAP=1, B0 step 1: readahead-ahead-of-pread)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[metal] EXPERIMENTAL combined decode enabled device=Apple M3 (GPU routed=8 + CPU routed=0/shared + SSD predictor)
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[teacher] verification_batch=8 (EXPERIMENTAL weight-reuse probe)
+[teacher] sequence=1/3 positions=87/180
+[teacher] sequence=2/3 positions=144/180
+[teacher] sequence=3/3 positions=180/180
+[teacher] wrote=docs/regressions/experiments/e-x10-m3-spec-verify/raw/verify_b8_metal.qtf sequences=3 positions=180 calibration=1 elapsed=20.738s
+real 22.13
+user 19.60
+sys 11.88
+          4022403072  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              399044  page reclaims
+                  42  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 791  voluntary context switches
+              119740  involuntary context switches
+        251701081036  instructions retired
+        112644883472  cycles elapsed
+          4776988752  peak memory footprint

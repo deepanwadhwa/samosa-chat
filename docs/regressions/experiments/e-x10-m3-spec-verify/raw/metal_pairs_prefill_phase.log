@@ -1,0 +1,11 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=1 thinking_budget=0
+[config] overlap=enabled (SAMOSA_OVERLAP=1, B0 step 1: readahead-ahead-of-pread)
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[metal] EXPERIMENTAL combined decode enabled device=Apple M3 (GPU routed=8 + CPU routed=0/shared + SSD predictor)
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=18 generated=1 stop=limit thinking=model-controlled prefill=2.633s (6.84 tok/s) decode=0.000s (0.00 tok/s) total=2.633s expert_hit=0/2308 (0.0%) expert_disk=1.311s expert_mm=0.730s peak_rss=3.39 GB physical_rss=4.37 GB
+[phase] prefill tokens=18 wall=2.633s attn=0.114s/6.31ms_tok router=0.075s/4.19ms_tok dense=0.331s/18.38ms_tok expert_mm=0.730s/40.58ms_tok expert_disk=1.311s/72.81ms_tok head=0.047s/2.61ms_tok other=0.025s/1.40ms_tok | decode tokens=0 wall=0.000s attn=0.000s/0.00ms_tok router=0.000s/0.00ms_tok dense=0.000s/0.00ms_tok expert_mm=0.000s/0.00ms_tok expert_disk=0.000s/0.00ms_tok head=0.000s/0.12ms_tok other=0.000s/0.00ms_tok
+[metal-combined] layers=120 fallbacks=7 gpu_experts=8 cpu_experts=0 submit=0.031ms/layer cpu_shared_overlap=0.388ms/layer cpu_routed_overlap=0.000ms/layer gpu=5.740ms/layer wait_tail=5.976ms/layer overlap_window=0.388ms/layer
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=1652 bytes_read=4.54 GB bytes_avoided=0.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=0 wasted_prefetch_bytes=0.00 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
