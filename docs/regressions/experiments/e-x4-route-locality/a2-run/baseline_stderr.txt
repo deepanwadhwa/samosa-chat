@@ -1,0 +1,8 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=256 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=949 generated=112 stop=model thinking=model-controlled prefill=42.454s (22.35 tok/s) decode=14.026s (7.91 tok/s) total=56.479s expert_hit=17295/43450 (39.8%) expert_disk=8.015s expert_mm=14.504s peak_rss=3.59 GB physical_rss=4.51 GB
+[phase] prefill tokens=949 wall=42.454s attn=9.735s/10.26ms_tok router=3.697s/3.90ms_tok dense=12.367s/13.03ms_tok expert_mm=11.930s/12.57ms_tok expert_disk=2.147s/2.26ms_tok head=0.031s/0.03ms_tok other=2.548s/2.68ms_tok | decode tokens=111 wall=14.026s attn=1.386s/12.49ms_tok router=0.498s/4.48ms_tok dense=2.756s/24.83ms_tok expert_mm=2.574s/23.19ms_tok expert_disk=5.868s/52.86ms_tok head=0.849s/7.65ms_tok other=0.094s/0.84ms_tok
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=25499 bytes_read=51.42 GB bytes_avoided=34.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
