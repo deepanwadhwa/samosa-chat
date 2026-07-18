@@ -18,10 +18,10 @@ env var or a separate build, measured on the reference machine, and honest
 about negative results. **A negative result is a result** — an experiment
 that kills an idea has done its job.
 
-## Verified ground truth (2026-07-17, reference M3 Air, Apple clang 21.0.0)
+## Verified ground truth (2026-07-17/18, reference M3 Air, Apple clang 21.0.0)
 
-Every row was verified on 2026-07-17 by the method stated. Do not re-derive;
-do re-verify if the toolchain or model changes.
+Every row was verified on the date stated by the method stated. Do not
+re-derive; do re-verify if the toolchain or model changes.
 
 | Fact | Evidence |
 |---|---|
@@ -37,6 +37,10 @@ do re-verify if the toolchain or model changes.
 | **Threads:** default 2 on macOS — the owner's comfort preference on a fanless chassis, ~7.3 tok/s vs ~9.5 at 4 threads, OS thermal pressure zero at both ([qwen36b.c:5079-5083](../src/qwen36b.c#L5079-L5083)). `SAMOSA_FAST=1` enables the H3 adaptive controller ([:3246-3250](../src/qwen36b.c#L3246-L3250)); E-H3 tuning is still unrun ([:3411](../src/qwen36b.c#L3411)). Thread-count changes were measured **byte-identical** in output (no reductions anywhere in `src/`) — see H3. | code read + H3 card |
 | Every hot kernel parallelizes with `#pragma omp parallel for schedule(static)` ([kernels.h](../src/kernels.h) throughout). On 4P+4E asymmetric cores a static split barriers on the slowest thread. | code read, 2026-07-17 |
 | A GPU/CUDA backend seam already exists in the matmul dispatcher ([kernels.h:347-357](../src/kernels.h#L347-L357)); resident tensors are marked by `cuda_eligible` ([:41](../src/kernels.h#L41)). | code read, 2026-07-17 |
+| **The checkpoint ships a native MTP draft head, loaded but never run.** The active snapshot's `config.json` (`text_config`) reads: 40 MoE layers × 256 experts, top-8, hidden 2048, `moe_intermediate_size` 512, and **`mtp_num_hidden_layers: 1`**. The engine sizes every expert table for `n_layers + mtp_layers` ([qwen36b.c:1284](../src/qwen36b.c#L1284), [:2345](../src/qwen36b.c#L2345)), requires MTP experts to be `passthrough-int8` ([:1679](../src/qwen36b.c#L1679)), and maps layer index `n_layers` as int8 in `expert_views` ([:1845-1850](../src/qwen36b.c#L1845-L1850)) — but the forward loop stops at `n_layers` ([:3092](../src/qwen36b.c#L3092)). See E-X8's 2026-07-18 addendum. | config read (`~/.samosa/current/model/config.json`) + code read, 2026-07-18 |
+| **Decode is single-batch in `mlp_moe`.** At S=1, `nu ≤ 8 < 64`, so the existing next-batch prefetch ([qwen36b.c:2977-2987](../src/qwen36b.c#L2977-L2987)) never fires during decode; miss loads ([:2964-2975](../src/qwen36b.c#L2964-L2975)) fully block before any expert math ([:2989-3021](../src/qwen36b.c#L2989-L3021)). Expert planes average ~2.0 MB (20,942,159,872 B ÷ 41×256 planes). | code read + arithmetic, 2026-07-18 |
+| **`posix_fadvise(WILLNEED)` is real on macOS.** [compat.h:13-36](../src/compat.h#L13-L36) maps it to `fcntl(F_RDADVISE)` (explicit readahead), so `expert_prefetch` ([qwen36b.c:1912-1935](../src/qwen36b.c#L1912-L1935)) does real work on the reference machine. | code read, 2026-07-18 |
+| **A colibrì clone sits in-repo at `colibri/` (Apache-2.0)** — the engine lineage Samosa credits ([expert_cache.h:1](../src/expert_cache.h#L1) still carries its `COLIBRI_EXPERT_CACHE_H` guard). Its measured mechanisms are imported as *external, directional* evidence into E-X4 and E-X8 — provenance labeled there, never quoted as Samosa numbers. | clone + LICENSE read, 2026-07-18 |
 
 **Unverified, investigate before relying on:** the semantics of `REF`
 ([qwen36b.c:5228](../src/qwen36b.c#L5228)) and the `teacher_corpus` /
@@ -54,10 +58,24 @@ both look like scoring/comparison hooks that E-X8 could reuse.
   expert-miss stalls, attention, dense matmul, dequant — is exactly what
   E-X1 measures. Every "expected gain" below is an estimate until E-X1
   replaces it with a measurement.
+- **E-X1 delivered the decode table (2026-07-17, clean 4T W-DECODE,
+  accepted under the owner's footprint tolerance):** 131.49 ms/token =
+  attention 13.12 + router 4.56 + resident dense 25.53 + expert matmul
+  23.37 + **expert disk 56.11** + head 7.88 + other 0.92, at 7.60 tok/s
+  (2T: 159.68 ms total, 59.70 disk, 6.26 tok/s). The non-disk floor is
+  therefore **75.4 ms/token = 13.3 tok/s at 4T: hiding the expert-disk
+  bucket alone spans the 12–15 gate.** That single measured fact is why the
+  revised E-X4 (2026-07-18) now leads the decode work. Evidence:
+  [e-x1-phase-baseline/report.md](regressions/experiments/e-x1-phase-baseline/report.md)
+  (on the experiments branch).
 - Honest prediction recorded up front: E-X2–E-X7 plausibly reach ~10–12;
-  the stretch to 15 most likely requires E-X8 (speculation) or E-X9
-  (adaptive top-k), both of which are gated — one on a measured acceptance
-  rate, the other on an owner quality decision.
+  the stretch to 15 most likely requires E-X8 (speculation), E-X9
+  (adaptive top-k), or the Metal track (E-X10, reopened 2026-07-17) — all
+  gated: E-X8 on a measured acceptance rate, E-X9 on an owner quality
+  decision, E-X10 on its one-day M0 spike. The strongest path to 15+ is
+  the *combination*: E-X10 M3 (CPU drafts, GPU verifies) multiplies E-X8's
+  speculation by Metal's cheap batched verification, and M2 lowers J/token
+  so whatever speed is reached actually *sustains* on a fanless chassis.
 - **Owner decision (2026-07-17): the target is *generic felt speed*, not
   long-session speed.** "12–15" means what a user feels in an ordinary chat
   — the owner does not assume users will run very long sessions. Two
@@ -75,7 +93,9 @@ than speed.
 
 ```
 E-X1 (baseline + phase timers)  ── gates everything below
-├── E-X4 Phase A (routing locality)      cheap, measurement-only; feeds E-X8
+├── E-X4 (miss-stall overlap; revised 2026-07-18: A done, negative for v1
+│         → A2 lookahead probe → B0 overlap → B1 pilot prefetch)
+│                                        the direct attack on the 56 ms disk bucket
 ├── E-X5 (schedule/threads sweep)        cheap, one-line build variant
 ├── E-X8 (speculation go/no-go)          measurement → maybe a new card; the ×-multiplier candidate
 ├── E-X9 (adaptive top-k sweep)          measurement → owner decision; the other multiplier
@@ -83,7 +103,9 @@ E-X1 (baseline + phase timers)  ── gates everything below
 ├── E-X6 (i8mm dispatch)                 code, bit-exact gate; time-to-first-token
 ├── E-X7 (Accelerate/AMX prefill)        code, owner note (build change); time-to-first-token
 └── E-X2 (fp16 KV)                       code; demoted to footprint/swap-safety — see its card
-E-X10 (Metal) — deferred placeholder, not scheduled
+E-X10 (Metal M-track: M0 spike → M1 prefill → M2 decode → M3 draft/verify)
+      — reopened by owner 2026-07-17; M0 runnable anytime and is the track's RUN-FIRST
+E-X11 (MLX / llama.cpp yardstick) — independent, anytime; calibrates the target against Metal-native engines
 ```
 
 ---
@@ -298,52 +320,207 @@ trusting differences.
 
 ---
 
-## E-X4 — Expert reuse locality, then prefetch overlap  ~2–4 days, hard gate between phases
+## E-X4 — Expert-miss overlap: locality (A, done), lookahead probe (A2), overlap prototypes (B0/B1)  ~4–6 days, hard gates between phases
 
-**Hypothesis:** expert routing has temporal locality across consecutive
-tokens; miss stalls (`expert_disk`) can be hidden behind attention compute
-by prefetching predicted experts. Also produces the expert-union statistics
-E-X8 needs for free.
+**Revised 2026-07-18** after an owner-directed analysis of the in-repo
+colibrì clone. Phase A ran 2026-07-17 and was **negative for the v1
+persistence predictor**; this revision replaces that dead predictor with a
+measured-elsewhere alternative (A2/B1) and adds a prediction-free overlap
+prototype (B0) that needs no predictor at all. Phase A evidence:
+[e-x4-route-locality/report.md](regressions/experiments/e-x4-route-locality/report.md).
 
-**What exists:** `ROUTE_TRACE`/`ROUTE_REPLAY`
-([qwen36b.c:763-799](../src/qwen36b.c#L763-L799) — verify the trace format
-before scripting); prefetch admission + waste counters in the cache
-([expert_cache.h:72-75](../src/expert_cache.h#L72-L75), [:180-181](../src/expert_cache.h#L180-L181));
-`expert_disk` seconds in `[stats]`.
+**Why this card now leads the decode work.** E-X1's clean 4T W-DECODE table
+puts **expert-disk stalls at 56.11 of 131.49 ms/token (43%) — warm** (2T:
+59.70 of 159.68). Everything else combined is 75.4 ms/token at 4T, i.e.
+**13.3 tok/s if the stall were fully hidden — this one bucket spans the
+12–15 gate.** No other card removes it: E-X3 (budget shrink) measured
+negative, growing the LRU is settled-slower, and E-X8/E-X10 route around
+the stall rather than attacking it.
 
-**Phase A — measurement only (~1 day):**
-1. `ROUTE_TRACE` a W-DECODE and a W-SESSION run.
-2. New `tools/route_locality.py`: per layer — expert reuse-distance
-   distribution; next-token overlap (how much of token t+1's expert set is
-   predicted by token t's); hot-set concentration (what fraction of
-   (layer, expert) pairs serve 90% of references); and **expert-union size
-   for windows of 4/6/8 consecutive tokens** (this is E-X8's cache-pressure
-   input — compute it here once).
-3. Combine with E-X1's warm `expert_disk` ms/token.
+**Phase A result (2026-07-17, done — negative for v1):** mean next-token
+overlap 35.19% (weakest layer 3.94%), median reuse distance 2 tokens,
+expert unions 21.67 / 28.61 / 34.66 for 4/6/8-token windows. "Token t's
+experts predict token t+1" implies far too much waste for the <20% target;
+**Phase B under the v1 predictor stays dead.** The union numbers feed E-X8
+regardless.
 
-**Gate:** proceed to Phase B only if warm miss stalls ≥ ~10 ms/token *and*
-next-token predictability is high enough that prefetch waste would stay
-under ~20% of `bytes_read`. Otherwise close the card with the analysis —
-that analysis is still the foundation of E-X8 and a pinning decision.
+**Colibrì provenance (external evidence — different model, GLM-5.2, and
+different machines; directional for design, never a Samosa claim):**
+colibrì streams a 744B MoE from disk with the engine family Samosa derives
+from. Two of its shipped mechanisms attack exactly our stall:
 
-**Phase B — prototype (~2 days):**
-1. One pthread prefetcher. **The cache API is not thread-safe**
-   ([expert_cache.h:14](../src/expert_cache.h#L14)): the thread only
-   `pread`s predicted experts into staging buffers; the engine thread
-   admits them with `ECACHE_ADMIT_PREFETCH` at its next natural touch
-   point. Predictor v1: token t's expert set predicts token t+1 (persistence
-   — the simplest thing Phase A can validate).
-2. Opt-in `SAMOSA_PREFETCH=1`. Print `wasted_prefetch_planes/bytes` in the
-   `[ecache]` line (counters exist; they are not currently printed).
-3. Measure W-DECODE/W-SESSION: decode tok/s, `expert_disk`, waste ratio.
+- **`PIPE` async expert-load pool** — overlaps expert `pread` with expert
+  matmul so the CPU never idles on the SSD; **−18% disk service time**
+  measured on their dev box. Prediction-free. This is B0.
+- **`PILOT=1` router lookahead** — applying layer L+1's router to layer L's
+  post-attention state recalls **71.6%** of the true top-8, vs **41.3%**
+  for "same experts as last token" (their persistence baseline — consistent
+  with our 35.19% Phase A negative, which corroborates comparing notes). A
+  dedicated I/O thread prefetches predicted experts while the current layer
+  computes. Neutral on their disk-saturated box; on machines profiled
+  "43% disk / 46% matmul" they predict real overlap — **our 4T decode is
+  43% disk.** Their main↔pilot thread-safety invariants
+  ([colibri/c/glm.c:1176-1192](../colibri/c/glm.c#L1176-L1192)) are the
+  reference design for B1. This is A2 (measure it on *our* model first)
+  then B1 (build it only if A2 passes).
 
-**Quality:** none expected — prefetch changes *when* bytes are read, never
-what is computed. Confirm same-seed byte-identity anyway (cheap).
+### Phase A2 — in-engine router-lookahead probe  ~1 day  measurement-only; gates B1
 
-**Acceptance:** decode tok/s up beyond noise with waste <20% and J/token not
-worse than proportional to the gain; or a recorded negative. Reads cost
-power, not SSD life (H1) — but they evict page cache, so re-run the E-X3
-residency check with prefetch on.
+**Hypothesis:** Qwen3.6-35B-A3B's layer-L+1 routing is substantially
+predictable from layer-L state, as GLM-5.2's is. If recall@k′ is high at
+small k′, cross-layer prefetch has a window wide enough to hide most of the
+per-layer miss stall (per-layer stall ≈ 56.11/40 ≈ 1.4 ms vs an available
+cross-layer window of ≈ 1.6 ms — full coverage is arithmetically possible).
+
+**Why in-engine:** `ROUTE_TRACE` records routing *decisions*, not hidden
+states — this cannot be computed offline from the existing Phase A traces.
+The probe must live in the forward pass, where it is nearly free.
+
+**Method:**
+1. Opt-in `SAMOSA_PILOT_PROBE=1`, S=1 only (decode is the phase that
+   matters). In `mlp_moe` ([qwen36b.c:2742](../src/qwen36b.c#L2742)), after
+   layer L's routing is ranked ([:2853-2859](../src/qwen36b.c#L2853-L2859)),
+   compute the **prediction for layer L+1**: `matmul_qt` against
+   `m->L[layer+1].router_w`, rank top-k′ for k′ ∈ {4, 6, 8, 12, 16}, store
+   in a per-model scratch. When layer L+1's own routing runs, score
+   predicted-vs-actual top-8 before overwriting. The last MoE layer
+   predicts nothing (cross-token prediction is the dead v1).
+2. **Two probe-input variants, separate runs:**
+   - **P1** — the exact vector layer L's router consumed (the `x` argument
+     of `mlp_moe`: the `post_ln`-normed post-attention state; zero extra
+     norms). Widest prefetch window: L's expert phase + L+1's
+     attention/dense (≈1.6 ms/layer at 4T).
+   - **P2** — after L's MoE completes, renorm the updated residual with
+     `m->L[layer+1].post_ln`, then L+1's `router_w`. Closer state (only
+     L+1's attention delta missing) → higher expected recall, narrower
+     window (≈1.0 ms/layer).
+3. Emit one `[pilot]` line per turn: recall@k′ of the true top-8 —
+   aggregate and per-layer min/median/max — split by `block_type`
+   (deltanet vs GQA attention alternates,
+   [:3103-3106](../src/qwen36b.c#L3103-L3106)), plus same-layer persistence
+   overlap as a free sanity anchor against Phase A's 35.19%.
+4. Overhead guard: the probe is one 256×2048 row matmul + a top-k′ scan per
+   MoE layer per token (~0.5 M MACs — microseconds). Verify with the E-X1
+   phase timers: router-bucket and tok/s deltas both <2%, else fix the
+   probe before trusting its numbers.
+5. Workloads: W-DECODE and W-SESSION, warm, 1 warm-up + 3 measured, per
+   common protocol.
+
+**Quality:** the probe reads state and writes only its own counters;
+routing must be untouched. Same-seed output SHA-256 must equal baseline.
+Any divergence is a probe bug, full stop.
+
+**Acceptance — and the B1 gate:** a k′ → {recall, per-layer min, predicted
+waste} table for P1 and P2. Precision@k′ = recall@k′ × 8/k′; predicted B1
+waste ≈ (1 − precision) of prefetched bytes (at k′=8, waste% ≈ 100 −
+recall%; smaller k′ trades coverage for precision — read the tradeoff off
+the measured curve, never hand-wave it). **B1 is authorized only if some k′
+gives recall ≥ ~60% of true top-8 with predicted waste < 20% of today's
+`bytes_read`.** Below that: close B1 with the curve — it still calibrates
+E-X10's `MTLIOCommandQueue` prefetch variant later.
+
+### Phase B0 — prediction-free read/compute overlap  ~1–2 days  independent of A2; run it regardless
+
+**Hypothesis (colibrì `PIPE`):** at decode the engine discovers all ≤8
+routed experts of a layer at once ([:2949-2962](../src/qwen36b.c#L2949-L2962)),
+then **blocks** on all misses ([:2964-2975](../src/qwen36b.c#L2964-L2975))
+before any expert math ([:2989-3021](../src/qwen36b.c#L2989-L3021)).
+Overlapping the two hides up to min(t_expert_mm, t_edisk) ≈ **23 ms/token**
+at 4T — waste-free by construction, since every byte read is needed this
+layer.
+
+**Design constraint — byte-identity:** expert outputs accumulate into `out`
+in `uniq` order ([:3012-3017](../src/qwen36b.c#L3012-L3017)); float
+accumulation order must not change. B0 may change **when reads happen**,
+never evaluation order: evaluate in the original `uniq` order, waiting
+per-expert for its bytes just before its matmul.
+
+**Method:**
+1. Step 1 — zero threads (~1 hour): at miss discovery, issue
+   `expert_prefetch()` (F_RDADVISE readahead,
+   [:1912-1935](../src/qwen36b.c#L1912-L1935) via
+   [compat.h:13-36](../src/compat.h#L13-L36)) for **all** misses of the
+   layer before the first blocking load, so the kernel readahead train runs
+   ahead of the `pread` train. Measure; keep it regardless (it cannot
+   hurt).
+2. Step 2 — `SAMOSA_OVERLAP=1`, one loader pthread: the engine hands the
+   miss list to a loader that `pread`s into its **own staging slabs**
+   (never touching the cache — the API is not thread-safe,
+   [expert_cache.h:14](../src/expert_cache.h#L14)). The engine evaluates
+   hits first-in-order, then each miss as its slab completes (condvar);
+   admission stays on the engine thread post-compute, reusing the existing
+   slab-handoff pattern ([:3025-3051](../src/qwen36b.c#L3025-L3051)).
+3. Phase-timer honesty: under `SAMOSA_OVERLAP=1`, `PHASE_EXPERT_DISK` must
+   count **only actual engine-thread wait** (condvar wait), not loader I/O
+   time — that is the number being optimized, and it keeps E-X1
+   comparability. State the redefinition in the report.
+4. Measure W-DECODE + W-SESSION at 2T and 4T, warm ×3 + warm-up. The loader
+   competes with OMP compute threads for cores: report the interference
+   honestly — if overlap favors the 2T default configuration, that is a
+   finding (and a good one for the owner's comfort preference), not a
+   failure.
+
+**Quality:** byte-identity (same-seed SHA-256 vs baseline) — required.
+
+**Acceptance:** decode tok/s up ≥3% beyond noise with `expert_disk`
+(redefined as stall) visibly down and J/token not worse than proportional;
+or a recorded negative. Pre-registered ceiling: −23 ms/token (7.60 → ~9.2
+tok/s at 4T); realistic pre-registration: −10 to −18 ms.
+
+### Phase B1 — cross-layer pilot prefetch  ~2 days  gated on A2 **and** B0 experience
+
+**Method:**
+1. Reuse A2's probe (variant and k′ chosen from its measured curve) and
+   B0's loader thread. At layer L the **engine thread** filters L+1
+   predictions through `ecache_peek`
+   ([expert_cache.h:210](../src/expert_cache.h#L210) — no recency or
+   telemetry mutation) and pushes only non-resident ones to the loader,
+   which `pread`s into staging while L's expert math and L+1's
+   attention/dense run. Colibrì's two-part safety invariant applies
+   verbatim ([colibri/c/glm.c:1176-1192](../colibri/c/glm.c#L1176-L1192)):
+   the loader touches only future-layer staging, never the cache; every
+   cache mutation stays on the engine thread.
+2. At L+1's miss discovery, drain matching staged slabs first — admitting
+   with `ECACHE_ADMIT_PREFETCH` so `wasted_prefetch_planes/bytes`
+   ([expert_cache.h:72-75](../src/expert_cache.h#L72-L75),
+   [:180-181](../src/expert_cache.h#L180-L181)) finally engage — then fall
+   through to B0's path for the rest. Print the waste counters in the
+   `[ecache]` line (they exist and are currently unprinted).
+3. Bound in-flight staging: k′ × 2 layers × ~2.0 MB ≈ ≤64 MB, counted
+   against the footprint ceiling. Prefetch never blocks the engine: loader
+   behind → drop and count (colibrì's `g_pilot_drops` analogue).
+4. Opt-in `SAMOSA_PREFETCH=1` (implies the probe). Measure W-DECODE +
+   W-SESSION, 2T/4T, warm ×3 + warm-up; **re-run the E-X3 residency check
+   with prefetch on** — extra reads evict page cache; measure, don't
+   assume.
+
+**Quality:** byte-identity, same bar as B0 (prefetch changes when bytes are
+read, never what is computed — prove it with the SHA every leg).
+
+**Acceptance:** additional decode gain beyond B0 with measured waste <20%
+of `bytes_read` and J/token not worse than proportional; footprint delta
+accounted. **Pre-registered ceilings, to be replaced by measurement:**
+B0+B1 at perfect prediction removes the stall entirely → 75.4 ms/token =
+13.3 tok/s at 4T (2T: 99.98 ms = 10.0); at ~70% recall the honest
+expectation is ~90–105 ms/token ≈ **9.5–11 tok/s at 4T**. If the measured
+curve lands there, the remaining gap to 12–15 belongs to E-X8/E-X9/E-X10 —
+say so in the report rather than stretching claims.
+
+**Files:** [src/qwen36b.c](../src/qwen36b.c) (probe, loader thread,
+overlap-aware disk accounting); **no `expert_cache.h` changes** (the
+admission API already exists); optionally a tiny `tools/pilot_curve.py` to
+tabulate `[pilot]` lines. Makefile untouched — everything is env-gated in
+the standard build.
+
+**Safety:** standard telemetry on every leg. Extra reads cost power, not
+NAND (H1) — J/token is the honest cost; report it per leg. Staging bytes
+are physical footprint; the 5 GB abort applies. The owner's live capture
+(started 2026-07-18) is
+`sudo /usr/bin/powermetrics --samplers cpu_power,gpu_power,thermal -i 1000 -o /tmp/samosa-e-x10-m0-powermetrics.log`
+— note `/tmp` does not survive reboot: copy each leg's slice into the
+evidence directory immediately after the run. The `gpu_power` sampler is a
+superset of the protocol's requirement; for CPU-only legs it doubles as a
+control (GPU power should be ~0).
 
 ---
 
@@ -508,8 +685,12 @@ teacher forcing, most of the harness exists.
 **Go/no-go:** modeled end-to-end speedup ≥1.4× at measured α and union
 sizes → write a separate implementation card (KV rollback design,
 sampling-mode acceptance, cache-pressure mitigation) for owner review.
-Below that → close with the numbers; the target then rests on E-X9 or a
-lower target.
+Below that → close with the numbers; the target then rests on E-X9, the
+Metal track, or a lower target. **Publish the full α/W curve either way**,
+not just the verdict: E-X10 M3 replaces `t_verify` with a much cheaper
+GPU batched pass, so an α that fails this CPU-only gate may still fund
+CPU-draft/GPU-verify — the curve lets that cell be recomputed without
+re-measuring.
 
 **Quality:** the measurement phase has no quality surface. An eventual
 implementation is class 3 at minimum during bring-up (greedy acceptance is
@@ -518,6 +699,68 @@ it).
 
 **Files (measurement):** `tools/spec_accept.py` (new); possibly a small
 score-mode addition in [src/qwen36b.c](../src/qwen36b.c).
+
+### E-X8 addendum (2026-07-18) — colibrì evidence import + the checkpoint's own draft head
+
+Status upstream of this addendum: the harness is **built, committed, and
+smoke-tested** on the experiments branch (tokens score mode in the engine,
+`tools/spec_accept.py`, 7 green tests — see
+[e-x8-spec-accept/report.md](regressions/experiments/e-x8-spec-accept/report.md));
+the measurement itself is unrun. This addendum imports external evidence
+from the in-repo colibrì clone (GLM-5.2 on other hardware — **directional
+for design, never a Samosa claim**) and one newly verified checkpoint fact.
+It changes the measurement plan in the three numbered places below; nothing
+else in the card moves.
+
+1. **The checkpoint ships a native MTP draft head, and the engine already
+   loads it** (ground-truth table, verified 2026-07-18): `config.json`
+   (`text_config`) has `mtp_num_hidden_layers: 1`; expert tables are sized
+   for `n_layers + mtp_layers`
+   ([qwen36b.c:1284](../src/qwen36b.c#L1284), [:2345](../src/qwen36b.c#L2345));
+   MTP experts are required `passthrough-int8` ([:1679](../src/qwen36b.c#L1679));
+   `expert_views` maps layer index `n_layers` as int8
+   ([:1845-1850](../src/qwen36b.c#L1845-L1850)); the forward loop stops at
+   `n_layers` ([:3092](../src/qwen36b.c#L3092)). **The draft head is on
+   disk, parsed, and never run.** Colibrì runs GLM-5.2's equivalent head as
+   its production drafter — 39–59% acceptance, **2.2–2.8 tokens/forward**
+   (their issue #8) — and measured acceptance collapsing to 0–4% with an
+   int4 head; ours is int8 by format requirement, the good case. Wiring the
+   head is *implementation* and stays outside this measurement card; it is
+   now the **leading design candidate for the follow-up card** if E-X8's
+   numbers justify one, with [colibri/c/glm.c](../colibri/c/glm.c) (native
+   MTP drafting, batch-union verify, rejection sampling under sampling) as
+   donor design. `MOE_K` drafts remain this card's zero-code measurement —
+   and double as the lower bound the MTP head must beat.
+2. **Plan change — widen the draft ladder (still zero code):** measure
+   `MOE_K=2` beside `MOE_K=1` in steps 2–3. Colibrì's int4-head collapse
+   shows acceptance is sharply sensitive to draft quality; if K=1's α sits
+   on that cliff, K=2 steps off it for one extra leg per step. Report the
+   full ladder in the curve.
+3. **Plan change — free early warning on batched-verify identity (colibrì
+   #100):** their quantized integer kernels are shape-dependent — any S>1
+   forward rounds differently from S=1, and near-argmax ties can flip
+   (kernel-family swap alone forked greedy output on 3/5 prompts with zero
+   speculation). Samosa's idot path also quantizes activations per shape —
+   assume the same sensitivity until measured. Consequence for this card:
+   step 4's batched-verify approximation should additionally record the
+   batched forward's per-position argmax on one already-captured sequence
+   and diff it against the S=1 teacher capture. Consequence for any
+   implementation card: "greedy acceptance keeps token identity" must be
+   *demonstrated* against this effect (quality class 2 minimum during
+   bring-up), never assumed from the algorithm.
+4. **Modeling change — cold and warm are different speculation regimes:**
+   colibrì measured cold-cache expert-loads/token inflating ~660 → ~1100
+   under speculation (a net *time loss* until the cache warms). Our own
+   union numbers (21.67 / 28.61 / 34.66 experts·layer⁻¹ for W = 4/6/8 vs 8
+   at S=1, E-X4 Phase A) say the same thing in Samosa terms. Step 6's
+   speedup model must be evaluated and reported **warm and cold
+   separately**, and the draft legs must archive their `[ecache]`/`[stats]`
+   lines so the draft's own expert traffic enters the model (step 2 already
+   requires this — keep it).
+
+Runner's note: the owner's live powermetrics capture and the /tmp-survival
+caveat are recorded in E-X4's safety section — same capture file serves
+these legs.
 
 ---
 
@@ -555,27 +798,268 @@ improve. Verify, don't assume.
 
 ---
 
-## E-X10 — Metal prefill spike  **Deferred — not scheduled by this card**
+## E-X10 — The Metal track (M0–M3): a native GPU arm for the C engine, running the custom q4 format in place
 
-[TASKS_HARDWARE.md](TASKS_HARDWARE.md) lists GPU/Metal as the separate,
-already-planned post-release track, and nothing above depends on it. For
-when the owner opens that track, the shape that survives this program's
-scrutiny:
+**Status: reopened by the owner, 2026-07-17.** This card previously
+deferred Metal to the post-release track that
+[TASKS_HARDWARE.md](TASKS_HARDWARE.md) recorded as a non-goal. The owner
+explicitly reopened it ("can our C engine not have a parallel capability to
+unlock Apple Metal and run our custom quantization?") — the answer is yes,
+and this section is the design. The hardware card's non-goal is annotated
+as superseded. House rules unchanged: staged, opt-in, measured before
+claimed, and **M0 is the RUN-FIRST that can kill the whole track in one
+day** — a good outcome if it does.
 
-- **Target prefill, not decode.** Unified memory means the GPU shares the
-  same ~100 GB/s DRAM — it cannot raise the decode bandwidth ceiling; and
-  at S=1, ~50–100 µs of command-buffer latency × dozens of dispatches per
-  token eats the margin. Prefill GEMMs amortize both.
-- Unified memory makes it cheaper than it looks: wrap existing resident and
-  cache slabs with `newBufferWithBytesNoCopy` (16 KB-aligned) — no copies,
-  no second model in memory. A q4-group dequant-dot compute shader and
-  whole-layer encoding are the real work.
-- The dispatcher seam already exists ([kernels.h:347-357](../src/kernels.h#L347-L357)).
-- Its honest sales pitch on a fanless machine is J/token, not peak speed —
-  E-H1's metric decides whether it was worth it.
-- Prerequisite: E-X1/E-X6/E-X7 first — if AMX gets prefill where it needs
-  to be, Metal may never be worth its complexity. That would be a good
-  outcome, not a disappointment.
+### Why this is native to Samosa, not a port (three unlocks)
+
+1. **Unified memory: the GPU reads our bytes as they are.**
+   `newBufferWithBytesNoCopy` wraps memory the engine already owns as a
+   GPU-visible buffer — zero copy, no second model in RAM, no format
+   conversion. A Metal shader reads whatever byte layout it is told to:
+   teaching it `groupwise-symmetric-q4-v1` (16 packed nibbles + one f32
+   scale per 32 weights) is ~150 lines of MSL mirroring
+   [kernels.h:121-143](../src/kernels.h#L121-L143) line for line.
+   "MLX cannot read our format" is true; "the GPU cannot" was never true.
+2. **Zero build-system damage.** Metal shaders compile at runtime from a
+   source string (`newLibraryWithSource`). The MSL lives as a C string in
+   the binary: no `.metallib` artifact, no new build step, no third-party
+   code — just `-framework Metal` on the Makefile's Darwin branch, an OS
+   framework exactly like E-X7's Accelerate. The "no dependencies, no
+   build system" identity survives literally.
+3. **The expert cache anticipated this by name.**
+   [expert_cache.h:8-13](../src/expert_cache.h#L8-L13) keeps payload
+   allocation outside the module precisely to leave "mmap, malloc,
+   **Metal**, and other storage choices" open, and `payload_alignment` is
+   already a config field ([expert_cache.h:101-107](../src/expert_cache.h#L101-L107)).
+   Set it to 16384, allocate the cache budget as **one page-aligned
+   arena**, wrap the arena as a single MTLBuffer, and every slab the LRU
+   manages is GPU-addressable by offset — LRU, pressure ladder, and stats
+   all unchanged. The dispatcher already has a GPU seam to mirror
+   ([kernels.h:347-357](../src/kernels.h#L347-L357), the `COLI_CUDA` hook,
+   including its tested fall-back-to-CPU-on-failure pattern).
+
+### Target architecture (what exists after M2)
+
+**Split by tensor, not by op.** GPU owns the expert FFN — the
+bandwidth/compute hog, computed in native q4. CPU keeps attention, norms,
+router, KV, and sampler: serial, small, already fast with dotprod, and
+AMX-augmentable (E-X7). The two run as a per-layer pipeline inside **one
+command buffer per decode token**:
+
+```
+CPU: attn L → router L → write {expert offsets, k, activations} to shared args
+     → signal cpu_ready[L] ──────────────┐
+GPU:                     wait cpu_ready[L] → indirect-dispatch expert FFN(L)
+     ┌──────────────────── signal gpu_done[L]
+CPU: wait gpu_done[L] → attn L+1 …
+```
+
+- `MTLSharedEvent` wait/signal pairs are encoded per layer inside the one
+  command buffer (`encodeWaitForEvent:`/`encodeSignalEvent:` between
+  compute encoders), so dispatch overhead amortizes to **one commit per
+  token** instead of ~48.
+- The router writes expert *arena offsets* into an argument buffer and the
+  FFN launches via `dispatchThreadgroupsWithIndirectBuffer:` — no CPU→GPU
+  chatter beyond the event signal.
+- The CPU's idle window while the GPU chews layer L is exactly where
+  E-X4's prefetch reads and sampler prep belong — the tracks compound.
+- Opt-in `SAMOSA_METAL=1`; startup logs a `[metal]` line (device, unified
+  memory size, arena vs mmap mode); the CPU path remains the default and
+  the runtime fallback, mirroring `cuda_failed`.
+
+### The radical variant M0 must answer (page cache as the GPU's streaming layer)
+
+Instead of the arena: mmap `experts.bin` read-only, wrap the whole mapping
+as one no-copy MTLBuffer (21 GB of address space is nothing on arm64), and
+let the shader index experts by **file offset** — which the manifest
+already parses ([qwen36b.c:1180-1206](../src/qwen36b.c#L1180-L1206)). The
+OS page cache then does streaming and eviction, the GPU-side twin of
+E-X3's question. llama.cpp ships this exact pattern (mmap + no-copy Metal
+buffers) on Apple Silicon — precedent, not proof. **The unknown that
+decides it:** residency semantics. If Metal wires mapped pages at encode
+time, whole-file wrapping is a footprint bomb and the arena wins; M0
+measures the wired-memory delta directly. Two Apple-native garnishes
+either way:
+
+- `setPurgeableState(volatile)` on cold slabs lets the **OS** reclaim
+  cache memory under pressure without asking us — a hardware-assisted
+  version of the ecache pressure ladder
+  ([expert_cache.h:91-99](../src/expert_cache.h#L91-L99)); a reclaimed
+  slab re-enters through the existing miss path.
+- `MTLIOCommandQueue` (macOS 13+) issues SSD→buffer loads off the CPU
+  entirely — a candidate replacement for E-X4 Phase B's prefetch thread.
+
+### The physics, honestly
+
+- The GPU shares the same ~100 GB/s DRAM. It adds **zero bandwidth**; what
+  it adds is more efficient compute and CPU/GPU concurrency. At ~9.5 tok/s
+  we are far from the bandwidth ceiling, so there is real room — but no
+  claim of "GPU = faster memory" may ever appear in a report.
+- On a fanless chassis the honest metric is **J/token** (E-H1): GPU GEMM
+  burns fewer joules per FLOP than NEON, and lower J/token is what lets a
+  speed *sustain* instead of throttling away. Even tok/s parity at lower
+  J/token is a win worth shipping.
+- Decode stays sequential across layers. The only concurrency is the
+  within-token CPU/GPU overlap above and the M3 speculation pipeline —
+  never oversell it as parallel decoding.
+
+### Known costs, each with a planned measurement
+
+| Cost | Measured by | Mitigation if bad |
+|---|---|---|
+| Sync tax: ~48 event round-trips/token | M0.4 (µs per ping-pong × 48) | GPU takes consecutive layer *pairs*; or M1-only (prefill has no such tax) |
+| Metal runtime + pipeline memory vs the 4.5 GB footprint ceiling | M0 footprint delta | arena mode; smaller pipeline set |
+| GPU float reassociation ≠ CPU | class-2 quality protocol (same as E-X7) | report divergence stats; suite review |
+| Identity: ObjC enters a pure-C codebase | — | one small fenced `.m` file (or C via `objc_msgSend`) + embedded MSL string; diff stays reviewable; owner accepted the direction 2026-07-17 |
+| Driver/OS variance | log Metal feature set in `[metal]` line | claims scoped to the reference machine only, per standing rules |
+
+### M0 — the spike  ~1 day  **RUN THIS FIRST — kills or funds the entire track**
+
+Standalone `tools/metal_spike.m` (or `.c` + ObjC runtime), **zero engine
+changes**; it includes [src/kernels.h](../src/kernels.h) directly so the
+CPU reference (`matmul_i4_grouped`/`_idot`) is the exact production code.
+Six numbered measurements, all in one report:
+
+1. **Correctness.** Synthetic q4-group-32 tensors *and* one real expert
+   slab read straight from `experts.bin` via manifest offsets. GPU
+   dequant-dot vs CPU reference: report max abs/rel error. Expect f32
+   reassociation noise (~1e-6 relative), not zero — say so.
+2. **Throughput.** Expert-shaped matmuls at S ∈ {1, 8, 32, 128}: GFLOP/s
+   GPU vs NEON 1-thread and 4-thread. The S=1 cell decides whether M2 is
+   even plausible; the S≥32 cells decide M1.
+3. **Energy.** `powermetrics` during sustained loops on both sides →
+   J/GFLOP, CPU vs GPU. **Kill criterion: GPU J/GFLOP ≥ CPU ⇒ the track
+   dies here** — on a fanless machine there is no reason left. Record and
+   close.
+4. **Sync latency.** 1,000 iterations of empty-dispatch
+   `MTLSharedEvent` ping-pong → µs/round-trip → ×48 = predicted decode
+   tax. >~200 µs/round-trip ⇒ M2 redesigns to layer pairs before it starts.
+5. **No-copy arena.** `posix_memalign(16384, …)` arena +
+   `newBufferWithBytesNoCopy` (StorageModeShared): creation succeeds, GPU
+   reads the same bytes the CPU wrote.
+6. **mmap leg.** Wrap a mapped region of the real `experts.bin`; run the
+   kernel over a **cold** region; measure wired-memory and RSS delta
+   (`vm_stat`, `footprint`) and first-touch latency. This single number
+   decides arena vs whole-file for M1/M2.
+
+**Acceptance:** all six numbers in
+`docs/regressions/experiments/e-x10-m0-spike/report.md` with an explicit
+go/no-go verdict per criterion. **Safety:** standard telemetry; a
+sustained GPU loop is a new thermal profile for this chassis — watch
+pressure continuously, bound loops to minutes, abort rules apply.
+
+### M1 — GPU expert prefill  ~3–5 days  (gated on M0)
+
+Prefill has no sync-tax problem (few, large dispatches) and lands on
+time-to-first-token, which the felt-speed decision made first-class.
+
+- Per layer, the CPU builds per-expert token lists (the MoE scatter), then
+  one compute encoder per layer runs a 2D grid (expert × token-block) via
+  indirect args. Activations f32 first; f16 staging as an optional second
+  step (halves activation traffic; class-2 quality check).
+- Integrates behind `SAMOSA_METAL=1` at the MoE call site with the CPU
+  path intact as fallback.
+- **Measure:** W-PREFILL at 2T/4T vs CPU baseline **and vs E-X7** — AMX
+  and the GPU compete for prefill ownership. Run both; keep the winner;
+  record the loser's numbers. A split verdict is legal and likely: AMX
+  for resident dense + GPU for experts do not conflict.
+- **Quality:** class 2. **Acceptance:** ≥25% end-to-end prefill
+  improvement over the better CPU-only configuration, or close with data.
+
+### M2 — the single-command-buffer decode pipeline  ~1–2 weeks  (gated on M0.2 S=1, M0.4, and M1 experience)
+
+The target architecture above, built: arena (or mmap, per M0.6) expert
+buffer, per-layer event ping-pong, indirect dispatch from the router,
+double-buffered activation staging, KV and sampling untouched on the CPU.
+
+- **Measure:** W-DECODE tok/s and J/token vs CPU baseline — and sweep CPU
+  threads {1, 2, 4} with the GPU on. The most interesting cell is *fewer*
+  CPU threads + GPU: if 2T+GPU beats 4T CPU-only at lower package power,
+  that is the fanless-chassis jackpot (faster *and* cooler than today's
+  `--fast`).
+- **Quality:** class 2, full protocol.
+- **Acceptance:** decode ≥ CPU baseline at equal-or-lower J/token with a
+  clean quality run — parity-at-lower-J/token explicitly counts (it raises
+  *sustained* speed). Otherwise close with the numbers; M1 can stand alone.
+
+### M3 — CPU-drafts, GPU-verifies: the compound play  (gated on E-X8's α and M2)
+
+The division of labor each processor is built for: the CPU runs the
+serial, latency-sensitive `MOE_K=1` draft; the GPU verifies W tokens in
+one batched pass — batching is precisely where GPUs stop being
+latency-bound. The two pipeline: GPU verifies window N while the CPU
+drafts window N+1.
+
+- **The cost model shifts:** E-X8's speedup formula
+  (`(E[accepted]+1) / (W·t_draft + t_verify(W))`) was gated at CPU verify
+  cost. With `t_verify_gpu(W)` collapsed, a draft-agreement rate α that
+  fails E-X8's CPU-only gate may still fund M3 — E-X8's report must
+  therefore publish the *curve*, not just the verdict, so this cell can be
+  recomputed without re-measuring.
+- Greedy acceptance preserves token identity **when correctly
+  implemented** — prove it with token-identity runs during bring-up, never
+  assume it.
+- This is the strongest single candidate for closing the last gap to 15:
+  the multiplier (speculation) × the efficient verifier (Metal) × the
+  cache pre-warm (draft touches the experts verify needs) stack on the
+  same tokens.
+
+---
+
+## E-X11 — Yardstick: what do Metal-native engines achieve on this exact machine?  ~0.5–1 day, measurement-only
+
+**A question, not a hypothesis.** The 12–15 tok/s target is currently
+calibrated against nothing but our own CPU numbers. MLX (Apple's
+Metal-native ML framework; `mlx-lm` runs quantized MoE LLMs on Apple
+Silicon) and llama.cpp's Metal backend are the best available software for
+this hardware. One afternoon of measurement answers: **what does the
+platform actually deliver on this machine, and does a ~17 GB MoE even
+survive 16 GB?** Both outcomes are valuable: a high number means the
+platform ceiling is far away and E-X10 gains ambition; a swap-thrashing
+failure **validates Samosa's streaming architecture with a number** instead
+of an argument. Either way the target stops being calibrated in a vacuum.
+
+**Explicit framing — a yardstick, not a migration proposal.** Adopting
+either engine is a non-goal (below). Nothing measured here implies parity:
+no public model matches our exact 35B-A3B custom quant, so the comparison
+is directional and must be reported as such.
+
+**Method:**
+1. Sandboxed, outside the repo: `python3 -m venv ~/tmp-mlx &&
+   ~/tmp-mlx/bin/pip install mlx-lm`. Nothing is added to Samosa, its
+   build, or its dependencies. Delete the venv afterwards.
+2. Closest public cousin — a 4-bit MLX community quant of **Qwen3-30B-A3B**
+   (~17 GB, nearest MoE relative). Record the exact model repo and
+   revision in the evidence. Note the download is ~17 GB; get owner OK on
+   disk/bandwidth before pulling it.
+3. One small fully-resident control (e.g. a ~4B dense 4-bit quant) for a
+   clean platform-tok/s datapoint with zero memory pressure.
+4. Workload mirrors W-DECODE: ~1k-token prompt, 256 new tokens, 3 runs;
+   record `mlx_lm.generate`'s reported prompt/generation tok/s plus wall
+   clock.
+5. Optional leg: llama.cpp Metal with a GGUF of the same model — it mmaps
+   weights and can run larger-than-RAM, making it the closest analogue to
+   Samosa's own problem; its behaviour under that pressure is the most
+   informative single number in the card.
+6. **Safety telemetry is mandatory and stricter here** — this is the
+   likeliest experiment in the program to swap: watch `sysctl vm.swapusage`
+   continuously, **abort at +2 GB swap delta** (swap writes are the real
+   wear vector — H1); powermetrics thermal/power throughout; the 30B model
+   may fail to load or beachball the machine — run nothing else alongside,
+   be ready to kill it, and record a failure verbatim as the result.
+
+**Measure:** generation and prompt tok/s, peak memory, swap delta, thermal
+pressure, J/token where obtainable — same table columns as everything else.
+
+**Acceptance:** an engine × model → numbers table plus an interpretation
+paragraph: where the platform ceiling appears to be, what that implies for
+E-X10's priority, and a restatement that no migration is proposed. A
+failed-to-run outcome is a complete, publishable result.
+
+**Risks:** model mismatch invites false comparisons — never quote these
+numbers next to Samosa's without the caveat in the same sentence; a
+swapping run stresses the machine — the abort bound exists precisely so
+curiosity doesn't cost SSD life.
 
 ---
 
@@ -597,6 +1081,25 @@ scrutiny:
   heat, not speed. E-X5 measures precisely once, then the question closes.
 - **Publishing any new performance claim** before it is measured on the
   real model through the real interactive path, per the standing rules.
+- **Distributed inference across household machines (exo / Thunderbolt /
+  the owner's x86 laptop) — analyzed and rejected, 2026-07-18 (owner
+  question).** The only physically sound geometry is a layer-split pipeline
+  (~8 KB activations per hop), and even that fails three ways here: an
+  IP-over-Thunderbolt bridge moves ~1.2–2.5 GB/s — *slower than the local
+  SSD* (~3 GB/s), so remote RAM as an expert store loses outright; the
+  in-repo exo clone supports Apple Silicon only (its `PLATFORMS.md` lists
+  Windows as "longer term") and no distributed stack reads Samosa's custom
+  formats; and E-X1's table shows the entire prize — the 56 ms expert-disk
+  bucket — is winnable locally (E-X4). Revisit only on new hardware facts,
+  not new enthusiasm.
+- **Adopting MLX or llama.cpp as the engine.** That is replacement, not
+  optimization: a third-party framework against the product's
+  no-dependency identity, no reader for the custom groupwise-q4 /
+  row-quant formats, and no expert-aware disk streaming for the
+  larger-than-RAM case Samosa is built around. E-X11 measures them as
+  yardsticks only. Mining *ideas* is encouraged — MLX's open-source Metal
+  kernels are the reference reading for E-X10 — the engines themselves
+  stay out.
 
 ## Open questions
 
