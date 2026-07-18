@@ -1,0 +1,15 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=256 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[pilot] probe enabled variant=P1 (measurement-only, decode)
+[pilot] prefetch enabled k'=6 (E-X4 B1, cross-layer, decode)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=949 generated=112 stop=model thinking=model-controlled prefill=43.827s (21.65 tok/s) decode=14.312s (7.76 tok/s) total=58.139s expert_hit=17295/43450 (39.8%) expert_disk=6.905s expert_mm=15.852s peak_rss=3.82 GB physical_rss=4.53 GB
+[phase] prefill tokens=949 wall=43.827s attn=9.834s/10.36ms_tok router=3.725s/3.93ms_tok dense=12.838s/13.53ms_tok expert_mm=12.759s/13.45ms_tok expert_disk=2.150s/2.27ms_tok head=0.032s/0.03ms_tok other=2.488s/2.62ms_tok | decode tokens=111 wall=14.312s attn=1.479s/13.33ms_tok router=0.531s/4.78ms_tok dense=2.950s/26.58ms_tok expert_mm=3.093s/27.86ms_tok expert_disk=4.755s/42.84ms_tok head=0.852s/7.67ms_tok other=0.653s/5.88ms_tok
+[pilot] variant=P1 scored_layers=4329 recall@4=47.5% recall@6=67.2% recall@8=80.6% recall@12=91.4% recall@16=94.9% persist@K=38.8%
+[pilot] per_layer recall@8 min=49.2% median=82.2% max=88.5%
+[pilot] block_type=linear_attn layers=3219 recall@4=47.4% recall@6=67.0% recall@8=80.5% recall@12=91.2% recall@16=94.7%
+[pilot] block_type=full_attn layers=1110 recall@4=47.8% recall@6=67.6% recall@8=81.1% recall@12=91.9% recall@16=95.6%
+[pilot-prefetch] k'=6 issued=11224 used=7705 wasted_prefetch_planes=1412 wasted_prefetch_bytes=2776.10 MB waste=12.6% dropped=346
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=25499 bytes_read=51.42 GB bytes_avoided=34.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=4288 wasted_prefetch_bytes=8430.55 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

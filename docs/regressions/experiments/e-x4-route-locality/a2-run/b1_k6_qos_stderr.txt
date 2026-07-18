@@ -1,0 +1,15 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=256 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[pilot] probe enabled variant=P1 (measurement-only, decode)
+[pilot] prefetch enabled k'=6 (E-X4 B1, cross-layer, decode)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=949 generated=112 stop=model thinking=model-controlled prefill=140.172s (6.77 tok/s) decode=25.780s (4.31 tok/s) total=165.952s expert_hit=17295/43450 (39.8%) expert_disk=9.310s expert_mm=45.515s peak_rss=3.42 GB physical_rss=4.52 GB
+[phase] prefill tokens=949 wall=140.172s attn=34.385s/36.23ms_tok router=13.548s/14.28ms_tok dense=45.139s/47.56ms_tok expert_mm=40.628s/42.81ms_tok expert_disk=3.871s/4.08ms_tok head=0.085s/0.09ms_tok other=2.517s/2.65ms_tok | decode tokens=111 wall=25.780s attn=4.700s/42.35ms_tok router=1.622s/14.61ms_tok dense=5.567s/50.15ms_tok expert_mm=4.888s/44.03ms_tok expert_disk=5.438s/49.00ms_tok head=1.849s/16.66ms_tok other=1.716s/15.46ms_tok
+[pilot] variant=P1 scored_layers=4329 recall@4=47.5% recall@6=67.2% recall@8=80.6% recall@12=91.4% recall@16=94.9% persist@K=38.8%
+[pilot] per_layer recall@8 min=49.2% median=82.2% max=88.5%
+[pilot] block_type=linear_attn layers=3219 recall@4=47.4% recall@6=67.0% recall@8=80.5% recall@12=91.2% recall@16=94.7%
+[pilot] block_type=full_attn layers=1110 recall@4=47.8% recall@6=67.6% recall@8=81.1% recall@12=91.9% recall@16=95.6%
+[pilot-prefetch] k'=6 issued=11674 used=8502 wasted_prefetch_planes=1555 wasted_prefetch_bytes=3057.25 MB waste=13.3% dropped=232
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=25499 bytes_read=51.42 GB bytes_avoided=34.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=4614 wasted_prefetch_bytes=9071.49 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

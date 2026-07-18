@@ -1,0 +1,6 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=256 thinking_budget=0
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=949 generated=112 stop=model thinking=model-controlled prefill=42.894s (22.12 tok/s) decode=14.831s (7.48 tok/s) total=57.725s expert_hit=17295/43450 (39.8%) expert_disk=8.636s expert_mm=14.700s peak_rss=3.44 GB physical_rss=4.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=25499 bytes_read=51.42 GB bytes_avoided=34.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=0 wasted_prefetch_bytes=0.00 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

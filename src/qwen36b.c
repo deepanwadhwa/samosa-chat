@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "st.h"
 #include "tok.h"
 #include "json.h"
@@ -42,6 +43,9 @@
 #define matmul_qt matmul_qt_impl
 
 static int g_direct = 0;
+/* E-X4 B0: SAMOSA_OVERLAP=1 issues kernel readahead for a layer's miss
+ * set before the blocking pread loop (step 1).  Off by default. */
+static int g_expert_overlap = 0;
 static int g_idot = 1;
 static int g_stateful_idot = 1;
 static int g_moe_down_idot = 1;
@@ -766,48 +770,313 @@ typedef struct {
 } PilotProbe;
 static PilotProbe g_pilot;
 
+/* ---------- E-X4 B1: cross-layer pilot prefetch ----------
+ *
+ * SAMOSA_PREFETCH=1 turns the A2 predictor from a passive scorer into an
+ * active prefetcher: while layer L computes, a dedicated loader pthread reads
+ * layer L+1's predicted-and-non-resident experts into private staging
+ * buffers.  Gated on A2's real measurement (2026-07-18, this model): recall@6
+ * 67.2% at ~10% predicted waste, recall@8 80.6% at ~19% — both clear the
+ * card's B1 gate (recall >= ~60% at <20% waste).  Default k'=6, the safer
+ * point; SAMOSA_PREFETCH_K overrides.
+ *
+ * Safety invariant (colibri's two-part rule, adapted to this cache's actual
+ * non-thread-safe API): the loader thread NEVER calls any ecache_* function
+ * and never touches Model state other than the read-only expert_offsets/
+ * expert_sizes tables and its own staging buffers — all cache admission and
+ * all `ecache_peek`/`ecache_get` calls stay on the engine thread.  The two
+ * threads communicate through one mutex-protected single-slot batch; the
+ * engine thread only ever accesses the batch under g_pilot_mx.
+ *
+ * Scope: REFINE_OFF only (matches the reference checkpoint's default load
+ * path); the loader always reads via the buffered fd_exp regardless of
+ * DIRECT, since DIRECT is a separate, unrelated experiment. */
+/* Forward declarations: defined later in this file (expert-loading and
+ * cache-key helpers), needed here because the pilot section is deliberately
+ * grouped together near the top rather than split across the file. */
+static uint8_t refine_mask_for_rank(const Model *m, int layer, int rank);
+static void refine_pread_exact(int fd, void *buffer, uint64_t bytes,
+                               uint64_t offset, const char *description);
+static ecache_key eslot_key(int layer, int eid, uint8_t refine_mask);
+
+#define PILOT_PREFETCH_MAX PILOT_KPRIME_MAX
+enum { PPF_EMPTY = 0, PPF_REQUESTED = 1, PPF_LOADING = 2, PPF_READY = 3 };
+typedef struct {
+    int state;
+    int layer;                          /* target layer these entries belong to */
+    int n;
+    int eid[PILOT_PREFETCH_MAX];
+    uint8_t mask[PILOT_PREFETCH_MAX];
+    uint8_t *slab[PILOT_PREFETCH_MAX];  /* NULL until loaded */
+    int64_t slab_cap[PILOT_PREFETCH_MAX];
+} PilotPrefetchBatch;
+
+static pthread_mutex_t g_pilot_mx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_pilot_cv = PTHREAD_COND_INITIALIZER;
+static PilotPrefetchBatch g_pilot_batch;
+static pthread_t g_pilot_thread;
+static int g_pilot_thread_started = 0;
+static volatile int g_pilot_thread_stop = 0;
+static int g_pilot_prefetch_enabled = 0;
+static int g_pilot_prefetch_kprime = 6;
+static Model *g_pilot_model = NULL;
+static _Atomic uint64_t g_pilot_pf_issued = 0, g_pilot_pf_used = 0,
+                         g_pilot_pf_wasted_planes = 0, g_pilot_pf_wasted_bytes = 0,
+                         g_pilot_pf_dropped = 0;
+
+static void *pilot_loader_main(void *arg) {
+    (void)arg;
+    /* A QOS_CLASS_UTILITY demotion was tried here after the first k'=6
+     * measurement (expert_disk down, expert_mm up — see the report) to test
+     * a P-core-contention diagnosis.  Reverted: the very next two runs with
+     * it applied were catastrophically slow (~98% CPU vs ~305%) during
+     * PREFILL too, before this thread is even created — proof the QoS change
+     * was not the actual cause, just correlated with an unisolated machine
+     * confound.  Do not reintroduce without isolating that confound first. */
+    pthread_mutex_lock(&g_pilot_mx);
+    for (;;) {
+        while (g_pilot_batch.state != PPF_REQUESTED && !g_pilot_thread_stop)
+            pthread_cond_wait(&g_pilot_cv, &g_pilot_mx);
+        if (g_pilot_thread_stop) break;
+        g_pilot_batch.state = PPF_LOADING;
+        int layer = g_pilot_batch.layer, n = g_pilot_batch.n;
+        int eid_local[PILOT_PREFETCH_MAX];
+        memcpy(eid_local, g_pilot_batch.eid, (size_t)n * sizeof(int));
+        pthread_mutex_unlock(&g_pilot_mx);
+
+        Model *m = g_pilot_model;
+        int E = m->c.num_experts;
+        uint8_t *slab_local[PILOT_PREFETCH_MAX]; int64_t cap_local[PILOT_PREFETCH_MAX];
+        for (int i = 0; i < n; i++) {
+            slab_local[i] = NULL; cap_local[i] = 0;
+            int64_t off = m->expert_offsets[(int64_t)layer * E + eid_local[i]];
+            int64_t sz  = m->expert_sizes[(int64_t)layer * E + eid_local[i]];
+            if (sz <= 0) continue;
+            if (posix_memalign((void**)&slab_local[i], 4096, (size_t)sz) != 0) {
+                slab_local[i] = NULL; continue;
+            }
+            refine_pread_exact(m->fd_exp, slab_local[i], (uint64_t)sz, (uint64_t)off,
+                               "pilot prefetch expert blob");
+            cap_local[i] = sz;
+        }
+
+        pthread_mutex_lock(&g_pilot_mx);
+        if (!g_pilot_thread_stop && g_pilot_batch.state == PPF_LOADING &&
+            g_pilot_batch.layer == layer) {
+            for (int i = 0; i < n; i++) {
+                g_pilot_batch.slab[i] = slab_local[i];
+                g_pilot_batch.slab_cap[i] = cap_local[i];
+            }
+            g_pilot_batch.state = PPF_READY;
+        } else {
+            /* Superseded by a reset/turn boundary while loading; discard. */
+            for (int i = 0; i < n; i++) free(slab_local[i]);
+        }
+    }
+    pthread_mutex_unlock(&g_pilot_mx);
+    return NULL;
+}
+
+static void pilot_prefetch_start_thread(Model *m);
+
+/* Engine-thread only.  Filters pred_ids[0..kprime) through ecache_peek (no
+ * recency/telemetry mutation) and hands the non-resident subset to the
+ * loader.  Must be called only after pilot_prefetch_drain has emptied the
+ * single-slot batch for the CURRENT layer — see the ordering note at the
+ * pilot_probe_predict call site in mlp_moe. */
+static void pilot_prefetch_issue(Model *m, int target_layer, const int *pred_ids, int kprime) {
+    if (!g_pilot_prefetch_enabled) return;
+    if (target_layer < 0 || target_layer >= m->c.n_layers) return;
+    if (!g_pilot_thread_started) pilot_prefetch_start_thread(m);
+    if (!g_pilot_prefetch_enabled || !g_pilot_thread_started) return;
+
+    pthread_mutex_lock(&g_pilot_mx);
+    if (g_pilot_batch.state == PPF_REQUESTED || g_pilot_batch.state == PPF_LOADING) {
+        g_pilot_pf_dropped++;
+        pthread_mutex_unlock(&g_pilot_mx);
+        return;
+    }
+    if (g_pilot_batch.state == PPF_READY) {
+        /* Undrained leftover (shouldn't happen given the call-site ordering;
+         * fail safe rather than leak). */
+        for (int i = 0; i < g_pilot_batch.n; i++) free(g_pilot_batch.slab[i]);
+    }
+    uint8_t mask = refine_mask_for_rank(m, target_layer, 0);
+    int n = 0, kcap = kprime < PILOT_PREFETCH_MAX ? kprime : PILOT_PREFETCH_MAX;
+    for (int r = 0; r < kcap; r++) {
+        int eid = pred_ids[r];
+        if (eid < 0) break;
+        ecache_view view;
+        if (ecache_peek(m->ec, eslot_key(target_layer, eid, mask), &view) == ECACHE_OK)
+            continue; /* already resident; not worth prefetching */
+        g_pilot_batch.eid[n] = eid;
+        g_pilot_batch.mask[n] = mask;
+        g_pilot_batch.slab[n] = NULL;
+        n++;
+    }
+    g_pilot_batch.n = n;
+    g_pilot_batch.layer = target_layer;
+    if (n > 0) {
+        g_pilot_batch.state = PPF_REQUESTED;
+        g_pilot_pf_issued += (uint64_t)n;
+        pthread_cond_signal(&g_pilot_cv);
+    } else {
+        g_pilot_batch.state = PPF_EMPTY;
+    }
+    pthread_mutex_unlock(&g_pilot_mx);
+}
+
+/* One entry the drain handed back to mlp_moe's miss-discovery loop. */
+typedef struct { int eid; uint8_t mask; uint8_t *slab; int64_t slab_cap; } PilotReadyEntry;
+
+/* Engine-thread only, called once per mlp_moe(layer) after the union (uniq[],
+ * nu) is known and BEFORE pilot_probe_predict issues the next request — this
+ * ordering is what keeps the single-slot batch race-free (see the header
+ * comment above).  Drains a ready batch targeting `layer`, keeping only
+ * entries whose (eid,mask) actually appears in this layer's union; anything
+ * else (over-predicted or superseded) is freed immediately as measured waste. */
+static int pilot_prefetch_drain(Model *m, int layer, const int *uniq,
+                                const uint8_t *uniq_masks, int nu,
+                                PilotReadyEntry *out) {
+    if (!g_pilot_prefetch_enabled) return 0;
+    int n = 0;
+    pthread_mutex_lock(&g_pilot_mx);
+    if (g_pilot_batch.state == PPF_READY && g_pilot_batch.layer == layer) {
+        for (int i = 0; i < g_pilot_batch.n; i++) {
+            uint8_t *slab = g_pilot_batch.slab[i];
+            if (!slab) continue;
+            int eid = g_pilot_batch.eid[i]; uint8_t mask = g_pilot_batch.mask[i];
+            int in_union = 0;
+            for (int u = 0; u < nu; u++)
+                if (uniq[u] == eid && uniq_masks[u] == mask) { in_union = 1; break; }
+            if (in_union) {
+                out[n].eid = eid; out[n].mask = mask;
+                out[n].slab = slab; out[n].slab_cap = g_pilot_batch.slab_cap[i];
+                n++;
+            } else {
+                g_pilot_pf_wasted_planes++;
+                g_pilot_pf_wasted_bytes += (uint64_t)g_pilot_batch.slab_cap[i];
+                free(slab);
+            }
+        }
+        g_pilot_batch.state = PPF_EMPTY;
+        g_pilot_batch.n = 0;
+    }
+    pthread_mutex_unlock(&g_pilot_mx);
+    (void)m;
+    return n;
+}
+
+/* Frees any drained entries the miss-discovery loop did not claim (their eid
+ * turned out to already be a cache hit by another path) — measured waste. */
+static void pilot_prefetch_release_unclaimed(PilotReadyEntry *entries, int n) {
+    for (int i = 0; i < n; i++) {
+        if (!entries[i].slab) continue;
+        g_pilot_pf_wasted_planes++;
+        g_pilot_pf_wasted_bytes += (uint64_t)entries[i].slab_cap;
+        free(entries[i].slab);
+    }
+}
+
+/* Lazily starts the loader thread on the first real issue call, by which
+ * point the model (including m->refine) is fully loaded — pilot_configure()
+ * runs too early for that check.  Idempotent; permanently disables prefetch
+ * (fail safe, no thread, no behaviour change) if the checkpoint uses a refine
+ * store, since the loader's read path assumes the plain REFINE_OFF layout. */
+static void pilot_prefetch_start_thread(Model *m) {
+    if (g_pilot_thread_started || !g_pilot_prefetch_enabled) return;
+    if (m->refine.mode != REFINE_OFF) {
+        fprintf(stderr, "[pilot] prefetch supports REFINE_OFF checkpoints only; disabled\n");
+        g_pilot_prefetch_enabled = 0;
+        return;
+    }
+    g_pilot_model = m;
+    memset(&g_pilot_batch, 0, sizeof(g_pilot_batch));
+    if (pthread_create(&g_pilot_thread, NULL, pilot_loader_main, NULL) != 0) {
+        fprintf(stderr, "[pilot] failed to start prefetch loader thread; prefetch disabled\n");
+        g_pilot_prefetch_enabled = 0;
+        return;
+    }
+    g_pilot_thread_started = 1;
+}
+
 static void pilot_configure(const Cfg *c) {
-    const char *env = getenv("SAMOSA_PILOT_PROBE");
-    if (!env || !*env || !strcmp(env, "0")) return;
+    const char *probe_env = getenv("SAMOSA_PILOT_PROBE");
+    const char *pf_env = getenv("SAMOSA_PREFETCH");
+    int want_probe = probe_env && *probe_env && strcmp(probe_env, "0");
+    int want_prefetch = pf_env && *pf_env && strcmp(pf_env, "0");
+    if (!want_probe && !want_prefetch) return;
     if (!c->has_moe) {
-        fprintf(stderr, "[pilot] probe requires an MoE checkpoint; disabled\n");
+        fprintf(stderr, "[pilot] probe/prefetch requires an MoE checkpoint; disabled\n");
         return;
     }
     if (c->n_layers > PILOT_MAX_LAYERS) {
-        fprintf(stderr, "[pilot] probe supports up to %d layers (model has %d); disabled\n",
+        fprintf(stderr, "[pilot] probe/prefetch supports up to %d layers (model has %d); disabled\n",
                 PILOT_MAX_LAYERS, c->n_layers);
         return;
     }
-    if ((env[0] == 'P' || env[0] == 'p') && env[1] == '2') {
-        fprintf(stderr, "[pilot] P2 (residual-renorm) not yet implemented; "
-                        "using P1 (post-attention input). See E-X4 card.\n");
+    if (want_probe) {
+        if ((probe_env[0] == 'P' || probe_env[0] == 'p') && probe_env[1] == '2') {
+            fprintf(stderr, "[pilot] P2 (residual-renorm) not yet implemented; "
+                            "using P1 (post-attention input). See E-X4 card.\n");
+        }
+        g_pilot.mode = PILOT_P1;
+        g_pilot.pred_layer = -1;
+        fprintf(stderr, "[pilot] probe enabled variant=P1 (measurement-only, decode)\n");
     }
-    g_pilot.mode = PILOT_P1;
-    g_pilot.pred_layer = -1;
-    fprintf(stderr, "[pilot] probe enabled variant=P1 (measurement-only, decode)\n");
+    if (want_prefetch) {
+        g_pilot_prefetch_enabled = 1;
+        const char *k_env = getenv("SAMOSA_PREFETCH_K");
+        if (k_env && *k_env) {
+            int k = atoi(k_env);
+            if (k >= 1 && k <= PILOT_PREFETCH_MAX) g_pilot_prefetch_kprime = k;
+            else fprintf(stderr, "[pilot] SAMOSA_PREFETCH_K=%s out of range [1,%d]; using default k'=%d\n",
+                        k_env, PILOT_PREFETCH_MAX, g_pilot_prefetch_kprime);
+        }
+        fprintf(stderr, "[pilot] prefetch enabled k'=%d (E-X4 B1, cross-layer, decode)\n",
+                g_pilot_prefetch_kprime);
+    }
 }
 
 static void pilot_reset(void) {
-    if (!g_pilot.mode) return;
-    PilotProbe *p = &g_pilot;
-    p->pred_layer = -1;
-    p->reported = 0;
-    memset(p->layer_dec, 0, sizeof(p->layer_dec));
-    memset(p->layer_hit, 0, sizeof(p->layer_hit));
-    memset(p->layer_truth, 0, sizeof(p->layer_truth));
-    memset(p->prev_k, 0, sizeof(p->prev_k));
-    p->persist_dec = p->persist_hit = p->persist_truth = 0;
+    if (g_pilot.mode) {
+        PilotProbe *p = &g_pilot;
+        p->pred_layer = -1;
+        p->reported = 0;
+        memset(p->layer_dec, 0, sizeof(p->layer_dec));
+        memset(p->layer_hit, 0, sizeof(p->layer_hit));
+        memset(p->layer_truth, 0, sizeof(p->layer_truth));
+        memset(p->prev_k, 0, sizeof(p->prev_k));
+        p->persist_dec = p->persist_hit = p->persist_truth = 0;
+    }
+    /* Turn-boundary cleanup for B1: a persistent HTTP server reuses this
+     * process across many turns, so a leftover ready-but-undrained batch
+     * from the previous turn's last layer must not leak or confuse the next
+     * turn's layer-0 processing.  Safe even if the loader is mid-flight —
+     * pilot_loader_main re-checks state/layer under the lock before
+     * publishing and discards a superseded result. */
+    if (g_pilot_thread_started) {
+        pthread_mutex_lock(&g_pilot_mx);
+        if (g_pilot_batch.state == PPF_READY)
+            for (int i = 0; i < g_pilot_batch.n; i++) free(g_pilot_batch.slab[i]);
+        if (g_pilot_batch.state != PPF_LOADING) {
+            g_pilot_batch.state = PPF_EMPTY;
+            g_pilot_batch.n = 0;
+        }
+        pthread_mutex_unlock(&g_pilot_mx);
+    }
 }
 
-/* Called at end of mlp_moe on decode (S==1) only.  idxs[0..K-1] is this
- * layer's trained top-K (the ground truth); x is the layer's router input. */
-static void pilot_probe_step(Model *m, Layer *l, int layer, const float *x,
-                             const int *idxs, int K) {
+/* SCORE half: called right after L's routing is finalized.  idxs[0..K-1] is
+ * L's trained top-K (ground truth); scores the prediction stored while L-1
+ * was processed (p->pred_layer==layer), then records L's own top-K as the
+ * persistence anchor and (via kk).  Split from the old single-function probe
+ * so the PREDICT half can run later, after B1's drain (see pilot_probe_predict). */
+static void pilot_probe_score(Layer *l, int layer, const int *idxs, int K) {
     PilotProbe *p = &g_pilot;
     if (layer >= PILOT_MAX_LAYERS) return;
     int kcap = K < 64 ? K : 64;
 
-    /* SCORE: did the prediction stored while processing L-1 hit L's top-K? */
     if (p->pred_layer == layer) {
         for (int ki = 0; ki < PILOT_KPRIME_N; ki++) {
             int kp = PILOT_KPRIMES[ki];
@@ -823,7 +1092,6 @@ static void pilot_probe_step(Model *m, Layer *l, int layer, const float *x,
         p->layer_bt[layer] = l->block_type;
     }
 
-    /* PERSISTENCE ANCHOR: L's top-K vs the previous token's L top-K. */
     if (p->prev_k[layer] > 0) {
         int hit = 0;
         for (int t = 0; t < K; t++) {
@@ -837,8 +1105,17 @@ static void pilot_probe_step(Model *m, Layer *l, int layer, const float *x,
     }
     for (int t = 0; t < kcap; t++) p->prev_ids[layer][t] = idxs[t];
     p->prev_k[layer] = kcap;
+}
 
-    /* PREDICT L+1: rank its router's top-KPRIME_MAX from L's input x (P1). */
+static void pilot_prefetch_issue(Model *m, int target_layer, const int *pred_ids, int kprime);
+
+/* PREDICT half: rank layer (layer+1)'s router top-KPRIME_MAX from layer
+ * `layer`'s post-attention input x (P1).  Called after B1's drain for
+ * `layer` so the single-slot prefetch batch is free before a new request for
+ * layer+1 is issued (see the ordering note above pilot_prefetch_issue). */
+static void pilot_probe_predict(Model *m, int layer, const float *x) {
+    PilotProbe *p = &g_pilot;
+    if (layer >= PILOT_MAX_LAYERS) return;
     p->pred_layer = -1;
     int Lnext = layer + 1;
     if (Lnext < m->c.n_layers && m->L[Lnext].has_moe) {
@@ -858,6 +1135,7 @@ static void pilot_probe_step(Model *m, Layer *l, int layer, const float *x,
         for (int r = nsel; r < PILOT_KPRIME_MAX; r++) p->pred_ids[r] = -1;
         p->pred_layer = Lnext;
         free(pl);
+        pilot_prefetch_issue(m, Lnext, p->pred_ids, g_pilot_prefetch_kprime);
     }
 }
 
@@ -913,6 +1191,26 @@ static void pilot_report(void) {
                     bt_truth[bt] ? 100.0 * (double)bt_hit[bt][ki] / (double)bt_truth[bt] : 0.0);
         fputc('\n', stderr);
     }
+}
+
+/* B1 telemetry: cumulative process totals (matches the existing [ecache]
+ * line's convention), independent of A2's per-turn scoring reset — printed
+ * whenever prefetch is enabled, regardless of whether the A2 scorer is also
+ * on.  `used` = prefetched bytes the miss path actually consumed instead of
+ * blocking on a pread; `wasted` = drained-but-unmatched (over-predicted) plus
+ * unclaimed-because-already-cached (see pilot_prefetch_release_unclaimed). */
+static void pilot_prefetch_report(void) {
+    if (!g_pilot_prefetch_enabled) return;
+    uint64_t issued = g_pilot_pf_issued, used = g_pilot_pf_used,
+             wasted_planes = g_pilot_pf_wasted_planes, wasted_bytes = g_pilot_pf_wasted_bytes,
+             dropped = g_pilot_pf_dropped;
+    double waste_pct = issued ? 100.0 * (double)wasted_planes / (double)issued : 0.0;
+    fprintf(stderr,
+        "[pilot-prefetch] k'=%d issued=%llu used=%llu wasted_prefetch_planes=%llu "
+        "wasted_prefetch_bytes=%.2f MB waste=%.1f%% dropped=%llu\n",
+        g_pilot_prefetch_kprime, (unsigned long long)issued, (unsigned long long)used,
+        (unsigned long long)wasted_planes, (double)wasted_bytes / 1e6, waste_pct,
+        (unsigned long long)dropped);
 }
 
 /* ---------- deterministic MoE route trace / replay ----------
@@ -2411,6 +2709,9 @@ static void model_init(Model *m, const char *snap, const char *refine_dir,
                        const char *refine_base_layers) {
     const char *phase_stats_env = getenv("SAMOSA_PHASE_STATS");
     g_direct = getenv("DIRECT") ? atoi(getenv("DIRECT")) : 0;
+    g_expert_overlap = getenv("SAMOSA_OVERLAP") ? atoi(getenv("SAMOSA_OVERLAP")) : 0;
+    if (g_expert_overlap)
+        fprintf(stderr, "[config] overlap=enabled (SAMOSA_OVERLAP=1, B0 step 1: readahead-ahead-of-pread)\n");
     /* IDOT=0 -> kernel f32 esatti (dequant-on-use senza quantizzare le
      * attivazioni): stesso interruttore A/B di glm.c, serve per la
      * validazione quantization-aware contro l'oracolo torch. */
@@ -3054,10 +3355,12 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
     free(logits);
     phase_add(m, PHASE_ROUTER, router_t0);
 
-    /* E-X4 A2 probe: measured outside the router timing bracket so its extra
-     * matmul never inflates the phase table.  Decode only; idxs holds this
-     * layer's trained top-K for the single token (S==1). */
-    if (g_pilot.mode && S == 1) pilot_probe_step(m, l, layer, x, idxs, K);
+    /* E-X4 A2 probe SCORE half: measured outside the router timing bracket so
+     * its extra matmul never inflates the phase table.  Decode only; idxs
+     * holds this layer's trained top-K for the single token (S==1).  The
+     * PREDICT+ISSUE half runs after the union/drain below — see the ordering
+     * note above pilot_prefetch_issue. */
+    if (g_pilot.mode && S == 1) pilot_probe_score(l, layer, idxs, K);
 
     // Prefill batch-union: unique experts list
     int *uniq = malloc((size_t)E*8u*sizeof(int));
@@ -3080,7 +3383,20 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
         }
         free(seen);
     }
-    
+
+    /* E-X4 B1: drain any ready cross-layer prefetch batch targeting THIS
+     * layer before issuing the next request (predict-and-issue below targets
+     * layer+1) — this ordering is what keeps the single-slot batch
+     * race-free: by construction, at most one request is ever in flight.
+     * pilot_ready[] entries not claimed by the miss-discovery loop below
+     * (e.g. the predicted expert turned out to already be cache-resident via
+     * some other path) are freed as measured waste after the batches loop. */
+    PilotReadyEntry pilot_ready[PILOT_PREFETCH_MAX]; int n_pilot_ready = 0;
+    if (S == 1 && g_pilot_prefetch_enabled)
+        n_pilot_ready = pilot_prefetch_drain(m, layer, uniq, uniq_masks, nu, pilot_ready);
+    if (S == 1 && (g_pilot.mode || g_pilot_prefetch_enabled))
+        pilot_probe_predict(m, layer, x);
+
     /* T2.5: quando l'unione di layer copre la maggior parte degli expert
      * (tipico dei prefill lunghi), UNA lettura sequenziale dell'intera
      * regione del layer sostituisce centinaia di pread sparsi.  Il buffer e'
@@ -3139,7 +3455,7 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
 
     for (int base = 0; base < nu; base += 64) {
         int nb = (nu - base < 64) ? (nu - base) : 64;
-        ESlot *use[64]; int missk[64]; int nmiss = 0;
+        ESlot *use[64]; int missk[64]; int missk_prefetched[64]; int nmiss = 0;
 
         if (seq_slots) {
             for (int j = 0; j < nb; j++) use[j] = &seq_slots[base + j];
@@ -3154,18 +3470,53 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
                 m->hits++; use[j] = (ESlot*)view.base_payload;
             } else {
                 use[j] = &m->ws[nmiss];
-                missk[nmiss++] = j;
+                missk[nmiss] = j;
+                missk_prefetched[nmiss] = 0;
+                nmiss++;
                 m->miss++;
             }
         }
-        
+
         // Load expert misses from experts.bin in parallel
         if (nmiss) {
             double t0 = now_s();
+            /* E-X4 B0 step 1 (colibri PIPE idea, zero threads): issue kernel
+             * readahead for every miss of this layer before the first
+             * blocking pread, so the readahead train runs ahead of the pread
+             * train instead of one blocking read starting cold at a time.
+             * Read-only fadvise/F_RDADVISE hint — no cache-API contact, no
+             * new thread, cannot change what is computed. */
+            if (g_expert_overlap)
+                for (int q = 0; q < nmiss; q++) {
+                    int item = base + missk[q];
+                    expert_prefetch(m, layer, uniq[item], uniq_masks[item]);
+                }
             #pragma omp parallel for schedule(dynamic, 1)
             for (int q = 0; q < nmiss; q++) {
                 int item=base+missk[q];
-                expert_load(m,layer,uniq[item],uniq_masks[item],&m->ws[q]);
+                int eid=uniq[item]; uint8_t mask=uniq_masks[item];
+                int pf = -1;
+                /* E-X4 B1: a genuine miss may already be sitting in
+                 * pilot_ready[] (drained above).  n_pilot_ready is small
+                 * (<=k'<=16) and every entry has a unique eid+mask (see the
+                 * drain's uniqueness argument in its header comment), so no
+                 * two `q` iterations of this parallel loop can ever match
+                 * the same z — safe without a lock. */
+                for (int z = 0; z < n_pilot_ready; z++)
+                    if (pilot_ready[z].slab && pilot_ready[z].eid == eid &&
+                        pilot_ready[z].mask == mask) { pf = z; break; }
+                if (pf >= 0) {
+                    ESlot *s = &m->ws[q];
+                    if (s->slab && s->slab != pilot_ready[pf].slab) free(s->slab);
+                    s->slab = pilot_ready[pf].slab; s->slab_cap = pilot_ready[pf].slab_cap;
+                    pilot_ready[pf].slab = NULL; /* ownership transferred */
+                    expert_views(m, layer, s);
+                    s->eid = eid; s->refine_mask = mask;
+                    missk_prefetched[q] = 1;
+                    g_pilot_pf_used++;
+                } else {
+                    expert_load(m,layer,eid,mask,&m->ws[q]);
+                }
             }
             double elapsed = now_s() - t0;
             m->t_edisk += elapsed;
@@ -3236,10 +3587,14 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
             m->ws[q].eid = -1;
             uint64_t charged = (uint64_t)slot->slab_cap + sizeof(ESlot);
             int64_t source_size = m->expert_sizes[(size_t)layer * m->c.num_experts + slot->eid];
+            /* E-X4 B1: prefetch-sourced misses admit as ECACHE_ADMIT_PREFETCH
+             * so the cache's own wasted_prefetch_planes/bytes counters (which
+             * exist but were unprinted before this card) engage. */
             if (ecache_insert_base(m->ec, eslot_key(layer,slot->eid,slot->refine_mask),
                                    slot, charged,
                                    source_size > 0 ? (uint64_t)source_size : charged,
-                                   ECACHE_ADMIT_DEMAND, NULL) != ECACHE_OK) {
+                                   missk_prefetched[q] ? ECACHE_ADMIT_PREFETCH : ECACHE_ADMIT_DEMAND,
+                                   NULL) != ECACHE_OK) {
                 /* Restituisci lo slab caricato allo scratch e l'handle al pool. */
                 uint8_t *loaded_slab = slot->slab; int64_t loaded_cap = slot->slab_cap;
                 slot->slab = m->ws[q].slab; slot->slab_cap = m->ws[q].slab_cap;
@@ -3249,7 +3604,12 @@ static void mlp_moe(Model *m, Layer *l, int layer, float *x, int S, float *out,
             }
         }
     }
-    
+
+    /* E-X4 B1: anything drained but never claimed by a miss this layer (the
+     * predicted expert turned out to already be a cache hit via some other
+     * path) is measured waste. */
+    if (n_pilot_ready) pilot_prefetch_release_unclaimed(pilot_ready, n_pilot_ready);
+
     free(seq_slots);
     free(uniq); free(uniq_masks); free(idxs); free(ws); free(refine_masks); free(keff);
     free(xg); free(gg); free(uu); free(hh); free(rows); free(rw);
@@ -4802,18 +5162,26 @@ static int run_chat(Model *m, const char *tokenizer_path, const char *user,
         m->t_edisk,m->t_emm,peak_rss_gb(),rss_gb());
     phase_print(m, &stats);
     pilot_report();
+    pilot_prefetch_report();
     {
         ecache_stats est; ecache_get_stats(m->ec,&est);
         fprintf(stderr,"[ecache] budget=%.2f GB payload=%.2f GB peak=%.2f GB "
             "entries=%u evictions=%llu bytes_read=%.2f GB bytes_avoided=%.2f GB "
-            "failed_admissions=%llu pressure_warn=%llu pressure_critical=%llu\n",
+            "failed_admissions=%llu pressure_warn=%llu pressure_critical=%llu "
+            /* E-X4 B1: the cache's own admitted-prefetch-then-never-hit
+             * counters — always existed (expert_cache.h), unprinted before
+             * this card.  Complements [pilot-prefetch]'s over-prediction
+             * waste (freed before admission) with post-admission waste. */
+            "wasted_prefetch_planes=%llu wasted_prefetch_bytes=%.2f MB\n",
             (double)est.budget_bytes/1e9,(double)est.payload_bytes/1e9,
             (double)est.peak_payload_bytes/1e9,est.entries,
             (unsigned long long)est.evictions,
             (double)est.base_bytes_read/1e9,(double)est.base_bytes_avoided/1e9,
             (unsigned long long)est.failed_admissions,
             (unsigned long long)est.pressure_warn_events,
-            (unsigned long long)est.pressure_critical_events);
+            (unsigned long long)est.pressure_critical_events,
+            (unsigned long long)est.wasted_prefetch_planes,
+            (double)est.wasted_prefetch_bytes/1e6);
     }
     if (m->seq_reads)
         fprintf(stderr,"[seqio] layer_reads=%llu bytes=%.2f GB\n",

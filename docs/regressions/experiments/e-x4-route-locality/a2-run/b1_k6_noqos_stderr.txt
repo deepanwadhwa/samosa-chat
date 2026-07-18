@@ -1,0 +1,15 @@
+[decode] greedy profile=direct activations=int8-fast temp=0.7 top_k=20 top_p=0.8 presence=1.5 max_tokens=256 thinking_budget=0
+[config] phase_stats=enabled (SAMOSA_PHASE_STATS=1)
+[pilot] probe enabled variant=P1 (measurement-only, decode)
+[pilot] prefetch enabled k'=6 (E-X4 B1, cross-layer, decode)
+[weights] expert_quant=groupwise-q4 group=32 down_bits=4
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=949 generated=112 stop=model thinking=model-controlled prefill=139.040s (6.83 tok/s) decode=25.483s (4.36 tok/s) total=164.523s expert_hit=17295/43450 (39.8%) expert_disk=9.181s expert_mm=45.121s peak_rss=3.46 GB physical_rss=4.52 GB
+[phase] prefill tokens=949 wall=139.040s attn=33.968s/35.79ms_tok router=13.512s/14.24ms_tok dense=44.896s/47.31ms_tok expert_mm=40.204s/42.36ms_tok expert_disk=3.881s/4.09ms_tok head=0.083s/0.09ms_tok other=2.496s/2.63ms_tok | decode tokens=111 wall=25.483s attn=4.664s/42.01ms_tok router=1.621s/14.60ms_tok dense=5.434s/48.95ms_tok expert_mm=4.917s/44.29ms_tok expert_disk=5.300s/47.74ms_tok head=1.836s/16.54ms_tok other=1.713s/15.43ms_tok
+[pilot] variant=P1 scored_layers=4329 recall@4=47.5% recall@6=67.2% recall@8=80.6% recall@12=91.4% recall@16=94.9% persist@K=38.8%
+[pilot] per_layer recall@8 min=49.2% median=82.2% max=88.5%
+[pilot] block_type=linear_attn layers=3219 recall@4=47.4% recall@6=67.0% recall@8=80.5% recall@12=91.2% recall@16=94.7%
+[pilot] block_type=full_attn layers=1110 recall@4=47.8% recall@6=67.6% recall@8=81.1% recall@12=91.9% recall@16=95.6%
+[pilot-prefetch] k'=6 issued=12544 used=10404 wasted_prefetch_planes=2022 wasted_prefetch_bytes=3975.41 MB waste=16.1% dropped=10
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=25499 bytes_read=51.42 GB bytes_avoided=34.00 GB failed_admissions=0 pressure_warn=0 pressure_critical=0 wasted_prefetch_planes=5679 wasted_prefetch_bytes=11165.37 MB
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
