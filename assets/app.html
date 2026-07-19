@@ -212,6 +212,15 @@
     .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink); padding: 10px 11px; outline: none; }
     .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); color: var(--muted); font-size: 12px; }
     .local-card strong { color: var(--ink); }
+    .web-card { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 20px; }
+    .web-row { display: flex; gap: 8px; }
+    .web-row input { min-width: 0; flex: 1; }
+    .web-button { border: 1px solid var(--line); background: var(--paper-2); color: var(--ink); border-radius: 10px; padding: 9px 11px; cursor: pointer; }
+    .web-button:disabled { opacity: .5; cursor: wait; }
+    .web-results { margin-top: 10px; display: grid; gap: 8px; font-size: 12px; }
+    .web-result { border: 1px solid var(--line); border-radius: 10px; padding: 9px; background: var(--paper); }
+    .web-result button { display: block; margin-top: 6px; }
+    .web-note { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
     .scrim { display: none; position: fixed; inset: 0; z-index: 20; background: rgba(20, 12, 8, .28); backdrop-filter: blur(2px); }
     .scrim.show { display: block; }
 
@@ -286,6 +295,11 @@
   <aside class="settings" id="settings" aria-hidden="true">
     <div class="settings-head"><h2>Generation settings</h2><button class="close-settings" id="closeSettings" aria-label="Close settings">Done</button></div>
     <div class="field">
+      <label for="modelBackend">Model</label>
+      <select id="modelBackend"><option value="bonsai">Bonsai 27B 1-bit</option><option value="ornith">Ornith 9B</option><option value="qwen">Qwen3.6 35B A3B</option></select>
+      <small id="modelHelp">Switching unloads the current model, loads the other one, and starts a new conversation.</small>
+    </div>
+    <div class="field">
       <label for="thinking">Thinking profile</label>
       <select id="thinking"><option value="off">Direct</option><option value="general">General thinking</option><option value="code">Precise code / WebDev</option></select>
       <small>General and code modes spend extra tokens reasoning before the visible answer. Direct is fastest.</small>
@@ -300,7 +314,15 @@
       <input id="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Random">
       <small>Use the same non-negative seed to reproduce a sampling path.</small>
     </div>
-    <div class="local-card"><strong>Local-only connection</strong><br>This page talks to <code>127.0.0.1</code>. It contains no analytics, accounts, CDNs, or remote scripts.</div>
+    <div class="web-card">
+      <div class="field">
+        <label for="webInput">Internet source</label>
+        <div class="web-row"><input id="webInput" placeholder="Search terms or https://…"><button class="web-button" id="webAction" type="button">Search</button></div>
+        <div class="web-note" id="webNote">Internet access is user-initiated. Samosa reads only public pages; the model cannot browse on its own.</div>
+        <div class="web-results" id="webResults"></div>
+      </div>
+    </div>
+    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Only Internet sources you explicitly choose are fetched.</div>
   </aside>
 
   <script>
@@ -314,7 +336,9 @@
         thinking: $("thinking"), maxTokens: $("maxTokens"), seed: $("seed"), mode: $("modeValue"),
         speed: $("speedValue"), rss: $("rssValue"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
-        imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview")
+        imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
+        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
+        webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults")
       };
       const STORAGE_KEY = "samosa-chat-v1";
       let state = loadState();
@@ -323,6 +347,7 @@
       let activeAssistant = null;
       let followOutput = true;
       let currentImageBase64 = null;
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:false};
 
       function makeId() {
         const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -386,7 +411,7 @@
         return out;
       }
       function welcomeHTML() {
-        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>Your model. Your machine.</h1><p>Ask Qwen3.6 anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
+        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>Your model. Your machine.</h1><p>Ask ${escapeHTML(backend.label)} anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
       }
       function renderMessages() {
         const chat = activeChat();
@@ -443,7 +468,15 @@
         if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
         activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
         
-        const payload={model:"qwen3.6-35b-a3b",messages:[{role:"user",content:payloadContent}],conversation_id:chat.id,stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
+        let payload;
+        if (backend.id !== "qwen") {
+          const history=chat.messages.filter(m=>m!==assistant&&!m.error).map(m=>({role:m.role,content:m.content||""}));
+          payload={model:backend.model,messages:history,stream:true,max_tokens:Number(els.maxTokens.value),
+            conversation_id:chat.id,chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
+        } else {
+          payload={model:backend.model,messages:[{role:"user",content:payloadContent}],conversation_id:chat.id,
+            stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
+        }
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         try {
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -466,11 +499,12 @@
         if (raw === "[DONE]") return;
         let event; try { event=JSON.parse(raw); } catch (_) { return; }
         const choice=event.choices?.[0], delta=choice?.delta||{};
-        if (delta.reasoning) assistant.reasoning+=delta.reasoning;
+        if (delta.reasoning||delta.reasoning_content) assistant.reasoning+=delta.reasoning||delta.reasoning_content;
         if (delta.content) assistant.content+=delta.content;
         if (choice?.finish_reason) {
           const meta=event.samosa||{};
-          els.speed.textContent=meta.tokens_per_second ? `${meta.tokens_per_second.toFixed(2)} tok/s` : "—";
+          const tokensPerSecond=meta.tokens_per_second||event.timings?.predicted_per_second;
+          els.speed.textContent=tokensPerSecond ? `${tokensPerSecond.toFixed(2)} tok/s` : "—";
           els.rss.textContent=meta.rss_gb ? `${meta.rss_gb.toFixed(2)} GB` : "—";
           els.closure.textContent=(meta.thinking_closure||choice.finish_reason).replaceAll("_"," ");
           if (meta.session_saved===false) assistant.error="The answer completed, but its continuation snapshot could not be saved.";
@@ -488,9 +522,80 @@
       async function health() {
         try {
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
-          els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
+          if(h.gateway) {
+            backend={id:h.backend,label:h.label,model:h.model,supports_images:h.supports_images,ready:h.ready};
+            els.modelBackend.value=h.backend;
+            els.attachBtn.disabled=!h.supports_images;
+            els.attachBtn.title=h.supports_images?"Attach an image":"This model was installed without a vision projector";
+            if(!h.supports_images)removeAttachedImage();
+            els.dot.className=h.ready?"status-dot online":"status-dot";
+            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
+          } else {
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:true};
+            els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
+          }
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
         } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
+      }
+      async function switchBackend() {
+        const requested=els.modelBackend.value;
+        if(requested===backend.id)return;
+        if(generating){els.modelBackend.value=backend.id;return;}
+        const previous=backend.id;
+        els.modelBackend.disabled=true; els.status.textContent="Switching local models…"; els.dot.className="status-dot";
+        try {
+          const r=await fetch("/v1/backends/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:requested})});
+          if(!r.ok){const j=await r.json();throw new Error(j.error?.message||"Model switch failed");}
+          backend={...backend,id:requested,ready:false};
+          currentId=null; ensureChat(); render();
+          await health();
+        } catch(error) {
+          els.modelBackend.value=previous;
+          alert(error.message||String(error));
+        } finally {els.modelBackend.disabled=false;}
+      }
+      async function webRequest(path, body) {
+        const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const data=await r.json();
+        if(!r.ok)throw new Error(data.error?.message||"Internet request failed");
+        return data;
+      }
+      async function ingestUrl(url) {
+        els.webAction.disabled=true; els.webNote.textContent="Reading and cleaning the public page…";
+        try {
+          const page=await webRequest("/v1/web/fetch",{url});
+          const citation=`\n\nWeb source: ${page.title}\nURL: ${page.url}\n---\n${page.text}\n---\n`;
+          els.prompt.value=(els.prompt.value.trim()?els.prompt.value.trim()+"\n\n":"Please answer using this source and cite its URL.")+citation;
+          resizePrompt(); closePanels(); els.prompt.focus();
+          els.webNote.textContent=page.truncated?"Source added (trimmed to the safe context limit).":"Source added to your next message.";
+        } catch(error) {els.webNote.textContent=error.message||String(error);}
+        finally {els.webAction.disabled=false;}
+      }
+      async function internetAction() {
+        const value=els.webInput.value.trim(); if(!value)return;
+        if(/^https?:\/\//i.test(value)){await ingestUrl(value);return;}
+        els.webAction.disabled=true; els.webResults.innerHTML=""; els.webNote.textContent="Searching the public web…";
+        try {
+          const data=await webRequest("/v1/web/search",{query:value});
+          els.webNote.textContent=data.results.length?"Choose a result to read and add to your next message.":"No results found.";
+          for(const result of data.results) {
+            const card=document.createElement("div"); card.className="web-result";
+            const title=document.createElement("strong"); title.textContent=result.title||result.url;
+            const description=document.createElement("div"); description.textContent=result.description||result.url;
+            const button=document.createElement("button"); button.className="web-button"; button.textContent="Read this page";
+            button.onclick=()=>ingestUrl(result.url);
+            card.append(title,description,button); els.webResults.appendChild(card);
+          }
+        } catch(error){els.webNote.textContent=error.message||String(error);}
+        finally{els.webAction.disabled=false;}
+      }
+      async function webStatus() {
+        try {
+          const r=await fetch("/v1/web/config",{cache:"no-store"}); if(!r.ok)return; const config=await r.json();
+          if(config.offline){els.webAction.disabled=true;els.webNote.textContent="Internet access is disabled by the Samosa offline switch.";}
+          else if(!config.search_configured)els.webNote.textContent="URL reading is ready. Configure DuckDuckGo, Brave, or SearXNG search in ~/.samosa/config.json.";
+          else els.webNote.textContent=`Web tools are on (${config.search_backend}). The model decides when to search or read pages; you can also add a specific URL here.`;
+        } catch(_){}
       }
       function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
       function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
@@ -518,13 +623,15 @@
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
       $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel;
+      els.modelBackend.onchange=switchBackend;
+      els.webAction.onclick=internetAction; els.webInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();internetAction();}};
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
       els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
       els.prompt.oninput=resizePrompt; els.prompt.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.composer.requestSubmit()}};
       for(const control of [els.thinking,els.maxTokens,els.seed]) control.onchange=()=>{saveState();els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text};
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
-      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); setInterval(health,5000); els.prompt.focus();
+      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); webStatus(); setInterval(health,5000); els.prompt.focus();
     })();
   </script>
 </body>

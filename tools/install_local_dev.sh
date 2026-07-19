@@ -12,13 +12,15 @@ HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 ENGINE="$ROOT/qwen36b"
 
 for path in "$ENGINE" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
-  "$ROOT/dist/samosa" "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
+  "$ROOT/dist/samosa" "$ROOT/tools/samosa_gateway.py" \
+  "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
   "$SNAPSHOT/manifest.json" "$SNAPSHOT/config.json" \
   "$SNAPSHOT/generation_config.json" "$TOKENIZER"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
 
-release_hash=$(shasum -a 256 "$ENGINE" "$ROOT/assets/app.html" "$ROOT/dist/samosa" |
+release_hash=$(shasum -a 256 "$ENGINE" "$ROOT/assets/app.html" "$ROOT/dist/samosa" \
+  "$ROOT/tools/samosa_gateway.py" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
@@ -38,9 +40,10 @@ ln "$TOKENIZER" "$stage/tokenizer_qwen36.json" || {
 }
 cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
+cp "$ROOT/tools/samosa_gateway.py" "$stage/bin/samosa-gateway"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
-chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa"
+chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa" "$stage/bin/samosa-gateway"
 
 if [ ! -d "$final" ]; then mv "$stage" "$final"; else rm -rf "$stage"; fi
 rm -f "$HOME_DIR/.current.next"
