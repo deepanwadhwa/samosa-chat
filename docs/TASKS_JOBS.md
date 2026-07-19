@@ -112,6 +112,20 @@ real model (respecting machine-safety, HR-6/J1.13).
   (§J1.13), not deferred to J2.
 - **Results surface = a dedicated Jobs view** — static, fully-escaped HTML in v1
   (§J1.12), interactive (live/create/pause) with the J2 daemon.
+- **Filesystem post-actions exist, and they never delete (owner, 2026-07-19).**
+  Jobs may create directories and move files inside one user-granted root, via
+  the organize stage (§Phase JO). The runner contains **no delete path** for
+  user files: a move is a no-clobber atomic rename, cross-volume moves are
+  refused (a copy-then-delete "move" smuggles a delete), and every applied move
+  is journaled and reversible with `undo`. Plans are shown and approved before
+  anything is touched. Do not reopen; the exact contract is §Phase JO.
+- **Product surface stays browser + headless server (owner, 2026-07-19).** No
+  dmg/Electron/exe shell: the capability lives in the server, a bundled
+  Chromium costs more RAM than a tab, and there is no native Windows port (#2
+  is Docker). Long jobs run with **no UI open**; completion is announced by a
+  local notification. An optional native **menu-bar shim** (small `.m`, polls
+  serve over loopback — the [metal_expert.m](../src/metal_expert.m) pattern) is
+  future polish, not a prerequisite. UI direction: [UI_DESIGN.md](UI_DESIGN.md).
 
 ## Engine additions J1 requires (small, additive, read-only)
 
@@ -169,8 +183,8 @@ job pays hours of prefill overhead before any useful work, on plans a 35B-A3B q4
 model produces unreliably. The map-shaped job — N inputs × one bounded model call
 each, deterministic reduce — is the only shape where "slow but local and
 unmetered" wins. Generality comes from **more intents on the same shape** (and
-deterministic post-actions over validated fields, e.g. rename-by-extracted-date),
-never from runtime planning. Pitch wording must match (HR-7): not "the model
+deterministic post-actions over validated fields, e.g. rename-by-extracted-date
+— now specified as **§Phase JO**), never from runtime planning. Pitch wording must match (HR-7): not "the model
 breaks the request into steps" — honest phrase: **"Samosa turns your description
 into a reviewable job definition, then executes it deterministically."**
 Reviewable-and-repeatable is the claim hosted agents cannot make; lead with it.
@@ -807,6 +821,282 @@ serve unless noted; build in order.
 **J1 acceptance (offline):** `make jobs-test` runs every `tests/jobs/*` and exits
 0. This is "tests pass" — **not** "works." "Works" is E-J1.
 
+## Phase JO — Organize: deterministic filesystem post-actions  **(owner ask, 2026-07-19)**
+
+The owner's three anchor tasks, verbatim shape:
+
+1. *"Arrange this folder by document type — PDFs, JPGs, JPEGs, PNGs, DOCX, CSV,
+   each in its own folder titled accordingly."*
+2. *"Separate out all pictures with two humans into one folder."*
+3. *"Check every receipt and separate out the ones for Saturday, June 5th."*
+
+All three are the same pipeline — **enumerate → classify each file → group →
+move** — and differ only in the classifier: (1) pure metadata, zero model
+calls; (2) one bounded vision call per image; (3) one bounded extraction call
+per document. The filesystem verbs are identical: list/stat, mkdir, move.
+**Never delete.** JO adds the missing write stage to J1's read-only runner. It
+is still not an agent: the model never chooses a path, names a folder, or
+initiates an action — it only fills validated fields the runner then maps to
+moves deterministically.
+
+**Dependency shape.** JO.0–JO.5 and the two metadata intents (JO.6) touch no
+model and are gated only on J1.0/J1.1/J1.7 landing. Field-based organize
+(intents 2 and 3) consumes J1 results and is gated on **E-J1's accuracy
+number**: a wrong extraction that merely sits in a JSON file is an error; a
+wrong extraction that *moves someone's receipt* erodes trust. Field rules
+therefore only ever consume **`passed`** documents (never `review_required`),
+and E-JO1 measures move precision before the intent is described as working.
+
+### Decisions locked (owner, 2026-07-19 — do not reopen)
+
+- **JO-D1 — No delete path exists.** The runner never calls `unlink`/`rmdir`/
+  `rmtree` on anything under the user's folder — not "gated", absent. The one
+  audited exception is inside the move fallback (JO.3), which may remove the
+  *source name* of a file only after proving the destination is the same inode.
+- **JO-D2 — Move = no-clobber atomic rename.** An overwriting move is a delete
+  by another name. macOS: `renamex_np(..., RENAME_EXCL)`; Linux:
+  `renameat2(..., RENAME_NOREPLACE)`; both via `ctypes` (stdlib — the
+  Python-stdlib-only decision holds). Destination exists ⇒ the move is **not**
+  performed; it is a logged skip.
+- **JO-D3 — Same-volume only.** `EXDEV` ⇒ skip with reason `cross_device`,
+  never copy+delete.
+- **JO-D4 — Scope jail.** Every source and destination stays under the job's
+  `input.folder`, checked on the **realpath**, descriptors opened `O_NOFOLLOW`.
+  Field values never become path components without passing the JO.1 whitelist.
+- **JO-D5 — Plan → approve → apply.** `organize` only ever writes a plan file.
+  User files change only in `apply`, after the frozen plan is shown and
+  approved. The default invocation touches nothing.
+- **JO-D6 — Journal + undo.** Every applied move is an event before and after
+  execution; `undo` replays exact reversals with the same no-clobber rename.
+  Never-delete **plus fully-reversible** is the promise, and E-JO1 verifies it
+  by hash inventory, not assertion.
+
+### `job.json` additions
+
+**Note (2026-07-19):** J1 implementation is already in flight on
+`issue-7-jobs` (validator/runner/PDF-corpus commits exist there, and that
+branch carries its own card edits that must be reconciled with this section
+on merge). The `organize` block is therefore an **additive** change JO.0
+lands in that validator: optional top-level `organize`; **absent ⇒ behavior
+byte-identical to a J1 job** (same gate pattern as the engine additions):
+
+```json
+"organize": {
+  "rule": {"by": "extension"},
+  "dest_root": null,
+  "on_collision": "skip",
+  "unmatched": "leave"
+}
+```
+
+- `rule` — exactly one of:
+  - `{"by":"extension"}` — destination folder = upper-cased extension (`PDF/`,
+    `JPG/`, `JPEG/` — jpg and jpeg stay distinct, per the owner's task 1);
+    extensionless files use the magic-byte type name (`JPEG/`, `PNG/`, `PDF/`,
+    `TEXT/`), else `OTHER/`. Optional `"map": {"jpg":"Photos", …}` overrides
+    folder names; keys are lowercase extensions, values pass the JO.1 whitelist.
+  - `{"by":"media_type"}` — destination = magic-byte type; extension ignored.
+  - `{"by":"field","field":"date"}` — one folder per distinct validated value
+    of a schema field (task 3 grouped by day: `2027-06-05/`).
+  - `{"by":"where","field":"people","op":"eq","value":2,"dest":"Two people"}` —
+    matching documents move to `dest`, everything else follows `unmatched`.
+    `op ∈ {eq, ne, lt, le, gt, ge}`; comparison is JSON-typed (the J1.5
+    `bool≠int` rule applies).
+- `dest_root` — `null` ⇒ `<input.folder>/Organized`; if set, must be an
+  absolute path inside `input.folder` (validator-enforced, realpath).
+- `on_collision` — `skip` (default) | `suffix_sha8` (append `.<first 8 hex of
+  input_sha256>` before the extension — deterministic, collision-proof; never a
+  mutable ` (2)` counter).
+- `unmatched` — `leave` (default) | a folder name passing the whitelist.
+
+### JO.0 — Validator extension + metadata-only jobs
+- **Goal.** Accept the `organize` block strictly; allow jobs with **no model
+  stage** for metadata rules.
+- **Interface.** Extends J1.0. Reject: unknown keys inside `organize`, unknown
+  `rule.by`/`op`, `dest_root` outside `input.folder` (checked by realpath, and
+  rejected if any path component is a symlink), a `map` value or `dest` or
+  `unmatched` folder name failing the JO.1 whitelist, `rule.by ∈
+  {field,where}` naming a field absent from `output_schema.properties`.
+  **Metadata-only form:** when `rule.by ∈ {extension, media_type}`,
+  `instruction`, `output_schema`, and `inference` may all be `null` — the
+  pipeline is discovery → plan, zero model calls, and `unit`/`reduce` are
+  ignored. For metadata-only jobs discovery relaxes J1.1's typing in one way:
+  a file that is neither magic-typed nor UTF-8 (e.g. DOCX — ZIP `PK`) is
+  **included** with type `application/octet-stream` instead of skipped
+  `unsupported` — it is being *sorted*, not sent to the model. Everything else
+  in J1.1 holds (O_NOFOLLOW, regular-file check, hashing, stability re-fstat;
+  `max_file_bytes` does not apply to metadata-only jobs).
+- **Done.** A J1 job with no `organize` block validates and runs byte-identical
+  to before (existing J1 tests untouched and green).
+- **Test.** `tests/jobs/test_organize_validate.sh`: 1 valid extension job with
+  nulls + 8 malformed (`dest_root` outside the folder, `dest_root` reached
+  through a symlink, `"by":"extenson"` typo, unknown `op`, `where` on a field
+  not in the schema, `map` value `"../up"`, `unmatched` value `".hidden"`,
+  `organize` with an unknown key) → exact exit codes/messages; plus: every
+  pre-existing J1 fixture still validates.
+
+### JO.1 — Plan compiler (pure, deterministic, model-free)
+- **Goal.** Turn results (or discovery records) into an exact, reviewable move
+  list. Never touches user files.
+- **Interface.** `samosa jobs organize <job.json>` reads `events.jsonl` +
+  `results/` (or, metadata-only, runs/reuses discovery), computes one decision
+  per input, writes `results/organize_plan.jsonl`, prints the human summary,
+  and appends `plan_created`. Rules:
+  - Source of truth per input: metadata rules → the `item_discovered` record;
+    field rules → the **passed** document record (reduced record for split
+    files). `review_required`/`failed`/unreduced → skip `not_validated`.
+  - **Destination-name whitelist** (the only gate between extracted text and
+    the filesystem): after trimming, a folder or mapped name must match
+    `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$` — no leading dot/dash, no path
+    separators, no control characters, never `..`. A field value failing it →
+    skip `unsafe_dest` (the hostile-value path: `"../../etc"`, `"a/b"`, a
+    300-char value, an empty string all land here, listed in the plan).
+  - Already in place (source dir == destination dir) → skip `already_sorted`.
+  - Collision handling per `on_collision`; a `skip` collision is computed
+    against both **existing files** and **other planned moves** (two different
+    `IMG_001.jpg` from sibling subfolders in a recursive job must not both be
+    planned into `JPG/IMG_001.jpg` — second one skips or suffixes
+    deterministically by `input_path` order).
+  - Plan lines: `{"input_sha256","src","dst","size","mtime"}` (src/dst
+    absolute, realpath); skips: `{"input_sha256","src","skip":<reason>}`.
+    Final line: `{"plan_sha256": <sha256 of all preceding lines>,
+    "built_at_seq": <last events.jsonl seq consumed>, "moves": n, "skips": n}`.
+  - Deterministic: same inputs ⇒ byte-identical plan (ordering: `input_path`
+    ascending, same as J1.1).
+- **Done.** Pure function of records; re-running `organize` with unchanged
+  inputs rewrites an identical file; zero model calls, zero mkdir/rename.
+- **Test.** `tests/jobs/test_organize_plan.py`: canned results for all four
+  rule forms; assert byte-identical plans across two runs; hostile field
+  values → `unsafe_dest`; review'd unit → `not_validated`; recursive name
+  clash → exactly one planned + one deterministic skip/suffix; `where` with
+  `value:2` does not match `true` (JSON-typed); a file already in its
+  destination → `already_sorted`; filesystem untouched (tree hash before ==
+  after).
+
+### JO.2 — Shipped intents (the owner's three tasks + folder report)
+- **Goal.** Encode the anchor tasks as reviewed templates, not ad-hoc jobs.
+- **Interface.** `docs/examples/jobs/`:
+  - `sort-by-type.job.json` — metadata-only, `{"by":"extension"}` (task 1).
+  - `folder-report.job.json` — metadata-only, **no organize block executed as
+    moves**: `samosa jobs report <job.json>` (tiny JO command) prints counts,
+    total bytes, and largest files per type from discovery records — the
+    "explore a directory" ask (count files, types, sizes) with zero inference
+    and zero writes.
+  - `photos-two-people.job.json` — vision intent: schema `{"people":
+    {"type":"integer","minimum":0,"maximum":20}}`, fixed instruction ("Count
+    the people visible…"), organize `{"by":"where","field":"people","op":"eq",
+    "value":2,"dest":"Two people"}` (task 2).
+  - `receipts-by-date.job.json` — extraction intent: the §job.json receipt
+    schema, organize `{"by":"field","field":"date"}` (task 3; the "Saturday"
+    check is deterministic — the runner, not the model, knows 2027-06-05's
+    weekday, and a mismatch between a claimed weekday and the extracted date is
+    a domain-rule review, not a move).
+- **Suggest-job mapping (J2 §1).** These templates are what `suggest-job`
+  selects among; "arrange this folder by type" must compile to
+  `sort-by-type` + the folder path — **not** to a bespoke plan (§actor split).
+- **Test.** `tests/jobs/test_intents.sh`: all four templates pass `validate`;
+  `sort-by-type` end-to-end offline on a fixture folder (pdf + jpg + jpeg +
+  png + docx-as-zip + csv + extensionless png + a `.txt` renamed `.jpg`) →
+  plan groups match the magic-byte/extension contract exactly, **0 POSTs** to
+  the fake serve; `report` prints the fixture's exact counts/bytes and creates
+  no plan; `photos-two-people` against fake serve returning canned
+  `{"people":N}` → only the `N==2` files planned.
+
+### JO.3 — Move engine (the only code that changes the user's filesystem)
+- **Goal.** One audited function performs every mkdir and rename; everything
+  else is forbidden from touching user files.
+- **Interface.** `apply_move(plan_line)`:
+  1. `open(src, O_NOFOLLOW | O_RDONLY)` — symlink or non-regular ⇒ skip
+     `not_regular_file`. `fstat` and compare `(size, mtime)` to the plan line —
+     drift ⇒ skip `changed_since_scan` (the job may have run overnight;
+     `--verify-hash` upgrades this check to a full re-hash).
+  2. Destination directory: created with `mkdir -p` semantics, each component
+     realpath-verified inside the jail before creation, default umask.
+  3. Rename: `renamex_np`/`renameat2` no-clobber (JO-D2); `EEXIST` ⇒ skip
+     `dest_exists`; `EXDEV` ⇒ skip `cross_device` (JO-D3).
+  4. **Fallback** (non-macOS/Linux only): `os.link(src, dst)` (atomic
+     no-clobber by contract), `fstat` both and **assert same inode**, only then
+     remove the source name. This is the single permitted `unlink` in the
+     runner (JO-D1) and it is wrapped in the inode assertion.
+- **Done.** Grep-auditable: `os.remove`/`os.unlink`/`shutil.rmtree`/`os.rmdir`
+  appear nowhere in the runner except the guarded fallback branch.
+- **Test.** `tests/jobs/test_move_engine.py`: dst exists → skip, **both**
+  files byte-identical after; src replaced by a symlink post-plan → skip; src
+  touched post-plan → `changed_since_scan`; injected `EXDEV` (monkeypatched
+  rename) → `cross_device`, src intact; fallback path unit-tested with the
+  inode assertion firing on a simulated mismatch (no source removal); an audit
+  fixture monkeypatches `os.unlink`/`os.remove`/`shutil.rmtree` to raise —
+  the full JO test suite passes with the traps armed (except the one guarded
+  call site, which the trap whitelists by stack inspection).
+
+### JO.4 — Apply: approval boundary, events, crash safety, gate
+- **Goal.** Execute a frozen plan exactly once, resumable, polite, journaled.
+- **Interface.** `samosa jobs apply <job.json> [--yes] [--verify-hash]`:
+  - Refuses without a plan; prints the summary (moves by destination, skips by
+    reason) and requires typed confirmation or `--yes`; appends `plan_approved
+    {plan_sha256}`. If `events.jsonl` has terminal events newer than
+    `built_at_seq`, warn `plan_stale` and require `organize` to be re-run.
+  - Per move: append `move_applying {src,dst,input_sha256}` → `apply_move` →
+    append `move_applied` or `move_skipped {reason}`; fsync discipline of
+    J1.6. Completion: `organize_complete {applied, skipped}`.
+  - **Recovery** (extends J1.7's replay): `move_applying` without a follow-up →
+    if dst exists with the plan line's size (or hash under `--verify-hash`)
+    and src is gone ⇒ the rename won the crash: append the missing
+    `move_applied`; if src still exists ⇒ retry the move; neither ⇒
+    `move_skipped reason:"unresolved_crash"` for the morning review. Re-`apply`
+    after completion ⇒ 0 actions (idempotent).
+  - **Gate:** run J1.13's `gate_check()` between batches (default 50 moves) —
+    renames are cheap but the interlock and pressure rules still apply; pauses
+    log `job_paused` exactly as in runs.
+- **Test.** `tests/jobs/test_apply.sh`: full offline apply of a 6-move plan →
+  tree matches expected exactly, 6 `move_applied`; `SIGKILL` mid-apply (fault
+  injection after rename, before event) → re-`apply` appends the missing
+  event, completes the rest, no move performed twice; immediate re-`apply` →
+  0 actions; without `--yes` and with stdin closed → exit non-zero, tree
+  untouched; stale plan → refused with `plan_stale`.
+
+### JO.5 — Undo
+- **Goal.** Reverse an applied plan exactly, with the same safety rules.
+- **Interface.** `samosa jobs undo <job.json> [--yes]` replays `move_applied`
+  events in **reverse order** as `dst → src` no-clobber renames via JO.3
+  (same jail, same skip taxonomy). User moved/renamed/replaced a file since ⇒
+  skip `changed_since_apply` and report; each reversal appends `move_reverted`.
+  Undo of an undo is out of scope — state it in the CLI help. Empty
+  destination directories created by apply are **left in place** (removing
+  them would require `rmdir` — JO-D1 wins over tidiness).
+- **Test.** `tests/jobs/test_undo.sh`: apply → undo → recursive tree+hash
+  identical to the pre-apply snapshot (empty created dirs excepted, asserted
+  present-but-empty); touch one moved file → that one skips
+  `changed_since_apply`, the rest revert; events show matching
+  applied/reverted pairs.
+
+### JO.6 — View + notification
+- **Goal.** The plan and its outcome are first-class in the Jobs view; the
+  finish is announced without any UI open.
+- **Interface.** `view.html` (J1.12 contract: static, inline CSS, no external
+  resources, every value escaped) gains a **Moves** section. Its first screen
+  obeys the **bakery test** ([UI_DESIGN.md](UI_DESIGN.md) §3.0, owner rule
+  2026-07-19): plain sentences — what happened, what needs a look (each
+  reason as one plain-language sentence, never a J1.5 taxonomy string),
+  where the files are, and the never-deleted + undo safety card. The full
+  src → dst manifest (grouped by destination, monospace, dimmed common
+  prefixes), skip reasons, per-unit table, exact undo command, and
+  provenance all live in one collapsed "Details for the record" section. On `organize_complete` (and
+  `job_complete`), the runner posts a local notification — macOS:
+  `osascript -e 'display notification …'`, best-effort, never fails the job;
+  content is counts only, **no filenames** (HR-10: notifications persist in
+  Notification Center logs).
+- **Test.** `tests/jobs/test_view_moves.sh`: after an apply with 2 moves +
+  1 skip, `view.html` shows the grouped table and counts; a file named
+  `<img src=x onerror=alert(1)>.jpg` appears escaped (literal `&lt;img`
+  present, raw tag absent); notification command is invoked via a stubbed
+  `osascript` on PATH and its argv contains no input filename.
+
+**JO acceptance (offline):** all `tests/jobs/test_organize_*`, `test_move_*`,
+`test_apply*`, `test_undo*`, `test_intents*`, `test_view_moves*` green under
+`make jobs-test`, with the no-delete audit traps armed. This is "tests pass" —
+"works" is E-JO1.
+
 ## Experiments — run the cheapest, most decisive one first
 
 ### E-J1 — Does the runner work on the real model?  ~1–2 days  **RUN FIRST (after J1 offline tests are green)**
@@ -837,6 +1127,37 @@ never-overstate rule): if per-field correctness is high, "extracts your data"
 is honest; if it is, say, ~80%, the feature must be framed as **"drafts every
 field, you confirm"** — or it will feel like it lies. Record the number and pick
 the sentence.
+
+### E-JO1 — Does organize keep its promises on a real folder?  ~0.5–1 day  (after JO offline tests; sort intent needs no model)
+
+Two halves, cheapest first:
+
+**(a) Metadata half — no model.** A real copy of a messy user folder (≥100
+mixed files including nested dirs, duplicate names, an alias/symlink, at least
+one file with the wrong extension). Run `sort-by-type`: `organize` → review the
+printed plan → `apply` → `undo` → `apply` again.
+
+**Acceptance (a):** the **hash inventory law** — `find … -type f | sha256sum`
+before and after every step: the *multiset of content hashes is identical at
+every point* (moves change paths, never the set of contents). Zero
+`unlink`-audit trips. `undo` restores every path (`changed_since_apply` count
+0 on an untouched folder). Re-`apply` after `undo` = re-plan required or
+identical plan applies cleanly. Plan preview counts matched what `apply` did,
+exactly. Wall-clock for plan/apply/undo recorded (expected: seconds — say so
+only after measuring).
+
+**(b) Field half — real model, gated on E-J1.** The owner's receipt folder +
+`receipts-by-date`, and ~30 personal photos + `photos-two-people`. Hand-label
+ground truth first.
+
+**Acceptance (b):** report **move precision** (files moved that belonged
+there / files moved) and **recall** separately per intent; the review/skip
+queue accounts for every file not moved; the hash inventory law holds; the
+same machine-safety telemetry as E-J1 (footprint, swap delta, pauses).
+Precision on labeled data decides the honest verb (per the E-J1 framing rule):
+high ⇒ "sorts your photos"; mediocre ⇒ "proposes a sort you confirm" — record
+the number and pick the sentence. Commit everything under
+`docs/regressions/jobs/e-jo1/`.
 
 ### E-J2 — Public-fetch politeness & extraction  ~1 day  (gates J3, after J1)
 
@@ -904,8 +1225,11 @@ deterministic page reduction (model reduce only for named narrative fields); the
 resource gate + chat interlock; status/errors/warnings validation; content-hash
 idempotency; crash-durable atomic artifacts + provenance; a fully-escaped static
 Jobs view; `validate`/`arm`/`preview`/`run`/`status`/`view`/`suggest-schema`/
-`delete`/`archive`; **host-derived** thread budget (floor = 2 on the reference
-machine). Two intents: **Extract Document Data**, **Analyze Image Folder**.
+`delete`/`archive` plus the JO surface `organize`/`apply`/`undo`/`report`;
+**host-derived** thread budget (floor = 2 on the reference machine). Four
+intents: **Extract Document Data**, **Analyze Image Folder**, and the JO pair
+**Sort Folder by Type** (no model) and **Folder Report** (no model); the two
+field-based organize templates ship as examples gated on E-J1/E-JO1 accuracy.
 
 Does **not** ship: daemon/scheduler, interactive Jobs view, folder-watching, web
 input, asset snapshots, auto-downscale, measured host-adaptive tiers, multi-image
@@ -917,7 +1241,10 @@ prompts, code-repo jobs, tool/action adapters, agents.
 - Autonomous site discovery / open-web crawling (user supplies inputs in v1).
 - Real-time / interactive browsing — the anti-pattern this concept avoids.
 - Autonomous agents or model-initiated actions (delete/send/publish/modify)
-  without an explicit human-approval boundary.
+  without an explicit human-approval boundary. §Phase JO's organize stage is
+  the sanctioned form of "modify": deterministic, plan-approved, journaled,
+  and **file deletion is absent from the runner entirely** (JO-D1), not merely
+  approval-gated.
 - Model-initiated tool calls (A3.3) — parked behind E-I1 in
   [TASKS_INTERNET.md](TASKS_INTERNET.md).
 - Parallel model inference (violates F-J1); multi-image prompts (F-J4).
