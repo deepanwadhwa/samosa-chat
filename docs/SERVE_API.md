@@ -155,7 +155,17 @@ failure is therefore visible instead of being silently reported as durable.
   free KV/scratch pages to the OS. Live model weights and cache entries are
   untouched.
 
-## Verified 2026-07-14
+## Verified evidence
+
+### Real-model compaction — 2026-07-19
+
+Real-model compaction was separately verified on 2026-07-19: a 1,724-token
+sealed conversation automatically compacted to 263 tokens with 72 recent
+tokens retained, continued under the same ID, survived a server restart, and
+recalled early summarized and recent-tail facts exactly. See
+[regressions/compaction/real-model-e2e.md](regressions/compaction/real-model-e2e.md).
+
+### Resident server — 2026-07-14
 
 - Socket component test: health/models/root/cancel/shutdown, 20 sequential
   connections without RSS growth, bounded-queue rejection, JSON escaping, and
