@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Samosa Jobs — view design</title>
+<style>
+  :root {
+    --paper: #faf7f2;
+    --surface: #ffffff;
+    --inset: #f1ece3;
+    --line: rgba(60, 42, 28, .12);
+    --line-strong: rgba(60, 42, 28, .24);
+    --ink: #221a13;
+    --ink-2: #6f6459;
+    --ink-3: #9a8d81;
+    --accent: #b3501e;
+    --accent-soft: rgba(179, 80, 30, .10);
+    --ok: #3d8f5f;
+    --warn: #b07d2c;
+    --warn-text: #7d5a1c;
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #161210;
+      --surface: #1e1915;
+      --inset: #272019;
+      --line: rgba(244, 236, 227, .11);
+      --line-strong: rgba(244, 236, 227, .22);
+      --ink: #f4ece3;
+      --ink-2: #b3a698;
+      --ink-3: #857a6e;
+      --accent: #e08a52;
+      --accent-soft: rgba(224, 138, 82, .13);
+      --ok: #6fbf8f;
+      --warn: #d9a851;
+      --warn-text: #e3bc75;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #161210;
+    --surface: #1e1915;
+    --inset: #272019;
+    --line: rgba(244, 236, 227, .11);
+    --line-strong: rgba(244, 236, 227, .22);
+    --ink: #f4ece3;
+    --ink-2: #b3a698;
+    --ink-3: #857a6e;
+    --accent: #e08a52;
+    --accent-soft: rgba(224, 138, 82, .13);
+    --ok: #6fbf8f;
+    --warn: #d9a851;
+    --warn-text: #e3bc75;
+  }
+  :root[data-theme="light"] {
+    --paper: #faf7f2;
+    --surface: #ffffff;
+    --inset: #f1ece3;
+    --line: rgba(60, 42, 28, .12);
+    --line-strong: rgba(60, 42, 28, .24);
+    --ink: #221a13;
+    --ink-2: #6f6459;
+    --ink-3: #9a8d81;
+    --accent: #b3501e;
+    --accent-soft: rgba(179, 80, 30, .10);
+    --ok: #3d8f5f;
+    --warn: #b07d2c;
+    --warn-text: #7d5a1c;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 16px/1.6 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 620px; margin: 0 auto; padding: 48px 24px 72px; display: flex; flex-direction: column; gap: 36px; }
+
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font: 400 13px/1.6 var(--font-mono); }
+
+  /* ---- the message ---- */
+  .topline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+  .dot { width: 8px; height: 8px; border-radius: 99px; flex: 0 0 auto; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .message h1 { margin: 10px 0 12px; font-size: 27px; line-height: 1.3; font-weight: 700; letter-spacing: -.015em; text-wrap: balance; }
+  .message p { margin: 0; color: var(--ink-2); }
+
+  /* ---- needs a look ---- */
+  section h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+  .lede { margin: 0 0 14px; font-size: 14px; color: var(--ink-2); }
+  .look-list { display: flex; flex-direction: column; gap: 10px; }
+  .look-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--warn);
+    border-radius: var(--r-md); background: var(--surface);
+  }
+  .look-item .what { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); }
+  .look-item .file { font-weight: 600; font-size: 15px; }
+  .open-link { font-size: 14px; white-space: nowrap; }
+
+  /* ---- where things went ---- */
+  .folders { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+  .folder-row { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--line); font-size: 15px; }
+  .folder-row:first-child { border-top: 0; }
+  .folder-row svg { color: var(--ink-2); flex: 0 0 auto; }
+  .folder-row .count { margin-left: auto; color: var(--ink-2); font-size: 14px; }
+  .aside-note { margin: 12px 0 0; font-size: 14px; color: var(--ink-2); }
+
+  /* ---- safety ---- */
+  .safety {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface);
+  }
+  .safety .text { flex: 1 1 300px; }
+  .safety .text strong { display: block; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .safety .text span { font-size: 14px; color: var(--ink-2); }
+  .undo-btn {
+    display: inline-block; padding: 10px 18px; border: 1px solid var(--line-strong);
+    border-radius: var(--r-md); background: var(--inset); color: var(--ink);
+    font: 600 14px/1 var(--font-ui); text-decoration: none; white-space: nowrap;
+  }
+  .undo-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- details for the record ---- */
+  details.record > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px;
+    font-size: 14px; color: var(--ink-2); padding: 4px 0;
+  }
+  details.record > summary::-webkit-details-marker { display: none; }
+  details.record > summary::before {
+    content: ""; width: 0; height: 0; border-left: 5px solid var(--ink-3);
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .15s ease;
+  }
+  details.record[open] > summary::before { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) { details.record > summary::before { transition: none; } }
+  .record-body { margin-top: 16px; display: flex; flex-direction: column; gap: 20px; font-size: 14px; color: var(--ink-2); }
+  .record-body h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .record-table { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+  .record-table table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .record-table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--ink-2); padding: 8px 14px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  .record-table td { padding: 7px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; color: var(--ink); }
+  .record-table tr:last-child td { border-bottom: 0; }
+  .dim { color: var(--ink-3); }
+  .prov-line { margin: 0; font: 400 11.5px/1.8 var(--font-mono); color: var(--ink-3); display: flex; gap: 18px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="message">
+    <div class="topline"><span class="dot ok"></span>Samosa · Receipts — June 2027 · finished Saturday 4:55 am</div>
+    <h1>Your June receipts are sorted.</h1>
+    <p>Samosa read all 74 receipts overnight and put 69 of them into folders,
+    one folder per day. 3 receipts need a quick look from you, and 2 were left
+    where they were.</p>
+  </div>
+
+  <section aria-label="Needs a look">
+    <h2>3 receipts need a look</h2>
+    <p class="lede">These were not moved. Open each one to see it yourself.</p>
+    <div class="look-list">
+      <div class="look-item">
+        <div>
+          <div class="file">IMG_4471.jpg</div>
+          <p class="what">No date is visible on this receipt.</p>
+        </div>
+        <a class="open-link" href="#">Open it</a>
+      </div>
+      <div class="look-item">
+        <div>
+          <div class="file">scan_0038.pdf</div>
+          <p class="what">It shows two different totals — 18.40 and 18.90.</p>
+        </div>
+        <a class="open-link" href="#">Open it</a>
+      </div>
+      <div class="look-item">
+        <div>
+          <div class="file">costco_return.png</div>
+          <p class="what">This one couldn't be read.</p>
+        </div>
+        <a class="open-link" href="#">Open it</a>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Where your files are">
+    <h2>Where your files are</h2>
+    <p class="lede">Documents › Receipts › Organized</p>
+    <div class="folders">
+      <div class="folder-row">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3.2l1.6 1.8H13a1.5 1.5 0 0 1 1.5 1.5v5.2A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-7Z" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>June 5</span><span class="count num">9 receipts</span>
+      </div>
+      <div class="folder-row">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3.2l1.6 1.8H13a1.5 1.5 0 0 1 1.5 1.5v5.2A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-7Z" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>June 12</span><span class="count num">11 receipts</span>
+      </div>
+      <div class="folder-row">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3.2l1.6 1.8H13a1.5 1.5 0 0 1 1.5 1.5v5.2A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-7Z" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>June 19</span><span class="count num">14 receipts</span>
+      </div>
+      <div class="folder-row">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3.2l1.6 1.8H13a1.5 1.5 0 0 1 1.5 1.5v5.2A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-7Z" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>4 more days</span><span class="count num">35 receipts</span>
+      </div>
+    </div>
+    <p class="aside-note">2 files stayed where they were — one because a file with the
+    same name was already in its folder, one because it changed while the job was
+    running. Nothing was overwritten.</p>
+  </section>
+
+  <div class="safety">
+    <div class="text">
+      <strong>Nothing was deleted.</strong>
+      <span>Files were moved, never copied or removed. Undo puts all 69 back exactly where they came from.</span>
+    </div>
+    <a class="undo-btn" href="#">Undo everything</a>
+  </div>
+
+  <details class="record">
+    <summary>Details for the record</summary>
+    <div class="record-body">
+
+      <div>
+        <h3>Timing</h3>
+        <p style="margin:0">Started Friday 22:03, finished Saturday 04:55 — 6 h 52 m in total,
+        of which 3 h 41 m was the model reading receipts (74 calls, about 3 minutes each).
+        The job paused itself twice while you were chatting (11 m) so it never slowed you down.</p>
+      </div>
+
+      <div>
+        <h3>Every move</h3>
+        <div class="record-table"><table>
+          <tr><th>From</th><th></th><th>To</th></tr>
+          <tr><td><span class="dim">~/Documents/Receipts/</span>IMG_3308.jpg</td><td class="dim">→</td><td><span class="dim">Organized/2027-06-05/</span>IMG_3308.jpg</td></tr>
+          <tr><td><span class="dim">~/Documents/Receipts/june/</span>scan_0021.pdf</td><td class="dim">→</td><td><span class="dim">Organized/2027-06-05/</span>scan_0021.pdf</td></tr>
+          <tr><td><span class="dim">~/Documents/Receipts/</span>trader_joes.png</td><td class="dim">→</td><td><span class="dim">Organized/2027-06-05/</span>trader_joes.png</td></tr>
+          <tr><td class="dim" colspan="3">… 66 more moves, all listed in the job log</td></tr>
+        </table></div>
+      </div>
+
+      <div>
+        <h3>Undo from the terminal</h3>
+        <p class="mono" style="margin:0">samosa jobs undo receipts-2027-06.job.json</p>
+      </div>
+
+      <div>
+        <h3>Provenance</h3>
+        <p class="prov-line num">
+          <span>run 3f9c21aa</span>
+          <span>seed 11</span>
+          <span>engine 04ccd26</span>
+          <span>tokenizer 91d07c3e</span>
+          <span>412 events</span>
+        </p>
+      </div>
+
+    </div>
+  </details>
+
+</div>
+</body>
+</html>

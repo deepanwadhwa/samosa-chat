@@ -675,8 +675,10 @@ as everywhere: an unmeasured tier is not "fast."**
 
 ## Non-goals
 
-- **GPU/Metal.** The separate, already-planned post-release performance track.
-  H2 is CPU dispatch only.
+- **GPU/Metal — superseded 2026-07-17.** The owner reopened Metal as a
+  staged, measured track: [TASKS_EXPERIMENTS.md](TASKS_EXPERIMENTS.md)
+  **E-X10** (M0 spike gates everything). H2 remains CPU dispatch only and
+  nothing in this card depends on Metal.
 - **Changing the *reference fanless* (M3 Air) default thread count.** It is the
   owner's explicit comfort preference and stays byte-identical. H3 adapts
   `--fast` and fixes non-macOS derivation; **H5** may raise the *default* for
