@@ -3161,6 +3161,9 @@ typedef struct {
     int session_save_requested;
     int session_save_failed;
     int session_save_skipped;
+    int compacted;
+    int compacted_from_tokens;
+    int compacted_to_tokens;
     double prefill_s, decode_s, total_s;
 } GenStats;
 
@@ -3774,6 +3777,56 @@ static int session_save(Model *m, const int *tokens, int len, const char *path) 
     double mb = (stat(path, &st) == 0) ? st.st_size / 1e6 : 0;
     fprintf(stderr, "[session] saved %s: %d tokens, %.1f MB\n", path, len, mb);
     return 0;
+}
+
+/* Read and authenticate only the transcript portion of a sealed session.
+ * Compaction needs the token boundaries but must not allocate the old KV
+ * cache just to inspect them.  The complete file is still hashed before any
+ * token is trusted. */
+static int session_read_tokens(Model *m,const char *path,int **tokens_out,int *len_out){
+    FILE *file=fopen(path,"rb"); if(!file)return 0;
+    if(fseek(file,0,SEEK_END)){fclose(file);return 0;}
+    long file_size=ftell(file);
+    if(file_size<8+9*4+4+4+m->c.n_layers+2*4+32||fseek(file,0,SEEK_SET)){
+        fclose(file);return 0;
+    }
+    RefineSha256 sha;refine_sha256_init(&sha);
+    char magic[8];uint32_t geometry[9],expected[9],len=0,kv_rows=0;
+    #define SESSION_TRY_READ(dst,bytes) \
+        (fread((dst),1,(bytes),file)==(bytes) ? \
+         (refine_sha256_update(&sha,(dst),(bytes)),1) : 0)
+    session_geometry(&m->c,expected);
+    int ok=SESSION_TRY_READ(magic,8)&&!memcmp(magic,SESSION_MAGIC,8)&&
+        SESSION_TRY_READ(geometry,sizeof(geometry))&&
+        !memcmp(geometry,expected,sizeof(geometry))&&
+        SESSION_TRY_READ(&len,4)&&SESSION_TRY_READ(&kv_rows,4)&&
+        len>=2&&len<=(uint32_t)m->context_limit&&kv_rows==len-1;
+    for(int i=0;ok&&i<m->c.n_layers;i++){
+        uint8_t type=0;ok=SESSION_TRY_READ(&type,1)&&
+            type==(uint8_t)m->c.layer_type[i];
+    }
+    int *tokens=ok?malloc((size_t)len*sizeof(int)):NULL;
+    if(ok&&!tokens)ok=0;
+    if(ok)ok=SESSION_TRY_READ(tokens,(size_t)len*sizeof(int));
+    long position=ok?ftell(file):-1;
+    long payload_end=file_size-32;
+    unsigned char chunk[65536];
+    while(ok&&position<payload_end){
+        size_t amount=(size_t)(payload_end-position);
+        if(amount>sizeof(chunk))amount=sizeof(chunk);
+        ok=SESSION_TRY_READ(chunk,amount);
+        position+=ok?(long)amount:0;
+    }
+    uint8_t expected_digest[32],digest[32];
+    if(ok&&position==payload_end){
+        refine_sha256_final(&sha,expected_digest);
+        ok=fread(digest,1,32,file)==32&&!memcmp(digest,expected_digest,32)&&
+           fgetc(file)==EOF;
+    }else ok=0;
+    #undef SESSION_TRY_READ
+    fclose(file);
+    if(!ok){free(tokens);return 0;}
+    *tokens_out=tokens;*len_out=(int)len;return 1;
 }
 
 static void session_die(const char *path, const char *why) {
@@ -4682,6 +4735,8 @@ typedef struct {
     pthread_mutex_t stats_mu;
     GenStats last_stats;
     int has_last_stats;
+    int auto_compact;
+    int compact_threshold_percent;
     double started;
     int port;
 } SamosaServeContext;
@@ -4736,6 +4791,190 @@ static int serve_token_sink(int token,void *opaque){
         atomic_store(sink->cancel,1);return 2;
     }
     return 0;
+}
+
+typedef struct {
+    int before_tokens;
+    int after_tokens;
+    int retained_tokens;
+} CompactionResult;
+
+static int compaction_should_run(int existing,int extra,int generated,
+                                 int limit,int threshold_percent){
+    if(existing<2||extra<0||generated<0||limit<2||
+       threshold_percent<1||threshold_percent>100)return 0;
+    int64_t projected=(int64_t)existing+extra+generated;
+    int64_t threshold=((int64_t)limit*threshold_percent+99)/100;
+    /* A huge incoming message is not compactable history. Avoid spending a
+     * summary turn unless the sealed state itself is large enough to shrink. */
+    return existing>=limit/4&&projected>=threshold;
+}
+
+/* Keep a recent verbatim tail, beginning at a real Qwen message boundary.
+ * If one enormous current turn has no usable boundary near the target, the
+ * summary remains authoritative and no malformed partial turn is retained. */
+static int compaction_tail_start(const int *tokens,int len,int im_start,
+                                 int target_tail_tokens){
+    if(!tokens||len<2||im_start<0||target_tail_tokens<1)return len;
+    int desired=len-target_tail_tokens;if(desired<0)desired=0;
+    for(int i=desired;i<len;i++)if(tokens[i]==im_start)return i;
+    for(int i=desired-1;i>=0;i--)
+        if(tokens[i]==im_start&&len-i<=target_tail_tokens*2)return i;
+    return len;
+}
+
+/* A prompt-only session follows the same invariant as generated sessions:
+ * len tokens are stored, while KV/DeltaNet state represents len-1 tokens.
+ * Resume will step the final token exactly once before the next user turn. */
+static int session_prefill_save_tokens(Model *m,const int *tokens,int len,
+                                       const char *path,atomic_int *cancel){
+    if(!m||!tokens||len<2||!path||!context_fits(m,0,len,0)||
+       !context_memory_fits(m,len))return 0;
+    teacher_state_begin(m,len);
+    int prefix=len-1;
+    /* Bound transient prefill memory. The persistent cache still reserves the
+     * complete compacted length, but hidden/attention scratch is only 256
+     * positions at a time. */
+    for(int position=0;position<prefix;){
+        if(cancel&&atomic_load_explicit(cancel,memory_order_relaxed)){
+            teacher_state_end(m);return 0;
+        }
+        int count=prefix-position;if(count>256)count=256;
+        float *embedded=falloc((int64_t)count*m->c.hidden);
+        for(int i=0;i<count;i++)
+            embed_gather_row(embedded+(int64_t)i*m->c.hidden,&m->embed,
+                             tokens[position+i]);
+        float *logit=step(m,embedded,tokens+position,count,position,0,
+                          NULL,NULL,NULL);
+        free(logit);position+=count;
+    }
+    int ok=session_save(m,tokens,len,path)==0;
+    teacher_state_end(m);
+    return ok;
+}
+
+/* True K/V compaction:
+ *   1. resume the old sealed session and ask Qwen for continuation memory;
+ *   2. run_chat frees that old inference state without modifying the file;
+ *   3. prefill a brand-new, much smaller transcript and atomically replace
+ *      session.qws only after the replacement is completely fsynced.
+ * The browser keeps its visible transcript and conversation id unchanged. */
+static int compact_session(SamosaServeContext *ctx,const char *session_path,
+                           CompactionResult *result){
+    static const char instruction[]=
+        "Create a compact continuation memory for our conversation so another "
+        "instance of you can continue it without the full transcript. Return "
+        "only a concise structured summary. Preserve the user's goals, durable "
+        "facts and preferences, decisions, constraints, exact identifiers, "
+        "file paths, commands, code changes, results, and unresolved next "
+        "steps. Distinguish completed work from pending work. Do not include "
+        "hidden chain-of-thought; keep conclusions and useful rationale only.";
+    static const char memory_prefix[]=
+        "<|im_start|>system\n"
+        "This conversation was compacted locally. Treat the continuation memory "
+        "below as authoritative prior context. Use the verbatim recent turns "
+        "after it for immediate conversational continuity.\n\n"
+        "CONTINUATION MEMORY\n";
+    static const char memory_suffix[]="\n<|im_end|>\n";
+    g_moe_down_idot=g_idot;
+    int *old_tokens=NULL,before=0;
+    if(!session_read_tokens(ctx->model,session_path,&old_tokens,&before))return 0;
+    int im_start=tok_id_of(&ctx->tokenizer,"<|im_start|>");
+    int target_tail=ctx->model->context_limit*15/100;
+    if(target_tail<256)target_tail=256;
+    int tail_start=compaction_tail_start(old_tokens,before,im_start,target_tail);
+    /* Image embeddings are represented by placeholder token ids in the
+     * transcript. Their meaning is captured by the resumed summarization, but
+     * cannot be reconstructed by text-only prefill. Retain only turns after
+     * the final image placeholder. */
+    int last_image=-1;
+    for(int i=tail_start;i<before;i++)if(old_tokens[i]==248056)last_image=i;
+    if(last_image>=0){
+        int next=before;
+        for(int i=last_image+1;i<before;i++)
+            if(old_tokens[i]==im_start){next=i;break;}
+        tail_start=next;
+    }
+    int retained=before-tail_start;
+
+    int im_end=tok_id_of(&ctx->tokenizer,"<|im_end|>");
+    char *continuation=qwen_chat_continuation(instruction,1,
+                                               old_tokens[before-1]==im_end);
+    int cap=(int)strlen(continuation)+32;
+    int *scratch=malloc((size_t)cap*sizeof(int));
+    int extra=scratch?tok_encode(&ctx->tokenizer,continuation,
+        (int)strlen(continuation),scratch,cap):0;
+    free(scratch);free(continuation);
+    int summary_tokens=ctx->model->context_limit/24;
+    if(summary_tokens<512)summary_tokens=512;
+    if(summary_tokens>2048)summary_tokens=2048;
+    int available=ctx->model->context_limit-before-extra;
+    if(summary_tokens>available)summary_tokens=available;
+    if(extra<=0||summary_tokens<256||
+       !context_memory_fits(ctx->model,before+extra+summary_tokens)){
+        free(old_tokens);return 0;
+    }
+
+    GenOptions options;load_generation_options(ctx->snapshot,&options);
+    options.sample=0;options.temperature=0;options.top_p=1;options.top_k=1;
+    options.presence_penalty=0;options.last_token_penalty=0;
+    options.thinking_budget=0;options.cancel_flag=&ctx->cancel;
+    ServeTokenSink summary={.stream=0,.thinking_open=0,
+        .close_token=tok_id_of(&ctx->tokenizer,"</think>"),
+        .tokenizer=&ctx->tokenizer,
+        .eos_token=tok_id_of(&ctx->tokenizer,"<|im_end|>"),
+        .eot_token=tok_id_of(&ctx->tokenizer,"<|endoftext|>"),
+        .cancel=&ctx->cancel};
+    GenStats summary_stats={0};
+    int failed=run_chat(ctx->model,ctx->tokenizer_path,instruction,NULL,
+        summary_tokens,1,0,&options,NULL,session_path,0,&ctx->tokenizer,
+        serve_token_sink,&summary,&summary_stats);
+    if(failed||summary_stats.cancelled||!summary.content.length){
+        free(summary.reasoning.data);free(summary.content.data);free(old_tokens);
+        return 0;
+    }
+
+    ServeBuffer system={0};
+    int ok=serve_buffer_append(&system,memory_prefix,strlen(memory_prefix))&&
+        serve_buffer_append(&system,summary.content.data,summary.content.length)&&
+        serve_buffer_append(&system,memory_suffix,strlen(memory_suffix));
+    free(summary.reasoning.data);free(summary.content.data);
+    int system_cap=ok?(int)system.length+32:0;
+    int *system_tokens=ok?malloc((size_t)system_cap*sizeof(int)):NULL;
+    int system_count=system_tokens?tok_encode(&ctx->tokenizer,system.data,
+        (int)system.length,system_tokens,system_cap):0;
+    free(system.data);
+    if(system_count<=0){free(system_tokens);free(old_tokens);return 0;}
+    int eot=tok_id_of(&ctx->tokenizer,"<|endoftext|>");
+    int final_im_end=-1,controls_ok=system_tokens[0]==im_start;
+    for(int i=1;i<system_count;i++){
+        if(system_tokens[i]==im_start||system_tokens[i]==eot)controls_ok=0;
+        if(system_tokens[i]==im_end){
+            if(final_im_end>=0)controls_ok=0;
+            final_im_end=i;
+        }
+    }
+    if(final_im_end<0)controls_ok=0;
+    /* With no recent tail, make <|im_end|> the saved final token so the next
+     * continuation does not add a duplicate assistant/system closure. */
+    if(!retained&&final_im_end>=0)system_count=final_im_end+1;
+    if(!controls_ok){free(system_tokens);free(old_tokens);return 0;}
+    int after=system_count+retained;
+    int *compacted=malloc((size_t)after*sizeof(int));
+    if(!compacted){free(system_tokens);free(old_tokens);return 0;}
+    memcpy(compacted,system_tokens,(size_t)system_count*sizeof(int));
+    if(retained)memcpy(compacted+system_count,old_tokens+tail_start,
+                       (size_t)retained*sizeof(int));
+    free(system_tokens);free(old_tokens);
+    if(after>=before||!session_prefill_save_tokens(ctx->model,compacted,after,
+                                                   session_path,&ctx->cancel)){
+        free(compacted);return 0;
+    }
+    free(compacted);
+    fprintf(stderr,"[compaction] %s: %d -> %d tokens (%d recent retained)\n",
+            session_path,before,after,retained);
+    if(result)*result=(CompactionResult){before,after,retained};
+    return 1;
 }
 
 static int serve_valid_id(const char *id){
@@ -4835,12 +5074,10 @@ static char *serve_last_user(SamosaServeContext *ctx, jval *root, const char **s
     return user;
 }
 
-/* Validate the exact tokenized turn before queueing, allocating KV, or
- * sending stream headers.  Returns 1 when it fits, 0 when it exceeds the
- * product cap, and -1 for an unreadable/incompatible saved session. */
-static int serve_context_preflight(SamosaServeContext *ctx,const char *user,
-                                   const char *system,int no_thinking,
-                                   const char *resume_session,int generated){
+static int serve_context_measure(SamosaServeContext *ctx,const char *user,
+                                 const char *system,int no_thinking,
+                                 const char *resume_session,int *existing_out,
+                                 int *extra_out){
     int existing=0,last=-1;
     char *text=NULL;
     if(resume_session){
@@ -4857,6 +5094,18 @@ static int serve_context_preflight(SamosaServeContext *ctx,const char *user,
     int extra=tok_encode(&ctx->tokenizer,text,(int)bytes,tokens,capacity);
     free(tokens);free(text);
     if(extra<=0)return -1;
+    *existing_out=existing;*extra_out=extra;return 1;
+}
+
+/* Validate the exact tokenized turn before queueing, allocating KV, or
+ * sending stream headers.  Returns 1 when it fits, 0 when it exceeds the
+ * product cap, and -1 for an unreadable/incompatible saved session. */
+static int serve_context_preflight(SamosaServeContext *ctx,const char *user,
+                                   const char *system,int no_thinking,
+                                   const char *resume_session,int generated){
+    int existing=0,extra=0;
+    if(serve_context_measure(ctx,user,system,no_thinking,resume_session,
+                             &existing,&extra)<0)return -1;
     if(!context_fits(ctx->model,existing,extra,generated))return 0;
     return context_memory_fits(ctx->model,existing+extra+generated)?1:-2;
 }
@@ -4871,7 +5120,7 @@ static int serve_finish_reason(const GenStats *stats,const char **closure){
 static int serve_send_nonstream(int fd,ServeTokenSink *sink,const GenStats *stats){
     const char *closure; int finish=serve_finish_reason(stats,&closure);
     const char *reason=finish==1?"stop":finish==2?"length":finish==3?"repetition":"cancelled";
-    ServeBuffer body={0}; char prefix[512],suffix[896];
+    ServeBuffer body={0}; char prefix[512],suffix[1088];
     int n=snprintf(prefix,sizeof(prefix),
         "{\"object\":\"chat.completion\",\"model\":\"qwen3.6-35b-a3b\","
         "\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\","
@@ -4884,11 +5133,15 @@ static int serve_send_nonstream(int fd,ServeTokenSink *sink,const GenStats *stat
         "\"},\"finish_reason\":\"%s\"}],\"usage\":{\"prompt_tokens\":%d,"
         "\"completion_tokens\":%d,\"total_tokens\":%d},\"samosa\":{"
         "\"thinking_closure\":\"%s\",\"tokens_per_second\":%.2f,"
-        "\"rss_gb\":%.2f,\"session_saved\":%s}}",reason,stats->prompt,stats->generated,
+        "\"rss_gb\":%.2f,\"session_saved\":%s,\"compacted\":%s,"
+        "\"compacted_from_tokens\":%d,\"compacted_to_tokens\":%d}}",
+        reason,stats->prompt,stats->generated,
         stats->prompt+stats->generated,closure,
         stats->generated>1&&stats->decode_s>0?(stats->generated-1)/stats->decode_s:0,
         rss_gb(),stats->session_save_requested
-            ? ((stats->session_save_failed||stats->session_save_skipped)?"false":"true") : "null");
+            ? ((stats->session_save_failed||stats->session_save_skipped)?"false":"true") : "null",
+        stats->compacted?"true":"false",stats->compacted_from_tokens,
+        stats->compacted_to_tokens);
     ok=ok&&n>0&&serve_buffer_append(&body,suffix,(size_t)n)&&
        samosa_http_headers(fd,200,"application/json",body.length,NULL)&&
        samosa_send_all(fd,body.data,body.length);
@@ -4898,16 +5151,20 @@ static int serve_send_nonstream(int fd,ServeTokenSink *sink,const GenStats *stat
 static int serve_send_stream_end(int fd,const GenStats *stats){
     const char *closure; int finish=serve_finish_reason(stats,&closure);
     const char *reason=finish==1?"stop":finish==2?"length":finish==3?"repetition":"cancelled";
-    char event[1152]; int n=snprintf(event,sizeof(event),
+    char event[1408]; int n=snprintf(event,sizeof(event),
         "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,"
         "\"delta\":{},\"finish_reason\":\"%s\"}],\"usage\":{\"prompt_tokens\":%d,"
         "\"completion_tokens\":%d,\"total_tokens\":%d},\"samosa\":{"
         "\"thinking_closure\":\"%s\",\"tokens_per_second\":%.2f,"
-        "\"rss_gb\":%.2f,\"session_saved\":%s}}\n\ndata: [DONE]\n\n",reason,stats->prompt,
+        "\"rss_gb\":%.2f,\"session_saved\":%s,\"compacted\":%s,"
+        "\"compacted_from_tokens\":%d,\"compacted_to_tokens\":%d}}\n\n"
+        "data: [DONE]\n\n",reason,stats->prompt,
         stats->generated,stats->prompt+stats->generated,closure,
         stats->generated>1&&stats->decode_s>0?(stats->generated-1)/stats->decode_s:0,
         rss_gb(),stats->session_save_requested
-            ? ((stats->session_save_failed||stats->session_save_skipped)?"false":"true") : "null");
+            ? ((stats->session_save_failed||stats->session_save_skipped)?"false":"true") : "null",
+        stats->compacted?"true":"false",stats->compacted_from_tokens,
+        stats->compacted_to_tokens);
     return n>0&&(size_t)n<sizeof(event)&&samosa_send_all(fd,event,(size_t)n);
 }
 
@@ -4965,15 +5222,23 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
         save_session=session_path; if(!access(session_path,R_OK))resume_session=session_path;
     }
 
-    int context_ok=serve_context_preflight(ctx,user,system,no_thinking,
-                                            resume_session,max_tokens);
+    int existing=0,extra=0;
+    int measured=serve_context_measure(ctx,user,system,no_thinking,resume_session,
+                                       &existing,&extra);
+    if(measured<0){free(user);return samosa_http_json_error(fd,409,"invalid_session",
+        "The saved conversation is invalid or incompatible with this model.");}
+    int auto_candidate=ctx->auto_compact&&resume_session&&
+        compaction_should_run(existing,extra,max_tokens,ctx->model->context_limit,
+                              ctx->compact_threshold_percent);
+    int context_ok=auto_candidate?1:serve_context_preflight(ctx,user,system,no_thinking,
+                                                            resume_session,max_tokens);
     if(context_ok==-2){ free(user); return samosa_http_json_error(fd,503,"insufficient_memory",
         "Not enough currently available memory for this context window."); }
     if(context_ok<0){ free(user); return samosa_http_json_error(fd,409,"invalid_session",
         "The saved conversation is invalid or incompatible with this model."); }
     if(!context_ok){ free(user); return samosa_http_json_error(fd,400,"context_limit",
         "This turn could exceed Samosa Chat's configured total context limit. "
-        "Start a new chat, shorten the message, or request fewer output tokens."); }
+        "Compact the chat, start a new one, shorten the message, or request fewer output tokens."); }
 
     double wait_s=0; int admitted=serve_scheduler_acquire(&ctx->scheduler,&wait_s);
     if(admitted==0){ free(user); return samosa_http_json_error(fd,429,"queue_full","The inference queue is full."); }
@@ -4982,6 +5247,24 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
      * the snapshot while this request waited. Refresh and revalidate while we
      * hold exclusive model admission, before allocation or response headers. */
     if(save_session)resume_session=!access(session_path,R_OK)?session_path:NULL;
+    measured=serve_context_measure(ctx,user,system,no_thinking,resume_session,
+                                   &existing,&extra);
+    if(measured<0){serve_scheduler_release(&ctx->scheduler);free(user);
+        return samosa_http_json_error(fd,409,"invalid_session",
+            "The saved conversation header is invalid or incompatible with this model.");}
+    auto_candidate=ctx->auto_compact&&resume_session&&
+        compaction_should_run(existing,extra,max_tokens,ctx->model->context_limit,
+                              ctx->compact_threshold_percent);
+    CompactionResult compaction={0};
+    if(auto_candidate){
+        atomic_store(&ctx->cancel,0);
+        if(!compact_session(ctx,resume_session,&compaction)){
+            serve_scheduler_release(&ctx->scheduler);free(user);
+            return samosa_http_json_error(fd,500,"compaction_failed",
+                "Automatic compaction could not safely replace the saved session. "
+                "The original session was kept unchanged.");}
+        resume_session=session_path;
+    }
     context_ok=serve_context_preflight(ctx,user,system,no_thinking,
                                        resume_session,max_tokens);
     if(context_ok==-2){serve_scheduler_release(&ctx->scheduler); free(user);
@@ -5004,6 +5287,11 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
     if(sent)result=run_chat(ctx->model,ctx->tokenizer_path,user,system,max_tokens,
         no_thinking,1,&options,save_session,resume_session,0,&ctx->tokenizer,
         serve_token_sink,&sink,&stats);
+    if(compaction.before_tokens){
+        stats.compacted=1;
+        stats.compacted_from_tokens=compaction.before_tokens;
+        stats.compacted_to_tokens=compaction.after_tokens;
+    }
     if(sent && !result){ if(stream)serve_send_stream_end(fd,&stats); else serve_send_nonstream(fd,&sink,&stats); }
     pthread_mutex_lock(&ctx->stats_mu);ctx->last_stats=stats;ctx->has_last_stats=1;pthread_mutex_unlock(&ctx->stats_mu);
     free(sink.reasoning.data);free(sink.content.data);serve_scheduler_release(&ctx->scheduler);
@@ -5018,26 +5306,72 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
  * will observe the new setting rather than allocate against a stale one. */
 static int samosa_serve_settings(SamosaServeContext *ctx,int fd,jval *root){
     jval *value=json_get(root,"context_tokens"); char numeric[32]; const char *spec=NULL;
-    if(!value)return samosa_http_json_error(fd,400,"invalid_context_limit",
-        "context_tokens must be 'auto' or a positive integer.");
-    if(value->t==J_STR)spec=value->str;
-    else if(value->t==J_NUM&&floor(value->num)==value->num&&value->num>=2&&value->num<=INT_MAX){
+    int has_context=value!=NULL;
+    if(value&&value->t==J_STR)spec=value->str;
+    else if(value&&value->t==J_NUM&&floor(value->num)==value->num&&value->num>=2&&value->num<=INT_MAX){
         snprintf(numeric,sizeof(numeric),"%.0f",value->num);spec=numeric;
-    }else return samosa_http_json_error(fd,400,"invalid_context_limit",
+    }else if(value)return samosa_http_json_error(fd,400,"invalid_context_limit",
         "context_tokens must be 'auto' or a positive integer.");
+    jval *auto_value=json_get(root,"auto_compact");
+    if(auto_value&&auto_value->t!=J_BOOL)return samosa_http_json_error(fd,400,
+        "invalid_auto_compact","auto_compact must be true or false.");
+    jval *threshold_value=json_get(root,"compact_threshold_percent");
+    if(threshold_value&&(threshold_value->t!=J_NUM||
+       floor(threshold_value->num)!=threshold_value->num||
+       threshold_value->num<50||threshold_value->num>90))
+        return samosa_http_json_error(fd,400,"invalid_compact_threshold",
+            "compact_threshold_percent must be an integer in 50..90.");
+    if(!has_context&&!auto_value&&!threshold_value)
+        return samosa_http_json_error(fd,400,"invalid_settings",
+            "Provide context_tokens, auto_compact, or compact_threshold_percent.");
     int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL);
     if(admitted==0)return samosa_http_json_error(fd,429,"queue_full","The inference queue is full.");
     if(admitted<0)return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down.");
-    int ok=model_configure_context_limit(ctx->model,spec);
+    int ok=!has_context||model_configure_context_limit(ctx->model,spec);
+    if(ok&&auto_value)ctx->auto_compact=auto_value->boolean;
+    if(ok&&threshold_value)ctx->compact_threshold_percent=(int)threshold_value->num;
     serve_scheduler_release(&ctx->scheduler);
     if(!ok)return samosa_http_json_error(fd,400,"model_context_limit",
         "The requested context limit is invalid or exceeds this model's native limit.");
-    char body[384];snprintf(body,sizeof(body),
+    char body[512];snprintf(body,sizeof(body),
         "{\"status\":\"ok\",\"model_context_limit_tokens\":%d,"
         "\"context_limit_tokens\":%d,\"context_limit_mode\":\"%s\","
-        "\"kv_bytes_per_token\":%llu}",ctx->model->model_context_limit,
+        "\"kv_bytes_per_token\":%llu,\"auto_compact\":%s,"
+        "\"compact_threshold_percent\":%d}",ctx->model->model_context_limit,
         ctx->model->context_limit,ctx->model->context_limit_is_auto?"auto":"manual",
-        (unsigned long long)ctx->model->kv_bytes_per_token);
+        (unsigned long long)ctx->model->kv_bytes_per_token,
+        ctx->auto_compact?"true":"false",ctx->compact_threshold_percent);
+    return samosa_http_response(fd,200,"application/json",body,NULL);
+}
+
+static int samosa_serve_compact(SamosaServeContext *ctx,int fd,jval *root){
+    jval *conversation=serve_json_field(root,"conversation_id",J_STR);
+    if(!conversation||!serve_valid_id(conversation->str))
+        return samosa_http_json_error(fd,400,"invalid_conversation_id",
+            "conversation_id must use letters, numbers, dash, or underscore.");
+    char path[PATH_MAX];
+    if(snprintf(path,sizeof(path),"%s/%s/session.qws",ctx->chats_dir,
+                conversation->str)>=(int)sizeof(path)||access(path,R_OK))
+        return samosa_http_json_error(fd,404,"session_not_found",
+            "This conversation does not have a saved session to compact.");
+    int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL);
+    if(admitted==0)return samosa_http_json_error(fd,429,"queue_full","The inference queue is full.");
+    if(admitted<0)return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down.");
+    if(access(path,R_OK)){serve_scheduler_release(&ctx->scheduler);
+        return samosa_http_json_error(fd,404,"session_not_found",
+            "This conversation does not have a saved session to compact.");}
+    atomic_store(&ctx->cancel,0);
+    CompactionResult compacted={0};
+    int ok=compact_session(ctx,path,&compacted);
+    serve_scheduler_release(&ctx->scheduler);
+    if(!ok)return samosa_http_json_error(fd,500,"compaction_failed",
+        "Compaction could not safely replace the saved session. "
+        "The original session was kept unchanged.");
+    char body[384];snprintf(body,sizeof(body),
+        "{\"status\":\"ok\",\"conversation_id\":\"%s\",\"before_tokens\":%d,"
+        "\"after_tokens\":%d,\"retained_recent_tokens\":%d}",
+        conversation->str,compacted.before_tokens,compacted.after_tokens,
+        compacted.retained_tokens);
     return samosa_http_response(fd,200,"application/json",body,NULL);
 }
 
@@ -5063,14 +5397,16 @@ static int samosa_serve_handler(SamosaHttpServer *server,int fd,
         int context_limit=ctx->model?ctx->model->context_limit:SAMOSA_LEGACY_CONTEXT_TOKENS;
         uint64_t kv_per_token=ctx->model?ctx->model->kv_bytes_per_token:0;
         const char *context_mode=ctx->model&&ctx->model->context_limit_is_auto?"auto":"manual";
-        char body[1024];snprintf(body,sizeof(body),
+        char body[1152];snprintf(body,sizeof(body),
             "{\"status\":\"ok\",\"model\":\"qwen3.6-35b-a3b\",\"rss_gb\":%.2f,"
             "\"model_context_limit_tokens\":%d,\"context_limit_tokens\":%d,"
             "\"context_limit_mode\":\"%s\",\"kv_bytes_per_token\":%llu,\"uptime_seconds\":%.0f,"
+            "\"compaction\":{\"auto\":%s,\"threshold_percent\":%d},"
             "\"scheduler\":{\"active\":%s,\"queued\":%d,"
             "\"max_queue\":%d},\"last_generation\":{\"available\":%s,"
             "\"tokens\":%d,\"tokens_per_second\":%.2f}}",rss_gb(),
             model_limit,context_limit,context_mode,(unsigned long long)kv_per_token,now_s()-ctx->started,
+            ctx->auto_compact?"true":"false",ctx->compact_threshold_percent,
             active?"true":"false",queued,ctx->scheduler.max_waiting,has?"true":"false",
             stats.generated,stats.generated>1&&stats.decode_s>0?(stats.generated-1)/stats.decode_s:0);
         return samosa_http_response(fd,200,"application/json",body,NULL);
@@ -5099,6 +5435,11 @@ static int samosa_serve_handler(SamosaHttpServer *server,int fd,
         if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
         int result=samosa_serve_settings(ctx,fd,root);json_free(root);free(arena);return result;
     }
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/compact")){
+        char *arena=NULL;jval *root=json_parse(request->body,&arena);
+        if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
+        int result=samosa_serve_compact(ctx,fd,root);json_free(root);free(arena);return result;
+    }
     return samosa_http_json_error(fd,404,"not_found","Endpoint not found.");
 }
 
@@ -5112,7 +5453,8 @@ static void samosa_serve_signal(int signal_number){
 static int run_samosa_serve(Model *model,const char *snapshot,
                             const char *tokenizer_path,int port,int max_queue){
     SamosaServeContext context={.model=model,.tokenizer_path=tokenizer_path,
-        .snapshot=snapshot,.started=now_s(),.port=port};
+        .snapshot=snapshot,.auto_compact=1,.compact_threshold_percent=80,
+        .started=now_s(),.port=port};
     atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
     serve_scheduler_init(&context.scheduler,max_queue);tok_load(&context.tokenizer,tokenizer_path);
     const char *configured=getenv("SAMOSA_CHATS_DIR");

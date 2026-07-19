@@ -25,7 +25,8 @@ equivalent is `--context-tokens 131072`. Background state is under `~/.samosa/`:
 - `GET /healthz` — macOS physical footprint, model/effective context limits,
   KV bytes per token, uptime, queue state, and last-generation speed.
 - `GET /v1/models` — OpenAI-shaped model listing.
-- `POST /v1/settings` — update the local server's total-context setting.
+- `POST /v1/settings` — update total-context and auto-compaction settings.
+- `POST /v1/compact` — compact one saved conversation in place.
 - `POST /v1/chat/completions` — JSON or SSE chat response.
 - `POST /v1/cancel` — cooperatively stop the active generation between tokens.
 - `POST /v1/shutdown` — cancel active work, reject queued work, and stop.
@@ -55,11 +56,60 @@ two requests for the same conversation cannot race against a stale snapshot.
 
 The browser’s **Total context capacity** setting calls the local-only settings
 endpoint and remembers the choice in browser-local storage. It accepts
-`{"context_tokens":"auto"}` or a positive integer no larger than the model
-limit. The update waits for the active generation slot, so it cannot change a
-context budget mid-generation. Existing conversations are retained; a chat
-already longer than a newly lowered limit will ask the user to raise the limit
-or start a new conversation when continued.
+`context_tokens` as `"auto"` or a positive integer no larger than the model
+limit. The same object can set `auto_compact` and
+`compact_threshold_percent` (an integer from 50 through 90):
+
+```json
+{
+  "context_tokens": "auto",
+  "auto_compact": true,
+  "compact_threshold_percent": 80
+}
+```
+
+The update waits for the active generation slot, so it cannot change a context
+budget mid-generation. Existing conversations are retained.
+
+## Conversation compaction
+
+Automatic compaction is enabled by default at 80% projected context use.
+“Projected” means the sealed history plus the exact incoming turn and its
+requested completion ceiling. This leaves room for Qwen to produce the
+continuation memory before the hard context limit is reached. Settings can turn
+automatic compaction off or choose a 70%, 75%, 80%, 85%, or 90% threshold.
+
+Compaction is a real state replacement, not an extra summary message appended
+to the old cache:
+
+1. Samosa resumes the sealed session and asks Qwen for a structured continuation
+   memory, so the summarizer sees the actual prior K/V state.
+2. The temporary summarization state is freed.
+3. Samosa creates a new transcript containing the continuation memory and a
+   recent verbatim tail (15% of the configured window, aligned to a message
+   boundary).
+4. The smaller K/V and DeltaNet state are prefilled in bounded chunks and written to a temporary
+   sealed session. `session.qws` is replaced by atomic rename only after the new
+   file is hashed, flushed, and fsynced.
+
+The conversation ID, browser transcript, and next-turn behavior stay the same.
+If any phase fails, the previous `session.qws` remains authoritative. Image
+understanding is captured by the resumed summary; raw image placeholder tokens
+are not copied into the text-only recent tail.
+
+Manual compaction uses the same path:
+
+```sh
+curl http://127.0.0.1:8642/v1/compact \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"conversation_id":"demo"}'
+```
+
+Success reports `before_tokens`, `after_tokens`, and
+`retained_recent_tokens`. Compaction requires enough unused context for its
+bounded 256–2,048-token summary. Auto-compaction is designed to preserve that
+headroom; a very full session manually compacted after the threshold may fail
+safely and retain the old snapshot.
 
 Example:
 
@@ -79,9 +129,10 @@ curl -N http://127.0.0.1:8642/v1/chat/completions \
 Streaming chunks place pre-closure text in `delta.reasoning` and final answer
 text in `delta.content`. The terminal chunk reports `finish_reason`, token
 usage, `samosa.thinking_closure` (`natural`, `budget_transition`, `repetition`,
-or `cancelled`), tokens/s, RSS, and `session_saved` (`true`/`false` for a
-conversation request, otherwise `null`). A snapshot failure is therefore
-visible instead of being silently reported as durable.
+or `cancelled`), tokens/s, RSS, `session_saved` (`true`/`false` for a
+conversation request, otherwise `null`), and auto-compaction metadata
+(`compacted`, `compacted_from_tokens`, `compacted_to_tokens`). A snapshot
+failure is therefore visible instead of being silently reported as durable.
 
 ## Admission and safety
 

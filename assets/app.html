@@ -305,8 +305,14 @@
       <label for="contextTokens">Total context capacity</label>
       <select id="contextTokens"><option value="auto">Auto (recommended)</option><option value="24576">24,576 tokens</option><option value="65536">65,536 tokens</option><option value="131072">131,072 tokens</option><option value="262144">262,144 tokens</option><option value="custom">Custom…</option></select>
       <input id="contextCustom" inputmode="numeric" pattern="[0-9]*" placeholder="Custom token limit" hidden>
-      <button class="close-settings" id="applyContext" type="button">Apply context setting</button>
+      <button class="close-settings" id="applyContext" type="button">Apply context settings</button>
       <small id="contextHelp">History, thinking, and the answer share this total. The server checks memory before every request.</small>
+    </div>
+    <div class="field">
+      <label><input id="autoCompact" type="checkbox" checked> Auto-compact conversations</label>
+      <select id="compactThreshold" aria-label="Auto-compaction threshold"><option value="70">At 70% projected use</option><option value="75">At 75% projected use</option><option value="80" selected>At 80% projected use</option><option value="85">At 85% projected use</option><option value="90">At 90% projected use</option></select>
+      <button class="close-settings" id="compactNow" type="button">Compact this conversation now</button>
+      <small id="compactHelp">Compaction summarizes durable context, retains recent turns verbatim, and rebuilds the K/V snapshot under the same conversation.</small>
     </div>
     <div class="local-card"><strong>Local-only connection</strong><br>This page talks to <code>127.0.0.1</code>. It contains no analytics, accounts, CDNs, or remote scripts.</div>
   </aside>
@@ -320,6 +326,7 @@
         composer: $("composer"), send: $("send"), stop: $("stop"), name: $("conversationName"),
         status: $("modelStatus"), dot: $("statusDot"), settings: $("settings"), scrim: $("scrim"),
         thinking: $("thinking"), maxTokens: $("maxTokens"), seed: $("seed"), contextTokens: $("contextTokens"), contextCustom: $("contextCustom"), applyContext: $("applyContext"), mode: $("modeValue"),
+        autoCompact: $("autoCompact"), compactThreshold: $("compactThreshold"), compactNow: $("compactNow"), compactHelp: $("compactHelp"),
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
         imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview")
@@ -341,11 +348,11 @@
           const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
           if (parsed && Array.isArray(parsed.chats)) return parsed;
         } catch (_) {}
-        return { currentId: null, chats: [], settings: { thinking: "off", maxTokens: "2048", seed: "", contextTokens: "auto", contextCustom: "", contextConfigured: false } };
+        return { currentId: null, chats: [], settings: { thinking: "off", maxTokens: "2048", seed: "", contextTokens: "auto", contextCustom: "", contextConfigured: false, autoCompact: true, compactThreshold: "80" } };
       }
       function saveState() {
         state.currentId = currentId;
-        state.settings = { thinking: els.thinking.value, maxTokens: els.maxTokens.value, seed: els.seed.value.trim(), contextTokens: els.contextTokens.value, contextCustom: els.contextCustom.value.trim(), contextConfigured: !!state.settings?.contextConfigured };
+        state.settings = { thinking: els.thinking.value, maxTokens: els.maxTokens.value, seed: els.seed.value.trim(), contextTokens: els.contextTokens.value, contextCustom: els.contextCustom.value.trim(), contextConfigured: !!state.settings?.contextConfigured, autoCompact: els.autoCompact.checked, compactThreshold: els.compactThreshold.value };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }
       function activeChat() { return state.chats.find(c => c.id === currentId) || null; }
@@ -481,6 +488,7 @@
           els.speed.textContent=meta.tokens_per_second ? `${meta.tokens_per_second.toFixed(2)} tok/s` : "—";
           els.rss.textContent=meta.rss_gb ? `${meta.rss_gb.toFixed(2)} GB` : "—";
           els.closure.textContent=(meta.thinking_closure||choice.finish_reason).replaceAll("_"," ");
+          if (meta.compacted) els.closure.textContent=`auto-compacted ${Number(meta.compacted_from_tokens).toLocaleString()} → ${Number(meta.compacted_to_tokens).toLocaleString()} · ${els.closure.textContent}`;
           if (meta.session_saved===false) assistant.error="The answer completed, but its continuation snapshot could not be saved.";
         }
         updateAssistantNode(assistant); scrollBottom(false);
@@ -499,6 +507,7 @@
           els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
           if(h.context_limit_tokens){const effective=h.context_limit_tokens.toLocaleString(), model=(h.model_context_limit_tokens||h.context_limit_tokens).toLocaleString(); els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${h.context_limit_mode||"configured"} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;}
+          if(h.compaction)els.compactHelp.textContent=`Auto-compaction is ${h.compaction.auto?"on":"off"} at ${h.compaction.threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
         } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
       }
       function contextValue() { return els.contextTokens.value === "custom" ? els.contextCustom.value.trim() : els.contextTokens.value; }
@@ -508,14 +517,28 @@
         if (value!=="auto"&&!/^[1-9][0-9]*$/.test(value)) { els.contextHelp.textContent="Enter a positive whole-token limit, or choose Auto."; return false; }
         els.applyContext.disabled=true;
         try {
-          const r=await fetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value})});
+          const r=await fetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value,auto_compact:els.autoCompact.checked,compact_threshold_percent:Number(els.compactThreshold.value)})});
           const result=await r.json(); if(!r.ok)throw new Error(result.error?.message||"Could not change the context setting.");
           state.settings.contextConfigured=true; saveState();
           const effective=result.context_limit_tokens.toLocaleString(), model=result.model_context_limit_tokens.toLocaleString();
           els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${result.context_limit_mode} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;
+          els.compactHelp.textContent=`Auto-compaction is ${result.auto_compact?"on":"off"} at ${result.compact_threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
           return true;
         } catch(error) { if(!silent)els.contextHelp.textContent=error.message||String(error); return false; }
         finally { els.applyContext.disabled=false; }
+      }
+      async function compactNow() {
+        if(generating)return;
+        const chat=activeChat();
+        if(!chat||!chat.messages.length){els.compactHelp.textContent="Send at least one message before compacting this conversation.";return;}
+        setGenerating(true);els.compactNow.disabled=true;els.closure.textContent="Compacting";
+        try {
+          const r=await fetch("/v1/compact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation_id:chat.id})});
+          const result=await r.json();if(!r.ok)throw new Error(result.error?.message||"Could not compact this conversation.");
+          els.compactHelp.textContent=`Compacted ${result.before_tokens.toLocaleString()} → ${result.after_tokens.toLocaleString()} tokens; retained ${result.retained_recent_tokens.toLocaleString()} recent tokens verbatim.`;
+          els.closure.textContent="Compacted";health();
+        } catch(error){els.compactHelp.textContent=error.message||String(error);els.closure.textContent="Compaction failed";}
+        finally{setGenerating(false);els.compactNow.disabled=false;els.prompt.focus();}
       }
       function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
       function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
@@ -548,9 +571,10 @@
       els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
       els.prompt.oninput=resizePrompt; els.prompt.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.composer.requestSubmit()}};
       for(const control of [els.thinking,els.maxTokens,els.seed]) control.onchange=()=>{saveState();els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text};
-      els.contextTokens.onchange=()=>{syncContextCustom();saveState()}; els.applyContext.onclick=()=>applyContextSetting();
+      els.contextTokens.onchange=()=>{syncContextCustom();saveState()}; els.autoCompact.onchange=()=>{saveState();applyContextSetting()};els.compactThreshold.onchange=()=>{saveState();applyContextSetting()};els.applyContext.onclick=()=>applyContextSetting();els.compactNow.onclick=compactNow;
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
       els.contextTokens.value=state.settings?.contextTokens||"auto"; els.contextCustom.value=state.settings?.contextCustom||""; syncContextCustom();
+      els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
       els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(health,5000); els.prompt.focus();
     })();
   </script>

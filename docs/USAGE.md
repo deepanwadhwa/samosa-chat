@@ -79,12 +79,17 @@ What the app does:
 - Has settings for thinking mode, maximum answer length, and a fixed seed.
 - Lets you choose automatic, preset, or custom total-context capacity; the
   choice is stored locally in the browser and applied to the local server.
+- Offers **Compact this conversation now** and configurable automatic
+  compaction, enabled by default at 80% projected context use. The conversation
+  and visible browser history stay in place.
 
 The server answers these HTTP endpoints:
 
 - `GET /healthz` — status, memory use, the context limit, queue state, last speed
 - `GET /v1/models`
 - `POST /v1/chat/completions` — reply as JSON, or stream token by token (SSE)
+- `POST /v1/settings` — apply context and automatic-compaction policy
+- `POST /v1/compact` — compact a saved conversation under the same ID
 - `POST /v1/cancel` — stop the current generation
 - `POST /v1/shutdown` — stop the server cleanly
 
@@ -103,6 +108,14 @@ KV bytes per token. The server checks a turn before queueing it and again after
 admission; it rejects an oversized or currently unsafe request before allocating
 KV. Only the conversation you are using is loaded into RAM, so opening other
 saved chats does not add resident KV.
+
+**Compaction.** Samosa resumes the current sealed session and asks Qwen for a
+structured continuation memory, retains recent complete turns verbatim, frees
+the old inference state, and builds a fresh smaller K/V snapshot. The old
+snapshot is not replaced until the compacted one is completely sealed and
+fsynced. Automatic compaction checks projected use—history, the incoming turn,
+and its answer ceiling—so it runs before the hard limit. Manual and automatic
+compaction keep the same conversation ID; browser messages are not deleted.
 
 ## Thinking modes
 
