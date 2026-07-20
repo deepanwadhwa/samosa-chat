@@ -1,0 +1,33 @@
+{
+  "job_id": "photos-two-people",
+  "schema_version": 1,
+  "input": {
+    "folder": "/tmp/inputs"
+  },
+  "instruction": "Count the people visible in this image.",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 20
+      }
+    },
+    "required": [
+      "people"
+    ]
+  },
+  "organize": {
+    "rule": {
+      "by": "where",
+      "field": "people",
+      "op": "eq",
+      "value": 2,
+      "dest": "Two people"
+    },
+    "dest_root": null,
+    "on_collision": "skip",
+    "unmatched": "leave"
+  }
+}

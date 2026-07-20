@@ -81,10 +81,9 @@ test: tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guar
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
-jobs-test: tests/jobs/fake_serve.py tests/jobs/test_jobs.py tests/jobs/test_gate.py dist/samosa_jobs.py
+jobs-test: tests/jobs/fake_serve.py dist/samosa_jobs.py
 	python3 tests/jobs/fake_serve.py --self-test
-	python3 -m unittest tests.jobs.test_jobs -v
-	python3 -m unittest tests.jobs.test_gate -v
+	python3 -m unittest discover -s tests/jobs -v
 
 clean:
 	rm -f qwen36b samosa-extract test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve

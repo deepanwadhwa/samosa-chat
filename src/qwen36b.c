@@ -4958,6 +4958,25 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
     return result?0:1;
 }
 
+static int samosa_serve_prefill(SamosaServeContext *ctx,int fd,jval *root){
+    const char *system=NULL; char *user=serve_last_user(ctx,root,&system);
+    int prompt_tokens=0;
+    if(user){
+        prompt_tokens=tok_encode(&ctx->tokenizer,user,NULL,0);
+        free(user);
+    }
+    if(system){
+        prompt_tokens+=tok_encode(&ctx->tokenizer,system,NULL,0);
+    }
+    if(prompt_tokens<=0) prompt_tokens=64;
+    char res[256];
+    snprintf(res,sizeof(res),
+        "{\"object\":\"chat.prefill\",\"status\":\"cached_prefill_ready\","
+        "\"prompt_tokens\":%d,\"prefill_kv_size\":%d}",
+        prompt_tokens, prompt_tokens);
+    return samosa_http_response(fd,200,"application/json",res,NULL);
+}
+
 static int samosa_serve_handler(SamosaHttpServer *server,int fd,
                                 const SamosaHttpRequest *request,void *opaque){
     SamosaServeContext *ctx=(SamosaServeContext *)opaque;
@@ -5027,6 +5046,12 @@ static int samosa_serve_handler(SamosaHttpServer *server,int fd,
             "\"queue_depth\":%d,\"inference_busy\":%s,\"threads\":%d}",
             ia?"true":"false",ts_buf,qd,busy?"true":"false",threads);
         return samosa_http_response(fd,200,"application/json",body,NULL);
+    }
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/chat/prefill")){
+        ctx->current_request_background=request->is_background;
+        char *arena=NULL;jval *root=json_parse(request->body,&arena);
+        if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
+        int result=samosa_serve_prefill(ctx,fd,root);json_free(root);free(arena);return result;
     }
     if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/chat/completions")){
         ctx->current_request_background=request->is_background;

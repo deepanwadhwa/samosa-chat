@@ -25,7 +25,10 @@ import csv
 import fcntl
 import hashlib
 import html
+import http.client
+import http.server
 import io
+import ipaddress
 import json
 import math
 import os
@@ -34,6 +37,7 @@ import re
 import shutil
 import signal
 import socket
+import ssl
 import struct
 import subprocess
 import sys
@@ -41,6 +45,7 @@ import tempfile
 import textwrap
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -183,16 +188,41 @@ def validate_output_schema(schema):
     return errors
 
 
+# Folder destination whitelist (JO.1)
+FOLDER_NAME_WHITELIST_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$')
+
+def is_valid_folder_name(name):
+    """Check if a folder name is whitelisted (no leading dot/dash, no path separators, no ..)."""
+    if not isinstance(name, str):
+        return False
+    if name in ('.', '..') or '/' in name or '\\' in name or '\x00' in name:
+        return False
+    return bool(FOLDER_NAME_WHITELIST_RE.match(name))
+
+
 def validate_job(job):
     """Validate a parsed job.json. Returns (normalized_job, errors)."""
     errors = []
 
+    # Check if job is metadata-only
+    org = job.get('organize')
+    is_metadata_only = False
+    if job.get('instruction') is None and job.get('output_schema') is None:
+        is_metadata_only = True
+    elif isinstance(org, dict):
+        rule = org.get('rule')
+        if isinstance(rule, dict):
+            by = rule.get('by')
+            if by in ('extension', 'media_type'):
+                is_metadata_only = True
+            elif 'instruction' not in job or 'output_schema' not in job or job.get('instruction') is None or job.get('output_schema') is None:
+                is_metadata_only = True
+
     # Required top-level fields
-    for key in ('job_id', 'input', 'instruction', 'output_schema'):
+    required_keys = ('job_id', 'input') if is_metadata_only else ('job_id', 'input', 'instruction', 'output_schema')
+    for key in required_keys:
         if key not in job:
             errors.append(f"missing required field: {key}")
-    if errors:
-        return None, errors
 
     # job_id
     jid = job.get('job_id', '')
@@ -210,9 +240,18 @@ def validate_job(job):
         errors.append("input must be an object")
     else:
         folder = inp.get('folder')
-        if not folder:
-            errors.append("input.folder is required")
-        elif not os.path.isabs(folder):
+        urls = inp.get('urls')
+        
+        if urls is not None:
+            if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
+                errors.append("input.urls must be a list of strings")
+            if not folder:
+                errors.append("input.folder is required as a spool directory when input.urls is used")
+        else:
+            if not folder:
+                errors.append("input.folder is required")
+
+        if folder and not os.path.isabs(folder):
             errors.append("input.folder must be an absolute path")
         mfb = inp.get('max_file_bytes', MAX_FILE_BYTES_DEFAULT)
         if not isinstance(mfb, (int, float)) or mfb <= 0:
@@ -224,20 +263,34 @@ def validate_job(job):
         errors.append(f"unit: must be auto, file, or page; got '{unit}'")
 
     # instruction
-    instr = job.get('instruction', '')
-    if not isinstance(instr, str) or not instr.strip():
-        errors.append("instruction must be a non-empty string")
+    if is_metadata_only:
+        if 'instruction' in job and job['instruction'] is not None:
+            instr = job['instruction']
+            if not isinstance(instr, str):
+                errors.append("instruction must be a string or null")
+    else:
+        instr = job.get('instruction', '')
+        if not isinstance(instr, str) or not instr.strip():
+            errors.append("instruction must be a non-empty string")
 
     # output_schema
-    schema_errors = validate_output_schema(job.get('output_schema', {}))
-    errors.extend(schema_errors)
+    if is_metadata_only:
+        if 'output_schema' in job and job['output_schema'] is not None:
+            schema_errors = validate_output_schema(job['output_schema'])
+            errors.extend(schema_errors)
+    else:
+        schema_errors = validate_output_schema(job.get('output_schema', {}))
+        errors.extend(schema_errors)
 
     # inference
-    inf = job.get('inference', {})
-    if not isinstance(inf, dict):
-        errors.append("inference must be an object")
+    inf = job.get('inference')
+    if is_metadata_only and inf is None:
+        pass
+    elif inf is not None and not isinstance(inf, dict):
+        errors.append("inference must be an object or null")
     else:
-        mt = inf.get('max_tokens', 512)
+        inf_dict = inf if inf is not None else {}
+        mt = inf_dict.get('max_tokens', 512)
         if not isinstance(mt, int) or mt < 1 or mt > 8192:
             errors.append("inference.max_tokens must be an integer in 1..8192")
 
@@ -262,6 +315,86 @@ def validate_job(job):
                 or mit < 256 or mit > MAX_JOB_INPUT_TOKENS):
             errors.append(f"resources.max_input_tokens must be an integer in 256..{MAX_JOB_INPUT_TOKENS}")
 
+    # organize (JO.0)
+    if org is not None:
+        if not isinstance(org, dict):
+            errors.append("organize must be an object")
+        else:
+            valid_org_keys = {'rule', 'dest_root', 'on_collision', 'unmatched'}
+            for k in org:
+                if k not in valid_org_keys:
+                    errors.append(f"organize: unknown key '{k}'")
+
+            rule = org.get('rule')
+            if not isinstance(rule, dict):
+                errors.append("organize.rule must be an object")
+            else:
+                by = rule.get('by')
+                if by not in ('extension', 'media_type', 'field', 'where'):
+                    errors.append(f"organize.rule.by: unknown rule type '{by}'")
+
+                if by == 'extension':
+                    mapping = rule.get('map')
+                    if mapping is not None:
+                        if not isinstance(mapping, dict):
+                            errors.append("organize.rule.map must be an object")
+                        else:
+                            for k, v in mapping.items():
+                                if not is_valid_folder_name(v):
+                                    errors.append(f"organize.rule.map value '{v}' is not a valid folder name")
+                elif by in ('field', 'where'):
+                    field_name = rule.get('field')
+                    if not field_name or not isinstance(field_name, str):
+                        errors.append("organize.rule.field is required and must be a string")
+                    else:
+                        schema_props = (job.get('output_schema') or {}).get('properties', {})
+                        if field_name not in schema_props:
+                            errors.append(f"organize.rule.field '{field_name}' not in output_schema properties")
+                    
+                    if by == 'where':
+                        op = rule.get('op')
+                        if op not in ('eq', 'ne', 'lt', 'le', 'gt', 'ge'):
+                            errors.append(f"organize.rule.op: unknown op '{op}'")
+                        if 'value' not in rule:
+                            errors.append("organize.rule.value is required for 'where' rule")
+                        dest = rule.get('dest')
+                        if not dest or not is_valid_folder_name(dest):
+                            errors.append(f"organize.rule.dest '{dest}' is not a valid folder name")
+
+            dest_root = org.get('dest_root')
+            if dest_root is not None:
+                if not isinstance(dest_root, str) or not os.path.isabs(dest_root):
+                    errors.append("organize.dest_root must be an absolute path")
+                else:
+                    folder_path = (job.get('input') or {}).get('folder', '')
+                    if folder_path and os.path.isabs(folder_path):
+                        folder_real = os.path.realpath(folder_path)
+                        dest_real = os.path.realpath(dest_root)
+                        try:
+                            rel = os.path.relpath(dest_real, folder_real)
+                            if rel.startswith('..') or rel == '..':
+                                errors.append("organize.dest_root must be an absolute path inside input.folder")
+                        except ValueError:
+                            errors.append("organize.dest_root must be an absolute path inside input.folder")
+
+                    folder_real = os.path.realpath(folder_path) if folder_path else ''
+                    cur = Path(dest_root)
+                    while cur != cur.parent:
+                        if folder_real and os.path.realpath(cur) == folder_real:
+                            break
+                        if cur.is_symlink():
+                            errors.append("organize.dest_root path component cannot be a symlink")
+                            break
+                        cur = cur.parent
+
+            on_coll = org.get('on_collision', 'skip')
+            if on_coll not in ('skip', 'suffix_sha8'):
+                errors.append(f"organize.on_collision: must be 'skip' or 'suffix_sha8', got '{on_coll}'")
+
+            unmatched = org.get('unmatched', 'leave')
+            if unmatched != 'leave' and not is_valid_folder_name(unmatched):
+                errors.append(f"organize.unmatched '{unmatched}' is not a valid folder name")
+
     # Normalize
     normalized = copy.deepcopy(job)
     normalized.setdefault('schema_version', 1)
@@ -270,11 +403,12 @@ def validate_job(job):
     normalized.setdefault('created_at', rfc3339_now())
     normalized.setdefault('reduce', {'mode': 'deterministic', 'model_fields': []})
     normalized.setdefault('inference', {})
-    normalized['inference'].setdefault('thinking', 'off')
-    normalized['inference'].setdefault('seed', 11)
-    normalized['inference'].setdefault('temperature', 0)
-    normalized['inference'].setdefault('max_tokens', 512)
-    normalized['inference'].setdefault('timeout_s', None)
+    if normalized['inference'] is not None:
+        normalized['inference'].setdefault('thinking', 'off')
+        normalized['inference'].setdefault('seed', 11)
+        normalized['inference'].setdefault('temperature', 0)
+        normalized['inference'].setdefault('max_tokens', 512)
+        normalized['inference'].setdefault('timeout_s', None)
     normalized.setdefault('output', {})
     normalized['output'].setdefault('format', 'jsonl')
     normalized.setdefault('resources', {})
@@ -328,25 +462,186 @@ def is_valid_utf8_text(data):
             return False
     return True
 
+def is_ssrf_safe_ip(ip_str):
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    if ip.is_loopback or ip.is_multicast or ip.is_unspecified:
+        return False
+    blocked_networks = [
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "169.254.0.0/16", "0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24",
+        "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4", "255.255.255.255/32",
+        "::/128", "fe80::/10", "::ffff:0:0/96", "64:ff9b::/96", "2002::/16",
+        "fc00::/7"
+    ]
+    for net in blocked_networks:
+        if ip in ipaddress.ip_network(net, strict=False):
+            return False
+    return True
 
-def discover_inputs(input_config, allowed_types=None):
+class PinningHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host, ip, **kwargs):
+        self._ip = ip
+        super().__init__(host, **kwargs)
+    def connect(self):
+        self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+
+class PinningHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, ip, **kwargs):
+        self._ip = ip
+        super().__init__(host, **kwargs)
+    def connect(self):
+        self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+def fetch_public_url(url, max_hops=5):
+    if os.environ.get("SAMOSA_OFFLINE") == "1":
+        return None, "SAMOSA_OFFLINE is set"
+    
+    current_url = url
+    hops = 0
+    while hops < max_hops:
+        parsed = urllib.parse.urlparse(current_url)
+        if parsed.scheme not in ("http", "https"):
+            return None, f"unsupported scheme: {parsed.scheme}"
+        
+        hostname = parsed.hostname
+        if not hostname:
+            return None, "missing hostname"
+            
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            addrinfo = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as e:
+            return None, f"DNS resolution failed: {e}"
+            
+        safe_ip = None
+        for info in addrinfo:
+            ip_str = info[4][0]
+            if is_ssrf_safe_ip(ip_str):
+                safe_ip = ip_str
+                break
+        
+        if not safe_ip:
+            return None, f"no safe IP address found for {hostname} (SSRF blocked)"
+            
+        if parsed.scheme == "https":
+            context = ssl.create_default_context()
+            conn = PinningHTTPSConnection(hostname, safe_ip, context=context, timeout=20)
+        else:
+            conn = PinningHTTPConnection(hostname, safe_ip, timeout=20)
+            
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+            
+        try:
+            conn.request("GET", path, headers={"User-Agent": "samosa-jobs/1.0", "Host": hostname})
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                loc = resp.getheader("Location")
+                if not loc:
+                    return None, "redirect missing Location header"
+                current_url = urllib.parse.urljoin(current_url, loc)
+                hops += 1
+                conn.close()
+                continue
+            if resp.status != 200:
+                return None, f"HTTP {resp.status} {resp.reason}"
+            body = resp.read(HTTP_MAX_BODY)
+            return body, None
+        except Exception as e:
+            return None, f"fetch failed: {e}"
+        finally:
+            conn.close()
+    return None, "too many redirects"
+
+def extract_html_text(html_bytes):
+    try:
+        html_str = html_bytes.decode('utf-8', errors='replace')
+    except Exception:
+        html_str = html_bytes.decode('latin1', errors='ignore')
+    
+    # Strip script and style blocks entirely
+    html_str = re.sub(r'<script\b[^<]*(?:(?!</script>)<[^<]*)*</script>', ' ', html_str, flags=re.IGNORECASE | re.DOTALL)
+    html_str = re.sub(r'<style\b[^<]*(?:(?!</style>)<[^<]*)*</style>', ' ', html_str, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Extract remaining text
+    text = re.sub(r'<[^>]+>', ' ', html_str)
+    text = html.unescape(text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # JS-heavy SPA detection heuristic
+    if len(html_str) > 2000 and len(text) < 100:
+        return None, "JS page detected, content unavailable"
+        
+    return text.encode('utf-8'), None
+
+
+def discover_inputs(input_config, allowed_types=None, is_metadata_only=False):
     """Discover input files. Returns list of {input_path, input_sha256, media_type, size}
     and a list of skip reasons."""
-    folder = input_config['folder']
+    folder = input_config.get('folder')
+    urls = input_config.get('urls', [])
     recursive = input_config.get('recursive', False)
     max_bytes = input_config.get('max_file_bytes', MAX_FILE_BYTES_DEFAULT)
-    type_filter = set(input_config.get('types', [
-        'image/jpeg', 'image/png', 'text/plain', 'application/pdf'
-    ]))
+
+    if 'types' in input_config:
+        type_filter = set(input_config['types'])
+    else:
+        type_filter = set(input_config.get('types', [
+            'image/jpeg', 'image/png', 'text/plain', 'application/pdf'
+        ]))
+        if is_metadata_only:
+            type_filter.add('application/octet-stream')
 
     items = []
     skipped = []
     seen_hashes = set()
 
-    if recursive:
-        walker = sorted(Path(folder).rglob('*'))
-    else:
-        walker = sorted(Path(folder).iterdir())
+    if urls and folder:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        for i, url in enumerate(urls):
+            body, err = fetch_public_url(url)
+            if err:
+                skipped.append((url, f"fetch failed: {err}"))
+                continue
+            
+            text_bytes, extract_err = extract_html_text(body)
+            if extract_err:
+                skipped.append((url, extract_err))
+                continue
+                
+            file_hash = sha256_bytes(text_bytes)
+            if file_hash in seen_hashes:
+                skipped.append((url, f"duplicate content (same SHA-256 as earlier item)"))
+                continue
+            seen_hashes.add(file_hash)
+            
+            safe_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', url)[:100]
+            spool_name = f"fetched_{file_hash[:8]}_{safe_slug}.txt"
+            spool_path = os.path.join(folder, spool_name)
+            if not os.path.exists(spool_path):
+                atomic_write(spool_path, text_bytes.decode('utf-8'))
+            
+            items.append({
+                'input_path': spool_path,
+                'input_sha256': file_hash,
+                'media_type': 'text/plain',
+                'size': len(text_bytes),
+                'source_url': url
+            })
+
+    walker = []
+    if folder and os.path.isdir(folder):
+        if recursive:
+            walker = sorted(Path(folder).rglob('*'))
+        else:
+            walker = sorted(Path(folder).iterdir())
 
     for entry in walker:
         path = str(entry)
@@ -363,8 +658,8 @@ def discover_inputs(input_config, allowed_types=None):
             if not stat_is_regular(st):
                 skipped.append((path, "not a regular file"))
                 continue
-            # Size check
-            if st.st_size > max_bytes:
+            # Size check (bypassed for metadata-only jobs)
+            if not is_metadata_only and st.st_size > max_bytes:
                 skipped.append((path, f"exceeds max_file_bytes ({st.st_size} > {max_bytes})"))
                 continue
             if st.st_size == 0:
@@ -398,6 +693,8 @@ def discover_inputs(input_config, allowed_types=None):
         if media_type is None:
             if is_valid_utf8_text(data):
                 media_type = 'text/plain'
+            elif is_metadata_only:
+                media_type = 'application/octet-stream'
             else:
                 skipped.append((path, "unsupported: not a recognized image/PDF and not valid UTF-8 text"))
                 continue
@@ -1131,13 +1428,96 @@ def build_request_body(job, extraction, unit):
     return body
 
 
+def auto_downscale_image_bytes(image_bytes, mime_type, target_max_bytes=3 * 1024 * 1024):
+    """Downscale image bytes (JPEG, PNG, PPM) so base64 representation stays under target_max_bytes."""
+    if len(image_bytes) <= target_max_bytes:
+        return image_bytes, mime_type, False
+
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        scale = (target_max_bytes / len(image_bytes)) ** 0.5
+        new_w = max(1, int(w * scale * 0.9))
+        new_h = max(1, int(h * scale * 0.9))
+        img = img.resize((new_w, new_h), getattr(Image, 'Resampling', Image).LANCZOS)
+        buf = io.BytesIO()
+        fmt = 'JPEG' if 'jpeg' in mime_type or 'jpg' in mime_type else 'PNG'
+        img.save(buf, format=fmt, quality=85)
+        res_bytes = buf.getvalue()
+        out_mime = 'image/jpeg' if fmt == 'JPEG' else 'image/png'
+        return res_bytes, out_mime, True
+    except Exception:
+        pass
+
+    if platform.system() == 'Darwin':
+        ext = '.jpg' if 'jpeg' in mime_type or 'jpg' in mime_type else '.png'
+        with tempfile.NamedTemporaryFile('wb', suffix=ext, delete=False) as in_f:
+            in_f.write(image_bytes)
+            in_path = in_f.name
+        out_path = in_path + '.downscaled' + ext
+        try:
+            res = subprocess.run(['sips', '-Z', '1024', in_path, '--out', out_path],
+                                 capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and os.path.exists(out_path):
+                with open(out_path, 'rb') as out_f:
+                    downscaled_bytes = out_f.read()
+                if downscaled_bytes and len(downscaled_bytes) < len(image_bytes):
+                    return downscaled_bytes, mime_type, True
+        except Exception:
+            pass
+        finally:
+            for p in (in_path, out_path):
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+    return image_bytes, mime_type, False
+
+
+def downscale_body_images_if_needed(body):
+    """Scan request body for image data URIs and auto-downscale if payload exceeds HTTP_MAX_BODY."""
+    data = json.dumps(body).encode('utf-8')
+    if len(data) <= HTTP_MAX_BODY:
+        return body, False
+
+    modified = False
+    messages = body.get('messages', [])
+    for msg in messages:
+        content = msg.get('content')
+        if isinstance(content, list):
+            for part in content:
+                if part.get('type') == 'image_url':
+                    img_url = part.get('image_url', {}).get('url', '')
+                    if img_url.startswith('data:image/'):
+                        try:
+                            header, b64_data = img_url.split(';base64,', 1)
+                            mime_type = header.replace('data:', '')
+                            raw_bytes = base64.b64decode(b64_data)
+                            downscaled_bytes, out_mime, shrank = auto_downscale_image_bytes(
+                                raw_bytes, mime_type, target_max_bytes=2 * 1024 * 1024
+                            )
+                            if shrank:
+                                new_b64 = base64.b64encode(downscaled_bytes).decode('ascii')
+                                part['image_url']['url'] = f"data:{out_mime};base64,{new_b64}"
+                                modified = True
+                        except Exception:
+                            pass
+
+    return body, modified
+
+
 def call_serve(body, serve_url, timeout=None, is_background=True):
     """POST to samosa serve. Returns (response_dict, error_str)."""
+    body, shrank = downscale_body_images_if_needed(body)
     data = json.dumps(body).encode('utf-8')
 
-    # Check body size (F-J5)
     if len(data) > HTTP_MAX_BODY:
         return None, 'image_too_large'
+
 
     headers = {
         'Content-Type': 'application/json',
@@ -1170,7 +1550,24 @@ def call_serve(body, serve_url, timeout=None, is_background=True):
             return None, 'timeout'
         return None, f'connection_error:{e.reason}'
     except Exception as e:
-        return None, f'request_error:{e}'
+        return None, f'unexpected_error:{e}'
+
+
+def call_serve_prefill(body, serve_url, timeout=None):
+    """POST to /v1/chat/prefill to pre-warm KV cache and get exact prefill stats. Returns (response_dict, error_str)."""
+    data = json.dumps(body).encode('utf-8')
+    headers = {'Content-Type': 'application/json'}
+    url = f"{serve_url}/v1/chat/prefill"
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    try:
+        if timeout:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+        else:
+            resp = urllib.request.urlopen(req)
+        resp_data = resp.read()
+        return json.loads(resp_data), None
+    except Exception as e:
+        return None, str(e)
 
 
 def request_cancel(serve_url):
@@ -1814,26 +2211,86 @@ def render_view_html(job, events, job_dir):
 
     job_name = html_escape(job.get('name', job.get('job_id', 'unknown')))
 
-    # REVIEW_REQUIRED queue first (each reason shown).
-    review_rows = []
+    props = job.get('output_schema', {}).get('properties', {})
+    review_cards = []
     for uid in sorted(units.keys()):
         row = units[uid]
         evt = row.get('state_event', {})
         if evt.get('type') != 'item_review_required':
             continue
+        
+        safe_uid = uid.replace('#', '_').replace('/', '_')
+        input_path = row.get("input_path", row.get("input_sha256", ""))
+        
+        # Load current data
+        current_data = {}
+        review_file = items_dir.parent / 'review' / f"{safe_uid}.json"
+        if review_file.exists():
+            try:
+                current_data = json.loads(review_file.read_text())
+            except Exception: pass
+        else:
+            item_file = items_dir / f"{safe_uid}.json"
+            if item_file.exists():
+                try:
+                    current_data = json.loads(item_file.read_text())
+                except Exception: pass
+        
+        # Generate left pane (preview)
+        media_type = ''
+        for e in events:
+            if e.get('type') == 'item_discovered' and e.get('input_sha256') == row.get('input_sha256'):
+                media_type = e.get('media_type', '')
+                break
+                
+        preview_html = '<div style="flex:1; padding:1em; border-right: 1px solid #eee; overflow:auto; max-height: 600px;">'
+        if media_type.startswith('image/'):
+            preview_html += f'<img src="file://{html_escape(input_path)}" style="max-width:100%; display:block;" />'
+        elif media_type == 'text/plain':
+            try:
+                with open(input_path, 'r', encoding='utf-8') as f:
+                    content = f.read(4096)
+                    if len(content) == 4096: content += '...'
+                preview_html += f'<pre style="white-space: pre-wrap; font-size: 12px; margin:0;">{html_escape(content)}</pre>'
+            except Exception:
+                preview_html += '<p>Could not read text preview.</p>'
+        else:
+            preview_html += f'<p>Preview not available for {html_escape(media_type)}</p><a href="file://{html_escape(input_path)}" target="_blank">Open file</a>'
+        preview_html += '</div>'
+        
+        # Generate right pane (fields)
+        fields_html = f'<div style="flex:1; padding:1em;"><h3>Review: {html_escape(uid)}</h3>'
         reasons = html_escape(', '.join(evt.get('reasons', [])))
-        review_rows.append(
-            f'<tr><td>{html_escape(uid)}</td>'
-            f'<td>{html_escape(row.get("input_path", row.get("input_sha256", "")))}</td>'
-            f'<td>{reasons}</td></tr>'
-        )
+        fields_html += f'<p class="review" style="margin-top:0;">Reasons: {reasons}</p><table style="width:100%; border:none; box-shadow:none; margin:0;">'
+        
+        for fname, fschema in props.items():
+            val = current_data.get(fname)
+            val_str = str(val) if val is not None else ""
+            cmd = f'samosa jobs review-patch job.json --unit "{uid}" --field "{fname}" --val "{val_str}"'
+            field_id = f"cmd_{safe_uid}_{html_escape(fname)}"
+            
+            fields_html += f'''
+            <tr style="background:none;">
+                <td style="padding:0.5em 0; border:none; border-bottom: 1px solid #eee; width:30%;"><strong>{html_escape(fname)}</strong></td>
+                <td style="padding:0.5em 0; border:none; border-bottom: 1px solid #eee;">
+                    <input type="text" value="{html_escape(val_str)}" style="width:100%; padding:0.4em; box-sizing:border-box;"
+                           oninput="document.getElementById('{field_id}').innerText = 'samosa jobs review-patch job.json --unit \\'{uid}\\' --field \\'{html_escape(fname)}\\' --val \\'' + this.value.replace(/'/g, '\\\\'') + '\\''" />
+                </td>
+            </tr>
+            <tr style="background:none;">
+                <td colspan="2" style="padding:0 0 1em 0; border:none;">
+                    <code id="{field_id}" style="font-size:11px; color:#555; display:block; background:#f4f4f4; padding:0.5em; border-radius:4px; margin-top:0.2em; word-break: break-all;">
+                        {html_escape(cmd)}
+                    </code>
+                </td>
+            </tr>
+            '''
+        fields_html += '</table></div>'
+        review_cards.append(f'<div style="display:flex; background:#fff; border-radius:8px; margin-bottom:1.5em; box-shadow:0 1px 3px rgba(0,0,0,.1);">{preview_html}{fields_html}</div>')
+
     review_section = ''
-    if review_rows:
-        review_section = (
-            '<h2 class="review">Needs review (' + str(review) + ')</h2>'
-            '<table><tr><th>Unit ID</th><th>Input</th><th>Reasons</th></tr>'
-            + ''.join(review_rows) + '</table>'
-        )
+    if review_cards:
+        review_section = f'<h2 class="review">Needs review ({review})</h2>' + ''.join(review_cards)
 
     # Full per-item table with links to result / provenance.
     rows_html = []
@@ -1863,6 +2320,89 @@ def render_view_html(job, events, job_dir):
             f'<td>{" · ".join(artifact_links)}</td></tr>'
         )
 
+    # Moves section (JO.6 - Bakery Test compliant)
+    moves_applied_events = [ev for ev in events if (ev.get('type') or ev.get('event')) == 'move_applied']
+    moves_skipped_events = [ev for ev in events if (ev.get('type') or ev.get('event')) == 'move_skipped']
+    moves_reverted_events = [ev for ev in events if (ev.get('type') or ev.get('event')) == 'move_reverted']
+
+    SKIP_PLAIN_SENTENCES = {
+        'unsafe_dest': "The folder name contained special characters and wasn't safe to use",
+        'dest_exists': 'A file with that name already exists in the destination folder',
+        'not_validated': 'The file was not validated or needs manual review',
+        'changed_since_scan': 'The file was modified after the organize plan was created',
+        'already_sorted': 'The file is already in its destination folder',
+        'cross_device': 'The destination is on a different drive or volume',
+        'unmatched': 'The file did not match any organize rule condition',
+        'changed_since_apply': 'The file was modified after the move was applied',
+        'unresolved_crash': 'Skipped due to an unresolved process interruption',
+    }
+
+    moves_section = ''
+    if moves_applied_events or moves_skipped_events or moves_reverted_events:
+        # Group events by destination folder
+        grouped_moves = {}
+        all_move_evs = moves_applied_events + moves_skipped_events + moves_reverted_events
+        for ev in all_move_evs:
+            dst = ev.get('dst', '')
+            dst_dir = os.path.dirname(dst) if dst else 'Unmapped'
+            grouped_moves.setdefault(dst_dir, []).append(ev)
+
+        # Build plain-sentence summary items
+        summary_sentences = []
+        n_moved = len(moves_applied_events)
+        summary_sentences.append(f"Where your files are: <strong>{n_moved} file(s) are sorted</strong>.")
+        if moves_reverted_events:
+            summary_sentences.append(f"Reverted <strong>{len(moves_reverted_events)}</strong> move(s).")
+        if moves_skipped_events:
+            reasons_count = {}
+            for ev in moves_skipped_events:
+                r = ev.get('skip', 'skipped')
+                reasons_count[r] = reasons_count.get(r, 0) + 1
+            reason_parts = [f"{SKIP_PLAIN_SENTENCES.get(r, f'Skipped ({r})')} ({cnt})" for r, cnt in reasons_count.items()]
+            summary_sentences.append(f"Needs attention: {'; '.join(reason_parts)}.")
+
+        moves_rows = []
+        for dst_dir in sorted(grouped_moves.keys()):
+            evs = grouped_moves[dst_dir]
+            dir_escaped = html_escape(dst_dir)
+            moves_rows.append(f'<tr style="background:#f0f4f8"><td colspan="4"><strong>Folder:</strong> <code>{dir_escaped}</code></td></tr>')
+            for ev in evs:
+                ev_type = ev.get('type') or ev.get('event')
+                src = ev.get('src', '')
+                dst = ev.get('dst', '')
+                src_dir = os.path.dirname(src)
+                src_base = os.path.basename(src)
+                dst_base = os.path.basename(dst)
+
+                src_formatted = f'<span style="color:#999">{html_escape(src_dir)}/</span>{html_escape(src_base)}'
+                dst_formatted = f'<span style="color:#999">{html_escape(dst_dir)}/</span>{html_escape(dst_base)}'
+
+                if ev_type == 'move_applied':
+                    moves_rows.append(f'<tr><td><code>{src_formatted}</code></td><td style="color:#999">→</td><td><code>{dst_formatted}</code></td><td class="passed">applied</td></tr>')
+                elif ev_type == 'move_skipped':
+                    raw_reason = ev.get('skip', 'skipped')
+                    plain_reason = html_escape(SKIP_PLAIN_SENTENCES.get(raw_reason, f'Skipped: {raw_reason}'))
+                    moves_rows.append(f'<tr><td><code>{src_formatted}</code></td><td style="color:#999">→</td><td><code>{dst_formatted}</code></td><td class="review" title="{plain_reason}">{plain_reason}</td></tr>')
+                elif ev_type == 'move_reverted':
+                    moves_rows.append(f'<tr><td><code>{src_formatted}</code></td><td style="color:#999">←</td><td><code>{dst_formatted}</code></td><td class="failed">reverted</td></tr>')
+
+        undo_cmd = f"samosa jobs undo {job_name} --yes"
+        plain_summary_html = ' '.join(summary_sentences)
+        moves_section = f"""
+<div class="summary">
+<h2>Moves Summary</h2>
+<p>{plain_summary_html}</p>
+<p><small>Nothing was deleted. User files are never deleted by Samosa Jobs. Revert moves at any time with: <code>{undo_cmd}</code></small></p>
+</div>
+<details>
+<summary style="font-weight:600; cursor:pointer; margin: 1em 0;">Details for the record (Filesystem Moves Manifest)</summary>
+<table>
+<tr><th>Source</th><th></th><th>Destination</th><th>Status</th></tr>
+{''.join(moves_rows)}
+</table>
+</details>
+"""
+
     view_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Samosa Jobs — {job_name}</title>
@@ -1887,6 +2427,7 @@ th {{ background: #fafafa; font-weight: 600; }}
 <p><strong>Active inference time:</strong> {_fmt(active_seconds)}</p>
 </div>
 {review_section}
+{moves_section}
 <h2>All items</h2>
 <table>
 <tr><th>Unit ID</th><th>Input</th><th>Granularity</th><th>State</th><th>Details</th><th>Artifacts</th></tr>
@@ -1986,6 +2527,109 @@ def _macos_memory_pressure():
     except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
         pass
     return 0
+
+
+def get_host_profile():
+    """Load host capability profile from config files or environment (TASKS_HARDWARE.md H5).
+    Returns dict with host capability profile and assigned resource tier.
+    """
+    env_path = os.environ.get('SAMOSA_HOST_PROFILE')
+    paths_to_check = []
+    if env_path:
+        paths_to_check.append(Path(env_path))
+    paths_to_check.extend([
+        Path.home() / '.samosa' / 'host_profile.json',
+        Path('/etc/samosa/host_profile.json')
+    ])
+
+    for path in paths_to_check:
+        if path.exists() and path.is_file():
+            try:
+                data = json.loads(path.read_text())
+                if isinstance(data, dict):
+                    data.setdefault('source', str(path))
+                    return derive_host_resource_budget(data)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    detected = _detect_host_capabilities()
+    return derive_host_resource_budget(detected)
+
+
+def _detect_host_capabilities():
+    """Detect host system capabilities for dynamic host-tuning tier."""
+    cpu_count = os.cpu_count() or 2
+    is_container = os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+    on_ac = not _on_battery()
+    
+    ram_gb = 16
+    if platform.system() == 'Darwin':
+        try:
+            res = subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                ram_gb = int(res.stdout.strip()) // (1024 ** 3)
+        except Exception:
+            pass
+    elif platform.system() == 'Linux':
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    if line.startswith('MemTotal:'):
+                        ram_gb = int(line.split()[1]) // (1024 * 1024)
+                        break
+        except Exception:
+            pass
+
+    if is_container:
+        tier = 'container-blind'
+    elif ram_gb >= 32 and cpu_count >= 8 and on_ac:
+        tier = 'desktop-cooled'
+    elif ram_gb < 12:
+        tier = 'constrained'
+    else:
+        tier = 'reference-fanless'
+
+    return {
+        'tier': tier,
+        'ram_gb': ram_gb,
+        'phys_perf_cores': max(2, cpu_count // 2 if platform.system() == 'Darwin' else cpu_count),
+        'smt': False,
+        'on_ac': on_ac,
+        'container': is_container,
+        'source': 'detected'
+    }
+
+
+def derive_host_resource_budget(profile_data):
+    """Derive resource budget based on host capability tier."""
+    tier = profile_data.get('tier', 'reference-fanless')
+    ram_gb = profile_data.get('ram_gb', 16)
+    cores = profile_data.get('phys_perf_cores', 2)
+    
+    if tier == 'desktop-cooled':
+        thread_budget = min(cores, 8)
+        prefill_budget = min(ram_gb * 1024 // 2, 16384)
+        max_mem_mb = ram_gb * 1024 // 2
+    elif tier == 'constrained':
+        thread_budget = 2
+        prefill_budget = 2048
+        max_mem_mb = 4096
+    elif tier == 'container-blind':
+        thread_budget = 2
+        prefill_budget = 4096
+        max_mem_mb = 8192
+    else:
+        thread_budget = 2
+        prefill_budget = 4096
+        max_mem_mb = 8192
+
+    profile_data.update({
+        'thread_budget': profile_data.get('thread_budget', thread_budget),
+        'prefill_budget': profile_data.get('prefill_budget', prefill_budget),
+        'max_mem_mb': profile_data.get('max_mem_mb', max_mem_mb)
+    })
+    return profile_data
+
 
 
 # ---------------------------------------------------------------------------
@@ -2193,6 +2837,83 @@ def estimate_unit_input_tokens(unit, input_meta, extraction):
     return text_tokens
 
 
+def estimate_job_cost(job):
+    """Calculate pre-arm time, token, and resource estimates for a job."""
+    inp = job.get('input', {})
+    is_meta = job.get('instruction') is None and job.get('organize') is not None
+    items, _ = discover_inputs(inp, is_metadata_only=is_meta)
+    if not items:
+        return {
+            'total_files': 0,
+            'total_units': 0,
+            'total_input_tokens': 0,
+            'estimated_wall_clock_s': 0.0,
+            'formatted_time': '0.0 seconds',
+            'run_on_battery': job.get('resources', {}).get('run_on_battery', False),
+            'min_free_gb': job.get('resources', {}).get('min_free_gb', 5)
+        }
+
+    budget = get_prefill_budget(job)
+    tokenizer_cmd = get_tokenizer_cmd()
+    unit_mode = job.get('unit', 'auto')
+
+    total_tokens = 0
+    all_units_count = 0
+
+    for item in items:
+        hydrate_pdf_input(item)
+        units = plan_units(item, unit_mode, budget, tokenizer_cmd)
+        all_units_count += len(units)
+        for u in units:
+            if item.get('media_type', '').startswith('image/'):
+                total_tokens += 576
+            elif item.get('media_type') == 'application/pdf' and u.get('plan_reason') == 'multi_image_pages':
+                total_tokens += 576
+            else:
+                sz = item.get('size', 0)
+                total_tokens += math.ceil(sz / 4) if sz > 0 else 100
+
+    max_tokens_per_unit = job.get('inference', {}).get('max_tokens', 512)
+    est_output_tokens = max_tokens_per_unit * all_units_count
+
+    # Reference speeds: prefill ~25 tok/s, decode ~6 tok/s
+    est_prefill_s = total_tokens / 25.0 if total_tokens > 0 else 0.0
+    est_decode_s = est_output_tokens / 6.0 if est_output_tokens > 0 else 0.0
+    total_sec = est_prefill_s + est_decode_s
+
+    if total_sec < 60:
+        formatted = f"~{total_sec:.1f} seconds"
+    elif total_sec < 3600:
+        formatted = f"~{total_sec / 60.0:.1f} minutes"
+    else:
+        hours = total_sec / 3600.0
+        formatted = f"~{hours:.1f} hours" + (" (run overnight recommended)" if hours >= 2.0 else "")
+
+    return {
+        'total_files': len(items),
+        'total_units': all_units_count,
+        'total_input_tokens': total_tokens,
+        'estimated_wall_clock_s': round(total_sec, 1),
+        'formatted_time': formatted,
+        'run_on_battery': job.get('resources', {}).get('run_on_battery', False),
+        'min_free_gb': job.get('resources', {}).get('min_free_gb', 5)
+    }
+
+
+def print_job_cost_estimate(job):
+    """Print pre-arm time/cost estimation summary."""
+    est = estimate_job_cost(job)
+    print(f"Pre-arm Estimate for job {job['job_id']}:")
+    urls = job.get('input', {}).get('urls', [])
+    if urls:
+        print(f"  [!] INTERNET USE: This job will make active network requests to {len(urls)} public URL(s).")
+    print(f"  Input Files: {est['total_files']} ({est['total_units']} units)")
+    print(f"  Estimated Input Tokens: {est['total_input_tokens']}")
+    print(f"  Projected Wall-Clock: {est['formatted_time']}")
+    batt = "Allowed" if est['run_on_battery'] else "AC Power Preferred (paused on battery)"
+    print(f"  Power Policy: {batt}")
+
+
 def cmd_validate(args):
     """samosa jobs validate <job.json>"""
     if len(args) < 1:
@@ -2220,7 +2941,7 @@ def cmd_arm(args):
         return 2
 
     job_id = job['job_id']
-    jobs_root = get_jobs_root()
+    jobs_root = Path(get_jobs_root())
     job_dir = jobs_root / job_id
     frozen_path = job_dir / 'job.json'
 
@@ -2233,6 +2954,7 @@ def cmd_arm(args):
                   f"use a new job_id or 'clone'", file=sys.stderr)
             return 4
 
+    print_job_cost_estimate(job)
     job_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(str(job_dir), 0o700)
     atomic_write(frozen_path, json.dumps(job, indent=2))
@@ -2283,17 +3005,24 @@ def cmd_status(args):
 
 
 def cmd_preview(args):
-    """samosa jobs preview <job.json> [--file <path>]"""
+    """samosa jobs preview <job.json> [--file <path>] [--samples N]"""
     if len(args) < 1:
-        print("Usage: samosa jobs preview <job.json> [--file <path>]", file=sys.stderr)
+        print("Usage: samosa jobs preview <job.json> [--file <path>] [--samples N]", file=sys.stderr)
         return 2
 
     preview_file = None
+    samples_count = 1
     job_path = args[0]
     i = 1
     while i < len(args):
         if args[i] == '--file' and i + 1 < len(args):
             preview_file = args[i + 1]
+            i += 2
+        elif args[i] == '--samples' and i + 1 < len(args):
+            try:
+                samples_count = max(1, int(args[i + 1]))
+            except ValueError:
+                samples_count = 1
             i += 2
         else:
             print(f"Unknown argument: {args[i]}", file=sys.stderr)
@@ -2305,12 +3034,13 @@ def cmd_preview(args):
             print(f"error: {e}", file=sys.stderr)
         return 2
 
+    print_job_cost_estimate(job)
+
     job_id = job['job_id']
-    job_dir = get_jobs_root() / job_id
+    job_dir = Path(get_jobs_root()) / job_id
     preview_dir = job_dir / 'preview'
     preview_dir.mkdir(parents=True, exist_ok=True)
 
-    # Discover or use specified file
     if preview_file:
         with open(preview_file, 'rb') as f:
             data = f.read()
@@ -2322,77 +3052,82 @@ def cmd_preview(args):
             else:
                 print("error: unsupported file type", file=sys.stderr)
                 return 2
-        input_meta = {
+        sample_items = [{
             'input_path': preview_file,
             'input_sha256': file_hash,
             'media_type': media_type,
             'size': len(data),
-        }
+        }]
     else:
-        items, skipped = discover_inputs(job['input'])
+        items, _ = discover_inputs(job['input'])
         if not items:
             print("error: no input files found", file=sys.stderr)
             return 2
-        input_meta = items[0]
+        if samples_count == 1 or len(items) <= samples_count:
+            sample_items = items[:samples_count]
+        else:
+            step = len(items) / float(samples_count)
+            sample_items = [items[int(idx * step)] for idx in range(samples_count)]
 
-    # Plan
     budget = get_prefill_budget(job)
-    hydrate_pdf_input(input_meta)
-    units = plan_units(input_meta, job.get('unit', 'auto'), budget,
-                       get_tokenizer_cmd())
-    unit = units[0]  # Preview: first unit only
-
-    # Extract
-    input_meta['_intermediates_dir'] = str(preview_dir / 'intermediates')
-    extraction = extract_unit(unit, input_meta)
-    if extraction.get('error'):
-        result = {'error': extraction['error']}
-        atomic_write(preview_dir / 'result.json', json.dumps(result, indent=2))
-        print(json.dumps(result, indent=2))
-        return 0
-
-    # Model call
     serve_url = get_serve_url()
-    body = build_request_body(job, extraction, unit)
-    if body is None:
-        print("error: could not build request body", file=sys.stderr)
-        return 2
+    preview_results = []
 
-    _call_t0 = time.perf_counter()
-    resp, err = call_serve(body, serve_url, timeout=300)
-    wall_seconds = time.perf_counter() - _call_t0
-    if err:
-        # Preview is a real model call too. A client-side timeout must not
-        # strand its inference and make the next interactive turn queue behind
-        # it (J1.4/F-J1).
-        if err == 'timeout':
-            request_cancel(serve_url)
-            wait_for_slot_clear(serve_url)
-        print(f"error: serve call failed: {err}", file=sys.stderr)
-        return 2
+    for s_idx, input_meta in enumerate(sample_items):
+        hydrate_pdf_input(input_meta)
+        units = plan_units(input_meta, job.get('unit', 'auto'), budget, get_tokenizer_cmd())
+        unit = units[0]
 
-    content = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
-    usage = resp.get('usage', {})
-    validation = validate_output(content, job['output_schema'],
-                                  job.get('validation', {}).get('domain_rules'))
+        input_meta['_intermediates_dir'] = str(preview_dir / 'intermediates')
+        extraction = extract_unit(unit, input_meta)
+        if extraction.get('error'):
+            res = {'error': extraction['error'], 'unit_id': unit['unit_id']}
+            preview_results.append(res)
+            continue
 
-    result = validation.get('record', {})
-    prov = {
-        'unit_id': unit['unit_id'],
-        'input_sha256': input_meta['input_sha256'],
-        'input_path': input_meta['input_path'],
-        'media_type': input_meta['media_type'],
-        'input_tokens': usage.get('prompt_tokens'),
-        'output_tokens': usage.get('completion_tokens'),
-        **derive_timing(resp, wall_seconds),
-        'validation': validation['status'],
-        'runner_version': RUNNER_VERSION,
-    }
+        body = build_request_body(job, extraction, unit)
+        if body is None:
+            res = {'error': 'could not build request body', 'unit_id': unit['unit_id']}
+            preview_results.append(res)
+            continue
 
-    atomic_write(preview_dir / 'result.json', json.dumps(result, indent=2))
-    atomic_write(preview_dir / 'provenance.json', json.dumps(prov, indent=2))
+        _call_t0 = time.perf_counter()
+        resp, err = call_serve(body, serve_url, timeout=300)
+        wall_seconds = time.perf_counter() - _call_t0
+        if err:
+            if err == 'timeout':
+                request_cancel(serve_url)
+                wait_for_slot_clear(serve_url)
+            print(f"error: serve call failed for {input_meta['input_path']}: {err}", file=sys.stderr)
+            return 2
 
-    print(json.dumps({'result': result, 'validation': validation}, indent=2))
+        content = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
+        usage = resp.get('usage', {})
+        validation = validate_output(content, job['output_schema'], job.get('validation', {}).get('domain_rules'))
+
+        result = validation.get('record', {})
+        prov = {
+            'unit_id': unit['unit_id'],
+            'input_sha256': input_meta['input_sha256'],
+            'input_path': input_meta['input_path'],
+            'media_type': input_meta['media_type'],
+            'input_tokens': usage.get('prompt_tokens'),
+            'output_tokens': usage.get('completion_tokens'),
+            **derive_timing(resp, wall_seconds),
+            'validation': validation['status'],
+            'runner_version': RUNNER_VERSION,
+        }
+
+        s_suffix = f"_{s_idx+1}" if len(sample_items) > 1 else ""
+        atomic_write(preview_dir / f'result{s_suffix}.json', json.dumps(result, indent=2))
+        atomic_write(preview_dir / f'provenance{s_suffix}.json', json.dumps(prov, indent=2))
+
+        preview_results.append({'sample': s_idx + 1, 'unit_id': unit['unit_id'], 'result': result, 'validation': validation})
+
+    if len(preview_results) == 1:
+        print(json.dumps({'result': preview_results[0]['result'], 'validation': preview_results[0]['validation']}, indent=2))
+    else:
+        print(json.dumps({'preview_samples': preview_results}, indent=2))
     return 0
 
 
@@ -2455,7 +3190,13 @@ def _run_job(job, job_dir):
         event_log.append('job_created', job_id=job_id, job_sha256=job_hash)
 
     # Discover inputs
-    print(f"[jobs] discovering inputs in {job['input']['folder']}...")
+    urls = job['input'].get('urls', [])
+    if urls:
+        print(f"[jobs] [!] INTERNET USE: Fetching {len(urls)} public URL(s) from the internet...")
+    
+    if job['input'].get('folder'):
+        print(f"[jobs] discovering inputs in {job['input']['folder']}...")
+        
     items, skipped = discover_inputs(job['input'])
     for path, reason in skipped:
         print(f"  skip: {path}: {reason}", file=sys.stderr)
@@ -2711,6 +3452,8 @@ def _run_job(job, job_dir):
                      review=review_count,
                      failed=failed_count)
 
+    send_local_notification("Samosa Jobs", f"Job complete: {processed_count} passed, {review_count} review, {failed_count} failed")
+
     # Write merged output
     write_merged_output(job, str(job_dir), event_log)
 
@@ -2721,13 +3464,154 @@ def _run_job(job, job_dir):
     return 0
 
 
+class JobsUIHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path == '/api/units':
+            job_dir_str = getattr(self.server, 'job_dir', '')
+            job_dir = Path(job_dir_str) if job_dir_str else Path('.')
+            log_path = job_dir / 'events.jsonl'
+            events = []
+            if log_path.exists():
+                el = EventLog(log_path)
+                el.load()
+                events = el.events
+            job = getattr(self.server, 'job', {})
+            data = json.dumps({'job': job, 'events': events})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(data.encode('utf-8'))
+            return
+
+        job_dir_str = getattr(self.server, 'job_dir', '')
+        job = getattr(self.server, 'job', {})
+        job_dir = Path(job_dir_str) if job_dir_str else Path('.')
+        log_path = job_dir / 'events.jsonl'
+        events = []
+        if log_path.exists():
+            el = EventLog(log_path)
+            el.load()
+            events = el.events
+        
+        view_path = render_view_html(job, events, str(job_dir))
+        content = Path(view_path).read_text(encoding='utf-8')
+        
+        interactive_script = """
+        <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const patchModal = document.createElement('div');
+            patchModal.id = 'patch-modal';
+            patchModal.style = 'display:none; position:fixed; top:20px; right:20px; background:#1e1e2e; color:#cdd6f4; border:1px solid #45475a; padding:15px; border-radius:8px; z-index:9999; width:350px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);';
+            patchModal.innerHTML = `
+                <h3 style="margin-top:0; color:#89b4fa;">Side-by-Side Unit Patch</h3>
+                <label style="display:block; margin-bottom:4px;">Unit ID:</label>
+                <input id="patch-unit-id" style="width:100%; margin-bottom:8px; background:#181825; color:#cdd6f4; border:1px solid #45475a; padding:4px;" readonly />
+                <label style="display:block; margin-bottom:4px;">Field Name:</label>
+                <input id="patch-field" style="width:100%; margin-bottom:8px; background:#181825; color:#cdd6f4; border:1px solid #45475a; padding:4px;" placeholder="e.g. total" />
+                <label style="display:block; margin-bottom:4px;">New Value:</label>
+                <input id="patch-val" style="width:100%; margin-bottom:12px; background:#181825; color:#cdd6f4; border:1px solid #45475a; padding:4px;" placeholder="e.g. 42.5" />
+                <button id="btn-save-patch" style="background:#89b4fa; color:#11111b; border:none; padding:6px 12px; font-weight:bold; cursor:pointer; border-radius:4px;">Save & Patch JSONL</button>
+                <button onclick="document.getElementById('patch-modal').style.display='none'" style="background:#45475a; color:#cdd6f4; border:none; padding:6px 12px; margin-left:8px; cursor:pointer; border-radius:4px;">Cancel</button>
+            `;
+            document.body.appendChild(patchModal);
+
+            document.addEventListener('click', (e) => {
+                const tr = e.target.closest('tr');
+                if (tr && tr.cells && tr.cells.length > 0) {
+                    const uid = tr.cells[0].innerText ? tr.cells[0].innerText.trim() : '';
+                    if (uid && uid.length >= 8) {
+                        document.getElementById('patch-unit-id').value = uid;
+                        document.getElementById('patch-modal').style.display = 'block';
+                    }
+                }
+            });
+
+            document.getElementById('btn-save-patch').onclick = async () => {
+                const unit_id = document.getElementById('patch-unit-id').value;
+                const field = document.getElementById('patch-field').value;
+                const val = document.getElementById('patch-val').value;
+                if (!unit_id || !field) return alert('Unit ID and Field are required');
+                const resp = await fetch('/api/review-patch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({unit_id, field, val})
+                });
+                const res = await resp.json();
+                if (res.status === 'ok') {
+                    alert('Patched successfully!');
+                    location.reload();
+                } else {
+                    alert('Patch error: ' + (res.error || 'failed'));
+                }
+            };
+        });
+        </script>
+        </body>
+        """
+        content = content.replace('</body>', interactive_script)
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(content.encode('utf-8'))
+
+    def do_POST(self):
+        if self.path == '/api/review-patch':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                unit_id = data.get('unit_id')
+                field = data.get('field')
+                val = data.get('val')
+                job_file = str(Path(self.server.job_dir) / 'job.json')
+                
+                code = cmd_review_patch([job_file, '--unit', unit_id, '--field', field, '--val', str(val)])
+                if code == 0:
+                    res_body = json.dumps({'status': 'ok', 'unit_id': unit_id})
+                    self.send_response(200)
+                else:
+                    res_body = json.dumps({'status': 'error', 'error': 'review patch failed'})
+                    self.send_response(400)
+            except Exception as e:
+                res_body = json.dumps({'status': 'error', 'error': str(e)})
+                self.send_response(500)
+
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(res_body.encode('utf-8'))
+            return
+
+        self.send_error(404)
+
+
+JobsAppHandler = JobsUIHandler
+
+
 def cmd_view(args):
-    """samosa jobs view <job.json>"""
+    """samosa jobs view <job.json> [--serve] [--port PORT]"""
     if len(args) < 1:
-        print("Usage: samosa jobs view <job.json>", file=sys.stderr)
+        print("Usage: samosa jobs view <job.json> [--serve] [--port PORT]", file=sys.stderr)
         return 2
 
-    job, errors = load_and_validate_job(args[0])
+    job_file = args[0]
+    serve_mode = '--serve' in args
+    port = 8085
+    if '--port' in args:
+        idx = args.index('--port')
+        if idx + 1 < len(args):
+            try:
+                port = int(args[idx + 1])
+            except ValueError:
+                pass
+
+    job, errors = load_and_validate_job(job_file)
     if errors:
         for e in errors:
             print(f"error: {e}", file=sys.stderr)
@@ -2744,7 +3628,19 @@ def cmd_view(args):
 
     view_path = render_view_html(job, event_log.events, str(job_dir))
     print(f"view: {view_path}")
+
+    if serve_mode:
+        server = http.server.HTTPServer(('127.0.0.1', port), JobsUIHandler)
+        server.job = job
+        server.job_dir = str(job_dir)
+        print(f"Interactive Jobs UI running at http://127.0.0.1:{port}")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            server.server_close()
+
     return 0
+
 
 
 def cmd_delete(args):
@@ -2859,8 +3755,1032 @@ def cmd_suggest_schema(args):
 
 
 # ---------------------------------------------------------------------------
+# JO.3 — Move engine (audited atomic no-clobber renames)
+# ---------------------------------------------------------------------------
+
+import ctypes
+import ctypes.util
+import errno
+
+_libc = None
+try:
+    _libc_path = ctypes.util.find_library('c')
+    if _libc_path:
+        _libc = ctypes.CDLL(_libc_path, use_errno=True)
+except Exception:
+    _libc = None
+
+RENAME_EXCL_MACOS = 4
+AT_FDCWD_LINUX = -100
+RENAME_NOREPLACE_LINUX = 1
+
+
+def atomic_no_clobber_rename(src, dst):
+    """Perform an atomic no-clobber rename using renamex_np (macOS) or renameat2 (Linux), or os.link fallback.
+    Returns (success: bool, skip_reason: str or None)."""
+    src_bytes = os.fsencode(src)
+    dst_bytes = os.fsencode(dst)
+
+    if _libc is not None:
+        sys_platform = sys.platform
+        if sys_platform == 'darwin' and hasattr(_libc, 'renamex_np'):
+            res = _libc.renamex_np(ctypes.c_char_p(src_bytes), ctypes.c_char_p(dst_bytes), ctypes.c_uint(RENAME_EXCL_MACOS))
+            if res == 0:
+                return True, None
+            err = ctypes.get_errno()
+            if err in (errno.EEXIST, errno.EACCES):
+                return False, 'dest_exists'
+            if err == errno.EXDEV:
+                return False, 'cross_device'
+
+        elif sys_platform.startswith('linux') and hasattr(_libc, 'renameat2'):
+            res = _libc.renameat2(
+                ctypes.c_int(AT_FDCWD_LINUX),
+                ctypes.c_char_p(src_bytes),
+                ctypes.c_int(AT_FDCWD_LINUX),
+                ctypes.c_char_p(dst_bytes),
+                ctypes.c_uint(RENAME_NOREPLACE_LINUX)
+            )
+            if res == 0:
+                return True, None
+            err = ctypes.get_errno()
+            if err in (errno.EEXIST, errno.EACCES):
+                return False, 'dest_exists'
+            if err == errno.EXDEV:
+                return False, 'cross_device'
+
+    # Fallback path (os.link)
+    if os.path.exists(dst):
+        return False, 'dest_exists'
+
+    try:
+        os.link(src, dst)
+    except FileExistsError:
+        return False, 'dest_exists'
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            return False, 'cross_device'
+        return False, f"link_failed: {e}"
+
+    # Inode assertion check
+    st_src = os.stat(src)
+    st_dst = os.stat(dst)
+    if st_src.st_ino != st_dst.st_ino or st_src.st_dev != st_dst.st_dev:
+        return False, 'inode_mismatch'
+
+    # Safe to remove source link
+    os.unlink(src)
+    return True, None
+
+
+def apply_move(plan_line, input_folder=None, verify_hash=False):
+    """Apply a single planned move. Returns (success: bool, skip_reason: str or None)."""
+    src = plan_line['src']
+    dst = plan_line['dst']
+
+    # 1. Open src with O_NOFOLLOW
+    try:
+        fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        return False, f"cannot_open_src: {e}"
+
+    try:
+        st = os.fstat(fd)
+        if not stat_is_regular(st):
+            return False, 'not_regular_file'
+
+        expected_size = plan_line.get('size')
+        expected_mtime = plan_line.get('mtime')
+        if expected_size is not None and st.st_size != expected_size:
+            return False, 'changed_since_scan'
+        if expected_mtime is not None and abs(st.st_mtime - expected_mtime) > 1e-4:
+            return False, 'changed_since_scan'
+
+        if verify_hash and 'input_sha256' in plan_line:
+            data = b''
+            os.lseek(fd, 0, os.SEEK_SET)
+            while True:
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                data += chunk
+            if sha256_bytes(data) != plan_line['input_sha256']:
+                return False, 'changed_since_scan'
+    finally:
+        os.close(fd)
+
+    # 2. Scope jail check
+    if input_folder:
+        folder_real = os.path.realpath(input_folder)
+        src_real = os.path.realpath(src)
+        dst_real = os.path.realpath(dst)
+        try:
+            rel_src = os.path.relpath(src_real, folder_real)
+            rel_dst = os.path.relpath(dst_real, folder_real)
+            if rel_src.startswith('..') or rel_dst.startswith('..'):
+                return False, 'outside_jail'
+        except ValueError:
+            return False, 'outside_jail'
+
+    # 3. Create destination directory safely
+    dst_dir = os.path.dirname(dst)
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+    except OSError as e:
+        return False, f"mkdir_failed: {e}"
+
+    # 4. Atomic no-clobber rename
+    return atomic_no_clobber_rename(src, dst)
+
+
+# ---------------------------------------------------------------------------
+# JO.1 / JO.2 — Plan compiler & Report
+# ---------------------------------------------------------------------------
+
+def eval_op(op, val1, val2):
+    """Evaluate comparison op for where rule. Ensures JSON-typed comparisons."""
+    if op == 'eq':
+        if type(val1) is not type(val2) and not (isinstance(val1, (int, float)) and isinstance(val2, (int, float)) and not isinstance(val1, bool) and not isinstance(val2, bool)):
+            return False
+        return val1 == val2
+    if op == 'ne':
+        return not eval_op('eq', val1, val2)
+    try:
+        if op == 'lt': return val1 < val2
+        if op == 'le': return val1 <= val2
+        if op == 'gt': return val1 > val2
+        if op == 'ge': return val1 >= val2
+    except TypeError:
+        return False
+    return False
+
+
+def build_organize_plan(job, job_dir):
+    """Compile organize plan for a job. Returns (records, error)."""
+    org = job.get('organize')
+    if not org:
+        return None, "job.json has no organize block"
+
+    rule = org.get('rule', {})
+    by = rule.get('by')
+    is_metadata_only = by in ('extension', 'media_type')
+
+    items, skipped_discovery = discover_inputs(job['input'], is_metadata_only=is_metadata_only)
+    items.sort(key=lambda x: x['input_path'])
+
+    results_by_path = {}
+    results_by_hash = {}
+    if not is_metadata_only:
+        out_file = Path(job_dir) / 'results' / 'output.jsonl'
+        if out_file.exists():
+            with open(out_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        if rec.get('input_path'):
+                            results_by_path[rec['input_path']] = rec
+                        if rec.get('input_sha256'):
+                            results_by_hash[rec['input_sha256']] = rec
+                    except json.JSONDecodeError:
+                        pass
+
+    dest_root = org.get('dest_root')
+    if not dest_root:
+        dest_root = os.path.join(job['input']['folder'], 'Organized')
+    dest_root = os.path.abspath(dest_root)
+
+    moves_or_skips = []
+    taken_dsts = set()
+
+    for item in items:
+        input_path = item['input_path']
+        input_sha256 = item['input_sha256']
+        size = item['size']
+        try:
+            mtime = os.path.getmtime(input_path)
+        except OSError:
+            mtime = 0.0
+
+        folder_name = None
+
+        if by == 'extension':
+            p = Path(input_path)
+            ext = p.suffix[1:].lower() if p.suffix.startswith('.') else ''
+            mapping = rule.get('map', {})
+            if ext and ext in mapping:
+                folder_name = mapping[ext]
+            elif ext:
+                folder_name = ext.upper()
+            else:
+                magic_map = {
+                    'image/jpeg': 'JPEG',
+                    'image/png': 'PNG',
+                    'application/pdf': 'PDF',
+                    'text/plain': 'TEXT'
+                }
+                folder_name = magic_map.get(item['media_type'], 'OTHER')
+
+        elif by == 'media_type':
+            magic_map = {
+                'image/jpeg': 'JPEG',
+                'image/png': 'PNG',
+                'application/pdf': 'PDF',
+                'text/plain': 'TEXT'
+            }
+            folder_name = magic_map.get(item['media_type'], 'OTHER')
+
+        elif by in ('field', 'where'):
+            rec = results_by_path.get(input_path) or results_by_hash.get(input_sha256)
+            if not rec:
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                continue
+            status = rec.get('status', 'passed')
+            if status != 'passed':
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                continue
+            extracted = rec.get('extracted') if isinstance(rec.get('extracted'), dict) else rec
+            field_name = rule.get('field')
+            field_val = extracted.get(field_name)
+
+            if by == 'field':
+                if field_val is None:
+                    moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                    continue
+                folder_name = str(field_val).strip()
+            elif by == 'where':
+                op = rule.get('op')
+                target_val = rule.get('value')
+                if eval_op(op, field_val, target_val):
+                    folder_name = rule.get('dest')
+                else:
+                    unmatched = org.get('unmatched', 'leave')
+                    if unmatched == 'leave':
+                        moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "unmatched"})
+                        continue
+                    folder_name = unmatched
+
+        if not folder_name or not is_valid_folder_name(folder_name):
+            moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "unsafe_dest"})
+            continue
+
+        dst_dir = os.path.join(dest_root, folder_name)
+        base_name = os.path.basename(input_path)
+        dst_path = os.path.join(dst_dir, base_name)
+
+        if os.path.realpath(input_path) == os.path.realpath(dst_path):
+            moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "already_sorted"})
+            continue
+
+        on_coll = org.get('on_collision', 'skip')
+        has_collision = os.path.exists(dst_path) or dst_path in taken_dsts
+        if has_collision:
+            if on_coll == 'skip':
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "dest_exists"})
+                continue
+            elif on_coll == 'suffix_sha8':
+                suffix = input_sha256[:8]
+                p = Path(input_path)
+                stem = p.stem
+                ext_with_dot = p.suffix
+                new_base = f"{stem}.{suffix}{ext_with_dot}"
+                dst_path = os.path.join(dst_dir, new_base)
+                if os.path.exists(dst_path) or dst_path in taken_dsts:
+                    moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "dest_exists"})
+                    continue
+
+        taken_dsts.add(dst_path)
+        moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "dst": dst_path, "size": size, "mtime": mtime})
+
+    moves_or_skips.sort(key=lambda x: x['src'])
+    return moves_or_skips, None
+
+
+def cmd_organize(args):
+    """samosa jobs organize <job.json>"""
+    if len(args) < 1:
+        print("Usage: samosa jobs organize <job.json>", file=sys.stderr)
+        return 2
+
+    job, errors = load_and_validate_job(args[0])
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    job_dir = get_jobs_root() / job['job_id']
+    job_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = job_dir / 'results'
+    results_dir.mkdir(parents=True, exist_ok=True)
+    log_path = job_dir / 'events.jsonl'
+
+    event_log = EventLog(log_path)
+    event_log.load()
+    built_at_seq = event_log.seq
+
+    records, err = build_organize_plan(job, job_dir)
+    if err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
+
+    lines = []
+    moves_count = 0
+    skips_count = 0
+    for rec in records:
+        if 'dst' in rec:
+            moves_count += 1
+        else:
+            skips_count += 1
+        lines.append(json.dumps(rec))
+
+    plan_sha = sha256_bytes('\n'.join(lines).encode('utf-8'))
+    summary_line = {
+        "plan_sha256": plan_sha,
+        "built_at_seq": built_at_seq,
+        "moves": moves_count,
+        "skips": skips_count
+    }
+    lines.append(json.dumps(summary_line))
+
+    plan_file = results_dir / 'organize_plan.jsonl'
+    atomic_write(plan_file, '\n'.join(lines) + '\n')
+
+    event_log.append('plan_created',
+        plan_sha256=plan_sha,
+        moves=moves_count,
+        skips=skips_count
+    )
+
+    print(f"plan created: {plan_file} (moves: {moves_count}, skips: {skips_count})")
+    return 0
+
+
+def cmd_report(args):
+    """samosa jobs report <job.json>"""
+    if len(args) < 1:
+        print("Usage: samosa jobs report <job.json>", file=sys.stderr)
+        return 2
+
+    job, errors = load_and_validate_job(args[0])
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    items, skipped = discover_inputs(job['input'], is_metadata_only=True)
+
+    by_type = {}
+    total_bytes = 0
+    for item in items:
+        mt = item['media_type']
+        size = item['size']
+        total_bytes += size
+        if mt not in by_type:
+            by_type[mt] = {'count': 0, 'bytes': 0, 'largest': (0, '')}
+        by_type[mt]['count'] += 1
+        by_type[mt]['bytes'] += size
+        if size > by_type[mt]['largest'][0]:
+            by_type[mt]['largest'] = (size, item['input_path'])
+
+    print(f"Folder Report: {job['input']['folder']}")
+    print(f"Total files: {len(items)}, Total size: {total_bytes} bytes")
+    print("-" * 50)
+    for mt, info in sorted(by_type.items()):
+        print(f"Type: {mt:<24} Count: {info['count']:<6} Bytes: {info['bytes']:<10}")
+        if info['largest'][1]:
+            print(f"  Largest: {info['largest'][1]} ({info['largest'][0]} bytes)")
+    return 0
+
+
+def send_local_notification(title, message):
+    """Post a local desktop notification on macOS (best-effort, counts only, no filenames)."""
+    if sys.platform == 'darwin':
+        try:
+            script = f'display notification "{message}" with title "{title}"'
+            subprocess.run(['osascript', '-e', script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            pass
+
+
+def cmd_apply(args):
+    """samosa jobs apply <job.json> [--yes] [--verify-hash]"""
+    if len(args) < 1:
+        print("Usage: samosa jobs apply <job.json> [--yes] [--verify-hash]", file=sys.stderr)
+        return 2
+
+    job_file = args[0]
+    auto_yes = '--yes' in args
+    verify_hash = '--verify-hash' in args
+
+    job, errors = load_and_validate_job(job_file)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    job_dir = get_jobs_root() / job['job_id']
+    plan_file = job_dir / 'results' / 'organize_plan.jsonl'
+    if not plan_file.exists():
+        print("error: no organize plan found. Run 'samosa jobs organize <job.json>' first.", file=sys.stderr)
+        return 2
+
+    lines = []
+    with open(plan_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                lines.append(line)
+
+    if not lines:
+        print("error: organize plan is empty", file=sys.stderr)
+        return 2
+
+    summary = json.loads(lines[-1])
+    plan_sha = summary.get('plan_sha256')
+    built_at_seq = summary.get('built_at_seq', 0)
+
+    log_path = job_dir / 'events.jsonl'
+    event_log = EventLog(log_path)
+    event_log.load()
+
+    if event_log.seq > built_at_seq:
+        stale = False
+        for ev in event_log.events:
+            ev_type = ev.get('type') or ev.get('event')
+            if ev.get('seq', 0) > built_at_seq and ev_type in ('unit_completed', 'job_complete', 'item_discovered'):
+                stale = True
+                break
+        if stale:
+            print("error: plan_stale: events updated since plan creation. Re-run 'samosa jobs organize <job.json>'", file=sys.stderr)
+            return 2
+
+    plan_moves = [json.loads(line) for line in lines[:-1] if 'dst' in json.loads(line)]
+    plan_skips = [json.loads(line) for line in lines[:-1] if 'skip' in json.loads(line)]
+
+    print(f"Organize Plan Summary for job {job['job_id']}:")
+    print(f"  Moves to execute: {len(plan_moves)}")
+    print(f"  Skips: {len(plan_skips)}")
+
+    if not auto_yes:
+        if not sys.stdin.isatty():
+            print("error: non-interactive invocation requires --yes", file=sys.stderr)
+            return 2
+        try:
+            resp = input("Apply plan? [y/N]: ").strip().lower()
+        except EOFError:
+            resp = ''
+        if resp != 'y':
+            print("aborted.")
+            return 1
+
+    event_log.append('plan_approved', plan_sha256=plan_sha)
+
+    input_folder = job['input']['folder']
+
+    # Crash recovery: resolve any orphaned move_applying events lacking terminal move_applied/move_skipped
+    applying_map = {}
+    terminal_srcs = set()
+    for ev in event_log.events:
+        ev_type = ev.get('type') or ev.get('event')
+        src = ev.get('src')
+        if not src:
+            continue
+        if ev_type == 'move_applying':
+            applying_map[src] = ev
+        elif ev_type in ('move_applied', 'move_skipped'):
+            terminal_srcs.add(src)
+
+    orphaned_srcs = [src for src in applying_map if src not in terminal_srcs]
+    plan_moves_by_src = {m['src']: m for m in plan_moves}
+
+    for src in orphaned_srcs:
+        ev = applying_map[src]
+        dst = ev.get('dst')
+        sha = ev.get('input_sha256', '')
+        plan_item = plan_moves_by_src.get(src, {'src': src, 'dst': dst, 'input_sha256': sha})
+
+        # Check if destination file exists and matches size/hash
+        dst_valid = False
+        if os.path.exists(dst):
+            if verify_hash and sha:
+                try:
+                    with open(dst, 'rb') as f:
+                        dst_valid = (sha256_bytes(f.read()) == sha)
+                except OSError:
+                    dst_valid = False
+            else:
+                expected_size = plan_item.get('size')
+                if expected_size is not None:
+                    try:
+                        dst_valid = (os.path.getsize(dst) == expected_size)
+                    except OSError:
+                        dst_valid = False
+                else:
+                    dst_valid = True
+
+        if dst_valid and not os.path.exists(src):
+            # Rename won the crash
+            event_log.append('move_applied', src=src, dst=dst, input_sha256=sha)
+        elif os.path.exists(src):
+            # Move didn't happen yet or failed before rename; retry move
+            ok, reason = apply_move(plan_item, input_folder=input_folder, verify_hash=verify_hash)
+            if ok:
+                event_log.append('move_applied', src=src, dst=dst, input_sha256=sha)
+            else:
+                event_log.append('move_skipped', src=src, dst=dst, skip=reason)
+        else:
+            event_log.append('move_skipped', src=src, dst=dst, skip='unresolved_crash')
+
+    applied_count = 0
+    skipped_count = 0
+
+    applied_srcs = set()
+    skipped_srcs = set()
+    for ev in event_log.events:
+        ev_type = ev.get('type') or ev.get('event')
+        if ev_type == 'move_applied':
+            applied_srcs.add(ev.get('src'))
+        elif ev_type == 'move_skipped':
+            skipped_srcs.add(ev.get('src'))
+    batch_counter = 0
+
+    for item in plan_moves:
+        src = item['src']
+        dst = item['dst']
+        if src in applied_srcs or src in skipped_srcs:
+            continue
+
+        batch_counter += 1
+        if batch_counter % 50 == 0:
+            serve_url = get_serve_url()
+            ok, gate_reason = gate_check(job, serve_url)
+            if not ok:
+                event_log.append('job_paused', reason=gate_reason)
+                print(f"gate paused move execution: {gate_reason}")
+
+        event_log.append('move_applying', src=src, dst=dst, input_sha256=item['input_sha256'])
+        ok, reason = apply_move(item, input_folder=input_folder, verify_hash=verify_hash)
+        if ok:
+            event_log.append('move_applied', src=src, dst=dst, input_sha256=item['input_sha256'])
+            applied_count += 1
+            applied_srcs.add(src)
+        else:
+            event_log.append('move_skipped', src=src, dst=dst, skip=reason)
+            skipped_count += 1
+            skipped_srcs.add(src)
+
+    event_log.append('organize_complete', applied=applied_count, skipped=skipped_count)
+    print(f"organize complete: {applied_count} applied, {skipped_count} skipped")
+    send_local_notification("Samosa Jobs", f"Organize complete: {applied_count} applied, {skipped_count} skipped")
+    return 0
+
+
+def cmd_undo(args):
+    """samosa jobs undo <job.json> [--yes]"""
+    if len(args) < 1:
+        print("Usage: samosa jobs undo <job.json> [--yes]", file=sys.stderr)
+        return 2
+
+    job_file = args[0]
+    auto_yes = '--yes' in args
+
+    job, errors = load_and_validate_job(job_file)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    job_dir = get_jobs_root() / job['job_id']
+    log_path = job_dir / 'events.jsonl'
+    if not log_path.exists():
+        print(f"error: no events found for job {job['job_id']}", file=sys.stderr)
+        return 2
+
+    event_log = EventLog(log_path)
+    event_log.load()
+
+    applied_events = [ev for ev in event_log.events if (ev.get('type') or ev.get('event')) == 'move_applied']
+    if not applied_events:
+        print("nothing to undo")
+        return 0
+
+    reverted_srcs = set()
+    for ev in event_log.events:
+        if (ev.get('type') or ev.get('event')) == 'move_reverted':
+            reverted_srcs.add(ev.get('src'))
+
+    pending_undo = [ev for ev in applied_events if ev.get('src') not in reverted_srcs]
+    if not pending_undo:
+        print("nothing to undo")
+        return 0
+
+    print(f"Undo Plan Summary for job {job['job_id']}:")
+    print(f"  Moves to revert: {len(pending_undo)}")
+
+    if not auto_yes:
+        if not sys.stdin.isatty():
+            print("error: non-interactive invocation requires --yes", file=sys.stderr)
+            return 2
+        try:
+            resp = input("Undo applied moves? [y/N]: ").strip().lower()
+        except EOFError:
+            resp = ''
+        if resp != 'y':
+            print("aborted.")
+            return 1
+
+    reverted_count = 0
+    skipped_count = 0
+    input_folder = job['input']['folder']
+
+    for ev in reversed(pending_undo):
+        src = ev['src']
+        dst = ev['dst']
+        sha = ev.get('input_sha256', '')
+
+        reverse_plan = {'src': dst, 'dst': src, 'input_sha256': sha}
+        ok, reason = apply_move(reverse_plan, input_folder=input_folder, verify_hash=True)
+        if ok:
+            event_log.append('move_reverted', src=src, dst=dst, input_sha256=sha)
+            reverted_count += 1
+        else:
+            event_log.append('undo_skipped', src=src, dst=dst, skip='changed_since_apply')
+            skipped_count += 1
+
+    print(f"undo complete: {reverted_count} reverted, {skipped_count} skipped")
+    return 0
+
+
+def cmd_suggest_job(args):
+    """samosa jobs suggest-job [--description "..."] [--folder "..."] [--output-job "job.json"]"""
+    desc = None
+    folder = "./inputs"
+    output_job = None
+
+    i = 0
+    while i < len(args):
+        if args[i] in ('--description', '-d') and i + 1 < len(args):
+            desc = args[i + 1]
+            i += 2
+        elif args[i] in ('--folder', '-f') and i + 1 < len(args):
+            folder = args[i + 1]
+            i += 2
+        elif args[i] in ('--output-job', '-o') and i + 1 < len(args):
+            output_job = args[i + 1]
+            i += 2
+        elif not desc and not args[i].startswith('-'):
+            desc = args[i]
+            i += 1
+        else:
+            i += 1
+
+    if not desc:
+        print("Usage: samosa jobs suggest-job [--description '...'] [--folder '/path'] [--output-job 'job.json']", file=sys.stderr)
+        return 2
+
+    folder_abs = os.path.abspath(folder)
+    desc_lower = desc.lower()
+
+    # Intent template keyword matching
+    template_name = None
+    if re.search(r'\b(sort|organize|arrange)\b.*\b(by extension|by type|type)\b', desc_lower):
+        template_name = 'sort-by-type.job.json'
+    elif re.search(r'\b(report|explore|count|summary)\b', desc_lower):
+        template_name = 'folder-report.job.json'
+    elif re.search(r'\b(two|2)\b.*\b(people|humans|persons)\b', desc_lower):
+        template_name = 'photos-two-people.job.json'
+    elif re.search(r'\b(receipt|receipts)\b', desc_lower):
+        template_name = 'receipts-by-date.job.json'
+
+    compiled_job = None
+    if template_name:
+        example_path = Path(__file__).parent.parent / 'docs' / 'examples' / 'jobs' / template_name
+        if example_path.exists():
+            try:
+                compiled_job = json.loads(example_path.read_text())
+                compiled_job['input']['folder'] = folder_abs
+            except Exception:
+                compiled_job = None
+
+    if not compiled_job:
+        # LLM compile call
+        serve_url = get_serve_url()
+        sys_prompt = (
+            "You are a Samosa Jobs specification compiler. Given a user description and folder path, "
+            "generate a complete, valid job.json object matching schema version 1.\n"
+            "Return ONLY the raw JSON object."
+        )
+        user_prompt = f"Description: {desc}\nFolder: {folder_abs}"
+        body = {
+            'model': 'qwen3.6-35b-a3b',
+            'messages': [
+                {'role': 'system', 'content': sys_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            'thinking': 'off',
+            'temperature': 0,
+            'max_tokens': 1024,
+            'stream': False,
+        }
+        resp, err = call_serve(body, serve_url, timeout=120)
+        if not err and resp:
+            content = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
+            val = validate_output(content, {'type': 'object'})
+            compiled_job = val.get('record')
+
+        if not compiled_job:
+            # Fallback job spec synthesis
+            slug = re.sub(r'[^a-z0-9]+', '-', desc_lower).strip('-')[:30] or 'suggested-job'
+            compiled_job = {
+                "schema_version": 1,
+                "job_id": slug,
+                "name": f"Suggested Job — {slug}",
+                "input": {
+                    "folder": folder_abs,
+                    "recursive": True,
+                    "types": ["image/jpeg", "image/png", "text/plain", "application/pdf"],
+                    "max_file_bytes": 26214400
+                },
+                "unit": "auto",
+                "instruction": f"Extract fields based on: {desc}",
+                "reduce": {"mode": "deterministic"},
+                "inference": {"thinking": "off", "seed": 11, "temperature": 0, "max_tokens": 512},
+                "output_schema": {
+                    "type": "object",
+                    "required": ["summary"],
+                    "properties": {
+                        "summary": {"type": ["string", "null"]}
+                    }
+                },
+                "output": {"dir": f"{folder_abs}/results", "format": "jsonl"},
+                "resources": {"max_attempts": 3, "run_on_battery": False, "pause_when_user_active": True, "min_free_gb": 5}
+            }
+
+    # Validate compiled job
+    _, errors = validate_job(compiled_job)
+    if errors:
+        print(f"warning: compiled job had validation errors: {errors}", file=sys.stderr)
+
+    job_json_str = json.dumps(compiled_job, indent=2)
+    if output_job:
+        out_path = Path(output_job)
+        atomic_write(out_path, job_json_str)
+        print(f"suggested job written to: {out_path}")
+    else:
+        print(job_json_str)
+    return 0
+
+
+def cmd_review_patch(args):
+    """samosa jobs review-patch <job.json> --unit <unit_id> --field <name> --val <value>"""
+    if len(args) < 1:
+        print("Usage: samosa jobs review-patch <job.json> --unit <unit_id> --field <name> --val <value>", file=sys.stderr)
+        return 2
+
+    job_file = args[0]
+    unit_id = None
+    field_name = None
+    field_val = None
+
+    i = 1
+    while i < len(args):
+        if args[i] == '--unit' and i + 1 < len(args):
+            unit_id = args[i + 1]
+            i += 2
+        elif args[i] == '--field' and i + 1 < len(args):
+            field_name = args[i + 1]
+            i += 2
+        elif args[i] in ('--val', '--value') and i + 1 < len(args):
+            field_val = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    if not unit_id or not field_name or field_val is None:
+        print("error: --unit, --field, and --val are required", file=sys.stderr)
+        return 2
+
+    job, errors = load_and_validate_job(job_file)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    job_dir = Path(get_jobs_root()) / job['job_id']
+    items_dir = job_dir / 'results' / 'items'
+    safe_uid = unit_id.replace('#', '_').replace('/', '_')
+    result_path = items_dir / f"{safe_uid}.json"
+    prov_path = items_dir / f"{safe_uid}.provenance.json"
+
+    if not result_path.exists():
+        print(f"error: unit result file not found: {result_path}", file=sys.stderr)
+        return 2
+
+    try:
+        rec = json.loads(result_path.read_text())
+    except Exception as e:
+        print(f"error: failed reading unit result: {e}", file=sys.stderr)
+        return 2
+
+    props = job.get('output_schema', {}).get('properties', {})
+    f_schema = props.get(field_name, {})
+    ftypes = f_schema.get('type', [])
+    if isinstance(ftypes, str):
+        ftypes = [ftypes]
+
+    parsed_val = field_val
+    if 'number' in ftypes or 'integer' in ftypes:
+        try:
+            parsed_val = int(field_val) if 'integer' in ftypes else float(field_val)
+        except ValueError:
+            pass
+    elif 'boolean' in ftypes:
+        if field_val.lower() in ('true', '1', 'yes'):
+            parsed_val = True
+        elif field_val.lower() in ('false', '0', 'no'):
+            parsed_val = False
+
+    rec[field_name] = parsed_val
+    atomic_write(result_path, json.dumps(rec, indent=2))
+
+    input_sha256 = ''
+    input_path = ''
+    if prov_path.exists():
+        try:
+            prov = json.loads(prov_path.read_text())
+            prov['validation'] = 'passed'
+            prov['manual_correction'] = True
+            atomic_write(prov_path, json.dumps(prov, indent=2))
+            input_sha256 = prov.get('input_sha256', '')
+            input_path = prov.get('input_path', '')
+        except Exception:
+            pass
+
+    review_file = job_dir / 'results' / 'review' / f"{safe_uid}.json"
+    if review_file.exists():
+        try:
+            review_file.unlink()
+        except OSError:
+            pass
+
+    log_path = job_dir / 'events.jsonl'
+    event_log = EventLog(log_path)
+    event_log.load()
+    event_log.append('unit_patched', unit_id=unit_id, field=field_name, val=parsed_val)
+    event_log.append('item_complete', unit_id=unit_id, artifact=unit_id, validation='passed', input_sha256=input_sha256, input_path=input_path)
+
+    write_merged_output(job, str(job_dir), event_log)
+    render_view_html(job, event_log.events, str(job_dir))
+
+    print(f"patched unit {unit_id}: field '{field_name}' updated to {json.dumps(parsed_val)}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
+PLIST_LABEL = "com.samosa.jobsd"
+PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{PLIST_LABEL}.plist"
+
+
+def generate_launchd_plist(script_path):
+    python_exe = sys.executable
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_exe}</string>
+        <string>{script_path}</string>
+        <string>daemon</string>
+        <string>run-loop</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{Path.home()}/.samosa/jobsd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{Path.home()}/.samosa/jobsd.err</string>
+</dict>
+</plist>
+"""
+
+
+def cmd_daemon(args):
+    """samosa jobs daemon [install|uninstall|status|run-loop]"""
+    sub = args[0] if args else 'status'
+    if sub == 'install':
+        return daemon_install()
+    elif sub == 'uninstall':
+        return daemon_uninstall()
+    elif sub == 'status':
+        return daemon_status()
+    elif sub == 'run-loop':
+        once = '--once' in args
+        return daemon_run_loop(once=once)
+    else:
+        print("Usage: samosa jobs daemon [install|uninstall|status|run-loop]", file=sys.stderr)
+        return 2
+
+
+def daemon_install():
+    if platform.system() != 'Darwin':
+        print("launchd daemon installation is currently supported on macOS.", file=sys.stderr)
+        return 1
+    PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    script_path = str(Path(__file__).resolve())
+    plist_content = generate_launchd_plist(script_path)
+    PLIST_PATH.write_text(plist_content)
+    subprocess.run(['launchctl', 'unload', str(PLIST_PATH)], capture_output=True)
+    res = subprocess.run(['launchctl', 'load', str(PLIST_PATH)], capture_output=True, text=True)
+    print(f"installed launchd agent {PLIST_LABEL} at {PLIST_PATH}")
+    return 0
+
+
+def daemon_uninstall():
+    if PLIST_PATH.exists():
+        subprocess.run(['launchctl', 'unload', str(PLIST_PATH)], capture_output=True)
+        try:
+            PLIST_PATH.unlink()
+        except OSError:
+            pass
+        print(f"uninstalled launchd agent {PLIST_LABEL}")
+    else:
+        print(f"plist not found: {PLIST_PATH}")
+    return 0
+
+
+def daemon_status():
+    installed = PLIST_PATH.exists()
+    status_str = "installed" if installed else "not installed"
+    print(f"daemon status: {status_str}")
+    if installed:
+        print(f"plist path: {PLIST_PATH}")
+    return 0
+
+
+def run_job_with_caffeinate(job_file):
+    """Run job wrapped with caffeinate -i -s on macOS to prevent sleep."""
+    cmd = [sys.executable, str(Path(__file__).resolve()), 'run', str(job_file)]
+    if platform.system() == 'Darwin':
+        cmd = ['caffeinate', '-i', '-s'] + cmd
+    return subprocess.run(cmd)
+
+
+def daemon_run_loop(once=False):
+    """Background execution loop for scheduled jobs with missed-window handling."""
+    print("samosa-jobsd scheduler starting...")
+    jobs_root = get_jobs_root()
+    while True:
+        try:
+            if jobs_root.exists():
+                for job_dir in jobs_root.iterdir():
+                    if job_dir.is_dir() and (job_dir / 'job.json').exists():
+                        _check_and_run_scheduled_job(job_dir / 'job.json')
+        except Exception as e:
+            print(f"[jobsd error] {e}", file=sys.stderr)
+        
+        if once:
+            break
+        time.sleep(30)
+    return 0
+
+
+def _check_and_run_scheduled_job(job_file):
+    try:
+        data = json.loads(job_file.read_text())
+        schedule = data.get('schedule')
+        if not schedule:
+            return
+        policy = schedule.get('missed_window_policy', 'catch_up')
+        interval = schedule.get('interval_seconds', 3600)
+        state_file = job_file.parent / 'schedule_state.json'
+        last_run = 0
+        if state_file.exists():
+            st = json.loads(state_file.read_text())
+            last_run = st.get('last_run', 0)
+        
+        now = time.time()
+        elapsed = now - last_run
+        if elapsed >= interval:
+            if last_run > 0 and elapsed > (interval * 2) and policy == 'skip':
+                print(f"[jobsd] Missed window for {data.get('job_id')}, skipping per policy 'skip'")
+                state_file.write_text(json.dumps({'last_run': now}))
+                return
+            print(f"[jobsd] Triggering scheduled job: {data.get('job_id')}")
+            state_file.write_text(json.dumps({'last_run': now}))
+            run_job_with_caffeinate(job_file)
+    except Exception as e:
+        print(f"[jobsd schedule error] {job_file}: {e}", file=sys.stderr)
+
 
 COMMANDS = {
     'validate': cmd_validate,
@@ -2872,6 +4792,13 @@ COMMANDS = {
     'delete': cmd_delete,
     'archive': cmd_archive,
     'suggest-schema': cmd_suggest_schema,
+    'suggest-job': cmd_suggest_job,
+    'review-patch': cmd_review_patch,
+    'organize': cmd_organize,
+    'report': cmd_report,
+    'apply': cmd_apply,
+    'undo': cmd_undo,
+    'daemon': cmd_daemon,
 }
 
 

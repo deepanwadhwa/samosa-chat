@@ -1,0 +1,10 @@
+{
+  "job_id": "folder-report",
+  "schema_version": 1,
+  "input": {
+    "folder": "/tmp/inputs"
+  },
+  "instruction": null,
+  "output_schema": null,
+  "inference": null
+}
