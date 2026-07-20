@@ -1,0 +1,671 @@
+#!/usr/bin/env python3
+"""Deterministic filesystem primitives for Samosa jobs.
+
+The genuinely valuable, hard-to-get-right core lifted from the original jobs
+runner: magic-byte type detection, local-folder discovery, the organize-rule
+engine, collision-safe atomic moves, an undo-capable append-only event log, and
+image downscaling. No model, no network, no CLI — those live one layer up
+(`samosa_tools`, `samosa_jobs`). Standard library only, except an optional
+Pillow import used to downscale oversized images.
+
+This is the implementation the filesystem *tools* wrap. Keeping it pure keeps
+the tools honest: given the same folder they produce byte-identical plans, and a
+plan is a data structure you can inspect before anything on disk moves.
+"""
+
+import ctypes
+import ctypes.util
+import errno
+import hashlib
+import json
+import os
+import platform
+import re
+import stat as stat_mod
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+# --- Constants -------------------------------------------------------------
+
+MAX_FILE_BYTES_DEFAULT = 26214400  # 25 MiB
+
+# Magic bytes for file type detection.
+MAGIC_JPEG = b'\xff\xd8\xff'
+MAGIC_PNG = b'\x89PNG'
+MAGIC_PDF = b'%PDF'
+
+# Whitelist for organize destination folder names: a leading alnum, then a
+# bounded run of safe characters. No leading dot/dash, no separators, no "..".
+FOLDER_NAME_WHITELIST_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$')
+
+# Default type filter for discovery (images, plain text, PDF).
+DEFAULT_TYPES = ('image/jpeg', 'image/png', 'text/plain', 'application/pdf')
+
+# libc for atomic no-clobber rename (renamex_np on macOS, renameat2 on Linux).
+_libc = None
+try:
+    _libc_path = ctypes.util.find_library('c')
+    if _libc_path:
+        _libc = ctypes.CDLL(_libc_path, use_errno=True)
+except Exception:
+    _libc = None
+
+RENAME_EXCL_MACOS = 4
+AT_FDCWD_LINUX = -100
+RENAME_NOREPLACE_LINUX = 1
+
+
+# --- Small utilities -------------------------------------------------------
+
+def rfc3339_now():
+    """Return the current UTC timestamp in RFC3339 format."""
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def sha256_file(path):
+    """Compute the SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def sha256_bytes(data):
+    """Compute the SHA-256 hex digest of bytes."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def fsync_dir(path):
+    """fsync a directory so a rename inside it is durable."""
+    fd = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def atomic_write(dest, data, mode=0o600):
+    """Write data atomically: write .partial, fsync, rename, fsync dir."""
+    dest = Path(dest)
+    partial = dest.with_suffix(dest.suffix + '.partial')
+    with open(partial, 'w') as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(str(partial), mode)
+    os.rename(str(partial), str(dest))
+    fsync_dir(str(dest.parent))
+
+
+def stat_is_regular(st):
+    """Return True if a stat result is a regular file."""
+    return stat_mod.S_ISREG(st.st_mode)
+
+
+# --- Type detection --------------------------------------------------------
+
+def detect_media_type(header_bytes):
+    """Detect a media type from the first bytes of a file, or None."""
+    if header_bytes[:3] == MAGIC_JPEG:
+        return 'image/jpeg'
+    if header_bytes[:4] == MAGIC_PNG:
+        return 'image/png'
+    if header_bytes[:4] == MAGIC_PDF:
+        return 'application/pdf'
+    return None
+
+
+def is_valid_utf8_text(data):
+    """Return True if data is valid UTF-8 with no problematic control chars."""
+    try:
+        text = data.decode('utf-8', errors='strict')
+    except UnicodeDecodeError:
+        return False
+    for ch in text:
+        cp = ord(ch)
+        if cp < 32 and cp not in (9, 10, 13):
+            return False
+    return True
+
+
+def is_valid_folder_name(name):
+    """Whitelist an organize destination folder name (no separators/.. /leading dot)."""
+    if not isinstance(name, str):
+        return False
+    if name in ('.', '..') or '/' in name or '\\' in name or '\x00' in name:
+        return False
+    return bool(FOLDER_NAME_WHITELIST_RE.match(name))
+
+
+# --- Discovery (local folder only) -----------------------------------------
+
+def discover_files(input_config, allowed_types=None, is_metadata_only=False):
+    """Discover local input files under a folder.
+
+    Returns (items, skipped) where each item is
+    {input_path, input_sha256, media_type, size} and skipped is a list of
+    (path, reason). Symlinks are rejected (O_NOFOLLOW), non-regular files are
+    skipped, content is hashed for dedup, and the type is detected by magic
+    bytes (falling back to UTF-8 text, then octet-stream for metadata-only
+    jobs). URL inputs are intentionally not handled here — that is a web-tool
+    concern, kept out of the filesystem layer.
+    """
+    folder = input_config.get('folder')
+    recursive = input_config.get('recursive', False)
+    max_bytes = input_config.get('max_file_bytes', MAX_FILE_BYTES_DEFAULT)
+
+    if 'types' in input_config:
+        type_filter = set(input_config['types'])
+    else:
+        type_filter = set(DEFAULT_TYPES)
+        if is_metadata_only:
+            type_filter.add('application/octet-stream')
+
+    items = []
+    skipped = []
+    seen_hashes = set()
+
+    walker = []
+    if folder and os.path.isdir(folder):
+        if recursive:
+            walker = sorted(Path(folder).rglob('*'))
+        else:
+            walker = sorted(Path(folder).iterdir())
+
+    for entry in walker:
+        path = str(entry)
+        # Reject symlinks by opening with O_NOFOLLOW.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as e:
+            skipped.append((path, f"cannot open (O_NOFOLLOW): {e}"))
+            continue
+
+        try:
+            st = os.fstat(fd)
+            if not stat_is_regular(st):
+                skipped.append((path, "not a regular file"))
+                continue
+            if not is_metadata_only and st.st_size > max_bytes:
+                skipped.append((path, f"exceeds max_file_bytes ({st.st_size} > {max_bytes})"))
+                continue
+            if st.st_size == 0:
+                skipped.append((path, "empty file"))
+                continue
+
+            data = b''
+            while True:
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                data += chunk
+
+            # Re-fstat to detect a change during the read.
+            st2 = os.fstat(fd)
+            if st2.st_size != st.st_size or st2.st_mtime != st.st_mtime:
+                skipped.append((path, "file changed during read"))
+                continue
+        finally:
+            os.close(fd)
+
+        file_hash = sha256_bytes(data)
+        if file_hash in seen_hashes:
+            skipped.append((path, "duplicate content (same SHA-256 as earlier file)"))
+            continue
+        seen_hashes.add(file_hash)
+
+        media_type = detect_media_type(data[:8])
+        if media_type is None:
+            if is_valid_utf8_text(data):
+                media_type = 'text/plain'
+            elif is_metadata_only:
+                media_type = 'application/octet-stream'
+            else:
+                skipped.append((path, "unsupported: not a recognized image/PDF and not valid UTF-8 text"))
+                continue
+
+        if media_type not in type_filter:
+            skipped.append((path, f"type {media_type} not in allowed types"))
+            continue
+
+        items.append({
+            'input_path': path,
+            'input_sha256': file_hash,
+            'media_type': media_type,
+            'size': len(data),
+        })
+
+    return items, skipped
+
+
+def count_by_type(items):
+    """Summarize discovered items as {media_type: {count, bytes}}."""
+    summary = {}
+    for item in items:
+        bucket = summary.setdefault(item['media_type'], {'count': 0, 'bytes': 0})
+        bucket['count'] += 1
+        bucket['bytes'] += item['size']
+    return summary
+
+
+# --- Organize plan (deterministic, no model) -------------------------------
+
+def eval_op(op, val1, val2):
+    """Evaluate a comparison op for a `where` rule, with JSON-typed semantics."""
+    if op == 'eq':
+        if type(val1) is not type(val2) and not (
+            isinstance(val1, (int, float)) and isinstance(val2, (int, float))
+            and not isinstance(val1, bool) and not isinstance(val2, bool)
+        ):
+            return False
+        return val1 == val2
+    if op == 'ne':
+        return not eval_op('eq', val1, val2)
+    try:
+        if op == 'lt':
+            return val1 < val2
+        if op == 'le':
+            return val1 <= val2
+        if op == 'gt':
+            return val1 > val2
+        if op == 'ge':
+            return val1 >= val2
+    except TypeError:
+        return False
+    return False
+
+
+_MAGIC_FOLDER_MAP = {
+    'image/jpeg': 'JPEG',
+    'image/png': 'PNG',
+    'application/pdf': 'PDF',
+    'text/plain': 'TEXT',
+}
+
+
+def build_organize_plan(job, job_dir, results=None):
+    """Compile an organize plan for a job spec. Returns (records, error).
+
+    `job` supplies `input` (a discovery config) and `organize` (the rule).
+    For `field`/`where` rules the per-file extraction records are read from
+    `results` (a list of dicts) when given, else from
+    `<job_dir>/results/output.jsonl`. `extension`/`media_type` rules need no
+    model and no results file. Records with a `dst` are moves; records with a
+    `skip` explain why a file stayed put. The plan is deterministic: the same
+    folder yields byte-identical output across runs.
+    """
+    org = job.get('organize')
+    if not org:
+        return None, "job has no organize block"
+
+    rule = org.get('rule', {})
+    by = rule.get('by')
+    is_metadata_only = by in ('extension', 'media_type')
+
+    items, _skipped = discover_files(job['input'], is_metadata_only=is_metadata_only)
+    items.sort(key=lambda x: x['input_path'])
+
+    results_by_path = {}
+    results_by_hash = {}
+    if not is_metadata_only:
+        records = results
+        if records is None:
+            records = []
+            out_file = Path(job_dir) / 'results' / 'output.jsonl'
+            if out_file.exists():
+                with open(out_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            records.append(json.loads(line))
+                        except ValueError:
+                            pass
+        for rec in records:
+            if rec.get('input_path'):
+                results_by_path[rec['input_path']] = rec
+            if rec.get('input_sha256'):
+                results_by_hash[rec['input_sha256']] = rec
+
+    dest_root = org.get('dest_root')
+    if not dest_root:
+        dest_root = os.path.join(job['input']['folder'], 'Organized')
+    dest_root = os.path.abspath(dest_root)
+
+    moves_or_skips = []
+    taken_dsts = set()
+
+    for item in items:
+        input_path = item['input_path']
+        input_sha256 = item['input_sha256']
+        size = item['size']
+        try:
+            mtime = os.path.getmtime(input_path)
+        except OSError:
+            mtime = 0.0
+
+        folder_name = None
+
+        if by == 'extension':
+            p = Path(input_path)
+            ext = p.suffix[1:].lower() if p.suffix.startswith('.') else ''
+            mapping = rule.get('map', {})
+            if ext and ext in mapping:
+                folder_name = mapping[ext]
+            elif ext:
+                folder_name = ext.upper()
+            else:
+                folder_name = _MAGIC_FOLDER_MAP.get(item['media_type'], 'OTHER')
+
+        elif by == 'media_type':
+            folder_name = _MAGIC_FOLDER_MAP.get(item['media_type'], 'OTHER')
+
+        elif by in ('field', 'where'):
+            rec = results_by_path.get(input_path) or results_by_hash.get(input_sha256)
+            if not rec:
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                continue
+            status = rec.get('status', 'passed')
+            if status != 'passed':
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                continue
+            extracted = rec.get('extracted') if isinstance(rec.get('extracted'), dict) else rec
+            field_name = rule.get('field')
+            field_val = extracted.get(field_name)
+
+            if by == 'field':
+                if field_val is None:
+                    moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "not_validated"})
+                    continue
+                folder_name = str(field_val).strip()
+            elif by == 'where':
+                op = rule.get('op')
+                target_val = rule.get('value')
+                if eval_op(op, field_val, target_val):
+                    folder_name = rule.get('dest')
+                else:
+                    unmatched = org.get('unmatched', 'leave')
+                    if unmatched == 'leave':
+                        moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "unmatched"})
+                        continue
+                    folder_name = unmatched
+
+        if not folder_name or not is_valid_folder_name(folder_name):
+            moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "unsafe_dest"})
+            continue
+
+        dst_dir = os.path.join(dest_root, folder_name)
+        base_name = os.path.basename(input_path)
+        dst_path = os.path.join(dst_dir, base_name)
+
+        if os.path.realpath(input_path) == os.path.realpath(dst_path):
+            moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "already_sorted"})
+            continue
+
+        on_coll = org.get('on_collision', 'skip')
+        has_collision = os.path.exists(dst_path) or dst_path in taken_dsts
+        if has_collision:
+            if on_coll == 'skip':
+                moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "dest_exists"})
+                continue
+            elif on_coll == 'suffix_sha8':
+                suffix = input_sha256[:8]
+                p = Path(input_path)
+                new_base = f"{p.stem}.{suffix}{p.suffix}"
+                dst_path = os.path.join(dst_dir, new_base)
+                if os.path.exists(dst_path) or dst_path in taken_dsts:
+                    moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "skip": "dest_exists"})
+                    continue
+
+        taken_dsts.add(dst_path)
+        moves_or_skips.append({"input_sha256": input_sha256, "src": input_path, "dst": dst_path, "size": size, "mtime": mtime})
+
+    moves_or_skips.sort(key=lambda x: x['src'])
+    return moves_or_skips, None
+
+
+# --- Move / undo primitives ------------------------------------------------
+
+def atomic_no_clobber_rename(src, dst):
+    """Atomic rename that never overwrites an existing dst.
+
+    Uses renamex_np(RENAME_EXCL) on macOS, renameat2(RENAME_NOREPLACE) on
+    Linux, and an os.link+inode-assert+unlink fallback elsewhere. Returns
+    (success, skip_reason) where skip_reason is one of 'dest_exists',
+    'cross_device', 'inode_mismatch', or a 'link_failed: …' string.
+    """
+    src_bytes = os.fsencode(src)
+    dst_bytes = os.fsencode(dst)
+
+    if _libc is not None:
+        if sys.platform == 'darwin' and hasattr(_libc, 'renamex_np'):
+            res = _libc.renamex_np(ctypes.c_char_p(src_bytes), ctypes.c_char_p(dst_bytes), ctypes.c_uint(RENAME_EXCL_MACOS))
+            if res == 0:
+                return True, None
+            err = ctypes.get_errno()
+            if err in (errno.EEXIST, errno.EACCES):
+                return False, 'dest_exists'
+            if err == errno.EXDEV:
+                return False, 'cross_device'
+
+        elif sys.platform.startswith('linux') and hasattr(_libc, 'renameat2'):
+            res = _libc.renameat2(
+                ctypes.c_int(AT_FDCWD_LINUX),
+                ctypes.c_char_p(src_bytes),
+                ctypes.c_int(AT_FDCWD_LINUX),
+                ctypes.c_char_p(dst_bytes),
+                ctypes.c_uint(RENAME_NOREPLACE_LINUX),
+            )
+            if res == 0:
+                return True, None
+            err = ctypes.get_errno()
+            if err in (errno.EEXIST, errno.EACCES):
+                return False, 'dest_exists'
+            if err == errno.EXDEV:
+                return False, 'cross_device'
+
+    # Fallback: hard-link + inode assertion + unlink source.
+    if os.path.exists(dst):
+        return False, 'dest_exists'
+    try:
+        os.link(src, dst)
+    except FileExistsError:
+        return False, 'dest_exists'
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            return False, 'cross_device'
+        return False, f"link_failed: {e}"
+
+    st_src = os.stat(src)
+    st_dst = os.stat(dst)
+    if st_src.st_ino != st_dst.st_ino or st_src.st_dev != st_dst.st_dev:
+        return False, 'inode_mismatch'
+
+    os.unlink(src)
+    return True, None
+
+
+def apply_move(plan_line, input_folder=None, verify_hash=False):
+    """Apply a single planned move. Returns (success, skip_reason).
+
+    Re-validates the source against the plan (regular file, unchanged size/mtime,
+    optionally hash), enforces a scope jail when `input_folder` is given, creates
+    the destination directory, then performs the atomic no-clobber rename.
+    """
+    src = plan_line['src']
+    dst = plan_line['dst']
+
+    try:
+        fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        return False, f"cannot_open_src: {e}"
+
+    try:
+        st = os.fstat(fd)
+        if not stat_is_regular(st):
+            return False, 'not_regular_file'
+
+        expected_size = plan_line.get('size')
+        expected_mtime = plan_line.get('mtime')
+        if expected_size is not None and st.st_size != expected_size:
+            return False, 'changed_since_scan'
+        if expected_mtime is not None and abs(st.st_mtime - expected_mtime) > 1e-4:
+            return False, 'changed_since_scan'
+
+        if verify_hash and 'input_sha256' in plan_line:
+            data = b''
+            os.lseek(fd, 0, os.SEEK_SET)
+            while True:
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                data += chunk
+            if sha256_bytes(data) != plan_line['input_sha256']:
+                return False, 'changed_since_scan'
+    finally:
+        os.close(fd)
+
+    if input_folder:
+        folder_real = os.path.realpath(input_folder)
+        src_real = os.path.realpath(src)
+        dst_real = os.path.realpath(dst)
+        try:
+            rel_src = os.path.relpath(src_real, folder_real)
+            rel_dst = os.path.relpath(dst_real, folder_real)
+            if rel_src.startswith('..') or rel_dst.startswith('..'):
+                return False, 'outside_jail'
+        except ValueError:
+            return False, 'outside_jail'
+
+    dst_dir = os.path.dirname(dst)
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+    except OSError as e:
+        return False, f"mkdir_failed: {e}"
+
+    return atomic_no_clobber_rename(src, dst)
+
+
+def revert_move(applied_line):
+    """Reverse a previously applied move (dst -> src). Returns (success, reason).
+
+    Used by undo. The original source location must be free (no-clobber) and the
+    moved file must still be at the destination.
+    """
+    src = applied_line['src']
+    dst = applied_line['dst']
+    if not os.path.exists(dst):
+        return False, 'dest_missing'
+    src_dir = os.path.dirname(src)
+    try:
+        os.makedirs(src_dir, exist_ok=True)
+    except OSError as e:
+        return False, f"mkdir_failed: {e}"
+    return atomic_no_clobber_rename(dst, src)
+
+
+# --- Append-only event log -------------------------------------------------
+
+class EventLog:
+    """Append-only JSONL event log with monotonic sequence numbers.
+
+    Every job records its actions here — the same stream the live UI renders and
+    the record undo replays. Writes are flushed and fsynced so a crash leaves a
+    truncated-but-valid tail, and a torn final line is ignored on load.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.seq = 0
+        self.events = []
+
+    def load(self):
+        self.events = []
+        self.seq = 0
+        if not self.path.exists():
+            return
+        with open(self.path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                    self.events.append(evt)
+                    s = evt.get('seq', 0)
+                    if s > self.seq:
+                        self.seq = s
+                except json.JSONDecodeError:
+                    pass
+
+    def append(self, event_type, **fields):
+        self.seq += 1
+        event = {'seq': self.seq, 'ts': rfc3339_now(), 'type': event_type, **fields}
+        self.events.append(event)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.path, 'a') as f:
+            f.write(json.dumps(event, separators=(',', ':')) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        return event
+
+
+# --- Image downscale (optional Pillow, macOS sips fallback) ----------------
+
+def auto_downscale_image_bytes(image_bytes, mime_type, target_max_bytes=3 * 1024 * 1024):
+    """Downscale image bytes so the payload stays under target_max_bytes.
+
+    Returns (bytes, mime_type, changed). Prefers Pillow; on macOS falls back to
+    `sips`; otherwise returns the input unchanged.
+    """
+    if len(image_bytes) <= target_max_bytes:
+        return image_bytes, mime_type, False
+
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        scale = (target_max_bytes / len(image_bytes)) ** 0.5
+        new_w = max(1, int(w * scale * 0.9))
+        new_h = max(1, int(h * scale * 0.9))
+        img = img.resize((new_w, new_h), getattr(Image, 'Resampling', Image).LANCZOS)
+        buf = io.BytesIO()
+        fmt = 'JPEG' if 'jpeg' in mime_type or 'jpg' in mime_type else 'PNG'
+        img.save(buf, format=fmt, quality=85)
+        res_bytes = buf.getvalue()
+        out_mime = 'image/jpeg' if fmt == 'JPEG' else 'image/png'
+        return res_bytes, out_mime, True
+    except Exception:
+        pass
+
+    if platform.system() == 'Darwin':
+        ext = '.jpg' if 'jpeg' in mime_type or 'jpg' in mime_type else '.png'
+        with tempfile.NamedTemporaryFile('wb', suffix=ext, delete=False) as in_f:
+            in_f.write(image_bytes)
+            in_path = in_f.name
+        out_path = in_path + '.downscaled' + ext
+        try:
+            res = subprocess.run(['sips', '-Z', '1024', in_path, '--out', out_path],
+                                 capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and os.path.exists(out_path):
+                with open(out_path, 'rb') as out_f:
+                    downscaled_bytes = out_f.read()
+                if downscaled_bytes and len(downscaled_bytes) < len(image_bytes):
+                    return downscaled_bytes, mime_type, True
+        except Exception:
+            pass
+        finally:
+            for p in (in_path, out_path):
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+    return image_bytes, mime_type, False
