@@ -26,6 +26,12 @@ from urllib.parse import quote_plus, urljoin, urlsplit
 import urllib.request
 import xml.etree.ElementTree as ET
 
+# The jobs layer lives beside the gateway (tools/ in source, bin/ when
+# installed). Put our own directory on the path so it — and the tools/jobs_fs
+# it pulls in — import from either location.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import samosa_jobs
+
 
 HOST = "127.0.0.1"
 PUBLIC_PORT = int(os.environ.get("SAMOSA_PORT", "8642"))
@@ -957,6 +963,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(200, {"results": search_web(str(data.get("query", "")))})
             except (ValueError, PermissionError, OSError, json.JSONDecodeError) as error:
                 self.json_response(400, {"error": {"message": str(error)}})
+        elif path == "/v1/jobs/run":
+            self.jobs_stream(self.body(), "run")
+        elif path == "/v1/jobs/apply":
+            self.jobs_stream(self.body(), "apply")
+        elif path == "/v1/jobs/undo":
+            self.jobs_stream(self.body(), "undo")
         elif path == "/v1/cancel":
             self.json_response(200, {"cancelled": supervisor.cancel()})
         elif path == "/v1/shutdown":
@@ -1058,6 +1070,105 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    # --- jobs (Models -> Tools -> Jobs) -----------------------------------
+
+    def sse_begin(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    def sse_event(self, event: dict) -> None:
+        self.wfile.write(b"data: " + json.dumps(event, separators=(",", ":")).encode() + b"\n\n")
+        self.wfile.flush()
+
+    def jobs_model_call(self, messages: list) -> str | None:
+        """Run one small, non-streaming completion on the active backend.
+
+        Used only to disambiguate a job's intent. Returns None whenever a model
+        is not available or busy, so the jobs layer falls back to its
+        deterministic (and safe, read-only) default rather than blocking.
+        """
+        status = supervisor.status()
+        if not status.get("ready"):
+            return None
+        with supervisor.lock:
+            if supervisor.generating:
+                return None
+            supervisor.generating = True
+        conn = None
+        response = None
+        try:
+            payload = {"messages": messages, "stream": False, "thinking": "off",
+                       "temperature": 0, "max_tokens": 64}
+            conn, response = self.backend_chat(payload)
+            raw = response.read()
+            if response.status != 200:
+                return None
+            return json.loads(raw)["choices"][0]["message"].get("content") or ""
+        except (OSError, http.client.HTTPException, json.JSONDecodeError,
+                KeyError, IndexError, TypeError):
+            return None
+        finally:
+            if conn is not None:
+                conn.close()
+            with supervisor.lock:
+                if supervisor.upstream is conn:
+                    supervisor.upstream = None
+                if supervisor.upstream_response is response:
+                    supervisor.upstream_response = None
+                supervisor.generating = False
+
+    def jobs_stream(self, body: bytes, kind: str) -> None:
+        """Stream a job's live events (decode intent, counting, plan, moves)."""
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+
+        if kind == "run":
+            goal = str(data.get("goal", "")).strip()
+            folder = str(data.get("folder", "")).strip()
+            mode = data.get("mode", "confirm")
+            if mode not in ("confirm", "execute"):
+                mode = "confirm"
+            if not goal or not folder:
+                self.json_response(400, {"error": {"message": "goal and folder are required"}})
+                return
+            gen = samosa_jobs.run_job(goal, folder, mode=mode, model_call=self.jobs_model_call)
+        elif kind in ("apply", "undo"):
+            job_id = str(data.get("job_id", "")).strip()
+            if not job_id:
+                self.json_response(400, {"error": {"message": "job_id is required"}})
+                return
+            gen = (samosa_jobs.apply_job(job_id) if kind == "apply"
+                   else samosa_jobs.undo_job(job_id))
+        else:
+            self.json_response(404, {"error": {"message": "unknown jobs action"}})
+            return
+
+        self.sse_begin()
+        try:
+            for event in gen:
+                self.sse_event(event)
+        except (OSError, BrokenPipeError):
+            self.close_connection = True
+            return
+        except Exception as error:  # a job bug becomes a stream error, not a 500
+            try:
+                self.sse_event({"type": "error", "message": str(error)})
+            except OSError:
+                pass
+        try:
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except OSError:
+            self.close_connection = True
 
     def chat_once(self, payload: dict) -> None:
         for round_index in range(MAX_TOOL_ROUNDS + 1):

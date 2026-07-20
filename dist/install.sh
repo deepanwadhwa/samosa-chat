@@ -110,12 +110,12 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
-    samosa|samosa_jobs.py) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
+    samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
     *) return 1 ;;
   esac
 }
 
-INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa samosa_jobs.py"
+INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
 
 # Document extraction is an optional release capability, not a host-package
 # dependency. A PDFium archive is fetched only when the verified release
@@ -182,7 +182,7 @@ cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 # Downloads do not retain the source file mode.  The Python runner is invoked
 # through python3, but keeping both entry points executable makes the staged
 # release directly inspectable/runnable too.
-chmod 755 "$STAGE/bin/samosa" "$STAGE/bin/samosa_jobs.py"
+chmod 755 "$STAGE/bin/samosa"
 
 say "Compiling the staged engine..."
 COMPILER=""

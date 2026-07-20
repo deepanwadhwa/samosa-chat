@@ -118,8 +118,9 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
-jobs-test: tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py
+jobs-test: tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py tools/samosa_gateway.py
 	python3 -m unittest discover -s tests/jobs -v
+	python3 tests/test_gateway_jobs.py
 
 clean:
 	rm -f qwen36b qwen36b-metal qwen36b-sched-runtime metal-spike samosa-extract pagecache-residency test_expert_cache test_kv_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve

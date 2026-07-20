@@ -121,9 +121,11 @@ def main() -> int:
             place(src, out / "pdfium" / name, link=False)
             staged.append(out / "pdfium" / name)
 
+    # NOTE: jobs and the multi-model gateway ship via tools/install_local_dev.sh
+    # today; the HF release path (this script + dist/install.sh) has not yet been
+    # migrated to the Models->Tools->Jobs layout, so it packages neither here.
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
-                     (ROOT / "dist" / "samosa_jobs.py", out / "samosa_jobs.py"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
                      (ROOT / "assets" / "app.html", out / "app.html"),
                      (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png")):

@@ -295,3 +295,69 @@ def _job_folder(jdir):
 def _dumps(obj):
     import json
     return json.dumps(obj, separators=(',', ':'))
+
+
+# --- Minimal terminal CLI --------------------------------------------------
+# The app (gateway Jobs tab) is the primary way to run jobs; this CLI is a thin
+# convenience for the terminal and for end-to-end testing. It prints the same
+# event stream the UI renders, one readable line per action.
+
+def _print_event(evt):
+    t = evt.get('type')
+    if t == 'decode_intent':
+        print(f"• decoding intent: {evt.get('goal')!r}")
+    elif t == 'intent':
+        print(f"• intent: {evt.get('kind')} — {evt.get('explain')}")
+    elif t == 'counting':
+        parts = ", ".join(f"{v} {k}" for k, v in sorted(evt.get('by_type', {}).items()))
+        print(f"• counting files: {evt.get('total')} found" + (f" ({parts})" if parts else ""))
+    elif t == 'plan':
+        print(f"• planned {len(evt.get('moves', []))} move(s), {len(evt.get('skips', []))} skip(s)")
+    elif t == 'await_apply':
+        print(f"• plan ready — apply with:  samosa jobs apply {evt.get('job_id')}")
+    elif t == 'action':
+        verb = 'restore' if evt.get('op') == 'revert' else 'move'
+        state = 'ok' if evt.get('ok') else f"skip ({evt.get('reason')})"
+        print(f"  [{evt.get('i')}/{evt.get('n')}] {verb} {os.path.basename(evt.get('src',''))} … {state}")
+    elif t in ('applied', 'reverted', 'report'):
+        pass
+    elif t == 'done':
+        print(f"✓ {evt.get('summary')}")
+    elif t == 'error':
+        print(f"✗ error: {evt.get('message')}")
+
+
+def main(argv):
+    if not argv or argv[0] in ('-h', '--help'):
+        print("Usage:\n"
+              "  samosa jobs run \"<goal>\" <folder> [--execute]\n"
+              "  samosa jobs apply <job_id>\n"
+              "  samosa jobs undo <job_id>", file=sys.stderr)
+        return 2
+    cmd = argv[0]
+    if cmd == 'run':
+        rest = [a for a in argv[1:] if a != '--execute']
+        mode = 'execute' if '--execute' in argv[1:] else 'confirm'
+        if len(rest) < 2:
+            print("Usage: samosa jobs run \"<goal>\" <folder> [--execute]", file=sys.stderr)
+            return 2
+        goal, folder = rest[0], rest[1]
+        gen = run_job(goal, folder, mode=mode)
+    elif cmd == 'apply' and len(argv) >= 2:
+        gen = apply_job(argv[1])
+    elif cmd == 'undo' and len(argv) >= 2:
+        gen = undo_job(argv[1])
+    else:
+        print(f"unknown jobs command: {cmd}", file=sys.stderr)
+        return 2
+
+    had_error = False
+    for evt in gen:
+        _print_event(evt)
+        if evt.get('type') == 'error':
+            had_error = True
+    return 1 if had_error else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))
