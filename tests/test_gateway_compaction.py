@@ -17,7 +17,6 @@ with tempfile.TemporaryDirectory() as temp:
         "SAMOSA_QWEN_ENGINE": str(root / "qwen36b"),
         "SAMOSA_QWEN_MODEL": str(root / "model"),
         "SAMOSA_TOKENIZER": str(root / "tokenizer.json"),
-        "SAMOSA_GGUF_CONTEXT_TOKENS": "8192",
     })
     spec = importlib.util.spec_from_file_location(
         "samosa_gateway_compaction",
@@ -43,6 +42,18 @@ with tempfile.TemporaryDirectory() as temp:
     gateway.supervisor.backend = "ornith"
     command, _ = gateway.supervisor.command("ornith")
     assert command[command.index("-c") + 1] == "4096"
+    assert command[command.index("--fit-target") + 1] == "4096"
+    gateway.settings.context_spec = "auto"
+    command, _ = gateway.supervisor.command("ornith")
+    assert "-c" not in command and "--ctx-size" not in command
+    gateway.supervisor.runtime_context_tokens = 0
+    with mock.patch.object(
+        gateway, "backend_json",
+        return_value=(200, {"default_generation_settings": {"n_ctx": 57344}}),
+    ):
+        assert gateway.supervisor.gguf_context_limit() == 57344
+    assert gateway.supervisor.runtime_context_tokens == 57344
+    gateway.settings.context_spec = "4096"
     for bad in ("0", "-1", "262145", "lots"):
         try:
             gateway.settings.update({"context_tokens": bad})

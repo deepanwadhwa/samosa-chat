@@ -1,6 +1,7 @@
 #!/bin/sh
-# Install the current source build as a local development release without
-# copying the large group-32 model. Model payloads are hard-linked on APFS.
+# Install the current source build as a local development release. Existing
+# Qwen payloads are hard-linked when available; a model-less clone is valid and
+# can download any model from the app or CLI after installation.
 
 set -eu
 
@@ -13,14 +14,12 @@ ENGINE="$ROOT/qwen36b"
 
 for path in "$ENGINE" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/dist/samosa" "$ROOT/tools/samosa_gateway.py" \
-  "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
-  "$SNAPSHOT/manifest.json" "$SNAPSHOT/config.json" \
-  "$SNAPSHOT/generation_config.json" "$TOKENIZER"; do
+  "$ROOT/tools/samosa_models.py"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
 
 release_hash=$(shasum -a 256 "$ENGINE" "$ROOT/assets/app.html" "$ROOT/dist/samosa" \
-  "$ROOT/tools/samosa_gateway.py" |
+  "$ROOT/tools/samosa_gateway.py" "$ROOT/tools/samosa_models.py" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
@@ -28,19 +27,26 @@ final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage/bin" "$stage/model" "$HOME_DIR/releases" "$HOME_DIR/bin"
 
-for name in experts.bin resident.safetensors manifest.json config.json generation_config.json; do
-  ln "$SNAPSHOT/$name" "$stage/model/$name" || {
-    echo "hard-link failed for $name; refusing to duplicate the model" >&2
+qwen_linked=0
+if [ -f "$SNAPSHOT/experts.bin" ] && [ -f "$SNAPSHOT/resident.safetensors" ] \
+   && [ -f "$SNAPSHOT/manifest.json" ] && [ -f "$SNAPSHOT/config.json" ] \
+   && [ -f "$SNAPSHOT/generation_config.json" ] && [ -f "$TOKENIZER" ]; then
+  for name in experts.bin resident.safetensors manifest.json config.json generation_config.json; do
+    ln "$SNAPSHOT/$name" "$stage/model/$name" || {
+      echo "hard-link failed for $name; refusing to duplicate the model" >&2
+      exit 1
+    }
+  done
+  ln "$TOKENIZER" "$stage/tokenizer_qwen36.json" || {
+    echo "hard-link failed for tokenizer; refusing an implicit copy" >&2
     exit 1
   }
-done
-ln "$TOKENIZER" "$stage/tokenizer_qwen36.json" || {
-  echo "hard-link failed for tokenizer; refusing an implicit copy" >&2
-  exit 1
-}
+  qwen_linked=1
+fi
 cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$ROOT/tools/samosa_gateway.py" "$stage/bin/samosa-gateway"
+cp "$ROOT/tools/samosa_models.py" "$stage/bin/samosa_models.py"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa" "$stage/bin/samosa-gateway"
@@ -61,7 +67,11 @@ trap - EXIT HUP INT TERM
 
 echo "Installed local development release $release_id"
 echo "Launcher: $HOME_DIR/bin/samosa"
-echo "Model files were hard-linked, not copied."
+if [ "$qwen_linked" = 1 ]; then
+  echo "Existing Qwen files were hard-linked, not copied."
+else
+  echo "No model was bundled. Run 'samosa app' or 'samosa pull MODEL' to install one."
+fi
 
 # Unlike dist/install.sh, this script never edits your shell rc — a dev install
 # should not mutate your profile behind your back. So say plainly whether the

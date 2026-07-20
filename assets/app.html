@@ -201,6 +201,7 @@
       position: fixed; inset: 0 0 0 auto; width: min(390px, 100%); z-index: 30;
       transform: translateX(102%); transition: transform .22s ease;
       border-left: 1px solid var(--line); background: var(--paper); box-shadow: -20px 0 60px rgba(30, 18, 12, .15); padding: 23px;
+      overflow-y: auto;
     }
     .settings.open { transform: translateX(0); }
     .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 27px; }
@@ -210,6 +211,16 @@
     .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 680; }
     .field small { display: block; color: var(--muted); margin-top: 7px; font-size: 11px; line-height: 1.45; }
     .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink); padding: 10px 11px; outline: none; }
+    .model-downloads { display: grid; gap: 8px; margin-top: 10px; }
+    .model-card { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .model-card-title { font-size: 12px; font-weight: 700; }
+    .model-card-meta { color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .model-action { min-width: 76px; border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; background: var(--paper-2); color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 650; }
+    .model-action.download { color: white; border-color: transparent; background: var(--brand); }
+    .model-action:disabled { cursor: default; opacity: .6; }
+    .download-progress { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 99px; background: var(--paper-2); }
+    .download-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
+    .download-error { grid-column: 1 / -1; color: var(--danger); font-size: 10px; }
     .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); color: var(--muted); font-size: 12px; }
     .local-card strong { color: var(--ink); }
     .web-card { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 20px; }
@@ -245,7 +256,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <img src="/assets/samosa-chat.png" alt="">
-        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Local Qwen · private by design</div></div>
+        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Three local models · private by design</div></div>
       </div>
       <button class="new-chat" id="newChat"><span aria-hidden="true">＋</span> New conversation</button>
       <div class="section-label">Conversations</div>
@@ -299,6 +310,7 @@
       <label for="modelBackend">Model</label>
       <select id="modelBackend"><option value="bonsai">Bonsai 27B 1-bit</option><option value="ornith">Ornith 9B</option><option value="qwen">Qwen3.6 35B A3B</option></select>
       <small id="modelHelp">Switching unloads the current model, loads the other one, and starts a new conversation.</small>
+      <div class="model-downloads" id="modelDownloads" aria-live="polite"></div>
     </div>
     <div class="field">
       <label for="thinking">Thinking profile</label>
@@ -352,7 +364,7 @@
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
         imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
-        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
+        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"), modelDownloads: $("modelDownloads"),
         webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults")
       };
       const STORAGE_KEY = "samosa-chat-v1";
@@ -364,6 +376,8 @@
       let currentImageBase64 = null;
       let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:false};
       let healthInitialized = false;
+      let modelPollFast = false;
+      let onboardingOpened = false;
 
       function makeId() {
         const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -474,6 +488,11 @@
 
       async function sendPrompt(text) {
         if (generating || !text.trim()) return;
+        if (!backend.ready) {
+          els.modelHelp.textContent="Install or wait for a model before starting a conversation.";
+          openSettings();
+          return;
+        }
         const chat=ensureChat(), user={id:makeId(),role:"user",content:text.trim(),image:currentImageBase64}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
         chat.messages.push(user,assistant); chat.updated=Date.now(); if (chat.messages.length===2) chat.title=titleFor(user.content);
         
@@ -547,7 +566,12 @@
             els.attachBtn.title=h.supports_images?"Attach an image":"This model was installed without a vision projector";
             if(!h.supports_images)removeAttachedImage();
             els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
+            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:h.installed?`Loading ${h.label}…`:"No model installed — choose one in Settings";
+            if(!h.installed&&!onboardingOpened) {
+              onboardingOpened=true;
+              openSettings();
+              els.modelHelp.textContent="Choose a model to download. Samosa verifies it before loading.";
+            }
           } else {
             backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:true};
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
@@ -557,13 +581,58 @@
           if(h.compaction)els.compactHelp.textContent=`Auto-compaction is ${h.compaction.auto?"on":"off"} at ${h.compaction.threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
           if(!healthInitialized||previousBackend!==backend.id) {
             const limit=String(h.context_limit_tokens||"");
-            if(h.context_limit_mode==="auto")els.contextTokens.value="auto";
+            if((h.context_limit_mode||"").includes("auto"))els.contextTokens.value="auto";
             else if([...els.contextTokens.options].some(option=>option.value===limit))els.contextTokens.value=limit;
             else {els.contextTokens.value="custom";els.contextCustom.value=limit;}
             if(h.compaction){els.autoCompact.checked=!!h.compaction.auto;els.compactThreshold.value=String(h.compaction.threshold_percent);}
             syncContextCustom();saveState();healthInitialized=true;
           }
+          refreshModels();
         } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
+      }
+      function downloadPercent(download) {
+        if (!download?.total_bytes) return 0;
+        return Math.max(0,Math.min(100,Math.round(100*Number(download.downloaded_bytes||0)/Number(download.total_bytes))));
+      }
+      async function refreshModels() {
+        try {
+          const r=await fetch("/v1/backends",{cache:"no-store"}); if(!r.ok)return;
+          const data=await r.json(), download=data.download||{}, activeDownload=!!download.active;
+          modelPollFast=activeDownload;
+          els.modelDownloads.innerHTML="";
+          for(const model of data.backends||[]) {
+            const card=document.createElement("div"); card.className="model-card";
+            const action=model.active&&model.available?"Active":model.available?"Use":activeDownload&&download.model===model.id?`${downloadPercent(download)}%`:"Download";
+            const actionClass=!model.available&&!activeDownload?"model-action download":"model-action";
+            const disabled=(model.active&&model.available)||activeDownload;
+            card.innerHTML=`<div><div class="model-card-title">${escapeHTML(model.label)}</div><div class="model-card-meta">${escapeHTML(model.size)} · ${escapeHTML(model.license)} · ${model.available?"installed locally":"not installed"}</div></div><button class="${actionClass}" data-model="${escapeHTML(model.id)}" data-action="${model.available?"select":"install"}"${disabled?" disabled":""}>${escapeHTML(action)}</button>`;
+            if(activeDownload&&download.model===model.id) {
+              card.insertAdjacentHTML("beforeend",`<div class="download-progress" title="${downloadPercent(download)}%"><span style="width:${downloadPercent(download)}%"></span></div>`);
+            }
+            if(!activeDownload&&download.phase==="error"&&download.model===model.id&&download.error) {
+              const error=document.createElement("div");error.className="download-error";error.textContent=download.error;card.appendChild(error);
+            }
+            els.modelDownloads.appendChild(card);
+          }
+          els.modelDownloads.querySelectorAll("button[data-model]").forEach(button=>button.onclick=()=>modelAction(button.dataset.action,button.dataset.model));
+          for(const option of els.modelBackend.options) {
+            const item=(data.backends||[]).find(model=>model.id===option.value);
+            option.disabled=!!item&&!item.available;
+          }
+        } catch (_) {}
+      }
+      async function modelAction(action,name) {
+        if(action==="select") {
+          els.modelBackend.value=name;
+          await switchBackend();
+          return;
+        }
+        els.modelHelp.textContent="Preparing a verified download. You can keep this window open.";
+        try {
+          const r=await fetch("/v1/backends/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:name})});
+          const result=await r.json();if(!r.ok)throw new Error(result.error?.message||"Could not start download.");
+          await refreshModels();
+        } catch(error){els.modelHelp.textContent=error.message||String(error);}
       }
       function contextValue() { return els.contextTokens.value === "custom" ? els.contextCustom.value.trim() : els.contextTokens.value; }
       function syncContextCustom() { els.contextCustom.hidden=els.contextTokens.value!=="custom"; }
@@ -575,8 +644,9 @@
           const r=await fetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value,auto_compact:els.autoCompact.checked,compact_threshold_percent:Number(els.compactThreshold.value)})});
           const result=await r.json(); if(!r.ok)throw new Error(result.error?.message||"Could not change the context setting.");
           state.settings.contextConfigured=true; saveState();
-          const effective=result.context_limit_tokens.toLocaleString(), model=result.model_context_limit_tokens.toLocaleString();
-          els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${result.context_limit_mode} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;
+          const effective=Number(result.context_limit_tokens||0), model=Number(result.model_context_limit_tokens||0);
+          if(effective) { els.context.textContent=`${effective.toLocaleString()} tokens`; els.contextHelp.textContent=`${result.context_limit_mode} total context: ${effective.toLocaleString()} tokens (model maximum ${model.toLocaleString()}). History, thinking, and the answer share it.`; }
+          else els.contextHelp.textContent="The runtime is fitting the largest context this hardware can safely hold.";
           els.compactHelp.textContent=`Auto-compaction is ${result.auto_compact?"on":"off"} at ${result.compact_threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
           return true;
         } catch(error) { if(!silent)els.contextHelp.textContent=error.message||String(error); return false; }
@@ -693,7 +763,7 @@
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
       els.contextTokens.value=state.settings?.contextTokens||"auto"; els.contextCustom.value=state.settings?.contextCustom||""; syncContextCustom();
       els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
-      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); webStatus(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(health,5000); els.prompt.focus();
+      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); refreshModels(); webStatus(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(()=>{health();if(modelPollFast)refreshModels()},2000); els.prompt.focus();
     })();
   </script>
 </body>

@@ -16,6 +16,25 @@ offer literally unlimited context. The installed Qwen3.6 checkpoint declares
 to that model limit; it must not imply that more RAM extends the model beyond
 the context it was trained to use.
 
+## Implementation update — 2026-07-19
+
+The original 24,576-token hard cap described below has been replaced for Qwen:
+the model-declared 262,144 limit, runtime Auto policy, explicit app/CLI
+configuration, admission checks, health metadata, and durable compaction are
+implemented. C5/C6 remain the longer qualification program for enormous
+one-shot prompts and broader hardware evidence.
+
+The gateway extension is also complete for Bonsai and Ornith. Auto now leaves
+Prism's context argument unset, retains a 4 GiB device margin, bounds prompt
+batches, and reads the fitted `n_ctx` back from `/props`. On the measured
+16 GiB M3, real generation passed at 66,816 tokens for Bonsai and 94,464 for
+Ornith. See
+[the regression record](regressions/model-downloads/2026-07-19.md).
+
+The remainder of this file preserves the original task rationale and acceptance
+criteria; line references and statements about the former cap are historical
+ground truth, not the current product behavior.
+
 ## Verified ground truth (2026-07-19)
 
 | Fact | Evidence |

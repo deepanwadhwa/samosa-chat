@@ -71,6 +71,26 @@ printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:8642'
 stopped=$(SAMOSA_CURL="$TMP/fake-curl" run serve --stop)
 printf '%s\n' "$stopped" | grep -qx -- 'Samosa server stopped.'
 
+cat >"$TMP/bin/samosa-gateway" <<'EOF'
+#!/usr/bin/env python3
+import os
+import sys
+print(" ".join(sys.argv[1:]))
+print("home=" + os.environ["SAMOSA_HOME"])
+EOF
+chmod +x "$TMP/bin/samosa-gateway"
+listed=$(run models)
+printf '%s\n' "$listed" | grep -qx -- '--models'
+printf '%s\n' "$listed" | grep -qx -- "home=$TMP"
+pulled=$(run pull ornith)
+printf '%s\n' "$pulled" | grep -qx -- '--pull ornith'
+pulled_default=$(run pull)
+printf '%s\n' "$pulled_default" | grep -qx -- '--pull qwen'
+if run pull unknown >/dev/null 2>&1; then
+  echo "unknown model download was accepted" >&2
+  exit 1
+fi
+
 if run --seed nope test >/dev/null 2>&1; then
   echo "invalid seed was accepted" >&2
   exit 1

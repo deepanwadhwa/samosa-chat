@@ -1,5 +1,5 @@
 #!/bin/sh
-# samosa — chat with Qwen3.6-35B-A3B locally. No cloud, no account, no telemetry.
+# samosa — run Qwen, Bonsai, and Ornith locally. No cloud, account, or telemetry.
 #
 #   samosa "explain how DNS works"          answer a question
 #   samosa --continue "and DNSSEC?"         follow up on the last conversation
@@ -13,7 +13,8 @@
 #   samosa serve                            run the local app server in foreground
 #   samosa serve --stop                     stop the local app server cleanly
 #   samosa app                              start the server and open the browser app
-#   samosa pull                             pull the 24 GB model to local volume
+#   samosa models                           show installed models
+#   samosa pull MODEL                       install qwen, bonsai, ornith, or all
 #   samosa doctor                           check the installation
 #
 # Conversations resume instantly from a small snapshot — your chat history
@@ -32,8 +33,15 @@ else
 fi
 ENGINE="$RELEASE_DIR/bin/qwen36b"
 GATEWAY="$RELEASE_DIR/bin/samosa-gateway"
-MODEL="$RELEASE_DIR/model"
-TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
+RELEASE_MODEL="$RELEASE_DIR/model"
+DOWNLOADED_QWEN="$HOME_DIR/models/qwen36-group32"
+if [ -f "$DOWNLOADED_QWEN/experts.bin" ]; then
+  MODEL="$DOWNLOADED_QWEN"
+  TOKENIZER="$DOWNLOADED_QWEN/tokenizer_qwen36.json"
+else
+  MODEL="$RELEASE_MODEL"
+  TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
+fi
 APP_HTML="$RELEASE_DIR/app.html"
 APP_LOGO="$RELEASE_DIR/samosa-chat.png"
 SESSION="$HOME_DIR/last_session.qws"
@@ -57,73 +65,14 @@ CONTEXT_TOKENS="${SAMOSA_CONTEXT_TOKENS:-auto}"
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
-  else
-    fail "neither sha256sum nor shasum is available"
-  fi
-}
-
-pull_model() {
-  BASE_URL="${SAMOSA_BASE_URL:-https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main}"
-  MODEL_DIR="/model"
-  mkdir -p "$MODEL_DIR"
-  MANIFEST="$MODEL_DIR/release-manifest.tsv"
-  
-  say "Fetching release manifest..."
-  "$CURL" -fL --retry 5 --retry-delay 3 --progress-bar \
-    "$BASE_URL/release-manifest.tsv" -o "$MANIFEST.next" \
-    || fail "release manifest download failed"
-    
-  awk -F '\t' '
-    NF != 3 || length($1) != 64 || $1 !~ /^[0-9a-f]+$/ || $2 !~ /^[0-9]+$/ ||
-    $3 == "" || $3 ~ /^\// || $3 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
-  ' "$MANIFEST.next" || fail "release manifest is malformed or unsafe"
-  
-  mv -f "$MANIFEST.next" "$MANIFEST"
-  
-  # We only pull the model files and the tokenizer to the volume
-  PULL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json"
-  
-  manifest_field() {
-    awk -F '\t' -v p="$1" -v c="$2" '$3==p {print $c; found=1} END {if(!found) exit 1}' "$MANIFEST"
-  }
-  
-  verified() {
-    want=$(manifest_field "$1" 1) || return 1
-    size=$(manifest_field "$1" 2) || return 1
-    [ -f "$2" ] || return 1
-    [ "$(wc -c <"$2" | tr -d ' ')" = "$size" ] || return 1
-    have=$(sha256_file "$2")
-    [ "$want" = "$have" ]
-  }
-  
-  fetch() {
-    relative=$1; target=$2
-    say "downloading $relative ..."
-    "$CURL" -fL --retry 5 --retry-delay 3 -C - --progress-bar \
-      "$BASE_URL/$relative" -o "$target" \
-      || fail "download failed for $relative - re-run to resume"
-  }
-  
-  for relative in $PULL_FILES; do
-    target="$MODEL_DIR/$relative"
-    if verified "$relative" "$target"; then
-      say "$relative already verified - skipping"
-    else
-      fetch "$relative" "$target"
-      verified "$relative" "$target" ||
-        fail "checksum mismatch for $relative"
-    fi
-  done
-  
-  say "Model pull complete."
-}
-
 usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+gateway_cli() {
+  [ -f "$GATEWAY" ] || fail "model manager is missing; run make install again"
+  SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+    SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+    SAMOSA_APP_LOGO="$APP_LOGO" python3 "$GATEWAY" "$@"
+}
 
 positive_integer() {
   case "$1" in ''|*[!0-9]*|0) return 1 ;; *) return 0 ;; esac
@@ -216,13 +165,8 @@ doctor() {
   ok=1
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release:   $(basename "$RELEASE_DIR")"
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
-  if [ -x "$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server" ] &&
-     [ -f "$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf" ]; then
-    echo "bonsai:    ok (27B 1-bit)"
-  else
-    echo "bonsai:    not installed (optional)"
-  fi
-  [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
+  [ -f "$GATEWAY" ] && echo "gateway:   ok" || { echo "gateway:   MISSING - re-run the installer"; ok=0; }
+  gateway_cli --models || ok=0
   if [ -f "$MODEL/manifest.json" ]; then
     if grep -q 'groupwise-q4-gate-up-row-q8-down-v1' "$MODEL/manifest.json"; then
       echo "format:    mixed group-q4 gate/up + row-q8 down (experimental)"
@@ -233,10 +177,8 @@ doctor() {
       echo "format:    LEGACY whole-row q4 - upgrade required"
     fi
   else
-    echo "format:    UNKNOWN (manifest missing)"
-    ok=0
+    echo "qwen fmt:  unavailable until Qwen is installed"
   fi
-  [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
   if [ -d "$HOME_DIR/releases" ]; then
     releases=$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' 2>/dev/null | wc -l | tr -d ' ')
     [ "$releases" -le 1 ] || echo "rollback:  $((releases - 1)) previous verified release(s) retained"
@@ -287,11 +229,20 @@ doctor() {
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
 
-if [ "${1:-}" = "pull" ]; then
+if [ "${1:-}" = "models" ]; then
   shift
   [ "$#" = 0 ] || usage
-  pull_model
-  exit 0
+  gateway_cli --models
+  exit $?
+fi
+
+if [ "${1:-}" = "pull" ]; then
+  shift
+  [ "$#" -gt 0 ] || set -- qwen
+  [ "$#" = 1 ] || fail "usage: samosa pull qwen|bonsai|ornith|all"
+  case "$1" in qwen|bonsai|ornith|all) : ;; *) fail "unknown model '$1'; choose qwen, bonsai, ornith, or all" ;; esac
+  gateway_cli --pull "$1"
+  exit $?
 fi
 
 if [ "${1:-}" = "serve" ]; then
@@ -366,6 +317,10 @@ done
 
 [ $# -gt 0 ] || usage
 PROMPT="$*"
+
+[ -x "$ENGINE" ] || fail "Qwen engine is missing; run make install again"
+[ -f "$MODEL/experts.bin" ] || fail "terminal chat currently uses Qwen; install it with: samosa pull qwen"
+[ -f "$TOKENIZER" ] || fail "Qwen tokenizer is missing; reinstall Qwen with: samosa pull qwen"
 
 [ -n "$TOKENS" ] || TOKENS=8192
 case "$PROFILE" in

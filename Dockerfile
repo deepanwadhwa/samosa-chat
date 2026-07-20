@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     curl \
     ca-certificates \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup release directory and volume mount targets
@@ -27,7 +28,9 @@ RUN mkdir -p /release/bin /model /samosa_home
 # Copy compiled engine and launcher/wrapper
 COPY --from=builder /build/qwen36b /release/bin/qwen36b
 COPY dist/samosa /release/bin/samosa
-RUN chmod +x /release/bin/samosa
+COPY tools/samosa_gateway.py /release/bin/samosa-gateway
+COPY tools/samosa_models.py /release/bin/samosa_models.py
+RUN chmod +x /release/bin/samosa /release/bin/samosa-gateway
 
 # Copy static UI assets
 COPY assets/app.html /release/app.html
@@ -48,7 +51,7 @@ ARG SAMOSA_REPO_ID=deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32
 
 # Environment variables
 ENV SAMOSA_RELEASE_DIR=/release \
-    SAMOSA_HOME=/samosa_home \
+    SAMOSA_HOME=/model \
     SAMOSA_BIND=0.0.0.0 \
     SAMOSA_BASE_URL=https://huggingface.co/${SAMOSA_REPO_ID}/resolve/main \
     PATH=/release/bin:$PATH

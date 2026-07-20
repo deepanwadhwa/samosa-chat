@@ -1,74 +1,99 @@
-# Samosa resident server
+# Samosa local gateway API
 
-Implementation status: developer preview. The model stays resident, requests
-are serialized through a bounded FIFO, and every connection is local-only on
-`127.0.0.1` (port 8642 by default).
-
-## Launch and stop
+Start the gateway:
 
 ```sh
-samosa serve          # foreground, logs visible
-samosa app            # background single instance, then open the browser
-samosa serve --stop   # cooperative cancellation + clean shutdown
+samosa serve
 ```
 
-`SAMOSA_PORT` overrides the port. `SAMOSA_CONTEXT_TOKENS=auto` selects the
-hardware-aware total-context policy; set it to an integer such as `131072` to
-choose an explicit limit (never above the checkpoint's model limit). The CLI
-equivalent is `--context-tokens 131072`. Background state is under `~/.samosa/`:
-`server.pid`, `server.log`, and `chats/`.
+It listens at `http://127.0.0.1:8642`. The gateway is healthy with no installed
+model so the app can provide onboarding and downloads.
 
-When the multi-model gateway runs Bonsai or Ornith,
-`SAMOSA_GGUF_CONTEXT_TOKENS` sets the conservative GGUF startup default
-(8,192 when unset). The same `/v1/settings` request can select an explicit
-capacity at runtime; changing it restarts the active `llama-server` but not the
-gateway. The selected GGUF policy persists in
-`~/.samosa/gateway-settings.json`.
+## Health
 
-## Endpoints
+```http
+GET /healthz
+```
 
-- `GET /` — dependency-free interactive Samosa Chat application.
-- `GET /assets/samosa-chat.png` — local transparent app mascot.
-- `GET /healthz` — macOS physical footprint, model/effective context limits,
-  KV bytes per token, uptime, queue state, and last-generation speed.
-- `GET /v1/models` — OpenAI-shaped model listing.
-- `POST /v1/settings` — update total-context and auto-compaction settings.
-- `POST /v1/compact` — compact one saved conversation in place.
-- `POST /v1/chat/completions` — JSON or SSE chat response.
-- `POST /v1/cancel` — cooperatively stop the active generation between tokens.
-- `POST /v1/shutdown` — cancel active work, reject queued work, and stop.
-
-The chat body accepts one or more text messages and uses the last user message.
-Supported controls are `stream`, `max_tokens`/`max_completion_tokens` (1..8192),
-`temperature`, `top_p`, `top_k`, `seed`, `thinking` (`off`, `general`, or
-`code`), `thinking_budget` (0..8192), and `conversation_id`.
-
-`conversation_id` is limited to 64 letters, digits, dashes, or underscores.
-Qwen persists a sealed `session.qws` under `~/.samosa/chats/<id>/`, so later
-turns avoid history prefill and survive a restart. Bonsai and Ornith persist
-atomic model-facing JSON ledgers as `<id>/bonsai.json` and `<id>/ornith.json`;
-their `llama-server` reuses an in-process common K/V prefix and rebuilds it from
-the ledger after restart or compaction. The browser retains the full visible
-transcript for every backend.
-
-The exact tokenized request is checked before queue admission or stream
-headers. Saved history + the new turn + the requested completion ceiling must
-not exceed the effective total-context limit. The model's own declared position
-limit is an absolute ceiling; the current Qwen checkpoint declares 262,144.
-Oversized turns receive `400 context_limit` without allocating KV state. A
-request that fits the configured token limit but fails the current-memory
-preflight receives `503 insufficient_memory`. The server reports the actual KV
-bytes per token in `/healthz` rather than assuming a model-specific constant.
-The session choice and token count are checked again after queue admission, so
-two requests for the same conversation cannot race against a stale snapshot.
-
-The browser’s **Total context capacity** setting calls the local-only settings
-endpoint and remembers the choice in browser-local storage. It accepts
-`context_tokens` as `"auto"` or a positive integer no larger than the model
-limit. The same object can set `auto_compact` and
-`compact_threshold_percent` (an integer from 50 through 90):
+Representative model-less response:
 
 ```json
+{
+  "gateway": true,
+  "backend": "qwen",
+  "installed": false,
+  "ready": false,
+  "loading": false
+}
+```
+
+When ready, the response also includes the active label/model, actual
+`context_limit_tokens`, context mode, generation state, and compaction status.
+
+## List models and download state
+
+```http
+GET /v1/backends
+```
+
+```json
+{
+  "active": "ornith",
+  "download": {"active": false, "phase": "idle"},
+  "backends": [
+    {
+      "id": "ornith",
+      "label": "Ornith 1.0 9B",
+      "size_bytes": 5629108704,
+      "license": "MIT",
+      "model_downloaded": true,
+      "runtime_ready": true,
+      "installed": true,
+      "available": true,
+      "active": true
+    }
+  ]
+}
+```
+
+`GET /v1/downloads` returns the same download snapshot plus the model array.
+
+## Install a model
+
+```http
+POST /v1/backends/install
+Content-Type: application/json
+
+{"backend":"bonsai"}
+```
+
+Returns `202` with a background download snapshot. Only one download runs at a
+time. Poll `/v1/backends` or `/v1/downloads`.
+
+```http
+POST /v1/backends/install/cancel
+```
+
+Cancellation retains the resumable `.partial` file.
+
+## Select a model
+
+```http
+POST /v1/backends/select
+Content-Type: application/json
+
+{"backend":"ornith"}
+```
+
+Returns `202`. A missing model or an active generation returns `409`. Switching
+stops the current backend before starting the selected one.
+
+## Context and compaction settings
+
+```http
+POST /v1/settings
+Content-Type: application/json
+
 {
   "context_tokens": "auto",
   "auto_compact": true,
@@ -76,147 +101,69 @@ limit. The same object can set `auto_compact` and
 }
 ```
 
-The update waits for the active generation slot, so it cannot change a context
-budget mid-generation. Existing conversations are retained.
+`context_tokens` is `"auto"` or an integer from 2 through 262,144. The
+threshold accepted by the API is 50–90.
 
-## Conversation compaction
+For GGUF Auto, the initial response can report zero while the fitter is loading.
+The next health response reports Prism's actual `n_ctx`.
 
-Automatic compaction is enabled by default at 80% projected context use.
-“Projected” means the durable history plus the exact incoming turn and its
-requested completion ceiling. This leaves room for the active model to produce
-continuation memory before the hard context limit is reached. Settings can turn
-automatic compaction off or choose a 70%, 75%, 80%, 85%, or 90% threshold.
+## Compact a conversation
 
-Compaction is a real state replacement, not an ever-growing summary appended
-to the old context. Qwen:
+```http
+POST /v1/compact
+Content-Type: application/json
 
-1. Samosa resumes the sealed session and asks Qwen for a structured continuation
-   memory, so the summarizer sees the actual prior K/V state.
-2. The temporary summarization state is freed.
-3. Samosa creates a new transcript containing the continuation memory and a
-   recent verbatim tail (15% of the configured window, aligned to a message
-   boundary).
-4. The smaller K/V and DeltaNet state are prefilled in bounded chunks and written to a temporary
-   sealed session. `session.qws` is replaced by atomic rename only after the new
-   file is hashed, flushed, and fsynced.
-
-The conversation ID, browser transcript, and next-turn behavior stay the same.
-If any phase fails, the previous `session.qws` remains authoritative. Image
-understanding is captured by the resumed summary; raw image placeholder tokens
-are not copied into the text-only recent tail.
-
-For Bonsai and Ornith, the gateway uses `/apply-template` and `/tokenize` on
-the active `llama-server` for exact accounting, asks that same model for
-continuation memory with thinking disabled, retains a 15% recent tail, and
-atomically replaces the per-model JSON ledger. The next chat request contains
-the compacted ledger, which makes `llama-server` rebuild the slot K/V instead of
-retaining the old prefix. The old file remains intact if any phase fails.
-
-Manual compaction uses the same path:
-
-```sh
-curl http://127.0.0.1:8642/v1/compact \
-  -H 'Content-Type: application/json' \
-  --data-binary '{"conversation_id":"demo"}'
+{"conversation_id":"chat-abc123"}
 ```
 
-Success reports `before_tokens`, `after_tokens`, and
-`retained_recent_tokens`. Compaction requires enough unused context for its
-bounded 256–2,048-token summary. Auto-compaction is designed to preserve that
-headroom; a very full session manually compacted after the threshold may fail
-safely and retain the old snapshot.
+The active local model summarizes older durable context and retains recent
+turns. Success includes before/after token counts. A non-shrinking summary,
+missing ledger, active generation, or invalid ID is rejected without replacing
+the prior conversation state.
 
-Example:
+## Chat completions
 
-```sh
-curl -N http://127.0.0.1:8642/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  --data-binary '{
-    "messages": [{"role": "user", "content": "Explain the invariant."}],
-    "thinking": "general",
-    "thinking_budget": 1024,
-    "max_tokens": 8192,
-    "conversation_id": "demo",
-    "stream": true
-  }'
+```http
+POST /v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "ornith-1.0-9b",
+  "conversation_id": "chat-abc123",
+  "messages": [
+    {"role": "user", "content": "Explain a B-tree."}
+  ],
+  "stream": true,
+  "max_tokens": 512
+}
 ```
 
-Streaming chunks place pre-closure text in `delta.reasoning` and final answer
-text in `delta.content`. The terminal chunk reports `finish_reason`, token
-usage, `samosa.thinking_closure` (`natural`, `budget_transition`, `repetition`,
-or `cancelled`), tokens/s, RSS, `session_saved` (`true`/`false` for a
-conversation request, otherwise `null`), and auto-compaction metadata
-(`compacted`, `compacted_from_tokens`, `compacted_to_tokens`). A snapshot
-failure is therefore visible instead of being silently reported as durable.
+The route is OpenAI-compatible. The gateway normalizes Qwen and GGUF streaming
+and appends a `samosa` metadata object to the terminal event when available.
+For Bonsai and Ornith, `conversation_id` enables the durable per-model ledger.
 
-## Admission and safety
+## Cancel generation
 
-- The default queue holds four waiting requests. Excess requests receive 429
-  with `Retry-After: 1`; shutdown rejects waiters with 503.
-- Model mutation is strictly single-request even though socket handling is
-  concurrent.
-- Client send failure, `/v1/cancel`, SIGINT/SIGTERM, and shutdown share an
-  atomic cancellation flag checked between generated tokens.
-- Request headers are capped at 64 KiB and bodies at 4 MiB. Chunked request
-  bodies are rejected. The listener is hard-bound to IPv4 loopback.
-- Per-request KV/DeltaNet state and sampler bitmaps are explicitly reclaimed;
-  the tokenizer and model/expert cache remain resident.
-- On macOS, API/UI `rss_gb` is the process's current physical footprint from
-  `TASK_VM_INFO`, matching Activity Monitor and `footprint`. CLI regression
-  logs retain their separate historical peak-RSS metric.
-- After each turn, Samosa frees surplus evicted-expert slabs that are outside
-  the live byte-budgeted cache; the 64 miss-scratch slots already provide the
-  needed cross-turn allocation reuse. It then asks Darwin malloc to return
-  free KV/scratch pages to the OS. Live model weights and cache entries are
-  untouched.
+```http
+POST /v1/cancel
+```
 
-## Verified evidence
+## Optional public Internet sources
 
-### Real-model compaction — 2026-07-19
+```http
+GET /v1/web/config
+POST /v1/web/fetch
+POST /v1/web/search
+```
 
-Real-model compaction was separately verified on 2026-07-19: a 1,724-token
-sealed conversation automatically compacted to 263 tokens with 72 recent
-tokens retained, continued under the same ID, survived a server restart, and
-recalled early summarized and recent-tail facts exactly. See
-[regressions/compaction/real-model-e2e.md](regressions/compaction/real-model-e2e.md).
+These are separate from model installation. Fetch/search validates public
+destinations and caps content. See
+[MODELS_AND_INTERNET.md](MODELS_AND_INTERNET.md).
 
-### Resident server — 2026-07-14
+## Shutdown
 
-- Socket component test: health/models/root/cancel/shutdown, 20 sequential
-  connections without RSS growth, bounded-queue rejection, JSON escaping, and
-  clean listener termination.
-- Real group-32 server: health/model discovery, one-token SSE (`OK`), correct
-  terminal telemetry, 3.29 GB peak RSS, 4.05 GB expert reads, clean shutdown.
-- Real launcher/session path: double `samosa app` kept one PID; two
-  `conversation_id` turns returned `OK` then `YES`, restored the sealed session,
-  and `samosa serve --stop` exited cleanly.
-- Real cancellation/admission path: with a zero-length wait queue, a second
-  request received `429 queue_full`; `/v1/cancel` stopped the active request at
-  zero completion tokens, emitted a terminal `cancelled` event, read 4.94 GB
-  of experts, peaked at 3.32 GB RSS, and shut down cleanly.
-- After acceptance: unchanged swapouts, zero throttled pages, and no macOS
-  thermal/performance warning.
+```http
+POST /v1/shutdown
+```
 
-The Phase A1 browser UI now streams the real local model, separates thinking
-from visible answers, stops generation, keeps browser-local transcripts, and
-reports speed/RSS/closure telemetry. A bounded group-32 app-path check returned
-the exact requested answer in 8 generated tokens, stopped on Qwen's end-of-turn
-token, saved the session, decoded at 5.13 tok/s, and peaked at 3.28 GB RSS.
-
-After the context-cap and telemetry correction, a fresh resident process
-reported 2.51 GiB while macOS `footprint` reported 2,566 MiB. A real two-turn
-sealed-session check returned exactly `OK` then `YES` at 7.05/6.96 tok/s;
-both the API and `footprint` agreed on 4.07 GiB / 4,170 MiB after the turn.
-The user separately confirmed the app value matched Activity Monitor. The
-temporary 64 MB test snapshot was removed.
-
-After the evicted-slab pool fix, an eight-turn repeated test on one resumed
-conversation (including a 64-token generation) loaded fresh at 2.51 GiB,
-warmed to 3.91 GiB on the first turn, and plateaued at 3.91–3.92 GiB;
-`footprint` reported 4,010–4,017 MB for the same samples. Before the fix the
-identical test grew about 210 MB per turn.
-
-Still required for the broader app program: in-RAM conversation slots with
-write batching, server-side transcript management, the bounded long-context
-regression, exact artifact fingerprints in health telemetry, and the declared
-soak/package release checks.
+The gateway cancels an active download, stops the model process, and exits.

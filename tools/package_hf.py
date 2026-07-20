@@ -123,6 +123,8 @@ def main() -> int:
 
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
+                     (ROOT / "tools" / "samosa_gateway.py", out / "samosa-gateway"),
+                     (ROOT / "tools" / "samosa_models.py", out / "samosa_models.py"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
                      (ROOT / "assets" / "app.html", out / "app.html"),
                      (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png")):

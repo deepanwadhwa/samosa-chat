@@ -26,19 +26,36 @@ from urllib.parse import quote_plus, urljoin, urlsplit
 import urllib.request
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from samosa_models import (  # noqa: E402
+    DownloadManager,
+    MODEL_CATALOG,
+    catalog_status,
+    discover_model_path,
+    discover_prism_server,
+    discover_qwen_directory,
+    human_bytes,
+    install_model,
+    qwen_tokenizer_path,
+)
+
 
 HOST = "127.0.0.1"
+PUBLIC_HOST = os.environ.get("SAMOSA_BIND", HOST)
 PUBLIC_PORT = int(os.environ.get("SAMOSA_PORT", "8642"))
 BACKEND_PORT = int(os.environ.get("SAMOSA_BACKEND_PORT", str(PUBLIC_PORT + 1)))
 HOME = Path(os.environ.get("SAMOSA_HOME", Path.home() / ".samosa"))
 APP_HTML = Path(os.environ["SAMOSA_APP_HTML"])
 APP_LOGO = Path(os.environ["SAMOSA_APP_LOGO"])
 QWEN_ENGINE = Path(os.environ["SAMOSA_QWEN_ENGINE"])
-QWEN_MODEL = Path(os.environ["SAMOSA_QWEN_MODEL"])
-TOKENIZER = Path(os.environ["SAMOSA_TOKENIZER"])
-BONSAI_SERVER = Path(os.environ.get("SAMOSA_BONSAI_SERVER", HOME / "backends/prism-llama.cpp/build/bin/llama-server"))
-BONSAI_MODEL = Path(os.environ.get("SAMOSA_BONSAI_MODEL", HOME / "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf"))
-ORNITH_MODEL = Path(os.environ.get("SAMOSA_ORNITH_MODEL", HOME / "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf"))
+QWEN_MODEL_PREFERRED = Path(os.environ["SAMOSA_QWEN_MODEL"]) \
+    if os.environ.get("SAMOSA_QWEN_MODEL") else None
+TOKENIZER_PREFERRED = Path(os.environ["SAMOSA_TOKENIZER"]) \
+    if os.environ.get("SAMOSA_TOKENIZER") else None
+BONSAI_MODEL_PREFERRED = Path(os.environ["SAMOSA_BONSAI_MODEL"]) \
+    if os.environ.get("SAMOSA_BONSAI_MODEL") else None
+ORNITH_MODEL_PREFERRED = Path(os.environ["SAMOSA_ORNITH_MODEL"]) \
+    if os.environ.get("SAMOSA_ORNITH_MODEL") else None
 SELECTION_FILE = HOME / "model-backend"
 BACKEND_LOG = HOME / "backend.log"
 CONFIG_FILE = HOME / "config.json"
@@ -48,14 +65,6 @@ MAX_WEB_BYTES = 5 * 1024 * 1024
 MAX_WEB_TEXT = 120_000
 MAX_TOOL_ROUNDS = 4
 GGUF_MODEL_CONTEXT_TOKENS = 262_144
-try:
-    GGUF_DEFAULT_CONTEXT_TOKENS = int(
-        os.environ.get("SAMOSA_GGUF_CONTEXT_TOKENS", "8192")
-    )
-except ValueError:
-    GGUF_DEFAULT_CONTEXT_TOKENS = 8192
-if not 2 <= GGUF_DEFAULT_CONTEXT_TOKENS <= GGUF_MODEL_CONTEXT_TOKENS:
-    GGUF_DEFAULT_CONTEXT_TOKENS = 8192
 COMPACTION_MEMORY_PREFIX = (
     "SAMOSA CONTINUATION MEMORY — Treat this as authoritative context from "
     "earlier in this same conversation. Preserve facts, decisions, constraints, "
@@ -95,11 +104,20 @@ BACKENDS = {
     },
 }
 
-# GGUF backends all run through the same Prism llama-server binary.
-GGUF_MODELS = {
-    "bonsai": BONSAI_MODEL,
-    "ornith": ORNITH_MODEL,
-}
+def qwen_model_directory() -> Path:
+    return discover_qwen_directory(HOME, QWEN_MODEL_PREFERRED)
+
+
+def qwen_tokenizer() -> Path:
+    downloaded = qwen_tokenizer_path(HOME)
+    if qwen_model_directory() == discover_qwen_directory(HOME, None) and downloaded.is_file():
+        return downloaded
+    return TOKENIZER_PREFERRED or downloaded
+
+
+def gguf_model(name: str) -> Path:
+    preferred = BONSAI_MODEL_PREFERRED if name == "bonsai" else ORNITH_MODEL_PREFERRED
+    return discover_model_path(HOME, name, preferred)
 
 
 def _read_json(path: Path, fallback: object) -> object:
@@ -155,7 +173,11 @@ class GatewaySettings:
 
     def effective_context(self) -> int:
         if self.context_spec == "auto":
-            return GGUF_DEFAULT_CONTEXT_TOKENS
+            # Zero is an internal "runtime decides" sentinel. The GGUF command
+            # deliberately omits -c: passing an explicit "-c 0" asks Prism for
+            # the model's full trained context and prevents its fitter from
+            # reducing that context on smaller machines.
+            return 0
         return int(self.context_spec)
 
     def update(self, payload: dict) -> tuple[dict, bool]:
@@ -268,6 +290,7 @@ class Supervisor:
         self.upstream: http.client.HTTPConnection | None = None
         self.upstream_response: http.client.HTTPResponse | None = None
         self.stopping = False
+        self.runtime_context_tokens = 0
 
     def _saved_backend(self) -> str:
         try:
@@ -281,35 +304,43 @@ class Supervisor:
     @staticmethod
     def available(name: str) -> bool:
         if name == "qwen":
-            return QWEN_ENGINE.is_file() and (QWEN_MODEL / "experts.bin").is_file()
-        return BONSAI_SERVER.is_file() and GGUF_MODELS[name].is_file()
+            return QWEN_ENGINE.is_file() and (qwen_model_directory() / "experts.bin").is_file()
+        server = discover_prism_server(HOME)
+        return server.is_file() and gguf_model(name).is_file()
 
     def command(self, name: str) -> tuple[list[str], dict[str, str]]:
         env = os.environ.copy()
         if name == "qwen":
+            model = qwen_model_directory()
+            tokenizer = qwen_tokenizer()
             env.update({
-                "SNAP": str(QWEN_MODEL),
-                "TOKENIZER": str(TOKENIZER),
+                "SNAP": str(model),
+                "TOKENIZER": str(tokenizer),
                 "SAMOSA_CHATS_DIR": str(HOME / "chats"),
                 "SAMOSA_CONTEXT_TOKENS": os.environ.get("SAMOSA_CONTEXT_TOKENS", "auto"),
             })
             return [
                 str(QWEN_ENGINE), "--serve", "--port", str(BACKEND_PORT),
-                "--tokenizer", str(TOKENIZER),
+                "--tokenizer", str(tokenizer),
             ], env
-        return [
-            str(BONSAI_SERVER), "-m", str(GGUF_MODELS[name]), "-ngl", "99",
-            "-c", str(settings.effective_context()), "-np", "1", "--cache-ram", "0",
+        server = discover_prism_server(HOME)
+        command = [
+            str(server), "-m", str(gguf_model(name)),
+            "-np", "1", "--cache-ram", "0", "--fit-target", "4096",
+            "-b", "512", "-ub", "256",
             "--host", HOST, "--port", str(BACKEND_PORT), "--no-ui",
             "--alias", BACKENDS[name]["model"],
-        ], env
+        ]
+        if settings.context_spec != "auto":
+            command[3:3] = ["-c", str(settings.effective_context())]
+        return command, env
 
     def start(self) -> None:
         with self.lock:
             if self.process and self.process.poll() is None:
                 return
             if not self.available(self.backend):
-                raise RuntimeError(f"{self.backend} backend is not installed")
+                return
             HOME.mkdir(parents=True, exist_ok=True)
             (HOME / "chats").mkdir(parents=True, exist_ok=True)
             command, env = self.command(self.backend)
@@ -318,6 +349,7 @@ class Supervisor:
             self.process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
             log.close()
             self.started_at = time.time()
+            self.runtime_context_tokens = 0
 
     def stop(self) -> None:
         with self.lock:
@@ -328,6 +360,7 @@ class Supervisor:
             self.upstream = None
             self.upstream_response = None
             self.generating = False
+            self.runtime_context_tokens = 0
         if response:
             try:
                 response.close()
@@ -428,6 +461,27 @@ class Supervisor:
         except OSError:
             return False
 
+    def gguf_context_limit(self) -> int:
+        if settings.context_spec != "auto":
+            return settings.effective_context()
+        with self.lock:
+            cached = self.runtime_context_tokens
+        if cached:
+            return cached
+        try:
+            code, detail = backend_json("GET", "/props", timeout=2)
+            value = (
+                detail.get("default_generation_settings", {}).get("n_ctx")
+                if isinstance(detail, dict) else None
+            )
+            if code == 200 and isinstance(value, int) and value > 0:
+                with self.lock:
+                    self.runtime_context_tokens = value
+                return value
+        except (OSError, http.client.HTTPException):
+            pass
+        return 0
+
     def status(self) -> dict:
         with self.lock:
             name = self.backend
@@ -439,6 +493,7 @@ class Supervisor:
             "label": BACKENDS[name]["label"],
             "model": BACKENDS[name]["model"],
             "supports_images": BACKENDS[name]["supports_images"],
+            "installed": self.available(name),
             "ready": self.ready(),
             "loading": bool(process and process.poll() is None and not self.ready()),
             "generating": generating,
@@ -459,6 +514,10 @@ class Supervisor:
                 pass
         elif name != "qwen":
             result.update(settings.response())
+            result["context_limit_tokens"] = self.gguf_context_limit() \
+                if result["ready"] else 0
+            result["context_limit_mode"] = "hardware-auto" \
+                if settings.context_spec == "auto" else "manual"
             result["compaction"] = {
                 "auto": settings.auto_compact,
                 "threshold_percent": settings.threshold,
@@ -476,16 +535,52 @@ class Supervisor:
         self.start()
 
     def listing(self) -> dict:
+        statuses = {
+            item["id"]: item for item in catalog_status(
+                HOME,
+                configured_qwen=QWEN_MODEL_PREFERRED,
+                configured_tokenizer=TOKENIZER_PREFERRED,
+                configured_runtime=discover_prism_server(HOME),
+                configured_models={
+                    "bonsai": BONSAI_MODEL_PREFERRED,
+                    "ornith": ORNITH_MODEL_PREFERRED,
+                },
+            )
+        }
         return {
             "active": self.backend,
+            "download": downloads.snapshot(),
             "backends": [
-                {**{"id": name}, **details, "available": self.available(name)}
+                {
+                    **{"id": name}, **details,
+                    **statuses[name],
+                    "available": self.available(name),
+                    "active": name == self.backend,
+                }
                 for name, details in BACKENDS.items()
             ],
         }
 
 
 supervisor = Supervisor()
+
+
+def _download_completed(name: str) -> None:
+    # A fresh install has no running backend, so make the first downloaded
+    # model immediately usable. Do not interrupt an already-running model when
+    # the user downloads another one in the background.
+    with supervisor.lock:
+        process = supervisor.process
+        running = bool(process and process.poll() is None)
+    if running:
+        return
+    try:
+        supervisor.select(name)
+    except (OSError, RuntimeError, FileNotFoundError):
+        pass
+
+
+downloads = DownloadManager(HOME, _download_completed)
 
 
 class GatewayServer(ThreadingHTTPServer):
@@ -1204,7 +1299,9 @@ def maybe_compact(payload: dict, messages: list[dict]) -> tuple[list[dict], dict
         payload.get("chat_template_kwargs"),
     )
     projected = measured + completion
-    limit = settings.effective_context()
+    limit = supervisor.gguf_context_limit()
+    if limit <= 0:
+        raise RuntimeError("the backend has not reported its fitted context capacity")
     should_compact = (
         settings.auto_compact and len(messages) >= 3
         and projected * 100 >= limit * settings.threshold
@@ -1313,6 +1410,11 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, supervisor.status())
         elif path == "/v1/backends":
             self.json_response(200, supervisor.listing())
+        elif path == "/v1/downloads":
+            self.json_response(200, {
+                "download": downloads.snapshot(),
+                "models": supervisor.listing()["backends"],
+            })
         elif path == "/v1/web/config":
             search = search_settings()
             try:
@@ -1337,6 +1439,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(202, supervisor.status())
             except (ValueError, FileNotFoundError, RuntimeError) as error:
                 self.json_response(409, {"error": {"message": str(error)}})
+        elif path == "/v1/backends/install":
+            try:
+                data = json.loads(self.body())
+                state = downloads.start(data.get("backend", ""))
+                self.json_response(202, {"download": state})
+            except (ValueError, RuntimeError, json.JSONDecodeError) as error:
+                self.json_response(409, {"error": {"message": str(error)}})
+        elif path == "/v1/backends/install/cancel":
+            self.json_response(200, {"cancelled": downloads.cancel()})
         elif path == "/v1/web/fetch":
             try:
                 data = json.loads(self.body())
@@ -1361,6 +1472,10 @@ class Handler(BaseHTTPRequestHandler):
                 result, restart = settings.update(payload)
                 if restart:
                     supervisor.restart_for_context()
+                if settings.context_spec == "auto":
+                    result["context_limit_tokens"] = supervisor.gguf_context_limit() \
+                        if supervisor.ready() else 0
+                    result["context_limit_mode"] = "hardware-auto"
                 self.json_response(200, result)
             except (ValueError, RuntimeError, OSError, json.JSONDecodeError) as error:
                 self.json_response(400, {"error": {"message": str(error)}})
@@ -1387,8 +1502,13 @@ class Handler(BaseHTTPRequestHandler):
                             "error": {"message": "This conversation has no saved model context."}
                         })
                         return
+                    limit = supervisor.gguf_context_limit()
+                    if limit <= 0:
+                        raise RuntimeError(
+                            "the backend has not reported its fitted context capacity"
+                        )
                     compacted, result = compact_messages(
-                        messages, settings.effective_context()
+                        messages, limit
                     )
                     ledger.save(conversation_id, supervisor.backend, compacted)
                 finally:
@@ -1734,14 +1854,65 @@ class Handler(BaseHTTPRequestHandler):
         return None, full_text
 
     def shutdown_all(self) -> None:
+        downloads.cancel()
         supervisor.stopping = True
         supervisor.stop()
         self.server.shutdown()
 
 
+def cli_progress(value: dict) -> None:
+    phase = str(value.get("phase", "working"))
+    filename = str(value.get("file", value.get("model", "")))
+    downloaded = int(value.get("downloaded_bytes", value.get("file_downloaded", 0)))
+    total = int(value.get("total_bytes", value.get("file_total", 0)))
+    detail = f" {human_bytes(downloaded)} / {human_bytes(total)}" if total else ""
+    print(f"\r{phase}: {filename}{detail}".ljust(88), end="", flush=True)
+
+
+def run_model_cli(arguments: list[str]) -> int | None:
+    if not arguments:
+        return None
+    if arguments[0] == "--models":
+        statuses = catalog_status(
+            HOME,
+            configured_qwen=QWEN_MODEL_PREFERRED,
+            configured_tokenizer=TOKENIZER_PREFERRED,
+            configured_runtime=discover_prism_server(HOME),
+            configured_models={
+                "bonsai": BONSAI_MODEL_PREFERRED,
+                "ornith": ORNITH_MODEL_PREFERRED,
+            },
+        )
+        print("MODEL    STATUS       DOWNLOAD")
+        for item in statuses:
+            state = "installed" if item["installed"] else (
+                "weights only" if item["model_downloaded"] else "not installed"
+            )
+            print(f"{item['id']:<8} {state:<12} {item['size']}")
+        return 0
+    if arguments[0] == "--pull":
+        if len(arguments) != 2 or arguments[1] not in (*MODEL_CATALOG, "all"):
+            print("usage: samosa pull qwen|bonsai|ornith|all", file=sys.stderr)
+            return 2
+        names = list(MODEL_CATALOG) if arguments[1] == "all" else [arguments[1]]
+        try:
+            for name in names:
+                print(f"Installing {MODEL_CATALOG[name]['label']}…")
+                install_model(HOME, name, callback=cli_progress)
+                print(f"\rInstalled {MODEL_CATALOG[name]['label']}.{' ' * 56}")
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"\nInstall failed: {error}", file=sys.stderr)
+            return 1
+        return 0
+    return None
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
-    server = GatewayServer((HOST, PUBLIC_PORT), Handler)
+    cli_result = run_model_cli(sys.argv[1:])
+    if cli_result is not None:
+        return cli_result
+    server = GatewayServer((PUBLIC_HOST, PUBLIC_PORT), Handler)
     try:
         supervisor.start()
     except Exception:
@@ -1756,6 +1927,7 @@ def main() -> int:
     try:
         server.serve_forever()
     finally:
+        downloads.cancel()
         supervisor.stop()
         server.server_close()
     return 0

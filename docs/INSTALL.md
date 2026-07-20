@@ -1,183 +1,179 @@
-# Installing Samosa Chat
+# Install Samosa
 
-Full install detail for every platform. The
-[README](../README.md#install) has the short version.
+Samosa's source install is model-less: it installs the app, gateway, and Qwen
+engine first, then lets you choose any of the three models from the app or
+terminal.
 
-## Install
+## Requirements
 
-**Find your machine in this table and follow that row. The two paths are
-different — do not mix them.**
+- macOS arm64/x64 or Linux arm64/x64
+- a C compiler and OpenMP
+- Python 3 (standard library only)
+- `curl`
+- at least 16 GB RAM is recommended for the three-model workflow
+- enough disk for the selected model plus Samosa's 2 GB safety reserve
 
-| Your machine | Install path | Speed |
-|---|---|---|
-| **macOS, Apple Silicon** (M1 or newer) | [one command](#macos-apple-silicon) | 5–7 tok/s |
-| **Windows** | [Docker inside WSL2](#windows) | ~1.3 tok/s |
-| **Linux, x86_64 or arm64** | [Docker](#linux) | ~1–2 tok/s |
-| Intel Mac, or under 16 GB RAM | not supported | — |
+Model weights require 3.8 GB (Bonsai), 5.6 GB (Ornith), or 24.0 GB (Qwen).
+All three require roughly 33.4 GB. Qwen expert streaming benefits strongly from
+an NVMe SSD.
 
-Every path downloads the same 24 GB model and needs **~30 GB free disk**.
-See [Where it runs, and how fast](#where-it-runs-and-how-fast) for why x86 is
-slower and what is being done about it.
-
-### macOS (Apple Silicon)
+## macOS
 
 ```sh
-curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/main/install.sh | sh
-```
-
-Then **open a new terminal** and ask it something:
-
-```sh
-samosa "explain how DNS works"
-```
-
-You need an Apple Silicon Mac, 16 GB of RAM, Apple's Command Line Tools (for the
-C compiler), and about 30 GB of free disk. The installer resumes interrupted
-downloads, checks the SHA-256 of every file, compiles the C engine on your
-machine, and smoke-tests it before switching the new release live. A corrupt or
-interrupted upgrade leaves your existing install untouched. It does not need
-administrator rights.
-
-### Windows
-
-Samosa runs as a Linux container. You do **not** need Docker Desktop — Docker
-inside WSL2 is simpler and avoids Docker Desktop's startup problems entirely.
-
-**1. Install Ubuntu on WSL2.** In **PowerShell**:
-
-```
-wsl --install -d Ubuntu
-```
-
-Reboot, then launch **Ubuntu** from the Start menu. Your prompt changes from
-`PS C:\...>` to `you@machine:~$` — **everything below runs there, not in
-PowerShell.**
-
-> If `wsl --install` fails, virtualisation is disabled in your BIOS/UEFI. Reboot
-> into it and enable Intel VT-x / AMD-V ("SVM Mode"). Nothing else will work
-> until you do, and the error messages will not tell you this.
-
-**2. Install Docker inside Ubuntu:**
-
-```sh
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-newgrp docker
-docker run --rm hello-world
-```
-
-`sudo usermod -aG docker $USER` is the step everyone misses — without it you get
-`permission denied` on the Docker socket. `newgrp docker` applies it to the
-current shell.
-
-**3. Check you have enough memory** — still in Ubuntu:
-
-```sh
-free -g
-```
-
-Total must be **≥6**. WSL2 takes ~50% of your RAM by default, so a 16 GB laptop
-gives ~7–8 and needs nothing further. If it says 2–3, create
-`%USERPROFILE%\.wslconfig` in **Windows** (Notepad):
-
-```ini
-[wsl2]
-memory=8GB
-```
-
-then run `wsl --shutdown` in **PowerShell** and reopen Ubuntu.
-
-**4. Install and run Samosa** — in Ubuntu:
-
-```sh
+brew install libomp
 git clone https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
+make install
+~/.samosa/bin/samosa app
+```
+
+The last command opens <http://127.0.0.1:8642>. Open Settings and use the
+Download button beside a model.
+
+`make install` builds the multithreaded Qwen engine and publishes an immutable
+development release under `~/.samosa/releases`. If a complete local Qwen
+snapshot was already configured through `SAMOSA_SNAPSHOT`, it is hard-linked;
+otherwise the installation remains model-less.
+
+## Debian or Ubuntu
+
+```sh
+sudo apt-get update
+sudo apt-get install build-essential libomp-dev curl python3
+git clone https://github.com/deepanwadhwa/samosa-chat
+cd samosa-chat
+make install
+~/.samosa/bin/samosa app
+```
+
+CI validates the Linux build and self-contained tests. Real three-model
+performance has so far been measured on a 16 GB Apple M3, so do not interpret
+CI as a Linux performance claim.
+
+## Terminal model installation
+
+```sh
+~/.samosa/bin/samosa models
+~/.samosa/bin/samosa pull bonsai
+~/.samosa/bin/samosa pull ornith
+~/.samosa/bin/samosa pull qwen
+~/.samosa/bin/samosa pull all
+```
+
+Downloads resume after interruption. Every catalog file is pinned by repository
+revision, expected size, and SHA-256. It remains under a `.partial` filename
+until validation succeeds. Bonsai and Ornith also install a pinned Prism
+llama.cpp runtime for the current platform.
+
+## Files and directories
+
+```text
+~/.samosa/
+├── bin/samosa
+├── current -> releases/dev-…
+├── releases/…
+├── models/
+│   ├── qwen36-group32/
+│   ├── bonsai-27b-1bit/
+│   └── ornith-9b/
+├── backends/prism-b9596-9fcaed7/
+├── downloads/
+├── chats/
+├── config.json
+└── gateway-settings.json
+```
+
+Interrupted downloads stay in the final model directory with a `.partial`
+suffix, or in `~/.samosa/downloads` for the Prism archive. Re-running the same
+pull resumes them.
+
+## Add the launcher to PATH
+
+The development installer does not modify shell startup files. Either invoke
+the full path or add:
+
+```sh
+export PATH="$HOME/.samosa/bin:$PATH"
+```
+
+Put that line in `~/.zshrc` or `~/.bashrc` if you want it in future shells.
+
+## Check or update an installation
+
+```sh
+samosa doctor
+samosa models
+```
+
+To update source code:
+
+```sh
+git pull
+make install
+```
+
+The installer stages a new immutable release and atomically changes
+`~/.samosa/current`. Downloaded model directories are outside that release and
+survive application upgrades.
+
+## Stop the app
+
+```sh
+samosa serve --stop
+```
+
+## Published Qwen release and Docker
+
+The existing Hugging Face release installer and Docker image are still
+Qwen-oriented. They predate app-managed three-model downloads. Use the
+source-clone path above for the workflow documented in the current README.
+
+The legacy container flow remains:
+
+```sh
 docker build -t samosa .
 docker volume create samosa-model
-docker run --rm -v samosa-model:/model samosa pull
-docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=6g samosa serve
+docker run --rm -v samosa-model:/model samosa pull qwen
+docker run -d --name samosa -p 127.0.0.1:8642:8642 \
+  -v samosa-model:/model --memory=6g samosa serve
 ```
 
-The `pull` is 24 GB (~20 min) and **resumes** — if it drops, re-run the same
-line. Set `--memory` about 1 GB below what `free -g` reported.
+That path is retained for existing Qwen users; it is not the recommended
+three-model installer.
 
-**5. Open http://127.0.0.1:8642** in your normal Windows browser. WSL2 forwards
-localhost, so it just works.
+## Troubleshooting
 
-`sudo service docker start` after a reboot if Docker is not running.
+**The app says no model is installed.** This is expected after a fresh clone.
+Open Settings or run `samosa pull MODEL`.
 
-### Linux
+**A download stopped.** Run the same pull again. Samosa resumes the `.partial`
+file and validates the entire completed artifact.
 
-Same as Windows from step 2 onward — install Docker, then the six commands. The
-native `curl | sh` installer supports Linux in this repository, but the copy
-published on Hugging Face is still macOS-only, so **use the Docker path** until
-that is republished.
+**The checksum fails.** The file is not installed. Retry. If it repeatedly
+fails, check proxies/caches and the repository issue tracker rather than
+renaming the partial file yourself.
 
-### Both Docker paths: three things that matter
+**Not enough disk.** Free the amount shown by the error. Samosa includes a 2 GB
+post-download reserve and will not begin when that reserve cannot be preserved.
 
-**Use a named volume, never a folder.** `-v samosa-model:/model` — not
-`-v /home/you/models:/model` or a Windows path. The file-sharing layer costs
-about **6x**, measured. `docker exec samosa samosa doctor` warns you if you get
-this wrong.
+**Bonsai or Ornith says the runtime is missing.** Re-run
+`samosa pull bonsai` or `samosa pull ornith`; either command provisions the
+same pinned Prism runtime.
 
-**Publish as `-p 127.0.0.1:8642:8642`, never `-p 8642:8642`.** The second form
-binds `0.0.0.0` and exposes the model server to your whole network.
+**Auto context differs from another machine.** That is intentional. Qwen
+calculates a safe capacity from RAM and K/V cost. The GGUF runtime fits current
+device memory and the gateway reports the selected `n_ctx`.
 
-**Try more threads — it is probably free speed.** The default targets *half your
-performance cores*, which is a comfort setting tuned for a fanless MacBook Air.
-It is almost certainly too conservative for a desktop or a mains-powered laptop:
-on a 12-core i7-1260P it picks **2 threads**.
+**The server is already running.**
 
 ```sh
-docker rm -f samosa
-docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=6g -e OMP_NUM_THREADS=8 samosa serve
+samosa serve --stop
+samosa app
 ```
 
-Why this is worth more on x86 than it is on a Mac: the Mac is storage-bound
-(70% of decode is SSD wait), so more threads bought only **14%** there. x86 runs
-the scalar path today, which makes it *compute*-bound — so threads should pay
-much better. Try 4, then 8. Past your performance-core count you are into
-efficiency cores and it will flatten. It will run warmer; that is the trade.
+## Uninstall
 
-Time a run before and after with the same prompt and seed:
-
-```sh
-curl -s http://127.0.0.1:8642/v1/chat/completions -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"What is the capital of France?"}],"thinking":"off","max_tokens":16,"seed":11}'
-```
-
-The `tokens_per_second` in the reply is your number. If you find a good setting
-for your CPU, [open an issue](https://github.com/deepanwadhwa/samosa-chat/issues)
-— real numbers from real machines are exactly what the thread policy needs.
-
-### Where Samosa is installed
-
-Everything lives under `~/.samosa`, and nothing is installed system-wide:
-
-| path | what it is |
-|---|---|
-| `~/.samosa/bin/samosa` | the `samosa` command itself |
-| `~/.samosa/current` | symlink to the active release |
-| `~/.samosa/releases/` | verified releases, kept so an upgrade can roll back |
-| `~/.samosa/chats/` | your saved conversations |
-
-The installer adds `~/.samosa/bin` to your `PATH` by appending one line to your
-shell's rc file (`~/.zshrc` for zsh, `~/.bashrc` for bash, otherwise
-`~/.profile`). **That only affects terminals you open afterwards** — which is
-why the step above says to open a new one. If `samosa` still is not found:
-
-```sh
-# make it work in the terminal you already have
-export PATH="$HOME/.samosa/bin:$PATH"
-
-# or skip PATH entirely and run it directly
-~/.samosa/bin/samosa "how are you"
-```
-
-`samosa doctor` reports which release is active and whether the model, engine,
-and tokenizer are healthy.
-
-To uninstall, delete `~/.samosa` and remove that one line from your rc file.
-
-The model lives at
-[deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32](https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32).
+Stop the server, then remove `~/.samosa` when you intentionally want to delete
+the application, all downloaded weights, settings, and durable chats. Model
+directories are large, so inspect them before removal if you intend to preserve
+weights.

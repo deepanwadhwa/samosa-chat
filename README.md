@@ -1,264 +1,250 @@
 <div align="center">
   <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
   <h1>Samosa Chat</h1>
-  <p><strong>Run Qwen3.6-35B-A3B locally on a 16 GB machine.</strong></p>
-  <p>Fast on Apple Silicon &nbsp;·&nbsp; Slower on Linux &amp; Windows via Docker &nbsp;·&nbsp; Runs on the CPU &nbsp;·&nbsp; No cloud account &nbsp;·&nbsp; No telemetry</p>
+  <p><strong>Three local models. One private chat app.</strong></p>
+  <p>Qwen3.6 35B A3B &nbsp;·&nbsp; Bonsai 27B 1-bit &nbsp;·&nbsp; Ornith 1.0 9B</p>
+  <p>No cloud account &nbsp;·&nbsp; No telemetry &nbsp;·&nbsp; Hardware-aware context &nbsp;·&nbsp; Durable compaction</p>
 
   <p>
     <a href="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml"><img src="https://github.com/deepanwadhwa/samosa-chat/actions/workflows/ci.yml/badge.svg" alt="CI: build and tests"></a>
-    <a href="https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-model-FFD21E" alt="Hugging Face model"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
-  </p>
-  <p>
-    <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white" alt="macOS on Apple Silicon">
-    <img src="https://img.shields.io/badge/Linux%20%26%20Windows-via%20Docker-2496ED?logo=docker&logoColor=white" alt="Linux and Windows via Docker">
-    <img src="https://img.shields.io/badge/RAM-16%20GB-orange" alt="16 GB RAM">
-    <img src="https://img.shields.io/badge/GPU-not%20required-success" alt="No GPU required">
-    <img src="https://img.shields.io/badge/engine-C-555555?logo=c&logoColor=white" alt="Written in C">
-    <img src="https://img.shields.io/badge/model-35B%20total%20%2F%203B%20active-8A2BE2" alt="35B total, 3B active">
+    <img src="https://img.shields.io/badge/context-up%20to%20262K-orange" alt="Context up to 262K">
   </p>
 </div>
 
-> **Credit.** Samosa Chat is built on [colibrì](https://github.com/JustVugg/colibri)
-> by JustVugg. Its expert-streaming design, SIMD kernels, and core utility
-> headers made this project possible. The model is the text part of
-> [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B), created and
-> released by the Qwen team. Samosa Chat is an independent, unofficial,
-> Apache-2.0 project. It is not affiliated with or endorsed by either team.
->
-> **What Samosa adds:** its own Qwen3.6 inference engine in C — the 30 Gated
-> DeltaNet layers, the 10 attention layers, and the routed-expert path — the
-> group-32 quantization format and its converter, the byte-budgeted expert
-> cache that fits 35B parameters into 16 GB, sealed conversations that resume
-> exactly, a local server and browser app, an atomic installer that verifies
-> and rolls back, and the tests around all of it.
-> [The full list](docs/DESIGN.md#what-samosa-adds-on-top).
+Samosa is a local model app and gateway. Start it with no model installed,
+choose a model in Settings, and Samosa downloads, verifies, loads, and runs it
+on your machine. The terminal offers the same model-management workflow.
 
-## What it looks like
+## Models
 
-A real, unedited recording on the 16 GB M3 MacBook Air — a question in, an
-answer out, no cloud:
+| Model | Download | Best fit | Runtime | License |
+|---|---:|---|---|---|
+| [Qwen3.6 35B A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | 24.0 GB | Samosa's fullest integration, image input, expert-streamed local chat | Samosa C engine | Apache-2.0 |
+| [Bonsai 27B 1-bit](https://huggingface.co/prism-ml/Bonsai-27B-gguf) | 3.8 GB | A very compact 27B reasoning model | Prism llama.cpp | Apache-2.0 |
+| [Ornith 1.0 9B](https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF) | 5.6 GB | Fast compact coding and reasoning | Prism llama.cpp | MIT |
 
-<p align="center"><img src="assets/demo-terminal.gif" alt="Samosa Chat answering a question in the terminal" width="900"></p>
+Only one model is resident at a time. Switching models unloads the current
+backend before starting the next one.
 
-Real time, played at normal speed. The pause before the answer is the model
-loading; after that it writes at about 5–9 tokens per second.
+> **Credit.** The Qwen runtime began from
+> [colibrì](https://github.com/JustVugg/colibri) by JustVugg and runs the model
+> released by the [Qwen team](https://huggingface.co/Qwen). Bonsai is released
+> by [PrismML](https://huggingface.co/prism-ml), and Ornith by
+> [DeepReinforce](https://huggingface.co/deepreinforce-ai). The GGUF backends
+> use PrismML's [llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp),
+> itself based on [llama.cpp](https://github.com/ggml-org/llama.cpp). Samosa is
+> an independent project and is not affiliated with those teams.
 
-## Install
+## Install from a clone
 
-**Find your machine, run that.** Full detail, troubleshooting, and the Windows
-walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**.
-
-| Your machine | How | Speed |
-|---|---|---|
-| **macOS, Apple Silicon** (M1+, 16 GB) | the command below | **5–7 tok/s** |
-| **Windows** | [Docker in WSL2](docs/INSTALL.md#windows) | **~1.3 tok/s** |
-| **Linux, x86_64 / arm64** | [Docker](docs/INSTALL.md#linux) | ~1–2 tok/s |
-| Intel Mac, or under 16 GB RAM | not supported | — |
-
-**macOS:**
+The source install intentionally includes no model. On macOS, install OpenMP
+first:
 
 ```sh
-curl -fsSL https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/main/install.sh | sh
-```
-
-Then **open a new terminal** (the installer adds to `PATH`, which only affects
-new shells) and ask it something:
-
-```sh
-samosa "explain how DNS works"
-```
-
-**Linux and Windows** run Samosa as a Linux container. On Windows this lives
-inside WSL2 — you do *not* need Docker Desktop, and
-[docs/INSTALL.md](docs/INSTALL.md#windows) walks through it from `wsl --install`
-onward:
-
-```sh
+brew install libomp
 git clone https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
-docker build -t samosa .
-docker volume create samosa-model
-docker run --rm -v samosa-model:/model samosa pull
-docker run -d --name samosa -p 127.0.0.1:8642:8642 -v samosa-model:/model --memory=6g samosa serve
+make install
+~/.samosa/bin/samosa app
 ```
 
-Then open <http://127.0.0.1:8642>.
+The app opens even on a clean machine. Open **Settings → Model**, then click
+**Download** beside Qwen, Bonsai, or Ornith. Progress stays in the app; a
+completed first download is activated automatically.
 
-Everything needs **16 GB RAM** (≥6 GB of it given to the Docker VM), **~30 GB
-free disk**, and **an NVMe SSD** — expert weights stream from disk on every
-token, so storage is the main driver of speed. Everything installs under
-`~/.samosa`; `samosa doctor` checks it; deleting that directory uninstalls it.
-
-## Two ways to use it
-
-Both come from the same install. Full reference: **[docs/USAGE.md](docs/USAGE.md)**.
-
-| | Terminal | Web app |
-|---|---|---|
-| | `samosa "your question"` | `samosa app` → <http://127.0.0.1:8642> |
-| | **the normal way to use it** | **a demo** — streams tokens, shows the model's reasoning |
+On Debian/Ubuntu, install a C compiler and OpenMP before the same clone/build
+flow:
 
 ```sh
-samosa "explain how a hash table handles collisions"
-samosa --continue "and which strategy does Python use?"   # resumes from a snapshot, no re-reading
-samosa --think "solve this logic puzzle"                  # reasoning first, then the answer
-samosa --fast "summarize this design"                     # more threads, runs warmer
+sudo apt-get install build-essential libomp-dev
+git clone https://github.com/deepanwadhwa/samosa-chat
+cd samosa-chat
+make install
+~/.samosa/bin/samosa app
+```
+
+The development install and three-model runtime have been exercised on a
+16 GB Apple M3. CI builds and tests macOS and Linux, but performance and
+long-running behavior are not claimed for machines that have not been measured.
+The older Qwen-only Docker workflow remains documented in
+[docs/INSTALL.md](docs/INSTALL.md).
+
+Everything lives under `~/.samosa`. The launcher is
+`~/.samosa/bin/samosa`; add that directory to `PATH` if desired.
+
+## Download models from the terminal
+
+```sh
+samosa models             # installed / missing status for all three
+samosa pull bonsai
+samosa pull ornith
+samosa pull qwen
+samosa pull all
+```
+
+Downloads:
+
+- are pinned to an immutable Hugging Face revision;
+- resume from a `.partial` file after interruption;
+- check the exact byte count and SHA-256 before installation;
+- become visible to the gateway only after verification;
+- preflight free disk space and retain a 2 GB reserve;
+- install the pinned Prism runtime automatically for Bonsai and Ornith.
+
+The Prism runtime is a checksum-pinned prebuilt release for macOS arm64/x64 and
+Linux x64/arm64. Samosa does not silently use an arbitrary executable from the
+network.
+
+Approximate storage:
+
+| What you install | Space |
+|---|---:|
+| Bonsai only | 3.8 GB plus ~12–17 MB runtime archive |
+| Ornith only | 5.6 GB plus ~12–17 MB runtime archive |
+| Qwen only | 24.0 GB |
+| All three | 33.4 GB plus runtime |
+
+## Use the app
+
+```sh
+samosa app
+```
+
+The app runs at <http://127.0.0.1:8642>. In Settings you can:
+
+- install and switch among all three models;
+- leave total context on **Auto (recommended)** or set an explicit capacity;
+- enable automatic compaction and select its threshold;
+- compact the current conversation immediately;
+- control thinking, output length, seed, and optional Internet sources.
+
+The browser keeps the visible transcript. Samosa keeps model-facing
+continuation state under `~/.samosa/chats`, so the same chat can continue after
+a restart or compaction.
+
+## Use the terminal
+
+Direct terminal chat currently uses the Qwen backend:
+
+```sh
+samosa pull qwen
+samosa "explain how DNS works"
+samosa --continue "and where does DNSSEC fit?"
+samosa --think "solve this logic puzzle"
+samosa --think-code "review this algorithm"
+samosa --context-tokens 65536 "remember this"
 samosa doctor
 ```
 
-Conversations are sealed to disk and resume byte-exactly, so a follow-up never
-re-reads the history. Their total context (history, new turn, thinking, and
-answer) is hardware-aware: the shipped Qwen model permits up to 262,144 tokens,
-while Samosa chooses a safe default for the machine and accepts an explicit
-`--context-tokens` setting up to that model limit. The web app can compact a
-long conversation without changing its chat ID or removing its visible
-messages: the active model writes continuation memory, recent turns stay
-verbatim, and Samosa rebuilds Qwen's sealed K/V snapshot or the smaller
-Bonsai/Ornith `llama-server` prompt. Automatic compaction defaults to 80%
-projected use, survives model/gateway restarts, and is configurable in Settings.
-[Thinking modes](docs/USAGE.md#thinking-modes) explains `--think` and
-`--think-code`.
+Use the app or the local HTTP API for Bonsai and Ornith chat. See
+[docs/USAGE.md](docs/USAGE.md) for every flag.
 
-## What this is
+## Hardware-aware context
 
-Samosa Chat runs Qwen's 35-billion-parameter model on a machine with 16 GB of
-RAM.
+All three models support up to 262,144 tokens, but **Auto is not a fixed
+24K/8K setting**.
 
-The model is a Mixture of Experts: 35B parameters in total, but only ~3B are
-used per token. Samosa never loads all 35B. The shared weights stay in RAM; the
-expert weights are **read from the SSD as the model chooses them**, token by
-token. That one decision is what makes it fit, and it is why storage speed
-matters more than anything else here.
+- **Qwen:** the C engine measures available memory, model-resident memory, and
+  per-token K/V cost, then selects a safe capacity. An explicit app or CLI
+  setting overrides Auto up to the model limit.
+- **Bonsai and Ornith:** Samosa leaves context unset and lets Prism fit the
+  model and K/V allocation to current device memory. The gateway reads the
+  resulting `n_ctx` back from the running server and uses that exact number for
+  status, request budgeting, and compaction. Samosa reserves a 4 GiB device
+  margin and bounds prompt batches to avoid turning theoretical context into a
+  machine-killing allocation.
 
-It runs entirely on the CPU — no Metal, no CUDA, no GPU required. It is text
-only today.
+On the measured 16 GB M3, the real runtime selected **66,816 tokens for
+Bonsai** and **94,464 for Ornith** and generated successfully with each. These
+are observations, not hardcoded tiers: another machine or a different amount
+of free memory can receive a different capacity.
 
-The architecture, the group-32 quantization format, what was tried and rejected,
-and real example output: **[docs/DESIGN.md](docs/DESIGN.md)**.
+Manual values are advanced controls. A capacity that technically initializes
+can still cause heavy memory pressure when filled, so Auto is the default.
 
-## Where it runs, and how fast
+## Conversation compaction
 
-Every number is measured, on the machine named beside it. Nothing is
-extrapolated. Full detail: **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)**.
+Automatic compaction defaults to 80% of projected context use and can be set
+from 50–90% through the API (70–90% presets in the app).
 
-| Platform | Measured decode | Verified on |
-|---|---|---|
-| macOS, Apple Silicon | **5–7 tok/s** | one 16 GB M3 MacBook Air (fanless), 2-thread default |
-| Windows, x86_64 (Docker/WSL2) | **1.26 tok/s** | one ASUS Zenbook, i7-1260P, 16 GB |
-| Linux, x86_64 (Docker) | *not yet measured* | build + tests green on Debian 12, Ubuntu 26.04 |
+When compaction runs:
 
-**macOS is the fast path; x86 is currently ~4–5x slower.** The build passes no
-`-march`, so the AVX2 kernels are compiled out on x86 and the engine falls back
-to a scalar loop — 7.6x slower, measured. Runtime CPU dispatch fixes it, and is
-the next thing on the roadmap ([G10/H2](docs/TASKS_HARDWARE.md)).
+1. Samosa loads the durable model-facing conversation.
+2. The active model summarizes older turns into dense continuation memory.
+3. Recent turns remain verbatim.
+4. Samosa verifies that the replacement is smaller.
+5. It atomically replaces the durable ledger while keeping the same chat ID and
+   visible browser transcript.
+6. The next request rebuilds the backend's K/V state from that compacted
+   context.
 
-Behaviour is identical on every platform: the same prompt and seed returns the
-same tokens on macOS/NEON, arm64 Linux, and x86_64 Linux, at the same ~3.84 GB
-footprint. Only speed differs.
+Qwen uses its sealed conversation snapshot; Bonsai and Ornith use per-model
+durable ledgers and reconstruct their llama.cpp prompt. A failed or non-shrinking
+summary does not replace the previous ledger.
 
-**Memory:** ~2.5 GiB fresh, ~3.9–4.2 GiB warmed. Bounded — it does not grow with
-conversation length.
-
-**Storage is the bottleneck, not the CPU.** On the M3, **70% of decode is spent
-waiting on the SSD and 30% on maths.** That is why an NVMe drive matters, why a
-host bind mount instead of a named Docker volume costs ~6x, and why a GPU would
-buy at most ~1.4x here. Reads do not wear out your SSD — endurance is spent by
-writes — so the real costs are time, power, and heat:
-[the details](docs/PERFORMANCE.md#ssd-speed-the-one-thing-to-be-deliberate-about).
-
-## Build from source
+## Local API
 
 ```sh
-make          # portable build
-make omp      # multithreaded (macOS: brew install libomp first)
-make test     # the full suite — no model download needed
+samosa serve
 ```
 
-The suite is self-contained — it stubs the engine and the network and uses tiny
-fixtures, so it runs on a clean machine with no 24 GB download. It covers the
-expert cache, long-context KV math, the repetition guard, the thinking
-wind-down, quantized math, the server, the CLI wrapper, installer rollback,
-output structure, route analysis, and the converter layout.
+Useful gateway endpoints:
 
-CI runs it on macOS and Ubuntu, plus a Debian container leg — Debian and Ubuntu
-ship different `awk` and libc behaviour, and the container leg catches what the
-Ubuntu runner cannot see.
-
-Answer quality is scored on structure, stop reason, repetition, and correctness
-separately, rather than by matching substrings. There is not yet enough evidence
-to publish a general benchmark score; the plan for getting there is in
-[docs/BENCHMARK_PLAN.md](docs/BENCHMARK_PLAN.md).
-
-## Privacy and machine safety
-
-- The model runs on your machine. The engine has no telemetry. The server
-  listens on local loopback only.
-- The installer contacts Hugging Face only to download the public release files.
-  Running the model needs no cloud account.
-- Two threads is the cool default. `--fast` is a deliberate choice.
-- The expert cache watches memory pressure and drops cached experts before the
-  system is forced to swap.
-- A generation can be cancelled between tokens.
-- Real-model test runs are kept short on purpose: one long run can read hundreds
-  of gigabytes from the SSD.
-
-## Roadmap
-
-Full detail and reasoning: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
-
-- **Make x86 fast.** Linux and Windows now work; what is left is the scalar-path
-  penalty. Runtime CPU dispatch should be worth ~3x
-  ([G10/H2](docs/TASKS_HARDWARE.md)).
-- **Vision.** Qwen3.6 is multimodal, and **the vision tower already ships inside
-  every install** — all 27 blocks, validated at mean cosine 0.9976 against the
-  reference weights. The weights are on your disk and usable today; what is
-  missing is the runtime: an image decoder, the encoder in C, and splicing image
-  embeddings into the language model ([docs/TASKS_VISION.md](docs/TASKS_VISION.md)).
-- **Documents and internet access** ([#5](docs/TASKS_DOCUMENTS.md),
-  [#4](docs/TASKS_INTERNET.md)).
-- **A Metal backend**, eventually — though the 70/30 split above caps it at ~1.4x.
-
-## Known limitations
-
-- **x86 is ~4–5x slower than macOS** — 1.26 tok/s on an i7-1260P against 5–7 on
-  the M3, because the AVX2 kernels are not compiled in yet
-  ([G10/H2](docs/TASKS_HARDWARE.md)).
-- **Linux and Windows speed is measured on one machine each.** Sustained and
-  long-running behaviour on those platforms has not been measured.
-- **Text only.** No images, video, audio, or tool calling — yet.
-- **No GPU acceleration.** Decode is 70% SSD wait, which caps any GPU near
-  1.4x, and 24 GB of experts do not fit in a typical laptop GPU.
-- **Quality is measured on one machine and one reasoning control**, not across
-  many machines or task types.
-- Deleting a chat in the app removes it from the browser but not yet from disk.
-
-## More documentation
-
-**Start here depending on what you want:**
-
-| I want to… | Read |
+| Endpoint | Purpose |
 |---|---|
-| install it, or fix an install | [docs/INSTALL.md](docs/INSTALL.md) |
-| use the CLI, the app, thinking modes | [docs/USAGE.md](docs/USAGE.md) |
-| know how fast it is, and why | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
-| understand how it works | [docs/DESIGN.md](docs/DESIGN.md) |
-| know what is next | [docs/ROADMAP.md](docs/ROADMAP.md) |
-| use the local HTTP API | [docs/SERVE_API.md](docs/SERVE_API.md) |
-| contribute, or pick up a task | [docs/ISSUE_TASKS.md](docs/ISSUE_TASKS.md) and [CLAUDE.md](CLAUDE.md) |
+| `GET /healthz` | active model, readiness, actual context, compaction status |
+| `GET /v1/backends` | three-model catalog plus install/download state |
+| `POST /v1/backends/install` | start a verified model download |
+| `POST /v1/backends/select` | unload and switch active model |
+| `POST /v1/settings` | context and compaction settings |
+| `POST /v1/compact` | compact one durable conversation |
+| `POST /v1/chat/completions` | OpenAI-compatible streaming chat |
 
-**Engineering detail:** [hardware and performance work](docs/TASKS_HARDWARE.md) ·
-[Linux](docs/TASKS_LINUX.md) · [Windows/Docker](docs/TASKS_WINDOWS.md) ·
-[vision](docs/TASKS_VISION.md) · [documents](docs/TASKS_DOCUMENTS.md) ·
-[internet](docs/TASKS_INTERNET.md) · [app program](docs/APP_TASKS.md)
+Full request and response examples are in
+[docs/SERVE_API.md](docs/SERVE_API.md).
 
-**Evidence and measurements:** [regression ledger](docs/REGRESSION_LEDGER.md) ·
-[group-32 baseline](docs/GROUP32_BASELINE.md) · [benchmark plan](docs/BENCHMARK_PLAN.md) ·
-[thinking diagnosis](docs/THINKING_DIAGNOSIS.md) ·
-[upstream comparison](docs/UPSTREAM_CONTROL_2026-07-14.md) ·
-[measured runs](docs/regressions/) · [work log](docs/WORK_LOG_2026-07-14.md)
+## Build and test
 
-## License
+```sh
+make              # portable Qwen engine
+make omp          # multithreaded engine
+make test         # self-contained unit and integration suite
+```
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the full attribution
-and derivative-work notice.
+The normal suite uses tiny fixtures and does not download model weights. Real
+model evidence—including durable compaction—is kept under
+[docs/regressions](docs/regressions).
+
+## Privacy and network behavior
+
+- Inference, chat history, and model switching stay on this computer.
+- The gateway binds to `127.0.0.1`.
+- There is no telemetry or model account.
+- Installing a model contacts only its pinned Hugging Face source and, for
+  GGUF models, the pinned Prism GitHub release.
+- Internet-source tools are opt-in and clearly separate from model downloads.
+
+## Known limits
+
+- The three-model app has measured real-model evidence on one 16 GB M3, not a
+  broad hardware benchmark.
+- Direct terminal chat is Qwen-only; model management works for all three.
+- Qwen expert streaming is SSD-sensitive. Bonsai and Ornith use Metal on Apple
+  Silicon through Prism and have different performance characteristics.
+- Deleting a browser chat does not yet remove every durable backend ledger.
+- The published Hugging Face release remains a Qwen-oriented distribution;
+  the fresh three-model workflow documented here is the source-clone
+  `make install` path until a new release bundle is published.
+
+## Documentation
+
+| Topic | Document |
+|---|---|
+| installation and model storage | [docs/INSTALL.md](docs/INSTALL.md) |
+| app and terminal usage | [docs/USAGE.md](docs/USAGE.md) |
+| model behavior and network boundaries | [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md) |
+| local gateway API | [docs/SERVE_API.md](docs/SERVE_API.md) |
+| architecture | [docs/DESIGN.md](docs/DESIGN.md) |
+| measured performance | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
+| regression evidence | [docs/regressions](docs/regressions) |
