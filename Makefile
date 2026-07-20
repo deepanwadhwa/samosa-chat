@@ -118,8 +118,7 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
-jobs-test: tests/jobs/fake_serve.py dist/samosa_jobs.py
-	python3 tests/jobs/fake_serve.py --self-test
+jobs-test: tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py
 	python3 -m unittest discover -s tests/jobs -v
 
 clean:
