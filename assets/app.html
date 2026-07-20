@@ -238,6 +238,38 @@
       .bubble { max-width: 91%; }
       .avatar { display: none; }
     }
+    /* Jobs view */
+    .view-tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-2); }
+    .view-tab { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 13px; }
+    .view-tab.active { background: var(--panel); color: var(--ink); box-shadow: 0 3px 10px rgba(77, 42, 20, .07); }
+    .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 30px max(22px, calc((100% - 760px) / 2)) 40px; }
+    .jobs-head h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
+    .jobs-head p { margin: 0 0 22px; color: var(--muted); line-height: 1.5; max-width: 60ch; }
+    .job-form { display: grid; gap: 8px; margin-bottom: 22px; }
+    .job-form label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .job-form input, .job-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 11px 13px; outline: none; font: inherit; resize: vertical; }
+    .job-form input:focus, .job-form textarea:focus { border-color: var(--brand); }
+    .job-form .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+    .job-run { border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 700; padding: 11px 20px; cursor: pointer; box-shadow: var(--shadow); }
+    .job-run:disabled { opacity: .55; cursor: default; }
+    .job-mode { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+    .job-activity { display: grid; gap: 2px; }
+    .job-line { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; line-height: 1.4; animation: jobin .18s ease; }
+    @keyframes jobin { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .job-line .dot { flex: none; width: 16px; text-align: center; }
+    .job-line.step-done .dot { color: var(--brand); }
+    .job-line.step-error { border-color: var(--danger); color: var(--danger); }
+    .job-line .body { min-width: 0; flex: 1; }
+    .job-line .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
+    .job-line .running { color: var(--brand); font-weight: 600; }
+    .job-plan { margin-top: 6px; display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
+    .job-plan .more { color: var(--muted); font-style: italic; }
+    .job-bar { position: sticky; bottom: 0; margin-top: 16px; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 13px 15px; border-radius: 14px; background: var(--brand-soft); border: 1px solid var(--line); }
+    .job-bar .txt { font-size: 13.5px; color: var(--ink); }
+    .job-bar button { border: 0; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
+    .job-bar .apply { background: var(--brand); color: #fff; }
+    .job-bar .undo { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+    .job-empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
   </style>
 </head>
 <body>
@@ -258,6 +290,10 @@
         <div class="top-left">
           <button class="menu-button" id="menuButton" aria-label="Open conversations">☰</button>
           <div><div class="conversation-name" id="conversationName">New conversation</div><div class="model-line"><span class="status-dot" id="statusDot"></span><span id="modelStatus">Connecting to local model…</span></div></div>
+        </div>
+        <div class="view-tabs" role="tablist">
+          <button class="view-tab active" id="tabChat" role="tab" aria-selected="true">Chat</button>
+          <button class="view-tab" id="tabJobs" role="tab" aria-selected="false">Jobs</button>
         </div>
         <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
       </header>
@@ -281,6 +317,28 @@
         </div>
         <div class="composer-hint">Enter to send · Shift+Enter for a new line · responses stay on this Mac</div>
       </div>
+
+      <section class="jobs-view" id="jobsView" hidden>
+        <div class="jobs-head">
+          <h1>Jobs</h1>
+          <p>Describe a task in plain words. Samosa decodes it into a step-by-step plan, shows you what it will do, then does it — every action runs on this Mac.</p>
+        </div>
+        <form class="job-form" id="jobForm">
+          <label for="jobFolder">Folder</label>
+          <input id="jobFolder" placeholder="/Users/you/Downloads" spellcheck="false" autocapitalize="off">
+          <label for="jobGoal">What should I do?</label>
+          <textarea id="jobGoal" rows="2" placeholder="Organize this folder by type"></textarea>
+          <div class="row">
+            <span class="job-mode"><input type="checkbox" id="jobAuto"> Apply moves automatically (skip the review step)</span>
+            <button class="job-run" id="jobRun" type="submit">Run ▸</button>
+          </div>
+        </form>
+        <div class="job-activity" id="jobActivity"><div class="job-empty">No job run yet. Try “organize this folder by type”.</div></div>
+        <div class="job-bar" id="jobBar" hidden>
+          <span class="txt" id="jobBarText"></span>
+          <span id="jobBarActions"></span>
+        </div>
+      </section>
 
       <footer class="telemetry">
         <span>Mode <strong id="modeValue">Direct</strong></span>
@@ -597,6 +655,139 @@
           else els.webNote.textContent=`Web tools are on (${config.search_backend}). The model decides when to search or read pages; you can also add a specific URL here.`;
         } catch(_){}
       }
+      // --- Jobs (Models -> Tools -> Jobs) --------------------------------
+      const jobEls = {
+        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
+        run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
+        barText: $("jobBarText"), barActions: $("jobBarActions"),
+        tabChat: $("tabChat"), tabJobs: $("tabJobs"),
+        composer: document.querySelector(".composer-wrap"), telemetry: document.querySelector(".telemetry"),
+      };
+      let jobRunning = false, lastJobId = null;
+
+      function showView(name) {
+        const jobs = name === "jobs";
+        jobEls.view.hidden = !jobs;
+        for (const el of [els.messages, els.jump, jobEls.composer, jobEls.telemetry])
+          if (el) el.style.display = jobs ? "none" : "";
+        jobEls.tabJobs.classList.toggle("active", jobs); jobEls.tabChat.classList.toggle("active", !jobs);
+        jobEls.tabJobs.setAttribute("aria-selected", String(jobs)); jobEls.tabChat.setAttribute("aria-selected", String(!jobs));
+        if (jobs && !jobEls.folder.value) jobEls.folder.focus();
+      }
+
+      const baseName = p => (p || "").split("/").filter(Boolean).pop() || p;
+      const relTo = (p, root) => (root && p.startsWith(root)) ? p.slice(root.length).replace(/^\/+/, "") : p;
+      const shortType = mt => ({ "image/jpeg": "images", "image/png": "images", "application/pdf": "PDFs", "text/plain": "text files", "application/octet-stream": "other" }[mt] || mt);
+      function addSub(line, text) { const s = document.createElement("div"); s.className = "sub"; s.textContent = text; line.querySelector(".body").appendChild(s); return s; }
+      function jobLine(dot, title, cls) {
+        const line = document.createElement("div");
+        line.className = "job-line" + (cls ? " " + cls : "");
+        line.innerHTML = '<span class="dot"></span><div class="body"><div class="title"></div></div>';
+        line.querySelector(".dot").textContent = dot;
+        line.querySelector(".title").textContent = title;
+        jobEls.activity.appendChild(line); jobEls.activity.scrollTop = jobEls.activity.scrollHeight;
+        return line;
+      }
+      function showBar(text, actions) {
+        jobEls.barText.textContent = text; jobEls.barActions.innerHTML = "";
+        for (const [label, cls, fn] of actions) { const b = document.createElement("button"); b.className = cls; b.textContent = label; b.onclick = fn; jobEls.barActions.appendChild(b); }
+        jobEls.bar.hidden = false;
+      }
+
+      function renderJobEvent(evt, ctx) {
+        switch (evt.type) {
+          case "decode_intent":
+            ctx.jobId = evt.job_id;
+            jobLine("●", `Decoding intent: “${evt.goal}”`, "step-done"); break;
+          case "intent":
+            addSub(jobLine("›", evt.kind === "organize" ? "Sort files into type folders" : "Read the folder and report"), evt.explain); break;
+          case "counting": {
+            const parts = Object.entries(evt.by_type || {}).map(([k, v]) => `${v} ${shortType(k)}`).join(", ");
+            const l = jobLine("▦", `Counting files: ${evt.total} found`); if (parts) addSub(l, parts); break;
+          }
+          case "plan": {
+            const n = evt.moves.length;
+            const l = jobLine("◇", `Planned ${n} move${n === 1 ? "" : "s"}` + (evt.skips.length ? `, ${evt.skips.length} left in place` : ""));
+            if (n) {
+              const box = document.createElement("div"); box.className = "job-plan";
+              evt.moves.slice(0, 8).forEach(m => { const d = document.createElement("div"); d.textContent = `${baseName(m.src)}  →  ${relTo(m.dst, ctx.folder)}`; box.appendChild(d); });
+              if (n > 8) { const d = document.createElement("div"); d.className = "more"; d.textContent = `…and ${n - 8} more`; box.appendChild(d); }
+              l.querySelector(".body").appendChild(box);
+            }
+            break;
+          }
+          case "await_apply":
+            ctx.jobId = evt.job_id; lastJobId = evt.job_id;
+            showBar(`${evt.moves} file${evt.moves === 1 ? "" : "s"} ready to move.`, [["Apply moves", "apply", () => applyJob(evt.job_id, ctx)]]);
+            break;
+          case "action": {
+            if (!ctx.progress) ctx.progress = jobLine("⟳", "");
+            const verb = evt.op === "revert" ? "Restoring" : "Moving";
+            ctx.progress.querySelector(".title").textContent = `${verb} ${evt.i}/${evt.n}: ${baseName(evt.src)}` + (evt.ok ? "" : ` — skipped (${evt.reason})`);
+            break;
+          }
+          case "applied":
+            if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
+            ctx.moved = evt.applied > 0;
+            jobLine("●", `Moved ${evt.applied} file${evt.applied === 1 ? "" : "s"}` + (evt.skipped ? `, skipped ${evt.skipped}` : ""), "step-done");
+            break;
+          case "reverted":
+            if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
+            ctx.undone = true;
+            jobLine("●", `Restored ${evt.reverted} file${evt.reverted === 1 ? "" : "s"}`, "step-done");
+            break;
+          case "done": {
+            jobLine("✓", evt.summary, "step-done");
+            if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
+            else jobEls.bar.hidden = true;
+            break;
+          }
+          case "error": jobLine("✗", evt.message, "step-error"); break;
+        }
+      }
+
+      async function streamJob(path, body, ctx) {
+        const resp = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!resp.ok || !resp.body) {
+          let msg = "request failed"; try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
+          renderJobEvent({ type: "error", message: msg }, ctx); return;
+        }
+        const reader = resp.body.getReader(), decoder = new TextDecoder(); let pending = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          const events = pending.split("\n\n"); pending = events.pop() || "";
+          for (const ev of events) for (const line of ev.split("\n")) if (line.startsWith("data: ")) {
+            const data = line.slice(6); if (data === "[DONE]") continue;
+            try { renderJobEvent(JSON.parse(data), ctx); } catch (_) {}
+          }
+        }
+      }
+
+      async function runJob() {
+        if (jobRunning) return;
+        const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
+        if (!folder || !goal) { jobEls.folder.focus(); return; }
+        jobRunning = true; jobEls.run.disabled = true; jobEls.bar.hidden = true; jobEls.activity.innerHTML = "";
+        const ctx = { folder };
+        try { await streamJob("/v1/jobs/run", { goal, folder, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; jobEls.run.disabled = false; }
+      }
+      async function applyJob(jobId, ctx) {
+        if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
+        try { await streamJob("/v1/jobs/apply", { job_id: jobId }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; }
+      }
+      async function undoJob(jobId, ctx) {
+        if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
+        const uctx = { folder: ctx.folder, jobId };
+        try { await streamJob("/v1/jobs/undo", { job_id: jobId }, uctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, uctx); }
+        finally { jobRunning = false; }
+      }
+
       function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
       function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
       
@@ -624,6 +815,9 @@
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
       $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel;
       els.modelBackend.onchange=switchBackend;
+      jobEls.tabChat.onclick=()=>showView("chat"); jobEls.tabJobs.onclick=()=>showView("jobs");
+      jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
+      jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
       els.webAction.onclick=internetAction; els.webInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();internetAction();}};
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
