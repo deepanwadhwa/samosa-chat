@@ -250,6 +250,9 @@
     .job-form input, .job-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 11px 13px; outline: none; font: inherit; resize: vertical; }
     .job-form input:focus, .job-form textarea:focus { border-color: var(--brand); }
     .job-form .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+    .job-tools { display: grid; gap: 10px; margin: 0 0 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .job-tools textarea { min-height: 92px; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); font-size: 12.5px; }
+    .job-tools .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .job-run { border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 700; padding: 11px 20px; cursor: pointer; box-shadow: var(--shadow); }
     .job-run:disabled { opacity: .55; cursor: default; }
     .job-mode { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
@@ -286,6 +289,7 @@
     @media (max-width: 640px) {
       .job-review-row { grid-template-columns: 1fr; gap: 6px; }
       .job-review-arrow { display: none; }
+      .job-tools .split { grid-template-columns: 1fr; }
     }
     .job-bar { position: sticky; bottom: 0; margin-top: 16px; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 13px 15px; border-radius: 14px; background: var(--brand-soft); border: 1px solid var(--line); }
     .job-bar .txt { font-size: 13.5px; color: var(--ink); }
@@ -356,6 +360,34 @@
             <button class="job-run" id="jobRun" type="submit">Run ▸</button>
           </div>
         </form>
+        <section class="job-form job-tools">
+          <label for="jobDefinition">Job definition JSON</label>
+          <textarea id="jobDefinition" rows="5" spellcheck="false" placeholder='{"input":{"folder":"/Users/you/Receipts","types":["text/plain"]},"instruction":"Extract merchant and total.","output_schema":{"type":"object","required":["merchant","total"],"properties":{"merchant":{"type":"string"},"total":{"type":"number"}}}}'></textarea>
+          <div class="row">
+            <span class="job-mode"><input type="checkbox" id="jobPreviewExpanded"> Preview about 3 samples</span>
+            <span>
+              <button class="job-run" id="jobPreviewDef" type="button">Preview</button>
+              <button class="job-run" id="jobRunDef" type="button">Run job</button>
+            </span>
+          </div>
+          <div class="split">
+            <div>
+              <label for="jobPublicUrls">Public URLs</label>
+              <textarea id="jobPublicUrls" rows="3" spellcheck="false" placeholder="https://example.com/jobs"></textarea>
+            </div>
+            <div>
+              <label for="jobResumePath">Resume path</label>
+              <input id="jobResumePath" spellcheck="false" autocapitalize="off" placeholder="/Users/you/resume.txt">
+            </div>
+          </div>
+          <div class="row">
+            <span class="job-mode">Public pages are fetched politely and only changed pages feed jobs.</span>
+            <span>
+              <button class="job-run" id="jobFetchPublic" type="button">Fetch URLs</button>
+              <button class="job-run" id="jobResumeWorkflow" type="button">Pair resume</button>
+            </span>
+          </div>
+        </section>
         <div class="job-activity" id="jobActivity"><div class="job-empty">No job run yet. Try “organize this folder by type”.</div></div>
         <section class="job-review" id="jobReview" hidden>
           <div class="job-review-head"><strong id="jobReviewTitle">Review</strong><span id="jobReviewMeta"></span></div>
@@ -686,6 +718,10 @@
       const jobEls = {
         view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
+        definition: $("jobDefinition"), previewExpanded: $("jobPreviewExpanded"),
+        previewDef: $("jobPreviewDef"), runDef: $("jobRunDef"),
+        publicUrls: $("jobPublicUrls"), resumePath: $("jobResumePath"),
+        fetchPublic: $("jobFetchPublic"), resumeWorkflow: $("jobResumeWorkflow"),
         barText: $("jobBarText"), barActions: $("jobBarActions"),
         review: $("jobReview"), reviewTitle: $("jobReviewTitle"), reviewMeta: $("jobReviewMeta"), reviewList: $("jobReviewList"),
         tabChat: $("tabChat"), tabJobs: $("tabJobs"),
@@ -921,6 +957,67 @@
         }
       }
 
+      function parseJobDefinition() {
+        try {
+          const job = JSON.parse(jobEls.definition.value.trim());
+          if (!job || typeof job !== "object" || Array.isArray(job)) throw new Error("Job definition must be a JSON object.");
+          return job;
+        } catch (error) {
+          jobLine("✗", error.message || String(error), "step-error");
+          return null;
+        }
+      }
+      function publicUrlList() {
+        return jobEls.publicUrls.value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+      }
+      async function previewDefinitionJob() {
+        if (jobRunning) return;
+        const job = parseJobDefinition(); if (!job) return;
+        jobRunning = true; clearReview(); jobEls.activity.innerHTML = ""; jobEls.bar.hidden = true;
+        try {
+          const resp = await fetch("/v1/jobs/definition/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, expanded: jobEls.previewExpanded.checked }) });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Preview failed");
+          jobLine("●", `Previewed ${data.sample_count} sample${data.sample_count === 1 ? "" : "s"}`, "step-done");
+          for (const rec of data.records || []) {
+            const title = rec.status === "passed" ? `Passed: ${baseName(rec.input_path)}` : `Needs review: ${baseName(rec.input_path)}`;
+            const line = jobLine(rec.status === "passed" ? "✓" : "!", title, rec.status === "passed" ? "step-done" : "");
+            addSub(line, JSON.stringify(rec.extracted || rec.reasons || {}, null, 0));
+          }
+        } catch (error) { jobLine("✗", error.message || String(error), "step-error"); }
+        finally { jobRunning = false; }
+      }
+      async function runDefinitionJob() {
+        if (jobRunning) return;
+        const job = parseJobDefinition(); if (!job) return;
+        jobRunning = true; clearReview(); jobEls.activity.innerHTML = ""; jobEls.bar.hidden = true;
+        const folder = job.input?.folder || jobEls.folder.value.trim();
+        try { await streamJob("/v1/jobs/definition/run", { job }, { folder, jobId: job.job_id }); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, { folder }); }
+        finally { jobRunning = false; }
+      }
+      async function fetchPublicInputs(pairResume) {
+        if (jobRunning) return;
+        const job = parseJobDefinition(); if (!job) return;
+        const urls = publicUrlList();
+        if (!urls.length) { jobLine("✗", "Add at least one public URL.", "step-error"); return; }
+        jobRunning = true;
+        try {
+          const body = { job_id: job.job_id || "public-job", urls };
+          let endpoint = "/v1/jobs/public-inputs/update";
+          if (pairResume) {
+            if (!jobEls.resumePath.value.trim()) throw new Error("Add a resume path.");
+            endpoint = "/v1/jobs/public-inputs/resume-workflow";
+            body.resume_path = jobEls.resumePath.value.trim();
+          }
+          const resp = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.error?.message || "Public input update failed");
+          jobLine("●", pairResume ? `Prepared ${data.pairs.length} resume/posting pair${data.pairs.length === 1 ? "" : "s"}` : `Fetched ${data.checked} URL${data.checked === 1 ? "" : "s"}, ${data.changed} changed`, "step-done");
+        } catch (error) { jobLine("✗", error.message || String(error), "step-error"); }
+        finally { jobRunning = false; }
+      }
+
       async function runJob() {
         if (jobRunning) return;
         const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
@@ -981,6 +1078,10 @@
       jobEls.tabChat.onclick=()=>showView("chat"); jobEls.tabJobs.onclick=()=>showView("jobs");
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
       jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
+      jobEls.previewDef.onclick=previewDefinitionJob;
+      jobEls.runDef.onclick=runDefinitionJob;
+      jobEls.fetchPublic.onclick=()=>fetchPublicInputs(false);
+      jobEls.resumeWorkflow.onclick=()=>fetchPublicInputs(true);
       els.webAction.onclick=internetAction; els.webInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();internetAction();}};
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
