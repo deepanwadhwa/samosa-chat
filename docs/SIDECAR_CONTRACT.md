@@ -12,6 +12,12 @@ generates code for them. It emits a structured tool call, the gateway selects a
 registered tool, and the tool may dispatch to a sidecar with validated
 arguments.
 
+For Ornith, the gateway sends standard OpenAI Chat Completions `tools` schemas
+to llama-server and consumes its parsed `tool_calls`. Tool results return as
+`role: "tool"` messages with the matching `tool_call_id`; they are not encoded
+as visible JSON or synthetic user messages. The text protocol remains only as
+a compatibility path for backends without native function-call parsing.
+
 The primary safety property is containment. A malformed file or expensive scan
 must fail inside a short-lived process with its own limits, not inside the
 gateway or model server.

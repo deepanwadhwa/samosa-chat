@@ -205,7 +205,8 @@ def find_extractor():
     Checked in order: SAMOSA_EXTRACTOR env override; a sibling of this file
     (the installed layout, where jobs_fs.py/samosa_tools.py/samosa_jobs.py and
     samosa-extract are staged together in bin/); the source-tree dev
-    convention of <repo_root>/dist/samosa-extract; then PATH. We never
+    convention of a freshly built <repo_root>/samosa-extract, then the
+    <repo_root>/dist/samosa-extract fallback, then PATH. We never
     substitute a host PDF utility when the sidecar is absent — a missing
     extractor is a clear capability gap, not a silent fallback.
     """
@@ -218,9 +219,10 @@ def find_extractor():
     if sibling.is_file() and os.access(str(sibling), os.X_OK):
         return str(sibling)
 
-    dev_tree = here.parent / 'dist' / 'samosa-extract'
-    if dev_tree.is_file() and os.access(str(dev_tree), os.X_OK):
-        return str(dev_tree)
+    for dev_tree in (here.parent / 'samosa-extract',
+                     here.parent / 'dist' / 'samosa-extract'):
+        if dev_tree.is_file() and os.access(str(dev_tree), os.X_OK):
+            return str(dev_tree)
 
     return shutil.which('samosa-extract')
 

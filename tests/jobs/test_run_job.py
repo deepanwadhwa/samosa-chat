@@ -369,6 +369,38 @@ class JobsLayerTest(unittest.TestCase):
         self.assertIn('titli_vaccination_2025.pdf', resumed['done'][0]['summary'])
         self.assertFalse(os.path.exists(os.path.join(self.jobsroot, job_id, 'convo.json')))
 
+    def test_native_find_pause_resumes_with_matching_tool_call_id(self):
+        first_reply = {
+            'content': None,
+            'tool_calls': [{
+                'id': 'call_question',
+                'type': 'function',
+                'function': {
+                    'name': 'ask_user',
+                    'arguments': '{"question":"Which pet name should I search for?"}',
+                },
+            }],
+        }
+        _, paused = drain(J.run_job(
+            'find the vaccination record', self.inbox, mode='confirm',
+            loop_model_call=lambda _messages: first_reply, native_tools=True))
+        job_id = paused['await_user'][0]['job_id']
+        seen = []
+
+        def resume_model(messages):
+            seen.extend(messages[-2:])
+            return {'content': 'Found it at titli_vaccination_2025.pdf.'}
+
+        _, resumed = drain(J.answer_job(
+            job_id, 'Titli', loop_model_call=resume_model, native_tools=True))
+        self.assertEqual(seen[0]['role'], 'assistant')
+        self.assertEqual(seen[0]['tool_calls'][0]['id'], 'call_question')
+        self.assertEqual(seen[1]['role'], 'tool')
+        self.assertEqual(seen[1]['tool_call_id'], 'call_question')
+        self.assertEqual(seen[1]['name'], 'ask_user')
+        self.assertIn('Titli', seen[1]['content'])
+        self.assertIn('done', resumed)
+
     def test_find_final_question_pauses_for_answer(self):
         def first_model(_messages):
             return 'Which pet name should I use?'

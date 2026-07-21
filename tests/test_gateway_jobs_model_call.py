@@ -31,7 +31,18 @@ class FakeBackend(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         FakeBackend.payloads.append(body)
-        self._json(200, {"choices": [{"message": {"content": "loop reply"}}]})
+        if body.get('tools'):
+            message = {
+                'content': None,
+                'tool_calls': [{
+                    'id': 'call_native',
+                    'type': 'function',
+                    'function': {'name': 'fs_list', 'arguments': '{"path":"."}'},
+                }],
+            }
+        else:
+            message = {"content": "loop reply"}
+        self._json(200, {"choices": [{"message": message}]})
 
     def _json(self, status, obj):
         data = json.dumps(obj).encode()
@@ -71,12 +82,18 @@ def main():
             messages = [{"role": "user", "content": "find Titli"}]
 
             with mock.patch.object(gateway.Supervisor, "ready", return_value=True):
+                gateway.supervisor.backend = 'ornith'
                 reply = handler.jobs_tool_loop_model_call(messages)
-                assert reply == "loop reply", reply
+                assert reply['tool_calls'][0]['id'] == 'call_native', reply
                 assert FakeBackend.payloads[-1]["max_tokens"] == 512, FakeBackend.payloads[-1]
                 assert FakeBackend.payloads[-1]["thinking"] == "off"
                 assert FakeBackend.payloads[-1]["temperature"] == 0
+                assert FakeBackend.payloads[-1]["tool_choice"] == 'auto'
+                assert FakeBackend.payloads[-1]["parallel_tool_calls"] is False
+                names = [item['function']['name'] for item in FakeBackend.payloads[-1]['tools']]
+                assert 'fs_read_pages' in names, names
 
+                gateway.supervisor.backend = 'qwen'
                 reply = handler.jobs_suggest_model_call(messages)
                 assert reply == "loop reply", reply
                 assert FakeBackend.payloads[-1]["max_tokens"] == 128, FakeBackend.payloads[-1]

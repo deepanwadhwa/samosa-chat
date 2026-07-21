@@ -346,6 +346,47 @@ class TestToolLoop(unittest.TestCase):
         self.assertIn('fs_move', prompt)
         self.assertIn('samosa_tool', prompt)
 
+    def test_native_tool_loop_preserves_openai_tool_messages(self):
+        ctx = T.ToolContext(self.root, mode='preview')
+        seen_followup = []
+        replies = [
+            {
+                'content': None,
+                'tool_calls': [{
+                    'id': 'call_123',
+                    'type': 'function',
+                    'function': {'name': 'fs_survey', 'arguments': '{}'},
+                }],
+            },
+            {'content': 'There are 2 files.'},
+        ]
+
+        def model_call(messages):
+            if len(replies) == 1:
+                seen_followup.extend(messages[-2:])
+            return replies.pop(0)
+
+        events = list(T.iter_tool_loop(
+            model_call, [{'role': 'user', 'content': 'inspect'}],
+            T.REGISTRY.subset(['fs_survey']), ctx, add_ability_prompt=False))
+        self.assertEqual([event['type'] for event in events], ['tool_result', 'final'])
+        self.assertEqual(seen_followup[0]['role'], 'assistant')
+        self.assertEqual(seen_followup[0]['tool_calls'][0]['id'], 'call_123')
+        self.assertEqual(seen_followup[1]['role'], 'tool')
+        self.assertEqual(seen_followup[1]['tool_call_id'], 'call_123')
+        self.assertNotIn('SAMOSA_TOOL_RESULT', seen_followup[1]['content'])
+
+    def test_openai_tool_schema_uses_native_argument_types(self):
+        definitions = T.openai_tool_definitions(
+            T.REGISTRY.subset(['fs_list', 'fs_read_pages']))
+        by_name = {item['function']['name']: item['function'] for item in definitions}
+        self.assertEqual(
+            by_name['fs_list']['parameters']['properties']['limit']['type'], 'integer')
+        self.assertEqual(
+            by_name['fs_read_pages']['parameters']['properties']['count']['type'], 'integer')
+        self.assertEqual(
+            by_name['fs_read_pages']['parameters']['required'], ['path', 'start', 'count'])
+
 
 if __name__ == '__main__':
     unittest.main()

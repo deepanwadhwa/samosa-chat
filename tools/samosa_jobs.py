@@ -828,7 +828,8 @@ def _find_incomplete_question(goal):
             "or phrase should I search for?")
 
 
-def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None):
+def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None,
+            native_tools=False):
     """Run a job, yielding event dicts as it goes.
 
     mode:
@@ -906,7 +907,8 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
                         "The goal includes candidates selected from every filename. Inspect the "
                         "best candidate first. Read PDFs in page chunks of at most 5 pages and "
                         "request the next chunk only when needed. Do not read a whole long document "
-                        "or inspect every file. If the candidates are weak, call "
+                        "or inspect every file. Do not repeat an identical tool call after it fails. "
+                        "If the candidates are weak, call "
                         "ask_user with the question; do not end with a question as your final "
                         "answer. If the user's goal asks to move the matching file, confirm "
                         "the match first, then call fs_move with relative src and dst. In review "
@@ -916,7 +918,8 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
              'content': (f"Goal: {goal}\nThe working folder is already selected; use relative "
                          f"paths only.{candidate_note}")},
         ]
-        for loop_event in samosa_tools.iter_tool_loop(call_model, messages, tools, ctx):
+        for loop_event in samosa_tools.iter_tool_loop(
+                call_model, messages, tools, ctx, add_ability_prompt=not native_tools):
             while pending:
                 yield pending.pop(0)
             if loop_event.get('type') == 'tool_result':
@@ -1001,7 +1004,7 @@ def apply_job(job_id, emit_only_new=True):
         yield evt
 
 
-def answer_job(job_id, answer, loop_model_call=None):
+def answer_job(job_id, answer, loop_model_call=None, native_tools=False):
     """Resume a paused find job after an ask_user answer."""
     jdir = job_dir_for(job_id)
     log = fs.EventLog(os.path.join(jdir, 'events.jsonl'))
@@ -1019,9 +1022,16 @@ def answer_job(job_id, answer, loop_model_call=None):
         return
     call = state.get('call') or {'samosa_tool': 'ask_user'}
     convo = list(state.get('convo') or [])
-    convo.append({'role': 'assistant', 'content': _dumps(call)})
-    convo.append({'role': 'user',
-                  'content': f"SAMOSA_TOOL_RESULT ask_user\n{answer}\n\n(Continue the job now.)"})
+    if call.get('_native'):
+        convo.append({'role': 'tool',
+                      'tool_call_id': call.get('_tool_call_id', 'call_samosa'),
+                      'name': 'ask_user',
+                      'content': answer + "\n\n(Continue the job now.)"})
+    else:
+        if not convo or convo[-1].get('role') != 'assistant':
+            convo.append({'role': 'assistant', 'content': _dumps(call)})
+        convo.append({'role': 'user',
+                      'content': f"SAMOSA_TOOL_RESULT ask_user\n{answer}\n\n(Continue the job now.)"})
     pending = []
 
     def emit_tool_event(event_type, **fields):
@@ -1031,7 +1041,8 @@ def answer_job(job_id, answer, loop_model_call=None):
                       stage_mutations=True)
     tools = samosa_tools.REGISTRY.subset(FIND_TOOLS)
     for loop_event in samosa_tools.iter_tool_loop(
-            loop_model_call, convo, tools, ctx, add_ability_prompt=False):
+            loop_model_call, convo, tools, ctx,
+            add_ability_prompt=False):
         while pending:
             yield pending.pop(0)
         if loop_event.get('type') == 'tool_result':

@@ -148,6 +148,33 @@ MAX_TOOL_ROUNDS = 8
 MAX_TOOL_RESULT_PROMPT_CHARS = 8000
 
 
+def openai_tool_definitions(tools):
+    """Return standard Chat Completions function schemas for registered tools."""
+    definitions = []
+    for tool in tools:
+        properties = {}
+        for name, _required, help_text in tool.params:
+            value_type = 'integer' if name in {
+                'count', 'limit', 'max_bytes', 'max_chars', 'page', 'start'
+            } else 'boolean' if name == 'recursive' else 'string'
+            properties[name] = {'type': value_type, 'description': help_text}
+        required = [name for name, is_required, _help in tool.params if is_required]
+        definitions.append({
+            'type': 'function',
+            'function': {
+                'name': tool.name,
+                'description': tool.description,
+                'parameters': {
+                    'type': 'object',
+                    'properties': properties,
+                    'required': required,
+                    'additionalProperties': False,
+                },
+            },
+        })
+    return definitions
+
+
 def ability_prompt(tools, locality=''):
     """Build the model-facing tool menu from a list of Tool objects."""
     if not tools:
@@ -210,6 +237,34 @@ def classify_reply(text):
     return "wait", None
 
 
+def classify_model_reply(reply):
+    """Normalize either native OpenAI tool calls or the legacy text protocol."""
+    if isinstance(reply, dict):
+        content = reply.get('content') or ''
+        tool_calls = reply.get('tool_calls')
+        if isinstance(tool_calls, list) and tool_calls:
+            native = tool_calls[0]
+            function = native.get('function') if isinstance(native, dict) else None
+            if isinstance(function, dict) and isinstance(function.get('name'), str):
+                arguments = function.get('arguments') or '{}'
+                try:
+                    arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+                except (TypeError, ValueError):
+                    arguments = {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                call = {**arguments, 'samosa_tool': function['name'],
+                        '_native': True,
+                        '_tool_call_id': str(native.get('id') or 'call_samosa')}
+                assistant = {'role': 'assistant', 'content': content or None,
+                             'tool_calls': [native]}
+                return 'tool', call, assistant
+        return 'text', None, {'role': 'assistant', 'content': str(content)}
+    text = str(reply or '')
+    kind, call = classify_reply(text)
+    return kind, call, {'role': 'assistant', 'content': text.strip()}
+
+
 def execute_tool(call, ctx, tools):
     """Execute one tool call against the registry, enforcing the boundary.
 
@@ -232,7 +287,9 @@ def execute_tool(call, ctx, tools):
         return f"tool {name} is not allowed in preview mode; it changes files"
     try:
         if ctx is not None:
-            ctx.emit('tool_call', tool=name, args={k: v for k, v in call.items() if k != 'samosa_tool'})
+            ctx.emit('tool_call', tool=name,
+                     args={k: v for k, v in call.items()
+                           if k != 'samosa_tool' and not k.startswith('_')})
         result = tool.run(call, ctx)
         return result if isinstance(result, str) else json.dumps(result)
     except AwaitUser:
@@ -264,11 +321,13 @@ def iter_tool_loop(model_call, messages, tools, ctx, max_rounds=MAX_TOOL_ROUNDS,
 
     last_result = ''
     for round_i in range(max_rounds):
-        text = model_call(convo)
-        kind, call = classify_reply(text or '')
+        reply = model_call(convo)
+        kind, call, assistant_message = classify_model_reply(reply)
         if kind != 'tool':
+            text = assistant_message.get('content') or ''
             yield {'type': 'final', 'text': text, 'convo': convo}
             return
+        convo.append(assistant_message)
         try:
             result = execute_tool(call, ctx, tools)
         except AwaitUser as pause:
@@ -285,9 +344,14 @@ def iter_tool_loop(model_call, messages, tools, ctx, max_rounds=MAX_TOOL_ROUNDS,
         note = ("\n\n(No tool calls remain; answer now.)" if remaining <= 0
                 else f"\n\n({remaining} tool call(s) left.)")
         prompt_result = _tool_result_for_prompt(result)
-        convo.append({'role': 'assistant', 'content': (text or '').strip()})
-        convo.append({'role': 'user',
-                      'content': f"SAMOSA_TOOL_RESULT {call.get('samosa_tool', '')}\n{prompt_result}{note}"})
+        if call.get('_native'):
+            convo.append({'role': 'tool',
+                          'tool_call_id': call['_tool_call_id'],
+                          'name': call.get('samosa_tool', ''),
+                          'content': prompt_result + note})
+        else:
+            convo.append({'role': 'user',
+                          'content': f"SAMOSA_TOOL_RESULT {call.get('samosa_tool', '')}\n{prompt_result}{note}"})
     yield {'type': 'final', 'text': '', 'convo': convo, 'exhausted': True}
 
 
