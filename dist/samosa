@@ -132,7 +132,48 @@ server_running() {
   "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1
 }
 
+port_owner_pid() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1
+  else
+    :
+  fi
+}
+
+process_command() {
+  pid=$1
+  ps -p "$pid" -o command= 2>/dev/null || true
+}
+
+is_samosa_server_pid() {
+  pid=$1
+  command=$(process_command "$pid")
+  case "$command" in
+    *samosa-gateway*|*qwen36b*" --serve "*|*qwen36b*" --serve") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_port_free_or_samosa_running() {
+  if server_running; then
+    say "server already running at http://127.0.0.1:$PORT"
+    return 0
+  fi
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ]; then
+    command=$(process_command "$pid")
+    if is_samosa_server_pid "$pid"; then
+      fail "Samosa process $pid is already listening on port $PORT but is not healthy. Run: samosa serve --stop"
+    fi
+    fail "port $PORT is already in use by process $pid: $command"
+  fi
+  return 1
+}
+
 serve_foreground() {
+  if require_port_free_or_samosa_running; then
+    return 0
+  fi
   mkdir -p "$HOME_DIR/chats"
   if [ -f "$GATEWAY" ]; then
     SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
@@ -146,6 +187,16 @@ serve_foreground() {
 
 start_server() {
   server_running && return 0
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ]; then
+    command=$(process_command "$pid")
+    if is_samosa_server_pid "$pid"; then
+      echo "Samosa server process $pid exists but is not healthy; run: samosa serve --stop" >&2
+    else
+      echo "port $PORT is already in use by process $pid: $command" >&2
+    fi
+    return 1
+  fi
   mkdir -p "$HOME_DIR/chats"
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
@@ -199,6 +250,18 @@ stop_server() {
       kill -TERM "$pid" 2>/dev/null || true
     fi
     rm -f "$PID_FILE"
+  fi
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ] && is_samosa_server_pid "$pid"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
   echo "Samosa server stopped."
 }
@@ -294,6 +357,7 @@ if [ "${1:-}" = "serve" ]; then
   fi
   [ "$#" = 0 ] || usage
   serve_foreground
+  exit 0
 fi
 
 if [ "${1:-}" = "app" ]; then

@@ -15,7 +15,7 @@ EOF
 chmod +x "$TMP/bin/qwen36b"
 
 run() {
-  SAMOSA_HOME="$TMP" sh "$ROOT/dist/samosa" "$@"
+  SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 sh "$ROOT/dist/samosa" "$@"
 }
 
 direct=$(run "hello world")
@@ -45,7 +45,7 @@ printf '%s\n' "$custom_budget" | grep -qx -- '333'
 
 serve=$(run serve)
 printf '%s\n' "$serve" | grep -qx -- '--serve'
-printf '%s\n' "$serve" | grep -qx -- '8642'
+printf '%s\n' "$serve" | grep -qx -- '18642'
 
 cat >"$TMP/fake-curl" <<'EOF'
 #!/bin/sh
@@ -57,8 +57,14 @@ printf 'OPEN %s\n' "$1"
 EOF
 chmod +x "$TMP/fake-curl" "$TMP/fake-open"
 app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" run app)
-printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:8642'
-printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:8642'
+printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:18642'
+printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
+already=$(SAMOSA_CURL="$TMP/fake-curl" run serve)
+printf '%s\n' "$already" | grep -q -- 'server already running at http://127.0.0.1:18642'
+if printf '%s\n' "$already" | grep -q -- 'answer a question'; then
+  echo "serve fell through to usage after reporting an existing server" >&2
+  exit 1
+fi
 stopped=$(SAMOSA_CURL="$TMP/fake-curl" run serve --stop)
 printf '%s\n' "$stopped" | grep -qx -- 'Samosa server stopped.'
 
