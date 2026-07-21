@@ -437,6 +437,25 @@ def _tool_fs_read_page(args, ctx):
     raise ToolError(f"page out of range: {page_number}")
 
 
+def _tool_fs_read_pages(args, ctx):
+    """Read at most five consecutive PDF pages through the native sidecar."""
+    target = ctx.resolve(args.get('path'), must_exist=True)
+    try:
+        start = int(args.get('start', 1))
+        count = int(args.get('count', 5))
+    except (TypeError, ValueError):
+        raise ToolError("start and count must be integers")
+    if start < 1 or count < 1 or count > 5:
+        raise ToolError("start must be 1 or greater and count must be between 1 and 5")
+    result, error = fs.extract_document_pages(target, start, count)
+    if error:
+        raise ToolError(error)
+    header = (f"[pages {result['page_start']}-{result['page_end']} "
+              f"of {result['page_count']}]")
+    return header + "\n" + (result['text'] if result['text'].strip()
+                              else "(no extractable text in this page range)")
+
+
 def _notes_path(ctx):
     job_dir = getattr(ctx, 'job_dir', None)
     if not job_dir:
@@ -540,6 +559,11 @@ def register_fs_tools(registry=REGISTRY):
         'fs_read_page', "read one page from a PDF or document",
         [('path', True, 'file to read'), ('page', True, '1-based page number')],
         _tool_fs_read_page, mutating=False))
+    registry.register(Tool(
+        'fs_read_pages', "read up to 5 consecutive PDF pages; use the next start page to continue",
+        [('path', True, 'PDF file to read'), ('start', True, '1-based first page'),
+         ('count', True, 'number of pages, 1 to 5')],
+        _tool_fs_read_pages, mutating=False))
     registry.register(Tool(
         'notes_append', "save a short note for this job",
         [('text', True, 'note to save')],

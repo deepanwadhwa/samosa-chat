@@ -58,12 +58,12 @@ chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage
 # optional capability, not a hard dependency of this installer: most dev
 # checkouts have not run `make samosa-extract` (it needs PDFIUM_DIR set to an
 # unpacked PDFium artifact). When both the sidecar and its dylib exist —
-# checking dist/ (the checked-in build convention) and repo root (the
-# Makefile's default `-o samosa-extract` output) — stage them together in
+# checking repo root (the Makefile's freshly built output) before dist/ (the
+# fallback prebuilt convention) — stage them together in
 # bin/, where the binary's baked-in @loader_path rpath finds the dylib.
 EXTRACT_BIN=""
 EXTRACT_LIB=""
-for candidate in "$ROOT/dist/samosa-extract" "$ROOT/samosa-extract"; do
+for candidate in "$ROOT/samosa-extract" "$ROOT/dist/samosa-extract"; do
   [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
 done
 for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do

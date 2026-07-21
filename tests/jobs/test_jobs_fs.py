@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
 import jobs_fs as fs
@@ -494,6 +494,47 @@ class TestDocumentExtractionNoBinary(unittest.TestCase):
             result, error = fs.extract_document(os.path.join(FIXTURES, 'hello.pdf'))
         self.assertIsNone(result)
         self.assertIn('not installed', error)
+
+
+class TestBoundedDocumentExtraction(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.pdf = os.path.join(self.tmpdir, 'long.pdf')
+        with open(self.pdf, 'wb') as handle:
+            handle.write(b'%PDF-1.7 synthetic')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir)
+
+    def test_dispatches_only_the_requested_native_page_range(self):
+        process = MagicMock()
+        process.communicate.return_value = (json.dumps({
+            'ok': True,
+            'text_layer': True,
+            'page_count': 500,
+            'page_start': 6,
+            'page_end': 10,
+            'pages': [{'index': page, 'text': f'page {page}'} for page in range(6, 11)],
+            'text': '\n\n'.join(f'page {page}' for page in range(6, 11)),
+        }), '')
+        with patch('jobs_fs.subprocess.Popen', return_value=process) as popen:
+            result, error = fs.extract_document_pages(
+                self.pdf, 6, 5, extractor='/installed/samosa-extract')
+        self.assertIsNone(error)
+        self.assertEqual(result['page_count'], 500)
+        self.assertEqual(result['page_start'], 6)
+        self.assertEqual(result['page_end'], 10)
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], [
+            '/installed/samosa-extract', '--json-pages', self.pdf, '6', '5'])
+
+    def test_rejects_more_than_five_before_starting_sidecar(self):
+        with patch('jobs_fs.subprocess.Popen') as popen:
+            result, error = fs.extract_document_pages(
+                self.pdf, 1, 6, extractor='/installed/samosa-extract')
+        self.assertIsNone(result)
+        self.assertIn('between 1 and 5', error)
+        popen.assert_not_called()
 
 
 class TestDownscale(unittest.TestCase):

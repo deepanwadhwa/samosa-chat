@@ -184,6 +184,7 @@ _EXTRACTOR_ERROR_MESSAGES = {
     'pdf_file_error': "this PDF could not be opened",
     'pdf_load_failed': "this PDF could not be loaded",
     'pdf_page_error': "a page in this PDF could not be read",
+    'page_out_of_range': "the requested page is outside this PDF",
     'page_count_limit': "this PDF has too many pages to read",
     'text_invalid_utf8': "this file is not a recognized document or text file",
     'file_unavailable': "the file could not be opened",
@@ -410,6 +411,59 @@ def extract_document(path, extractor=None, timeout=_EXTRACTOR_TIMEOUT_S):
         'tokens_estimate': payload.get('tokens_estimate'),
     }
     return result, None
+
+
+def extract_document_pages(path, start, count, extractor=None,
+                           timeout=_EXTRACTOR_TIMEOUT_S):
+    """Run the native extractor for one bounded PDF page range (maximum 5)."""
+    try:
+        start = int(start)
+        count = int(count)
+    except (TypeError, ValueError):
+        return None, "page start and count must be integers"
+    if start < 1 or count < 1 or count > 5:
+        return None, "page start must be 1 or greater and count must be between 1 and 5"
+    binary = extractor or find_extractor()
+    if not binary:
+        return None, _EXTRACTOR_ERROR_MESSAGES['extractor_unavailable']
+    if not os.path.isfile(path):
+        return None, _EXTRACTOR_ERROR_MESSAGES['file_unavailable']
+    try:
+        proc = subprocess.Popen(
+            [binary, '--json-pages', path, str(start), str(count)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
+        )
+        try:
+            stdout, _stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.communicate()
+            return None, _EXTRACTOR_ERROR_MESSAGES['extract_timeout']
+    except OSError as error:
+        return None, f"the document reader could not be run: {error}"
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, ValueError):
+        return None, _EXTRACTOR_ERROR_MESSAGES['extract_invalid_response']
+    if not isinstance(payload, dict) or not payload.get('ok'):
+        code = payload.get('error') if isinstance(payload, dict) else ''
+        return None, _EXTRACTOR_ERROR_MESSAGES.get(
+            code, f"could not read these pages ({code or 'unknown error'})")
+    pages = payload.get('pages')
+    if not isinstance(pages, list) or not isinstance(payload.get('text'), str):
+        return None, _EXTRACTOR_ERROR_MESSAGES['extract_invalid_response']
+    return {
+        'text': payload['text'],
+        'pages': pages,
+        'page_count': int(payload.get('page_count', len(pages))),
+        'page_start': int(payload.get('page_start', start)),
+        'page_end': int(payload.get('page_end', start + len(pages) - 1)),
+        'text_layer': bool(payload.get('text_layer', True)),
+    }, None
 
 
 # --- Discovery (local folder only) -----------------------------------------

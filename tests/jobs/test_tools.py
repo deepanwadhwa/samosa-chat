@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
 import samosa_tools as T
@@ -221,6 +222,42 @@ class TestReadDocumentTool(unittest.TestCase):
         ctx = T.ToolContext(self.root, mode='preview')
         with self.assertRaises(T.ToolError):
             T.REGISTRY.get('fs_read_document').run({'path': '../../etc/hosts'}, ctx)
+
+
+class TestBoundedReadPagesTool(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        with open(os.path.join(self.root, 'long.pdf'), 'wb') as handle:
+            handle.write(b'%PDF-1.7 synthetic')
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+
+    def test_returns_only_the_native_page_window(self):
+        extracted = {
+            'text': 'pages six through ten',
+            'pages': [],
+            'page_count': 500,
+            'page_start': 6,
+            'page_end': 10,
+            'text_layer': True,
+        }
+        ctx = T.ToolContext(self.root, mode='preview')
+        with patch('samosa_tools.fs.extract_document_pages',
+                   return_value=(extracted, None)) as extract:
+            out = T.REGISTRY.get('fs_read_pages').run(
+                {'path': 'long.pdf', 'start': 6, 'count': 5}, ctx)
+        self.assertIn('[pages 6-10 of 500]', out)
+        self.assertIn('pages six through ten', out)
+        extract.assert_called_once_with(os.path.realpath(os.path.join(self.root, 'long.pdf')), 6, 5)
+
+    def test_rejects_more_than_five_without_extracting(self):
+        ctx = T.ToolContext(self.root, mode='preview')
+        with patch('samosa_tools.fs.extract_document_pages') as extract:
+            with self.assertRaises(T.ToolError):
+                T.REGISTRY.get('fs_read_pages').run(
+                    {'path': 'long.pdf', 'start': 1, 'count': 6}, ctx)
+        extract.assert_not_called()
 
 
 class TestToolLoop(unittest.TestCase):

@@ -28,7 +28,6 @@ The event stream (each event: {seq, ts, type, ...}):
 """
 
 import os
-import concurrent.futures
 import json
 import plistlib
 import platform
@@ -782,13 +781,10 @@ class _Emitter:
 
 
 FIND_TOOLS = ['fs_survey', 'fs_list', 'fs_metadata', 'fs_detect_type',
-              'fs_read_text', 'fs_read_document', 'fs_read_page',
+              'fs_read_text', 'fs_read_pages',
               'notes_append', 'notes_read', 'ask_user', 'fs_move']
 TOOL_RESULT_EVENT_PREVIEW_CHARS = 2000
 FIND_CANDIDATE_LIMIT = 40
-FIND_SCAN_BATCH_SIZE = 32
-FIND_SCAN_WORKERS = 4
-FIND_TEXT_CHUNK_CHARS = 65536
 
 _FIND_STOP_WORDS = {
     'a', 'all', 'an', 'and', 'can', 'could', 'file', 'files', 'find', 'folder',
@@ -822,127 +818,6 @@ def _find_candidate_names(goal, items, limit=FIND_CANDIDATE_LIMIT):
             ranked.append((-score, name.lower(), name))
     ranked.sort()
     return [name for _score, _key, name in ranked[:limit]]
-
-
-def _find_search_terms(goal):
-    words = [w for w in re.findall(r'[a-z0-9]+', (goal or '').lower())
-             if len(w) > 1 and w not in _FIND_STOP_WORDS]
-    terms = set(words)
-    for word in words:
-        terms.update(_FIND_DOMAIN_TERMS.get(word, ()))
-    return words, terms
-
-
-def _text_term_hits(text, direct_terms, related_terms):
-    lower = text.lower()
-    return {
-        'direct': {term for term in direct_terms if term in lower},
-        'related': {term for term in related_terms if term in lower},
-    }
-
-
-def _read_search_hits(item, direct_terms, related_terms):
-    path = item.get('input_path')
-    media_type = item.get('media_type')
-    if media_type == 'text/plain':
-        try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as handle:
-                direct_hits = set()
-                related_hits = set()
-                has_text = False
-                overlap = max([len(term) for term in direct_terms | related_terms] or [1]) - 1
-                carry = ''
-                while True:
-                    chunk = handle.read(FIND_TEXT_CHUNK_CHARS)
-                    if not chunk:
-                        break
-                    has_text = has_text or bool(chunk.strip())
-                    hits = _text_term_hits(carry + chunk, direct_terms, related_terms)
-                    direct_hits.update(hits['direct'])
-                    related_hits.update(hits['related'])
-                    carry = chunk[-overlap:] if overlap else ''
-                return {'direct': direct_hits, 'related': related_hits,
-                        'has_text': has_text}, None
-        except OSError as error:
-            return {'direct': set(), 'related': set(), 'has_text': False}, str(error)
-    if media_type == 'application/pdf':
-        result, error = fs.extract_document(path)
-        text = (result or {}).get('text', '')
-        hits = _text_term_hits(text, direct_terms, related_terms)
-        hits['has_text'] = bool(text.strip())
-        return hits, error
-    return {'direct': set(), 'related': set(), 'has_text': False}, None
-
-
-def _search_all_files(goal, items, limit=FIND_CANDIDATE_LIMIT,
-                      batch_size=FIND_SCAN_BATCH_SIZE):
-    """Check all files in bounded batches and return ranked evidence."""
-    words, terms = _find_search_terms(goal)
-    direct_terms = set(words)
-    related_terms = terms - direct_terms
-    errors = 0
-    ranked = []
-    batches = 0
-    content_checked = 0
-
-    def score_item(item, hits=None):
-        hits = hits or {'direct': set(), 'related': set()}
-        name = str(item.get('name') or os.path.basename(item.get('input_path') or ''))
-        name_text = re.sub(r'[^a-z0-9]+', ' ', name.lower())
-        direct_name = sum(term in name_text for term in direct_terms)
-        related_name = sum(term in name_text for term in related_terms)
-        direct_text = len(hits['direct'])
-        related_text = len(hits['related'])
-        score = direct_name * 12 + related_name * 4 + direct_text * 5 + related_text
-        if not score:
-            return
-        evidence = []
-        if direct_name or related_name:
-            evidence.append('filename')
-        if direct_text or related_text:
-            evidence.append('document text')
-        ranked.append((-score, name.lower(), {
-            'name': name,
-            'media_type': item.get('media_type'),
-            'evidence': ' and '.join(evidence),
-        }))
-
-    all_items = list(items or [])
-    batch_size = max(1, int(batch_size))
-    for start in range(0, len(all_items), batch_size):
-        batches += 1
-        batch = all_items[start:start + batch_size]
-        searchable = [item for item in batch
-                      if item.get('media_type') in ('text/plain', 'application/pdf')]
-        content_checked += len(searchable)
-        searchable_ids = {id(item) for item in searchable}
-        for item in batch:
-            if id(item) not in searchable_ids:
-                score_item(item)
-        if not searchable:
-            continue
-        with concurrent.futures.ThreadPoolExecutor(
-                max_workers=min(FIND_SCAN_WORKERS, len(searchable))) as pool:
-            future_items = {
-                pool.submit(_read_search_hits, item, direct_terms, related_terms): item
-                for item in searchable
-            }
-            for future in concurrent.futures.as_completed(future_items):
-                item = future_items.pop(future)
-                try:
-                    hits, error = future.result()
-                except Exception:
-                    hits, error = {'direct': set(), 'related': set(), 'has_text': False}, 'reader failed'
-                errors += bool(error or not hits['has_text'])
-                score_item(item, hits)
-    ranked.sort(key=lambda row: (row[0], row[1]))
-    return {
-        'total': len(items or []),
-        'content_checked': content_checked,
-        'content_unreadable': errors,
-        'batches': batches,
-        'matches': [row[2] for row in ranked[:limit]],
-    }
 
 
 def _find_incomplete_question(goal):
@@ -1013,20 +888,14 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
         ctx = ToolContext(folder, mode=ctx_mode, emit=emit_tool_event, job_dir=jdir,
                           stage_mutations=(mode == 'confirm'))
         tools = samosa_tools.REGISTRY.subset(FIND_TOOLS)
-        yield log.append('searching', total=total)
+        yield log.append('indexing', total=total)
         indexed_items, _indexed_skips, index_error = fs.fs_sidecar_list(folder, recursive=False)
-        search = ({'total': 0, 'content_checked': 0, 'content_unreadable': 0, 'matches': []}
-                  if index_error else _search_all_files(goal, indexed_items))
-        yield log.append('search_complete', total=search['total'],
-                         content_checked=search['content_checked'],
-                         content_unreadable=search['content_unreadable'],
-                         matches=len(search['matches']))
-        candidate_lines = [f"{match['name']} ({match['evidence']})"
-                           for match in search['matches']]
-        candidate_note = ("\nBest matches from a complete scan of every filename and all "
-                          "extractable document text:\n- " + "\n- ".join(candidate_lines)) \
-                         if candidate_lines else ("\nThe complete scan found no filename or "
-                                                  "extractable-text matches.")
+        candidate_names = [] if index_error else _find_candidate_names(goal, indexed_items)
+        yield log.append('index_complete', total=len(indexed_items or []),
+                         candidates=len(candidate_names))
+        candidate_note = ("\nLikely candidates from all filenames and metadata:\n- " +
+                          "\n- ".join(candidate_names)) if candidate_names else \
+                         "\nNo filename was a clear match; ask for a distinguishing name or date."
         messages = [
             {'role': 'system',
              'content': "You are running a local find job. Use metadata first, "
@@ -1034,9 +903,10 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
                         "with plain sentences that include the path and why it matches. "
                         "Always pass relative paths to filesystem tools: '.', 'sub/file.pdf', "
                         "or a filename from fs_list. Never pass '/' or an absolute path. "
-                        "The goal includes results from a complete scan of every filename and "
-                        "all extractable document text. Inspect likely candidates directly; "
-                        "do not use fs_list to repeat that scan. If you need clarification, call "
+                        "The goal includes candidates selected from every filename. Inspect the "
+                        "best candidate first. Read PDFs in page chunks of at most 5 pages and "
+                        "request the next chunk only when needed. Do not read a whole long document "
+                        "or inspect every file. If the candidates are weak, call "
                         "ask_user with the question; do not end with a question as your final "
                         "answer. If the user's goal asks to move the matching file, confirm "
                         "the match first, then call fs_move with relative src and dst. In review "

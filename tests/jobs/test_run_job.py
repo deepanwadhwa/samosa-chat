@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
 import samosa_jobs as J
@@ -296,6 +297,35 @@ class JobsLayerTest(unittest.TestCase):
         self.assertIn(target, seen[0])
         self.assertIn(target, by['done'][0]['summary'])
 
+    def test_find_reads_a_long_pdf_only_in_model_requested_page_windows(self):
+        target = 'Titli-medical-history.pdf'
+        with open(os.path.join(self.inbox, target), 'wb') as handle:
+            handle.write(b'%PDF-1.7 synthetic')
+        scripted = [
+            '{"samosa_tool":"fs_read_pages","path":"Titli-medical-history.pdf",'
+            '"start":1,"count":5}',
+            'Found the medical history in Titli-medical-history.pdf on page 4.',
+        ]
+        extracted = {
+            'text': 'Page 4: veterinary examination',
+            'pages': [],
+            'page_count': 500,
+            'page_start': 1,
+            'page_end': 5,
+            'text_layer': True,
+        }
+        with patch('samosa_jobs.fs.extract_document') as whole_document, \
+             patch('samosa_jobs.fs.extract_document_pages',
+                   return_value=(extracted, None)) as extract:
+            _, by = drain(J.run_job(
+                "find my cat's medical records", self.inbox, mode='confirm',
+                loop_model_call=lambda _messages: scripted.pop(0)))
+        whole_document.assert_not_called()
+        extract.assert_called_once_with(
+            os.path.realpath(os.path.join(self.inbox, target)), 1, 5)
+        self.assertEqual(by['tool_call'][0]['tool'], 'fs_read_pages')
+        self.assertIn('page 4', by['done'][0]['summary'])
+
     def test_find_empty_model_response_pauses_instead_of_completing(self):
         scripted = [
             '{"samosa_tool":"fs_list","path":".","limit":"1"}',
@@ -309,37 +339,6 @@ class JobsLayerTest(unittest.TestCase):
         self.assertIn("pet's name", by['await_user'][0]['question'])
         job_id = by['await_user'][0]['job_id']
         self.assertTrue(os.path.exists(os.path.join(self.jobsroot, job_id, 'convo.json')))
-
-    def test_complete_search_checks_every_readable_file(self):
-        items = []
-        for index in range(75):
-            path = os.path.join(self.inbox, f'note-{index:02d}.txt')
-            with open(path, 'w') as handle:
-                handle.write('ordinary archive')
-            items.append({'input_path': path, 'name': os.path.basename(path),
-                          'media_type': 'text/plain'})
-        target = items[-1]['input_path']
-        with open(target, 'w') as handle:
-            handle.write('veterinary vaccination record for a cat')
-
-        result = J._search_all_files("find my cat's medical records", items)
-        self.assertEqual(result['total'], 75)
-        self.assertEqual(result['content_checked'], 75)
-        self.assertEqual(result['content_unreadable'], 0)
-        self.assertEqual(result['batches'], 3)
-        self.assertEqual(result['matches'][0]['name'], os.path.basename(target))
-
-    def test_complete_search_honors_small_batch_bound(self):
-        items = []
-        for index in range(17):
-            path = os.path.join(self.inbox, f'batch-{index:02d}.txt')
-            with open(path, 'w') as handle:
-                handle.write('ordinary archive')
-            items.append({'input_path': path, 'name': os.path.basename(path),
-                          'media_type': 'text/plain'})
-        result = J._search_all_files('find medical records', items, batch_size=5)
-        self.assertEqual(result['content_checked'], 17)
-        self.assertEqual(result['batches'], 4)
 
     def test_find_ask_user_pauses_and_resumes(self):
         def first_model(_messages):

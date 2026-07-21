@@ -23,6 +23,7 @@ Existing example:
 
 ```sh
 samosa-extract --json FILE
+samosa-extract --json-pages FILE.pdf START COUNT
 samosa-extract --json FILE --tokenizer tokenizer.json
 samosa-extract --render-ppm FILE.pdf PAGE OUTPUT.ppm
 ```
@@ -38,6 +39,12 @@ samosa-fs metadata [flags] PATH
 Arguments are passed through `argv`, not stdin shell snippets. Paths are plain
 path arguments after the caller has applied the registry permission model. A
 sidecar still revalidates filesystem invariants itself.
+
+`--json-pages` accepts a one-based start page and a count from 1 through 5.
+The native sidecar rejects larger ranges. Model-driven document inspection must
+prefer this operation so each additional range requires a new model decision;
+whole-document extraction is reserved for bounded batch pipelines that have
+already calculated and enforced an input-token budget.
 
 ## Output
 
