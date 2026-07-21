@@ -69,6 +69,18 @@ def sse_post(port, path, payload):
     return events
 
 
+def json_post(port, path, payload):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    body = json.dumps(payload).encode()
+    conn.request("POST", path, body=body,
+                 headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
+    resp = conn.getresponse()
+    raw = resp.read().decode("utf-8")
+    status = resp.status
+    conn.close()
+    return status, json.loads(raw)
+
+
 def by_type(events):
     out = {}
     for e in events:
@@ -125,7 +137,16 @@ def main():
                                         "mode": "confirm"}))
             assert "report" in revents and "plan" not in revents
 
-            # 5) validation: missing fields -> 400 (not a stream).
+            # 5) suggest-job returns an editable job.json draft without running it.
+            status, suggested = json_post(port, "/v1/jobs/suggest",
+                                          {"goal": "sort these by file type", "folder": inbox})
+            assert status == 200, suggested
+            assert suggested["ok"] is True
+            assert suggested["template"] == "sort-by-type"
+            assert suggested["job"]["input"]["folder"] == inbox
+            assert suggested["job"]["organize"]["rule"] == {"by": "extension"}
+
+            # 6) validation: missing fields -> 400 (not a stream).
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             b = json.dumps({"goal": "", "folder": ""}).encode()
             conn.request("POST", "/v1/jobs/run", body=b,

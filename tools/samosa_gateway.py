@@ -1012,6 +1012,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(400, {"error": {"message": str(error)}})
         elif path == "/v1/jobs/run":
             self.jobs_stream(self.body(), "run")
+        elif path == "/v1/jobs/suggest":
+            self.jobs_suggest(self.body())
         elif path == "/v1/jobs/apply":
             self.jobs_stream(self.body(), "apply")
         elif path == "/v1/jobs/undo":
@@ -1152,6 +1154,10 @@ class Handler(BaseHTTPRequestHandler):
         """
         return self._jobs_completion(messages, max_tokens=512)
 
+    def jobs_suggest_model_call(self, messages: list) -> str | None:
+        """Run one supervised completion for choosing a shipped job template."""
+        return self._jobs_completion(messages, max_tokens=128)
+
     def _jobs_completion(self, messages: list, max_tokens: int) -> str | None:
         status = supervisor.status()
         if not status.get("ready"):
@@ -1182,6 +1188,21 @@ class Handler(BaseHTTPRequestHandler):
                 if supervisor.upstream_response is response:
                     supervisor.upstream_response = None
                 supervisor.generating = False
+
+    def jobs_suggest(self, body: bytes) -> None:
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+        goal = str(data.get("goal", "")).strip()
+        folder = str(data.get("folder", "")).strip()
+        if not goal or not folder:
+            self.json_response(400, {"error": {"message": "goal and folder are required"}})
+            return
+        result = samosa_jobs.suggest_job(goal, folder,
+                                         model_call=self.jobs_suggest_model_call)
+        self.json_response(200 if result.get("ok") else 422, result)
 
     def jobs_stream(self, body: bytes, kind: str) -> None:
         """Stream a job's live events (decode intent, counting, plan, moves)."""

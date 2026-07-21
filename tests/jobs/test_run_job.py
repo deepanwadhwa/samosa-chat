@@ -87,6 +87,32 @@ class JobsLayerTest(unittest.TestCase):
                                  model_call=lambda msgs: "find")
         self.assertEqual(intent['kind'], 'report')
 
+    # --- job suggestion ----------------------------------------------------
+
+    def test_suggest_job_compiles_shipped_template(self):
+        result = J.suggest_job("sort these by file type", self.inbox)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['template'], 'sort-by-type')
+        self.assertEqual(result['source'], 'deterministic')
+        self.assertEqual(result['job']['schema_version'], 1)
+        self.assertEqual(result['job']['input']['folder'], os.path.abspath(self.inbox))
+        self.assertEqual(result['job']['organize']['rule'], {'by': 'extension'})
+
+    def test_suggest_job_uses_model_only_to_select_known_template(self):
+        result = J.suggest_job("handle my errand paperwork", self.inbox,
+                               model_call=lambda msgs: '{"template":"receipts-by-date"}')
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['template'], 'receipts-by-date')
+        self.assertEqual(result['source'], 'model')
+        self.assertIn('output_schema', result['job'])
+        self.assertEqual(result['job']['organize']['rule'], {'by': 'field', 'field': 'date'})
+
+    def test_suggest_job_rejects_unshipped_template(self):
+        result = J.suggest_job("email all the PDFs to Alex", self.inbox,
+                               model_call=lambda msgs: '{"template":"email-pdfs"}')
+        self.assertFalse(result['ok'])
+        self.assertIn('no shipped job shape', result['reason'])
+
     # --- report ------------------------------------------------------------
 
     def test_report_stream(self):

@@ -28,6 +28,7 @@ The event stream (each event: {seq, ts, type, ...}):
 """
 
 import os
+import json
 import re
 import sys
 import time
@@ -66,6 +67,142 @@ _ORGANIZE_RE = re.compile(r'\b(organi[sz]e|sort|arrange|tidy|group)\b')
 _BY_TYPE_RE = re.compile(r'\b(type|types|kind|extension|extensions|format|formats|file type)\b')
 _REPORT_RE = re.compile(r'\b(report|count|how many|summar|inventory|breakdown|what.?s in)\b')
 _FIND_RE = re.compile(r'\b(find|locate|search|look for|where is|which file)\b')
+_RECEIPT_RE = re.compile(r'\b(receipt|receipts|invoice|invoices|merchant|total|purchase)\b')
+_DATE_RE = re.compile(r'\b(date|day|month|year)\b')
+_PHOTO_RE = re.compile(r'\b(photo|photos|picture|pictures|image|images|jpg|jpeg|png)\b')
+_PEOPLE_RE = re.compile(r'\b(people|person|persons|human|humans|two people|2 people)\b')
+
+JOB_TEMPLATES = {
+    'folder-report': {
+        'intent': 'report',
+        'instruction': None,
+        'output_schema': None,
+        'inference': None,
+    },
+    'sort-by-type': {
+        'intent': 'organize',
+        'organize': {
+            'rule': {'by': 'extension'},
+            'dest_root': None,
+            'on_collision': 'skip',
+            'unmatched': 'leave',
+        },
+    },
+    'receipts-by-date': {
+        'intent': 'extract-and-organize',
+        'instruction': "Extract the receipt date (YYYY-MM-DD), merchant name, and total amount.",
+        'output_schema': {
+            'type': 'object',
+            'properties': {
+                'date': {'type': 'string'},
+                'merchant': {'type': 'string'},
+                'total': {'type': 'number'},
+            },
+            'required': ['date', 'merchant', 'total'],
+        },
+        'organize': {
+            'rule': {'by': 'field', 'field': 'date'},
+            'dest_root': None,
+            'on_collision': 'skip',
+            'unmatched': 'leave',
+        },
+    },
+    'photos-two-people': {
+        'intent': 'vision-and-organize',
+        'instruction': "Count the people visible in this image.",
+        'output_schema': {
+            'type': 'object',
+            'properties': {
+                'people': {'type': 'integer', 'minimum': 0, 'maximum': 20},
+            },
+            'required': ['people'],
+        },
+        'organize': {
+            'rule': {'by': 'where', 'field': 'people', 'op': 'eq',
+                     'value': 2, 'dest': 'Two people'},
+            'dest_root': None,
+            'on_collision': 'skip',
+            'unmatched': 'leave',
+        },
+    },
+}
+
+
+def _suggest_template(goal):
+    g = (goal or '').lower()
+    if _REPORT_RE.search(g) and not _ORGANIZE_RE.search(g):
+        return 'folder-report', 'deterministic'
+    if _ORGANIZE_RE.search(g) and _BY_TYPE_RE.search(g):
+        return 'sort-by-type', 'deterministic'
+    if _RECEIPT_RE.search(g) and (_DATE_RE.search(g) or _ORGANIZE_RE.search(g)):
+        return 'receipts-by-date', 'deterministic'
+    if _PHOTO_RE.search(g) and _PEOPLE_RE.search(g):
+        return 'photos-two-people', 'deterministic'
+    return None, 'unsupported'
+
+
+def _suggest_template_with_model(goal, model_call):
+    try:
+        reply = model_call([
+            {'role': 'system',
+             'content': "Select exactly one shipped Samosa job template for the "
+                        "user request. Reply with JSON only: "
+                        "{\"template\":\"folder-report|sort-by-type|receipts-by-date|"
+                        "photos-two-people|unsupported\"}. Never invent a template."},
+            {'role': 'user', 'content': goal},
+        ])
+    except Exception:
+        return None
+    try:
+        data = json.loads((reply or '').strip())
+    except ValueError:
+        return None
+    template = data.get('template') if isinstance(data, dict) else None
+    return template if template in JOB_TEMPLATES else None
+
+
+def _job_from_template(template_id, goal, folder):
+    template = JOB_TEMPLATES[template_id]
+    job = {
+        'job_id': slugify(template_id + '-' + (goal or ''), maxlen=48),
+        'schema_version': 1,
+        'intent': template['intent'],
+        'input': {'folder': folder},
+    }
+    for key in ('instruction', 'output_schema', 'inference', 'organize'):
+        if key in template:
+            job[key] = template[key]
+    if 'instruction' not in job and template_id == 'sort-by-type':
+        job['instruction'] = None
+        job['output_schema'] = None
+        job['inference'] = None
+    return json.loads(json.dumps(job))
+
+
+def suggest_job(goal, folder, model_call=None, out_path=None):
+    """Compile plain English into one of the shipped job templates.
+
+    The model may help select a template, but it cannot invent a workflow. The
+    returned payload always includes either a complete editable job definition
+    or an explicit unsupported reason.
+    """
+    folder = os.path.abspath(folder)
+    template_id, source = _suggest_template(goal)
+    if template_id is None and model_call is not None:
+        template_id = _suggest_template_with_model(goal, model_call)
+        source = 'model' if template_id else 'unsupported'
+    if template_id is None:
+        return {
+            'ok': False,
+            'reason': 'no shipped job shape matches this request yet',
+            'supported_templates': sorted(JOB_TEMPLATES),
+        }
+    job = _job_from_template(template_id, goal, folder)
+    result = {'ok': True, 'template': template_id, 'source': source, 'job': job}
+    if out_path:
+        fs.atomic_write(out_path, json.dumps(job, indent=2, sort_keys=True) + "\n")
+        result['path'] = os.path.abspath(out_path)
+    return result
 
 
 def decode_intent(goal, folder, model_call=None):
@@ -541,11 +678,30 @@ def _print_event(evt):
 def main(argv):
     if not argv or argv[0] in ('-h', '--help'):
         print("Usage:\n"
+              "  samosa jobs suggest-job \"<goal>\" <folder> [--out <job.json>]\n"
               "  samosa jobs run \"<goal>\" <folder> [--execute]\n"
               "  samosa jobs apply <job_id>\n"
               "  samosa jobs undo <job_id>", file=sys.stderr)
         return 2
     cmd = argv[0]
+    if cmd == 'suggest-job':
+        rest = argv[1:]
+        out_path = None
+        if '--out' in rest:
+            idx = rest.index('--out')
+            if idx + 1 >= len(rest):
+                print("Usage: samosa jobs suggest-job \"<goal>\" <folder> [--out <job.json>]",
+                      file=sys.stderr)
+                return 2
+            out_path = rest[idx + 1]
+            rest = rest[:idx] + rest[idx + 2:]
+        if len(rest) < 2:
+            print("Usage: samosa jobs suggest-job \"<goal>\" <folder> [--out <job.json>]",
+                  file=sys.stderr)
+            return 2
+        result = suggest_job(rest[0], rest[1], out_path=out_path)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result.get('ok') else 1
     if cmd == 'run':
         rest = [a for a in argv[1:] if a != '--execute']
         mode = 'execute' if '--execute' in argv[1:] else 'confirm'

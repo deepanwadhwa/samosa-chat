@@ -77,6 +77,12 @@ def main():
                 assert FakeBackend.payloads[-1]["thinking"] == "off"
                 assert FakeBackend.payloads[-1]["temperature"] == 0
 
+                reply = handler.jobs_suggest_model_call(messages)
+                assert reply == "loop reply", reply
+                assert FakeBackend.payloads[-1]["max_tokens"] == 128, FakeBackend.payloads[-1]
+                assert FakeBackend.payloads[-1]["thinking"] == "off"
+                assert FakeBackend.payloads[-1]["temperature"] == 0
+
                 with gateway.supervisor.lock:
                     gateway.supervisor.generating = True
                 try:
