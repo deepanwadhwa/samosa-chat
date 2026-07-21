@@ -244,31 +244,43 @@
     .view-tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-2); }
     .view-tab { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 13px; }
     .view-tab.active { background: var(--panel); color: var(--ink); box-shadow: 0 3px 10px rgba(77, 42, 20, .07); }
-    .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 30px max(22px, calc((100% - 760px) / 2)) 40px; }
-    .jobs-head h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
-    .jobs-head p { margin: 0 0 22px; color: var(--muted); line-height: 1.5; max-width: 60ch; }
-    .job-form { display: grid; gap: 8px; margin-bottom: 22px; }
-    .job-form label { font-size: 12px; font-weight: 600; color: var(--muted); }
-    .job-form input, .job-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 11px 13px; outline: none; font: inherit; resize: vertical; }
-    .job-form input:focus, .job-form textarea:focus { border-color: var(--brand); }
-    .job-form .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
-    .job-tools { display: grid; gap: 10px; margin: 0 0 22px; padding-top: 16px; border-top: 1px solid var(--line); }
-    .job-tools textarea { min-height: 92px; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); font-size: 12.5px; }
+    .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)) 48px; }
+    .jobs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .jobs-head h1 { margin: 0; font-size: 24px; line-height: 1.2; }
+    .jobs-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .job-form { display: grid; gap: 11px; margin-bottom: 18px; }
+    .job-form label { font-size: 12px; font-weight: 650; color: var(--muted); }
+    .job-field { display: grid; gap: 6px; }
+    .job-form input:not([type="checkbox"]), .job-form textarea { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
+    .job-form #jobGoal { min-height: 86px; max-height: 180px; padding: 13px; font-size: 16px; line-height: 1.45; }
+    .job-form input:not([type="checkbox"]):focus, .job-form textarea:focus { border-color: var(--brand); }
+    .job-form .row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+    .job-advanced { margin: 0 0 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .job-advanced > summary { padding: 11px 2px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 650; }
+    .job-tools { display: grid; gap: 12px; margin: 0; padding: 4px 0 16px; }
+    .job-tools textarea { min-height: 92px; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); font-size: 12px; }
     .job-tools .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .job-run { border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 700; padding: 11px 20px; cursor: pointer; box-shadow: var(--shadow); }
+    .job-run { min-height: 40px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; font-weight: 700; padding: 9px 17px; cursor: pointer; }
     .job-run:disabled { opacity: .55; cursor: default; }
-    .job-mode { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
-    .job-activity { display: grid; gap: 2px; }
-    .job-line { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; line-height: 1.4; animation: jobin .18s ease; }
+    .job-mode { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+    .job-mode input[type="checkbox"] { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
+    .job-progress { margin-top: 22px; }
+    .job-progress[hidden], .job-result[hidden] { display: none; }
+    .job-section-label { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .job-activity { display: grid; border-top: 1px solid var(--line); }
+    .job-line { display: flex; align-items: flex-start; gap: 9px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.4; animation: jobin .18s ease; }
     @keyframes jobin { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-    .job-line .dot { flex: none; width: 16px; text-align: center; }
+    .job-line .dot { flex: none; width: 15px; text-align: center; color: var(--muted); }
     .job-line.step-done .dot { color: var(--brand); }
-    .job-line.step-error { border-color: var(--danger); color: var(--danger); }
+    .job-line.step-error { color: var(--danger); }
     .job-line .body { min-width: 0; flex: 1; }
-    .job-line .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
+    .job-line .sub { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-word; }
     .job-line .running { color: var(--brand); font-weight: 600; }
     .job-plan { margin-top: 6px; display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
     .job-plan .more { color: var(--muted); font-style: italic; }
+    .job-result { margin-top: 22px; padding: 15px 16px; border-left: 3px solid var(--brand); background: color-mix(in srgb, var(--brand-soft) 36%, var(--panel)); }
+    .job-result.error { border-left-color: var(--danger); }
+    .job-result-text { font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
     .job-review { margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
     .job-review[hidden] { display: none; }
     .job-review-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
@@ -298,7 +310,12 @@
     .job-bar button { border: 0; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
     .job-bar .apply { background: var(--brand); color: #fff; }
     .job-bar .undo { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
-    .job-empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+    @media (max-width: 640px) {
+      .jobs-view { padding: 20px 14px 36px; }
+      .jobs-head p { display: none; }
+      .job-form .row { justify-content: stretch; }
+      .job-run { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -353,47 +370,60 @@
       <section class="jobs-view" id="jobsView" hidden>
         <div class="jobs-head">
           <h1>Jobs</h1>
-          <p>Describe a task in plain words. Samosa decodes it into a step-by-step plan, shows you what it will do, then does it — every action runs on this Mac.</p>
+          <p>Runs locally on this Mac</p>
         </div>
         <form class="job-form" id="jobForm">
-          <label for="jobFolder">Folder</label>
-          <input id="jobFolder" placeholder="/Users/you/Downloads" spellcheck="false" autocapitalize="off">
-          <label for="jobGoal">What should I do?</label>
-          <textarea id="jobGoal" rows="2" placeholder="Organize this folder by type"></textarea>
+          <div class="job-field">
+            <label for="jobFolder">Folder</label>
+            <input id="jobFolder" placeholder="/Users/you/Downloads" spellcheck="false" autocapitalize="off">
+          </div>
+          <div class="job-field">
+            <label for="jobGoal">Task</label>
+            <textarea id="jobGoal" rows="3" placeholder="Find my cat's medical records"></textarea>
+          </div>
           <div class="row">
-            <span class="job-mode"><input type="checkbox" id="jobAuto"> Apply moves automatically (skip the review step)</span>
-            <button class="job-run" id="jobRun" type="submit">Run ▸</button>
+            <button class="job-run" id="jobRun" type="submit">Run job</button>
           </div>
         </form>
-        <section class="job-form job-tools">
-          <label for="jobDefinition">Job definition JSON</label>
-          <textarea id="jobDefinition" rows="5" spellcheck="false" placeholder='{"input":{"folder":"/Users/you/Receipts","types":["text/plain"]},"instruction":"Extract merchant and total.","output_schema":{"type":"object","required":["merchant","total"],"properties":{"merchant":{"type":"string"},"total":{"type":"number"}}}}'></textarea>
-          <div class="row">
-            <span class="job-mode"><input type="checkbox" id="jobPreviewExpanded"> Preview about 3 samples</span>
-            <span>
-              <button class="job-run" id="jobPreviewDef" type="button">Preview</button>
-              <button class="job-run" id="jobRunDef" type="button">Run job</button>
-            </span>
-          </div>
-          <div class="split">
-            <div>
-              <label for="jobPublicUrls">Public URLs</label>
-              <textarea id="jobPublicUrls" rows="3" spellcheck="false" placeholder="https://example.com/jobs"></textarea>
+        <details class="job-advanced">
+          <summary>Advanced</summary>
+          <section class="job-form job-tools">
+            <span class="job-mode"><input type="checkbox" id="jobAuto"> Apply file moves without review</span>
+            <div class="job-field">
+              <label for="jobDefinition">Job definition</label>
+              <textarea id="jobDefinition" rows="5" spellcheck="false" placeholder="Paste a job definition as JSON"></textarea>
             </div>
-            <div>
-              <label for="jobResumePath">Resume path</label>
-              <input id="jobResumePath" spellcheck="false" autocapitalize="off" placeholder="/Users/you/resume.txt">
+            <div class="row">
+              <span class="job-mode"><input type="checkbox" id="jobPreviewExpanded"> Preview 3 samples</span>
+              <span>
+                <button class="job-run" id="jobPreviewDef" type="button">Preview</button>
+                <button class="job-run" id="jobRunDef" type="button">Run definition</button>
+              </span>
             </div>
-          </div>
-          <div class="row">
-            <span class="job-mode">Public pages are fetched politely and only changed pages feed jobs.</span>
-            <span>
+            <div class="split">
+              <div class="job-field">
+                <label for="jobPublicUrls">Public URLs</label>
+                <textarea id="jobPublicUrls" rows="3" spellcheck="false" placeholder="https://example.com/jobs"></textarea>
+              </div>
+              <div class="job-field">
+                <label for="jobResumePath">Resume</label>
+                <input id="jobResumePath" spellcheck="false" autocapitalize="off" placeholder="/Users/you/resume.txt">
+              </div>
+            </div>
+            <div class="row">
               <button class="job-run" id="jobFetchPublic" type="button">Fetch URLs</button>
               <button class="job-run" id="jobResumeWorkflow" type="button">Pair resume</button>
-            </span>
-          </div>
+            </div>
+          </section>
+        </details>
+        <section class="job-progress" id="jobProgress" hidden>
+          <div class="job-section-label">Progress</div>
+          <div class="job-activity" id="jobActivity"></div>
         </section>
-        <div class="job-activity" id="jobActivity"><div class="job-empty">No job run yet. Try “organize this folder by type”.</div></div>
+        <section class="job-result" id="jobResult" hidden>
+          <div class="job-section-label" id="jobResultLabel">Result</div>
+          <div class="job-result-text" id="jobResultText"></div>
+        </section>
         <section class="job-review" id="jobReview" hidden>
           <div class="job-review-head"><strong id="jobReviewTitle">Review</strong><span id="jobReviewMeta"></span></div>
           <div class="job-review-list" id="jobReviewList"></div>
@@ -735,6 +765,7 @@
       const jobEls = {
         view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
+        progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
         definition: $("jobDefinition"), previewExpanded: $("jobPreviewExpanded"),
         previewDef: $("jobPreviewDef"), runDef: $("jobRunDef"),
         publicUrls: $("jobPublicUrls"), resumePath: $("jobResumePath"),
@@ -761,6 +792,7 @@
       const shortType = mt => ({ "image/jpeg": "images", "image/png": "images", "application/pdf": "PDFs", "text/plain": "text files", "application/octet-stream": "other" }[mt] || mt);
       function addSub(line, text) { const s = document.createElement("div"); s.className = "sub"; s.textContent = text; line.querySelector(".body").appendChild(s); return s; }
       function jobLine(dot, title, cls) {
+        jobEls.progress.hidden = false;
         const line = document.createElement("div");
         line.className = "job-line" + (cls ? " " + cls : "");
         line.innerHTML = '<span class="dot"></span><div class="body"><div class="title"></div></div>';
@@ -768,6 +800,22 @@
         line.querySelector(".title").textContent = title;
         jobEls.activity.appendChild(line); jobEls.activity.scrollTop = jobEls.activity.scrollHeight;
         return line;
+      }
+      function clearJobOutput() {
+        clearReview();
+        jobEls.activity.innerHTML = "";
+        jobEls.progress.hidden = true;
+        jobEls.result.hidden = true;
+        jobEls.result.classList.remove("error");
+        jobEls.resultText.textContent = "";
+        jobEls.bar.hidden = true;
+      }
+      function showJobResult(text, error = false) {
+        jobEls.resultLabel.textContent = error ? "Could not finish" : "Result";
+        jobEls.resultText.textContent = text;
+        jobEls.result.classList.toggle("error", error);
+        jobEls.result.hidden = false;
+        jobEls.result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
       function showBar(text, actions) {
         jobEls.barText.textContent = text; jobEls.barActions.innerHTML = "";
@@ -919,12 +967,12 @@
         switch (evt.type) {
           case "decode_intent":
             ctx.jobId = evt.job_id;
-            jobLine("●", `Decoding intent: “${evt.goal}”`, "step-done"); break;
+            jobLine("●", "Understanding your request", "step-done"); break;
           case "intent":
-            addSub(jobLine("›", evt.kind === "organize" ? "Sort files into type folders" : (evt.kind === "find" ? "Find matching files" : "Read the folder and report")), evt.explain); break;
+            jobLine("›", evt.kind === "organize" ? "Preparing file organization" : (evt.kind === "find" ? "Searching for matching files" : "Reviewing the folder")); break;
           case "counting": {
             const parts = Object.entries(evt.by_type || {}).map(([k, v]) => `${v} ${shortType(k)}`).join(", ");
-            const l = jobLine("▦", `Counting files: ${evt.total} found`); if (parts) addSub(l, parts); break;
+            const l = jobLine("▦", `${evt.total} files checked`, "step-done"); if (parts) addSub(l, parts); break;
           }
           case "plan": {
             const n = evt.moves.length;
@@ -964,13 +1012,18 @@
           }
           case "tool_call": {
             const item = friendlyToolEvent(evt, ctx);
-            jobLine(item.dot, item.title);
+            ctx.lastTool = evt.tool;
+            ctx.lastToolLine = jobLine(item.dot, item.title);
             break;
           }
           case "tool_result": {
             const item = friendlyToolResult(evt);
-            const l = jobLine("✓", item, "step-done");
+            const l = ctx.lastTool === evt.tool && ctx.lastToolLine ? ctx.lastToolLine : jobLine("✓", item, "step-done");
+            l.querySelector(".dot").textContent = "✓";
+            l.querySelector(".title").textContent = item;
+            l.classList.add("step-done");
             if (evt.truncated) addSub(l, "Large result summarized for the next step.");
+            ctx.lastTool = null; ctx.lastToolLine = null;
             break;
           }
           case "notes":
@@ -990,17 +1043,17 @@
           case "done": {
             const summary = (evt.summary || "").trim();
             if (!summary || summary === "Find job completed without a summary.") {
-              jobLine("✗", "This job did not produce an answer. Run it again.", "step-error");
+              showJobResult("This job did not produce an answer. Run it again.", true);
               jobEls.bar.hidden = true;
               break;
             }
-            jobLine("✓", summary, "step-done");
+            showJobResult(summary);
             loadReviewQueue(ctx.jobId || lastJobId, ctx);
             if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
             else jobEls.bar.hidden = true;
             break;
           }
-          case "error": jobLine("✗", evt.message, "step-error"); break;
+          case "error": showJobResult(evt.message, true); break;
         }
       }
 
@@ -1038,7 +1091,7 @@
       async function previewDefinitionJob() {
         if (jobRunning) return;
         const job = parseJobDefinition(); if (!job) return;
-        jobRunning = true; clearReview(); jobEls.activity.innerHTML = ""; jobEls.bar.hidden = true;
+        jobRunning = true; clearJobOutput();
         try {
           const resp = await fetch("/v1/jobs/definition/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, expanded: jobEls.previewExpanded.checked }) });
           const data = await resp.json();
@@ -1055,7 +1108,7 @@
       async function runDefinitionJob() {
         if (jobRunning) return;
         const job = parseJobDefinition(); if (!job) return;
-        jobRunning = true; clearReview(); jobEls.activity.innerHTML = ""; jobEls.bar.hidden = true;
+        jobRunning = true; clearJobOutput();
         const folder = job.input?.folder || jobEls.folder.value.trim();
         try { await streamJob("/v1/jobs/definition/run", { job }, { folder, jobId: job.job_id }); }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, { folder }); }
@@ -1087,11 +1140,11 @@
         if (jobRunning) return;
         const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
         if (!folder || !goal) { jobEls.folder.focus(); return; }
-        jobRunning = true; jobEls.run.disabled = true; jobEls.bar.hidden = true; clearReview(); jobEls.activity.innerHTML = "";
+        jobRunning = true; jobEls.run.disabled = true; jobEls.run.textContent = "Running"; clearJobOutput();
         const ctx = { folder };
         try { await streamJob("/v1/jobs/run", { goal, folder, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
-        finally { jobRunning = false; jobEls.run.disabled = false; }
+        finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Run job"; }
       }
       async function applyJob(jobId, ctx) {
         if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
