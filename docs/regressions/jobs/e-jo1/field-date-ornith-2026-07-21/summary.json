@@ -1,0 +1,33 @@
+{
+  "run_root": "/tmp/samosa-ejo1-field-20260721145922",
+  "inbox": "/tmp/samosa-ejo1-field-20260721145922/inbox",
+  "rule": {
+    "by": "field",
+    "field": "date"
+  },
+  "plan": {
+    "moves": 10,
+    "skips": 0,
+    "seconds": 0.001
+  },
+  "apply": {
+    "applied": 10,
+    "skipped": 0,
+    "seconds": 0.023
+  },
+  "undo": {
+    "reverted": 10,
+    "skipped": 0,
+    "seconds": 0.02
+  },
+  "hash_inventory_ok": {
+    "after_plan": true,
+    "after_apply": true,
+    "after_undo": true
+  },
+  "path_restore_ok": true,
+  "move_precision": 1.0,
+  "move_recall": 1.0,
+  "correct_moves": 10,
+  "expected_moves": 10
+}

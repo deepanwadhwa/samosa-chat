@@ -1,0 +1,72 @@
+[
+  {
+    "input_sha256": "f7b262e3af95232c1c827844ad4c0e97c2a9530569c8fca28e59586c476051e1",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r01_coffee.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-10/r01_coffee.txt",
+    "size": 103,
+    "mtime": 1784561970.897851
+  },
+  {
+    "input_sha256": "37535f951c6c13380706ee565c303f82aaa6adfb46b13118a78f1647d1b46c99",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r02_electronics.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-06-28/r02_electronics.txt",
+    "size": 116,
+    "mtime": 1784561970.8984814
+  },
+  {
+    "input_sha256": "0dabc08152b34e82711847a28d198203e52c27161193648bc66ba5093d15128d",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r03_bakery.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-15/r03_bakery.txt",
+    "size": 69,
+    "mtime": 1784561970.8986135
+  },
+  {
+    "input_sha256": "5ea53b2017a4f356c3a968d51e36a65b5208c85b7e64012aa645d6f51aeae9a8",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r04_grocery.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-02/r04_grocery.txt",
+    "size": 91,
+    "mtime": 1784561970.8987572
+  },
+  {
+    "input_sha256": "3d52ba859857b3b51e7c14297d51bce46f2d8b9f40ab421760409539a90d896a",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r05_bookshop.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-05-19/r05_bookshop.txt",
+    "size": 72,
+    "mtime": 1784561970.8989058
+  },
+  {
+    "input_sha256": "8a8e905edfbdd0ad4387f031b7b63fe7ab98bf70b8d9fd08ec8d2382ea1a803b",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r06_pharmacy.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-04-12/r06_pharmacy.txt",
+    "size": 105,
+    "mtime": 1784561970.8990405
+  },
+  {
+    "input_sha256": "fb29df1de2775df10440bda080265886e6b4506f181c86bfd1c8c20bb5174204",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r07_transit.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-03-08/r07_transit.txt",
+    "size": 71,
+    "mtime": 1784561970.8992388
+  },
+  {
+    "input_sha256": "d36b6e7fc6c7fff8db57e39badb43da6c060aba6fdd17445af161b8c90fdf6ba",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r08_hardware.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-02-14/r08_hardware.txt",
+    "size": 87,
+    "mtime": 1784561970.8994029
+  },
+  {
+    "input_sha256": "28d8f83659a7a3438e27593b0ddbf8217fb2f80188000fa99105782ac59b6c2f",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r09_petstore.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-01-26/r09_petstore.txt",
+    "size": 98,
+    "mtime": 1784561970.8995872
+  },
+  {
+    "input_sha256": "db5d11797aba7defc995090f98e508923fb4101b4a04d71137fd338721975e0b",
+    "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r10_stationery.txt",
+    "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2025-12-03/r10_stationery.txt",
+    "size": 81,
+    "mtime": 1784561970.9002695
+  }
+]

@@ -1,0 +1,68 @@
+{
+  "label": "01_after_plan",
+  "count": 10,
+  "hash_multiset": {
+    "0dabc08152b34e82711847a28d198203e52c27161193648bc66ba5093d15128d": 1,
+    "28d8f83659a7a3438e27593b0ddbf8217fb2f80188000fa99105782ac59b6c2f": 1,
+    "37535f951c6c13380706ee565c303f82aaa6adfb46b13118a78f1647d1b46c99": 1,
+    "3d52ba859857b3b51e7c14297d51bce46f2d8b9f40ab421760409539a90d896a": 1,
+    "5ea53b2017a4f356c3a968d51e36a65b5208c85b7e64012aa645d6f51aeae9a8": 1,
+    "8a8e905edfbdd0ad4387f031b7b63fe7ab98bf70b8d9fd08ec8d2382ea1a803b": 1,
+    "d36b6e7fc6c7fff8db57e39badb43da6c060aba6fdd17445af161b8c90fdf6ba": 1,
+    "db5d11797aba7defc995090f98e508923fb4101b4a04d71137fd338721975e0b": 1,
+    "f7b262e3af95232c1c827844ad4c0e97c2a9530569c8fca28e59586c476051e1": 1,
+    "fb29df1de2775df10440bda080265886e6b4506f181c86bfd1c8c20bb5174204": 1
+  },
+  "paths": [
+    {
+      "path": "r01_coffee.txt",
+      "sha256": "f7b262e3af95232c1c827844ad4c0e97c2a9530569c8fca28e59586c476051e1",
+      "bytes": 103
+    },
+    {
+      "path": "r02_electronics.txt",
+      "sha256": "37535f951c6c13380706ee565c303f82aaa6adfb46b13118a78f1647d1b46c99",
+      "bytes": 116
+    },
+    {
+      "path": "r03_bakery.txt",
+      "sha256": "0dabc08152b34e82711847a28d198203e52c27161193648bc66ba5093d15128d",
+      "bytes": 69
+    },
+    {
+      "path": "r04_grocery.txt",
+      "sha256": "5ea53b2017a4f356c3a968d51e36a65b5208c85b7e64012aa645d6f51aeae9a8",
+      "bytes": 91
+    },
+    {
+      "path": "r05_bookshop.txt",
+      "sha256": "3d52ba859857b3b51e7c14297d51bce46f2d8b9f40ab421760409539a90d896a",
+      "bytes": 72
+    },
+    {
+      "path": "r06_pharmacy.txt",
+      "sha256": "8a8e905edfbdd0ad4387f031b7b63fe7ab98bf70b8d9fd08ec8d2382ea1a803b",
+      "bytes": 105
+    },
+    {
+      "path": "r07_transit.txt",
+      "sha256": "fb29df1de2775df10440bda080265886e6b4506f181c86bfd1c8c20bb5174204",
+      "bytes": 71
+    },
+    {
+      "path": "r08_hardware.txt",
+      "sha256": "d36b6e7fc6c7fff8db57e39badb43da6c060aba6fdd17445af161b8c90fdf6ba",
+      "bytes": 87
+    },
+    {
+      "path": "r09_petstore.txt",
+      "sha256": "28d8f83659a7a3438e27593b0ddbf8217fb2f80188000fa99105782ac59b6c2f",
+      "bytes": 98
+    },
+    {
+      "path": "r10_stationery.txt",
+      "sha256": "db5d11797aba7defc995090f98e508923fb4101b4a04d71137fd338721975e0b",
+      "bytes": 81
+    }
+  ]
+}
