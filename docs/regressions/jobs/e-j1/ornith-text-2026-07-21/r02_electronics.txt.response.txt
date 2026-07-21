@@ -1,0 +1,1 @@
+{"merchant":"TECH MART","date":"2026-06-28","subtotal":37.49,"tax":3.0,"total":40.49,"currency":"USD"}

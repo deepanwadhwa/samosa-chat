@@ -1,0 +1,1 @@
+{"merchant":"PAWS AND CLAWS","date":"2026-01-26","subtotal":21.3,"tax":1.7,"total":23.0,"currency":"USD"}
