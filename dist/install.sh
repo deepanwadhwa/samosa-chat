@@ -110,7 +110,7 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
-    samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
+    samosa|samosa-gateway|samosa_jobs.py|jobs_fs.py|samosa_tools.py) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
     *) return 1 ;;
   esac
 }
@@ -134,6 +134,21 @@ if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&
    manifest_field "engine/samosa_extract.c" 1 >/dev/null 2>&1; then
   INSTALL_FILES="$INSTALL_FILES engine/samosa_extract.c $PDFIUM_ARCHIVE"
   DOCUMENTS_ENABLED=1
+fi
+
+# The multi-backend gateway (Bonsai/Ornith/Qwen behind one app) and the
+# Models->Tools->Jobs layer are likewise optional: only staged when
+# tools/package_hf.py was run with --gateway and the manifest reflects it.
+# Absent, `samosa serve`/`samosa app` fall back to the raw Qwen engine
+# unchanged — this installer behaves exactly as it did before either existed.
+GATEWAY_ENABLED=0
+if manifest_field "samosa-gateway" 1 >/dev/null 2>&1; then
+  INSTALL_FILES="$INSTALL_FILES samosa-gateway samosa_jobs.py jobs_fs.py samosa_tools.py"
+  GATEWAY_ENABLED=1
+  # serve/app run through the gateway (Python) once it's staged, not just the
+  # `jobs` subcommand as before — check before spending any bandwidth.
+  command -v python3 >/dev/null 2>&1 ||
+    fail "this release includes the multi-backend gateway, which needs python3 (not found)"
 fi
 
 required_remaining=0
@@ -183,6 +198,7 @@ cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 # through python3, but keeping both entry points executable makes the staged
 # release directly inspectable/runnable too.
 chmod 755 "$STAGE/bin/samosa"
+[ "$GATEWAY_ENABLED" = 1 ] && chmod 755 "$STAGE/bin/samosa-gateway"
 
 say "Compiling the staged engine..."
 COMPILER=""

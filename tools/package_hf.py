@@ -56,6 +56,18 @@ PDFIUM_ARCHIVES = [
     "pdfium-linux-arm64.tgz",
 ]
 
+# The Python gateway (multi-backend front door) and the Models->Tools->Jobs
+# layer beside it. Opt-in via --gateway, same reasoning as --pdfium-dir: a
+# release manifest without these entries stays valid for install.sh (it only
+# stages what the manifest lists), and whether to include this capability in
+# a given release is a packaging-time decision, not an automatic one.
+GATEWAY_FILES = [
+    "samosa_gateway.py",
+    "samosa_jobs.py",
+    "jobs_fs.py",
+    "samosa_tools.py",
+]
+
 def sha256_file(path: pathlib.Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -85,6 +97,8 @@ def main() -> int:
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     ap.add_argument("--pdfium-dir", type=pathlib.Path,
                     help="directory containing all SHA-reviewed PDFium archives")
+    ap.add_argument("--gateway", action="store_true",
+                    help="include the multi-backend gateway and the Models->Tools->Jobs layer")
     args = ap.parse_args()
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -121,9 +135,21 @@ def main() -> int:
             place(src, out / "pdfium" / name, link=False)
             staged.append(out / "pdfium" / name)
 
-    # NOTE: jobs and the multi-model gateway ship via tools/install_local_dev.sh
-    # today; the HF release path (this script + dist/install.sh) has not yet been
-    # migrated to the Models->Tools->Jobs layout, so it packages neither here.
+    if args.gateway:
+        for name in GATEWAY_FILES:
+            src = ROOT / "tools" / name
+            if not src.exists():
+                print(f"missing gateway file: {src}", file=sys.stderr)
+                return 1
+            # dist/samosa's launcher looks for the extension-less, hyphenated
+            # "samosa-gateway" (matching tools/install_local_dev.sh's dev
+            # staging convention) — install.sh's manifest_field/destination()
+            # lookups below must agree with this name or the whole gateway
+            # capability silently stays disabled.
+            dst_name = "samosa-gateway" if name == "samosa_gateway.py" else name
+            place(src, out / dst_name, link=False)
+            staged.append(out / dst_name)
+
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),

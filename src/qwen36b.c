@@ -4958,15 +4958,30 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
     return result?0:1;
 }
 
+/* tok_encode wants a real (len, out, capacity) triple even when only the
+ * resulting count is needed; mirrors serve_context_preflight's sizing
+ * (worst case one token per byte, plus a small margin). */
+static int samosa_count_tokens(Tok *tokenizer,const char *text){
+    if(!text) return 0;
+    size_t bytes=strlen(text);
+    if(bytes==0 || bytes>(size_t)INT_MAX-32u) return 0;
+    int capacity=(int)bytes+32;
+    int *tokens=malloc((size_t)capacity*sizeof(int));
+    if(!tokens) return 0;
+    int n=tok_encode(tokenizer,text,(int)bytes,tokens,capacity);
+    free(tokens);
+    return n>0?n:0;
+}
+
 static int samosa_serve_prefill(SamosaServeContext *ctx,int fd,jval *root){
     const char *system=NULL; char *user=serve_last_user(ctx,root,&system);
     int prompt_tokens=0;
     if(user){
-        prompt_tokens=tok_encode(&ctx->tokenizer,user,NULL,0);
+        prompt_tokens=samosa_count_tokens(&ctx->tokenizer,user);
         free(user);
     }
     if(system){
-        prompt_tokens+=tok_encode(&ctx->tokenizer,system,NULL,0);
+        prompt_tokens+=samosa_count_tokens(&ctx->tokenizer,system);
     }
     if(prompt_tokens<=0) prompt_tokens=64;
     char res[256];
