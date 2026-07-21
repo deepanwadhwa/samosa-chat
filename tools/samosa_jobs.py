@@ -786,6 +786,9 @@ FIND_TOOLS = ['fs_survey', 'fs_list', 'fs_metadata', 'fs_detect_type',
               'notes_append', 'notes_read', 'ask_user', 'fs_move']
 TOOL_RESULT_EVENT_PREVIEW_CHARS = 2000
 FIND_CANDIDATE_LIMIT = 40
+FIND_SCAN_BATCH_SIZE = 32
+FIND_SCAN_WORKERS = 4
+FIND_TEXT_CHUNK_CHARS = 65536
 
 _FIND_STOP_WORDS = {
     'a', 'all', 'an', 'and', 'can', 'could', 'file', 'files', 'find', 'folder',
@@ -830,39 +833,66 @@ def _find_search_terms(goal):
     return words, terms
 
 
-def _read_search_text(item):
+def _text_term_hits(text, direct_terms, related_terms):
+    lower = text.lower()
+    return {
+        'direct': {term for term in direct_terms if term in lower},
+        'related': {term for term in related_terms if term in lower},
+    }
+
+
+def _read_search_hits(item, direct_terms, related_terms):
     path = item.get('input_path')
     media_type = item.get('media_type')
     if media_type == 'text/plain':
         try:
             with open(path, 'r', encoding='utf-8', errors='replace') as handle:
-                return handle.read(), None
+                direct_hits = set()
+                related_hits = set()
+                has_text = False
+                overlap = max([len(term) for term in direct_terms | related_terms] or [1]) - 1
+                carry = ''
+                while True:
+                    chunk = handle.read(FIND_TEXT_CHUNK_CHARS)
+                    if not chunk:
+                        break
+                    has_text = has_text or bool(chunk.strip())
+                    hits = _text_term_hits(carry + chunk, direct_terms, related_terms)
+                    direct_hits.update(hits['direct'])
+                    related_hits.update(hits['related'])
+                    carry = chunk[-overlap:] if overlap else ''
+                return {'direct': direct_hits, 'related': related_hits,
+                        'has_text': has_text}, None
         except OSError as error:
-            return '', str(error)
+            return {'direct': set(), 'related': set(), 'has_text': False}, str(error)
     if media_type == 'application/pdf':
         result, error = fs.extract_document(path)
-        return ((result or {}).get('text', ''), error)
-    return '', None
+        text = (result or {}).get('text', '')
+        hits = _text_term_hits(text, direct_terms, related_terms)
+        hits['has_text'] = bool(text.strip())
+        return hits, error
+    return {'direct': set(), 'related': set(), 'has_text': False}, None
 
 
-def _search_all_files(goal, items, limit=FIND_CANDIDATE_LIMIT):
-    """Check every filename and all readable text, returning ranked evidence."""
+def _search_all_files(goal, items, limit=FIND_CANDIDATE_LIMIT,
+                      batch_size=FIND_SCAN_BATCH_SIZE):
+    """Check all files in bounded batches and return ranked evidence."""
     words, terms = _find_search_terms(goal)
     direct_terms = set(words)
     related_terms = terms - direct_terms
-    searchable = [item for item in items or []
-                  if item.get('media_type') in ('text/plain', 'application/pdf')]
     errors = 0
     ranked = []
+    batches = 0
+    content_checked = 0
 
-    def score_item(item, content=''):
+    def score_item(item, hits=None):
+        hits = hits or {'direct': set(), 'related': set()}
         name = str(item.get('name') or os.path.basename(item.get('input_path') or ''))
         name_text = re.sub(r'[^a-z0-9]+', ' ', name.lower())
-        content_lower = content.lower()
         direct_name = sum(term in name_text for term in direct_terms)
         related_name = sum(term in name_text for term in related_terms)
-        direct_text = sum(term in content_lower for term in direct_terms)
-        related_text = sum(term in content_lower for term in related_terms)
+        direct_text = len(hits['direct'])
+        related_text = len(hits['related'])
         score = direct_name * 12 + related_name * 4 + direct_text * 5 + related_text
         if not score:
             return
@@ -877,26 +907,40 @@ def _search_all_files(goal, items, limit=FIND_CANDIDATE_LIMIT):
             'evidence': ' and '.join(evidence),
         }))
 
-    searchable_ids = {id(item) for item in searchable}
-    for item in items or []:
-        if id(item) not in searchable_ids:
-            score_item(item)
-    if searchable:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(searchable))) as pool:
-            future_items = {pool.submit(_read_search_text, item): item for item in searchable}
+    all_items = list(items or [])
+    batch_size = max(1, int(batch_size))
+    for start in range(0, len(all_items), batch_size):
+        batches += 1
+        batch = all_items[start:start + batch_size]
+        searchable = [item for item in batch
+                      if item.get('media_type') in ('text/plain', 'application/pdf')]
+        content_checked += len(searchable)
+        searchable_ids = {id(item) for item in searchable}
+        for item in batch:
+            if id(item) not in searchable_ids:
+                score_item(item)
+        if not searchable:
+            continue
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(FIND_SCAN_WORKERS, len(searchable))) as pool:
+            future_items = {
+                pool.submit(_read_search_hits, item, direct_terms, related_terms): item
+                for item in searchable
+            }
             for future in concurrent.futures.as_completed(future_items):
                 item = future_items.pop(future)
                 try:
-                    text, error = future.result()
+                    hits, error = future.result()
                 except Exception:
-                    text, error = '', 'reader failed'
-                errors += bool(error or not text.strip())
-                score_item(item, text)
+                    hits, error = {'direct': set(), 'related': set(), 'has_text': False}, 'reader failed'
+                errors += bool(error or not hits['has_text'])
+                score_item(item, hits)
     ranked.sort(key=lambda row: (row[0], row[1]))
     return {
         'total': len(items or []),
-        'content_checked': len(searchable),
+        'content_checked': content_checked,
         'content_unreadable': errors,
+        'batches': batches,
         'matches': [row[2] for row in ranked[:limit]],
     }
 

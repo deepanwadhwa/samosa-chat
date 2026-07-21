@@ -326,7 +326,20 @@ class JobsLayerTest(unittest.TestCase):
         self.assertEqual(result['total'], 75)
         self.assertEqual(result['content_checked'], 75)
         self.assertEqual(result['content_unreadable'], 0)
+        self.assertEqual(result['batches'], 3)
         self.assertEqual(result['matches'][0]['name'], os.path.basename(target))
+
+    def test_complete_search_honors_small_batch_bound(self):
+        items = []
+        for index in range(17):
+            path = os.path.join(self.inbox, f'batch-{index:02d}.txt')
+            with open(path, 'w') as handle:
+                handle.write('ordinary archive')
+            items.append({'input_path': path, 'name': os.path.basename(path),
+                          'media_type': 'text/plain'})
+        result = J._search_all_files('find medical records', items, batch_size=5)
+        self.assertEqual(result['content_checked'], 17)
+        self.assertEqual(result['batches'], 4)
 
     def test_find_ask_user_pauses_and_resumes(self):
         def first_model(_messages):
