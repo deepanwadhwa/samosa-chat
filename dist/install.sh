@@ -110,7 +110,7 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
-    samosa|samosa-gateway|samosa_jobs.py|jobs_fs.py|samosa_tools.py) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
+    samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
     *) return 1 ;;
   esac
 }
@@ -136,19 +136,15 @@ if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&
   DOCUMENTS_ENABLED=1
 fi
 
-# The multi-backend gateway (Bonsai/Ornith/Qwen behind one app) and the
-# Models->Tools->Jobs layer are likewise optional: only staged when
+# The compiled multi-backend gateway (Bonsai/Ornith/Qwen behind one app) and
+# native Jobs controller are likewise optional: only staged when
 # tools/package_hf.py was run with --gateway and the manifest reflects it.
 # Absent, `samosa serve`/`samosa app` fall back to the raw Qwen engine
 # unchanged — this installer behaves exactly as it did before either existed.
 GATEWAY_ENABLED=0
-if manifest_field "samosa-gateway" 1 >/dev/null 2>&1; then
-  INSTALL_FILES="$INSTALL_FILES samosa-gateway samosa_jobs.py jobs_fs.py samosa_tools.py engine/samosa_fs.c"
+if manifest_field "engine/samosa_gateway.c" 1 >/dev/null 2>&1; then
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c"
   GATEWAY_ENABLED=1
-  # serve/app run through the gateway (Python) once it's staged, not just the
-  # `jobs` subcommand as before — check before spending any bandwidth.
-  command -v python3 >/dev/null 2>&1 ||
-    fail "this release includes the multi-backend gateway, which needs python3 (not found)"
 fi
 
 required_remaining=0
@@ -194,11 +190,8 @@ for relative in $INSTALL_FILES; do
   fi
 done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
-# Downloads do not retain the source file mode.  The Python runner is invoked
-# through python3, but keeping both entry points executable makes the staged
-# release directly inspectable/runnable too.
+# Downloads do not retain source file modes.
 chmod 755 "$STAGE/bin/samosa"
-[ "$GATEWAY_ENABLED" = 1 ] && chmod 755 "$STAGE/bin/samosa-gateway"
 
 say "Compiling the staged engine..."
 COMPILER=""
@@ -256,10 +249,13 @@ if [ "$DOCUMENTS_ENABLED" = 1 ]; then
 fi
 
 if [ "$GATEWAY_ENABLED" = 1 ]; then
+  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
+    fail "staged gateway compilation failed; live release was not changed"
   $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
     "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
     fail "staged filesystem sidecar compilation failed; live release was not changed"
-  chmod +x "$STAGE/bin/samosa-fs"
+  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-fs"
 fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then

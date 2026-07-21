@@ -56,19 +56,13 @@ PDFIUM_ARCHIVES = [
     "pdfium-linux-arm64.tgz",
 ]
 
-# The Python gateway (multi-backend front door) and the Models->Tools->Jobs
-# layer beside it. Opt-in via --gateway, same reasoning as --pdfium-dir: a
+# The compiled gateway and filesystem sidecar. Opt-in via --gateway, same
+# reasoning as --pdfium-dir: a
 # release manifest without these entries stays valid for install.sh (it only
 # stages what the manifest lists), and whether to include this capability in
 # a given release is a packaging-time decision, not an automatic one.
-GATEWAY_FILES = [
-    "samosa_gateway.py",
-    "samosa_jobs.py",
-    "jobs_fs.py",
-    "samosa_tools.py",
-]
-
 GATEWAY_SOURCE_FILES = [
+    "samosa_gateway.c",
     "samosa_fs.c",
 ]
 
@@ -147,20 +141,6 @@ def main() -> int:
                 return 1
             place(src, out / "engine" / name, link=False)
             staged.append(out / "engine" / name)
-        for name in GATEWAY_FILES:
-            src = ROOT / "tools" / name
-            if not src.exists():
-                print(f"missing gateway file: {src}", file=sys.stderr)
-                return 1
-            # dist/samosa's launcher looks for the extension-less, hyphenated
-            # "samosa-gateway" (matching tools/install_local_dev.sh's dev
-            # staging convention) — install.sh's manifest_field/destination()
-            # lookups below must agree with this name or the whole gateway
-            # capability silently stays disabled.
-            dst_name = "samosa-gateway" if name == "samosa_gateway.py" else name
-            place(src, out / dst_name, link=False)
-            staged.append(out / dst_name)
-
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
