@@ -9,9 +9,10 @@ MODEL_ROOT=${SAMOSA_MODELS_DIR:-"$(dirname "$ROOT")/samosa-models"}
 SNAPSHOT=${SAMOSA_SNAPSHOT:-"$MODEL_ROOT/qwen36_group32_i8"}
 TOKENIZER=${SAMOSA_TOKENIZER:-"$MODEL_ROOT/tokenizer_qwen36.json"}
 HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
-ENGINE="$ROOT/qwen36b"
-FS_SIDECAR="$ROOT/samosa-fs"
-GATEWAY="$ROOT/samosa-gateway"
+BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/build"}
+ENGINE="$BUILD_DIR/qwen36b"
+FS_SIDECAR="$BUILD_DIR/samosa-fs"
+GATEWAY="$BUILD_DIR/samosa-gateway"
 
 for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/dist/samosa" \
@@ -56,7 +57,7 @@ chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage
 # bin/, where the binary's baked-in @loader_path rpath finds the dylib.
 EXTRACT_BIN=""
 EXTRACT_LIB=""
-for candidate in "$ROOT/samosa-extract" "$ROOT/dist/samosa-extract"; do
+for candidate in "$BUILD_DIR/samosa-extract" "$ROOT/dist/samosa-extract"; do
   [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
 done
 for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do

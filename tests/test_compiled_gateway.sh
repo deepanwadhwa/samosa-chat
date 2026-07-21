@@ -4,6 +4,8 @@ set -eu
 GATEWAY=${SAMOSA_COMPILED_GATEWAY:-./samosa-gateway}
 BACKEND=${SAMOSA_FAKE_BACKEND:-./test_fake_openai_backend}
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+FS_SIDECAR=${SAMOSA_FS:-"$ROOT/build/samosa-fs"}
+EXTRACTOR=${SAMOSA_EXTRACT:-"$ROOT/build/samosa-extract"}
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-compiled-gateway.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=18977
@@ -30,7 +32,7 @@ printf '%s\n' '#!/bin/sh' \
   'case "$last" in' \
   '  */slow) printf "%s\\n" "$$" >"'$TMP'/slow-sidecar.pid"; exec /bin/sleep 30 ;;' \
   'esac' \
-  'exec "'$ROOT'/samosa-fs" "$@"' >"$TMP/samosa-fs-wrapper"
+  'exec "'$FS_SIDECAR'" "$@"' >"$TMP/samosa-fs-wrapper"
 /bin/chmod +x "$TMP/samosa-fs-wrapper"
 
 # Deliberately expose no external executable through PATH. All utilities used
@@ -51,7 +53,7 @@ SAMOSA_APP_LOGO="$TMP/logo.png" \
 SAMOSA_BONSAI_SERVER="$BACKEND" \
 SAMOSA_ORNITH_MODEL="$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf" \
 SAMOSA_FS="$TMP/samosa-fs-wrapper" \
-SAMOSA_EXTRACT="$ROOT/samosa-extract" \
+SAMOSA_EXTRACT="$EXTRACTOR" \
 "$GATEWAY" >"$TMP/gateway.log" 2>&1 &
 PID=$!
 
