@@ -130,6 +130,50 @@ class TestFsTools(unittest.TestCase):
         self.assertFalse(T.is_valid_reldir(''))
 
 
+class TestReadDocumentTool(unittest.TestCase):
+    """fs_read_document through the full registry/jail stack, real PDF."""
+
+    FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'documents')
+
+    def setUp(self):
+        import jobs_fs
+        if jobs_fs.find_extractor() is None:
+            self.skipTest('samosa-extract sidecar not built in this environment')
+        self.root = tempfile.mkdtemp()
+        shutil.copy(os.path.join(self.FIXTURES, 'hello.pdf'), os.path.join(self.root, 'hello.pdf'))
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+
+    def test_reads_real_pdf_through_the_registry(self):
+        ctx = T.ToolContext(self.root, mode='preview')
+        out = T.REGISTRY.get('fs_read_document').run({'path': 'hello.pdf'}, ctx)
+        self.assertIn('Hello PDFium', out)
+
+    def test_unsupported_format_raises_tool_error_not_garbage(self):
+        with open(os.path.join(self.root, 'fake.docx'), 'wb') as f:
+            f.write(b'PK\x03\x04 not really a docx')
+        ctx = T.ToolContext(self.root, mode='preview')
+        with self.assertRaises(T.ToolError):
+            T.REGISTRY.get('fs_read_document').run({'path': 'fake.docx'}, ctx)
+
+    def test_via_execute_tool_returns_message_not_raise(self):
+        # execute_tool() catches ToolError and returns text, so a bad-format
+        # read never aborts an agent loop or a job.
+        ctx = T.ToolContext(self.root, mode='preview')
+        with open(os.path.join(self.root, 'fake.rtf'), 'wb') as f:
+            f.write(b'{\\rtf1 not really rtf')
+        out = T.execute_tool({'samosa_tool': 'fs_read_document', 'path': 'fake.rtf'},
+                             ctx, T.REGISTRY.subset(['fs_read_document']))
+        self.assertIn('refused', out)
+        self.assertIn('rtf', out)
+
+    def test_jailed_like_other_fs_tools(self):
+        ctx = T.ToolContext(self.root, mode='preview')
+        with self.assertRaises(T.ToolError):
+            T.REGISTRY.get('fs_read_document').run({'path': '../../etc/hosts'}, ctx)
+
+
 class TestToolLoop(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()

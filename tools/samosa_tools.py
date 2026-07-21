@@ -300,6 +300,26 @@ def _tool_fs_read_text(args, ctx):
     return text + ("\n… (truncated)" if len(data) > max_bytes else "")
 
 
+def _tool_fs_read_document(args, ctx):
+    """Read the text of a document (PDF today; plain text too), any length.
+
+    Unlike fs_read_text (plain text only, fast path, no subprocess), this
+    dispatches through the samosa-extract sidecar, so it also handles PDFs —
+    and reports a clear reason instead of garbage for formats not wired up yet
+    (.docx, .html, .rtf).
+    """
+    target = ctx.resolve(args.get('path'), must_exist=True)
+    max_chars = int(args.get('max_chars', 8000))
+    result, error = fs.extract_document(target)
+    if error:
+        raise ToolError(error)
+    text = result['text']
+    pages = result['pages']
+    header = f"[{len(pages)} page(s)] " if len(pages) > 1 else ""
+    body = text[:max_chars] + ("\n… (truncated)" if len(text) > max_chars else "")
+    return header + body if body.strip() else header + "(no extractable text)"
+
+
 def _tool_fs_mkdir(args, ctx):
     """Create a directory (and parents) inside the working folder."""
     if not is_valid_reldir(args.get('path')):
@@ -348,9 +368,13 @@ def register_fs_tools(registry=REGISTRY):
         [('path', True, 'file to inspect')],
         _tool_fs_detect_type, mutating=False))
     registry.register(Tool(
-        'fs_read_text', "read the text of a file",
+        'fs_read_text', "read a plain text file (not PDF/docx — use fs_read_document for those)",
         [('path', True, 'file to read')],
         _tool_fs_read_text, mutating=False))
+    registry.register(Tool(
+        'fs_read_document', "read the text of a PDF (or other document) — extracts the content",
+        [('path', True, 'file to read')],
+        _tool_fs_read_document, mutating=False))
     registry.register(Tool(
         'fs_mkdir', "create a folder",
         [('path', True, 'folder name to create')],

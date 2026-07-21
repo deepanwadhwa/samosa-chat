@@ -326,6 +326,65 @@ class TestEventLog(unittest.TestCase):
         self.assertEqual(reloaded.seq, 2)
 
 
+FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'documents')
+
+
+class TestDocumentExtraction(unittest.TestCase):
+    def setUp(self):
+        if fs.find_extractor() is None:
+            self.skipTest('samosa-extract sidecar not built in this environment')
+
+    def test_extracts_real_pdf_text(self):
+        result, error = fs.extract_document(os.path.join(FIXTURES, 'hello.pdf'))
+        self.assertIsNone(error)
+        self.assertEqual(result['input_type'], 'application/pdf')
+        self.assertEqual(result['text'], 'Hello PDFium')
+        self.assertEqual(len(result['pages']), 1)
+        self.assertEqual(result['pages'][0]['index'], 1)
+
+    def test_extracts_plain_text_too(self):
+        result, error = fs.extract_document(os.path.join(FIXTURES, 'notes.txt'))
+        self.assertIsNone(error)
+        self.assertEqual(result['input_type'], 'text/plain')
+        self.assertIn('Ada Lovelace', result['text'])
+
+    def test_missing_file_is_a_clean_error(self):
+        result, error = fs.extract_document('/no/such/file.pdf')
+        self.assertIsNone(result)
+        self.assertIsInstance(error, str)
+        self.assertNotIn('Traceback', error)
+
+    def test_unsupported_format_reports_clearly_not_garbage(self):
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as f:
+            f.write(b'PK\x03\x04 not really a docx')
+            path = f.name
+        try:
+            result, error = fs.extract_document(path)
+            self.assertIsNone(result)
+            self.assertIn('docx', error)
+            self.assertIn('not supported', error)
+        finally:
+            os.unlink(path)
+
+    def test_explicit_bad_extractor_path_reports_cleanly(self):
+        result, error = fs.extract_document(os.path.join(FIXTURES, 'hello.pdf'),
+                                            extractor='/no/such/binary')
+        self.assertIsNone(result)
+        self.assertIn('document reader could not be run', error)
+
+
+class TestDocumentExtractionNoBinary(unittest.TestCase):
+    """extractor_unavailable path: exercised regardless of whether the real
+    sidecar happens to be built in this environment, by forcing find_extractor
+    to report none found."""
+
+    def test_no_extractor_found_is_a_clean_capability_gap(self):
+        with patch('jobs_fs.find_extractor', return_value=None):
+            result, error = fs.extract_document(os.path.join(FIXTURES, 'hello.pdf'))
+        self.assertIsNone(result)
+        self.assertIn('not installed', error)
+
+
 class TestDownscale(unittest.TestCase):
     def test_small_image_unchanged(self):
         data = b'\xff\xd8\xff' + b'x' * 100

@@ -21,6 +21,8 @@ import json
 import os
 import platform
 import re
+import shutil
+import signal
 import stat as stat_mod
 import subprocess
 import sys
@@ -139,6 +141,127 @@ def is_valid_folder_name(name):
     if name in ('.', '..') or '/' in name or '\\' in name or '\x00' in name:
         return False
     return bool(FOLDER_NAME_WHITELIST_RE.match(name))
+
+
+# --- Document extraction (PDF and beyond, via the samosa-extract sidecar) --
+#
+# "Reading a file" and "knowing its magic bytes" are different problems.
+# detect_media_type() answers the second; this answers the first, for the
+# formats the project has decided to support text extraction for (2026-07-15,
+# docs/TASKS_DOCUMENTS.md — libpdfium via a sandboxed sidecar binary, plain
+# text natively). The sidecar already recognizes .docx/.html/.rtf by content
+# and reports them as not-yet-supported rather than mishandling them, so this
+# wrapper's job is just: find the binary, run it, and turn its JSON into a
+# clear result or a clear reason. No new parser logic belongs here — a new
+# format is a sidecar capability, not a Python one.
+
+_EXTRACTOR_ERROR_MESSAGES = {
+    'docx_extractor_unavailable': "reading .docx files is not supported yet",
+    'html_extractor_unavailable': "reading HTML files is not supported yet",
+    'rtf_unsupported': "reading .rtf files is not supported yet",
+    'pdf_encrypted': "this PDF is password-protected",
+    'pdf_unsupported_security': "this PDF uses an unsupported security scheme",
+    'pdf_malformed': "this PDF file is malformed",
+    'pdf_file_error': "this PDF could not be opened",
+    'pdf_load_failed': "this PDF could not be loaded",
+    'pdf_page_error': "a page in this PDF could not be read",
+    'page_count_limit': "this PDF has too many pages to read",
+    'text_invalid_utf8': "this file is not a recognized document or text file",
+    'file_unavailable': "the file could not be opened",
+    'output_too_large': "the extracted text was too large",
+    'wall_timeout': "reading this file took too long and was stopped",
+    'extractor_unavailable': "the document reader is not installed in this release",
+    'extract_timeout': "reading this file took too long and was stopped",
+    'extract_invalid_response': "the document reader returned an unexpected response",
+}
+
+_EXTRACTOR_TIMEOUT_S = 25
+
+
+def find_extractor():
+    """Locate the samosa-extract sidecar binary, or None if unavailable.
+
+    Checked in order: SAMOSA_EXTRACTOR env override; a sibling of this file
+    (the installed layout, where jobs_fs.py/samosa_tools.py/samosa_jobs.py and
+    samosa-extract are staged together in bin/); the source-tree dev
+    convention of <repo_root>/dist/samosa-extract; then PATH. We never
+    substitute a host PDF utility when the sidecar is absent — a missing
+    extractor is a clear capability gap, not a silent fallback.
+    """
+    configured = os.environ.get('SAMOSA_EXTRACTOR')
+    if configured and os.path.isfile(configured) and os.access(configured, os.X_OK):
+        return configured
+
+    here = Path(__file__).resolve().parent
+    sibling = here / 'samosa-extract'
+    if sibling.is_file() and os.access(str(sibling), os.X_OK):
+        return str(sibling)
+
+    dev_tree = here.parent / 'dist' / 'samosa-extract'
+    if dev_tree.is_file() and os.access(str(dev_tree), os.X_OK):
+        return str(dev_tree)
+
+    return shutil.which('samosa-extract')
+
+
+def extract_document(path, extractor=None, timeout=_EXTRACTOR_TIMEOUT_S):
+    """Extract text from a document (PDF today; plain text natively too).
+
+    Returns (result, error). On success, result is
+    {'input_type', 'text', 'pages': [{'index','text','has_raster_figure'}, …],
+    'text_layer', 'tokens_estimate'}. On failure, result is None and error is a
+    short, human-readable reason (never a raw sidecar error code). The sidecar
+    applies its own CPU/memory sandboxing; this adds a wall-clock watchdog so a
+    stuck child can never strand a job.
+    """
+    binary = extractor or find_extractor()
+    if not binary:
+        return None, _EXTRACTOR_ERROR_MESSAGES['extractor_unavailable']
+    if not os.path.isfile(path):
+        return None, _EXTRACTOR_ERROR_MESSAGES['file_unavailable']
+
+    try:
+        proc = subprocess.Popen(
+            [binary, '--json', path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
+        )
+        try:
+            stdout, _stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.communicate()
+            return None, _EXTRACTOR_ERROR_MESSAGES['extract_timeout']
+    except OSError as e:
+        return None, f"the document reader could not be run: {e}"
+
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, ValueError):
+        return None, _EXTRACTOR_ERROR_MESSAGES['extract_invalid_response']
+    if not isinstance(payload, dict):
+        return None, _EXTRACTOR_ERROR_MESSAGES['extract_invalid_response']
+    if not payload.get('ok'):
+        code = payload.get('error') if isinstance(payload.get('error'), str) else ''
+        return None, _EXTRACTOR_ERROR_MESSAGES.get(code, f"could not read this file ({code or 'unknown error'})")
+
+    text = payload.get('text')
+    pages = payload.get('pages')
+    if not isinstance(text, str) or not isinstance(pages, list):
+        return None, _EXTRACTOR_ERROR_MESSAGES['extract_invalid_response']
+    result = {
+        'input_type': payload.get('input_type', 'application/pdf'),
+        'text': text,
+        'pages': [{'index': p.get('index'), 'text': p.get('text', ''),
+                   'has_raster_figure': bool(p.get('has_raster_figure', False))}
+                  for p in pages if isinstance(p, dict)],
+        'text_layer': bool(payload.get('text_layer', True)),
+        'tokens_estimate': payload.get('tokens_estimate'),
+    }
+    return result, None
 
 
 # --- Discovery (local folder only) -----------------------------------------

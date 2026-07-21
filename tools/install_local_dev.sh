@@ -52,6 +52,30 @@ cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa" "$stage/bin/samosa-gateway"
 
+# Document extraction (PDF text via libpdfium, docs/TASKS_DOCUMENTS.md) is an
+# optional capability, not a hard dependency of this installer: most dev
+# checkouts have not run `make samosa-extract` (it needs PDFIUM_DIR set to an
+# unpacked PDFium artifact). When both the sidecar and its dylib exist —
+# checking dist/ (the checked-in build convention) and repo root (the
+# Makefile's default `-o samosa-extract` output) — stage them together in
+# bin/, where the binary's baked-in @loader_path rpath finds the dylib.
+EXTRACT_BIN=""
+EXTRACT_LIB=""
+for candidate in "$ROOT/dist/samosa-extract" "$ROOT/samosa-extract"; do
+  [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
+done
+for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do
+  [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
+done
+if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
+  cp "$EXTRACT_BIN" "$stage/bin/samosa-extract"
+  cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
+  chmod +x "$stage/bin/samosa-extract"
+  DOCUMENTS_ENABLED=1
+else
+  DOCUMENTS_ENABLED=0
+fi
+
 if [ ! -d "$final" ]; then mv "$stage" "$final"; else rm -rf "$stage"; fi
 rm -f "$HOME_DIR/.current.next"
 ln -s "releases/$release_id" "$HOME_DIR/.current.next"
@@ -69,6 +93,12 @@ trap - EXIT HUP INT TERM
 echo "Installed local development release $release_id"
 echo "Launcher: $HOME_DIR/bin/samosa"
 echo "Model files were hard-linked, not copied."
+if [ "$DOCUMENTS_ENABLED" = "1" ]; then
+  echo "Document reading: on (PDF text via $final/bin/samosa-extract)."
+else
+  echo "Document reading: off — samosa-extract/libpdfium.dylib not found."
+  echo "  Build with: PDFIUM_DIR=<unpacked pdfium> make samosa-extract, then re-run this installer."
+fi
 
 # Unlike dist/install.sh, this script never edits your shell rc — a dev install
 # should not mutate your profile behind your back. So say plainly whether the
