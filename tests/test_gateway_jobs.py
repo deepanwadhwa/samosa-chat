@@ -184,7 +184,27 @@ def main():
             assert saved[0]["status"] == "passed"
             assert saved[0]["extracted"]["merchant"] == "Coffee Shop"
 
-            # 7) validation: missing fields -> 400 (not a stream).
+            # 7) scheduled public URL inputs route returns only new/changed pages.
+            gateway.readable_page = lambda url: {
+                "url": url,
+                "title": "Public Posting",
+                "text": "Role A",
+                "truncated": False,
+            }
+            status, public = json_post(port, "/v1/jobs/public-inputs/update", {
+                "job_id": "public-route",
+                "urls": ["https://example.com/jobs"],
+            })
+            assert status == 200, public
+            assert public["changed"] == 1
+            status, public_again = json_post(port, "/v1/jobs/public-inputs/update", {
+                "job_id": "public-route",
+                "urls": ["https://example.com/jobs"],
+            })
+            assert status == 200, public_again
+            assert public_again["changed"] == 0
+
+            # 8) validation: missing fields -> 400 (not a stream).
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             b = json.dumps({"goal": "", "folder": ""}).encode()
             conn.request("POST", "/v1/jobs/run", body=b,

@@ -176,4 +176,32 @@ with tempfile.TemporaryDirectory() as temp:
     assert fetched.call_args.args[0] == "https://api.example.com/find?q=a+b&k=K"
     assert rows == [{"title": "Hit", "url": "https://example.com/1", "description": "S"}]
 
+    # --- scheduled public URL job inputs ---------------------------------
+
+    jobs_root = root / "jobs"
+    os.environ["SAMOSA_JOBS_DIR"] = str(jobs_root)
+    page_v1 = {
+        "url": "https://example.com/jobs",
+        "title": "Example Jobs",
+        "text": "Role A\nRole B",
+        "truncated": False,
+    }
+    page_v2 = dict(page_v1, text="Role A\nRole C")
+    with mock.patch.object(gateway, "readable_page", return_value=page_v1) as readable:
+        first = gateway.update_job_public_inputs("public-job", ["https://example.com/jobs"])
+        second = gateway.update_job_public_inputs("public-job", ["https://example.com/jobs"])
+    assert readable.call_count == 2
+    assert first["changed"] == 1
+    assert first["changed_items"][0]["status"] == "new"
+    assert second["changed"] == 0
+    assert second["records"][0]["status"] == "unchanged"
+    assert Path(first["changed_items"][0]["text_path"]).is_file()
+    assert (jobs_root / "public-job" / "public" / "state.json").is_file()
+
+    with mock.patch.object(gateway, "readable_page", return_value=page_v2):
+        changed = gateway.update_job_public_inputs("public-job", ["https://example.com/jobs"])
+    assert changed["changed"] == 1
+    assert changed["changed_items"][0]["status"] == "changed"
+    assert "Role C" in Path(changed["changed_items"][0]["text_path"]).read_text()
+
 print("gateway web/search checks: PASS (32 SSRF cases + tool protocol + search providers)")

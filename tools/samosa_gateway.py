@@ -8,6 +8,7 @@ connected to this process while Qwen or Bonsai is stopped and replaced.
 from __future__ import annotations
 
 import http.client
+import hashlib
 from html.parser import HTMLParser
 import ipaddress
 import json
@@ -53,6 +54,7 @@ CONFIG_FILE = HOME / "config.json"
 MAX_WEB_BYTES = 5 * 1024 * 1024
 MAX_WEB_TEXT = 120_000
 MAX_TOOL_ROUNDS = 4
+MAX_PUBLIC_JOB_URLS = 20
 MIN_PUBLIC_FETCH_INTERVAL = float(os.environ.get("SAMOSA_WEB_MIN_INTERVAL", "1.0"))
 PUBLIC_FETCH_USER_AGENT = "SamosaChat/1.0 (+local user-initiated fetch)"
 BLOCKED_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
@@ -557,6 +559,88 @@ def readable_page(url: str) -> dict:
     return {"url": final_url, "title": title[:300], "text": text[:MAX_WEB_TEXT], "truncated": truncated}
 
 
+def update_job_public_inputs(job_id: str, urls: list[str]) -> dict:
+    """Fetch user-provided public URLs and persist only new/changed inputs."""
+    job_id = samosa_jobs.slugify(job_id, maxlen=64)
+    if not job_id:
+        raise ValueError("job_id is required")
+    clean_urls = []
+    seen = set()
+    for url in urls:
+        value = str(url).strip()
+        if not value:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        clean_urls.append(value)
+    if not clean_urls:
+        raise ValueError("at least one public URL is required")
+    if len(clean_urls) > MAX_PUBLIC_JOB_URLS:
+        raise ValueError(f"at most {MAX_PUBLIC_JOB_URLS} URLs are allowed")
+
+    public_dir = Path(samosa_jobs.job_dir_for(job_id)) / "public"
+    items_dir = public_dir / "items"
+    items_dir.mkdir(parents=True, exist_ok=True)
+    state_path = public_dir / "state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = {"pages": {}}
+    if not isinstance(state, dict) or not isinstance(state.get("pages"), dict):
+        state = {"pages": {}}
+
+    changed = []
+    all_records = []
+    for requested_url in clean_urls:
+        page = readable_page(requested_url)
+        digest = hashlib.sha256(
+            (page["title"] + "\0" + page["text"]).encode("utf-8")
+        ).hexdigest()
+        previous = state["pages"].get(page["url"])
+        status = "new" if previous is None else (
+            "changed" if previous.get("sha256") != digest else "unchanged")
+        record = {
+            "url": page["url"],
+            "requested_url": requested_url,
+            "title": page["title"],
+            "sha256": digest,
+            "status": status,
+            "truncated": bool(page.get("truncated")),
+            "text_chars": len(page["text"]),
+        }
+        if status != "unchanged":
+            stem = samosa_jobs.slugify(page["title"] or page["url"], maxlen=32)
+            text_path = items_dir / f"{stem}-{digest[:12]}.txt"
+            meta_path = items_dir / f"{stem}-{digest[:12]}.json"
+            samosa_jobs.fs.atomic_write(text_path, page["text"])
+            record["text_path"] = str(text_path)
+            samosa_jobs.fs.atomic_write(
+                meta_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+            record["meta_path"] = str(meta_path)
+            changed.append(record)
+        state["pages"][page["url"]] = {
+            "sha256": digest,
+            "title": page["title"],
+            "last_seen_at": samosa_jobs.fs.rfc3339_now(),
+        }
+        all_records.append(record)
+
+    samosa_jobs.fs.atomic_write(
+        state_path, json.dumps(state, indent=2, sort_keys=True) + "\n")
+    samosa_jobs.fs.atomic_write(
+        public_dir / "last_fetch.json",
+        json.dumps({
+            "job_id": job_id,
+            "checked": len(all_records),
+            "changed": len(changed),
+            "records": all_records,
+        }, indent=2, sort_keys=True) + "\n")
+    return {"ok": True, "job_id": job_id, "checked": len(all_records),
+            "changed": len(changed), "changed_items": changed,
+            "records": all_records}
+
+
 # Declarative descriptors for well-known search services. A user connects one
 # by naming it in config.json and supplying only its credentials; any other
 # HTTP JSON search API can be described with the same fields under
@@ -1020,6 +1104,8 @@ class Handler(BaseHTTPRequestHandler):
             self.jobs_review(self.body())
         elif path == "/v1/jobs/review/correct":
             self.jobs_review_correct(self.body())
+        elif path == "/v1/jobs/public-inputs/update":
+            self.jobs_public_inputs_update(self.body())
         elif path == "/v1/jobs/apply":
             self.jobs_stream(self.body(), "apply")
         elif path == "/v1/jobs/undo":
@@ -1251,6 +1337,24 @@ class Handler(BaseHTTPRequestHandler):
             mark_done=bool(data.get("mark_done", True)),
         )
         self.json_response(200 if result.get("ok") else 404, result)
+
+    def jobs_public_inputs_update(self, body: bytes) -> None:
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+        job_id = str(data.get("job_id", "")).strip()
+        urls = data.get("urls")
+        if not job_id or not isinstance(urls, list):
+            self.json_response(400, {"error": {"message": "job_id and urls[] are required"}})
+            return
+        try:
+            result = update_job_public_inputs(job_id, urls)
+        except (ValueError, PermissionError, OSError, subprocess.SubprocessError) as error:
+            self.json_response(400, {"error": {"message": str(error)}})
+            return
+        self.json_response(200, result)
 
     def jobs_stream(self, body: bytes, kind: str) -> None:
         """Stream a job's live events (decode intent, counting, plan, moves)."""
