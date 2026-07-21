@@ -1162,6 +1162,10 @@ class Handler(BaseHTTPRequestHandler):
             self.jobs_suggest(self.body())
         elif path == "/v1/jobs/estimate":
             self.jobs_estimate(self.body())
+        elif path == "/v1/jobs/definition/preview":
+            self.jobs_definition_preview(self.body())
+        elif path == "/v1/jobs/definition/run":
+            self.jobs_stream(self.body(), "definition-run")
         elif path == "/v1/jobs/review":
             self.jobs_review(self.body())
         elif path == "/v1/jobs/review/correct":
@@ -1314,6 +1318,10 @@ class Handler(BaseHTTPRequestHandler):
         """Run one supervised completion for choosing a shipped job template."""
         return self._jobs_completion(messages, max_tokens=128)
 
+    def jobs_extraction_model_call(self, messages: list) -> str | None:
+        """Run one non-streaming completion for structured extraction jobs."""
+        return self._jobs_completion(messages, max_tokens=512)
+
     def _jobs_completion(self, messages: list, max_tokens: int) -> str | None:
         status = supervisor.status()
         if not status.get("ready"):
@@ -1327,6 +1335,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = {"messages": messages, "stream": False, "thinking": "off",
                        "temperature": 0, "max_tokens": max_tokens}
+            backend_name = supervisor.backend
+            if backend_name in BACKENDS:
+                payload["model"] = BACKENDS[backend_name]["model"]
             conn, response = self.backend_chat(payload)
             raw = response.read()
             if response.status != 200:
@@ -1371,6 +1382,25 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(400, {"error": {"message": "job is required"}})
             return
         self.json_response(200, samosa_jobs.estimate_job(job))
+
+    def jobs_definition_preview(self, body: bytes) -> None:
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+        job = data.get("job")
+        if not isinstance(job, dict):
+            self.json_response(400, {"error": {"message": "job is required"}})
+            return
+        sample_count = data.get("samples", 1)
+        if bool(data.get("expanded")) and sample_count == 1:
+            sample_count = samosa_jobs.PREVIEW_SAMPLE_TARGET
+        result = samosa_jobs.preview_job(
+            job, file_path=data.get("file"), sample_count=sample_count,
+            model_call=self.jobs_extraction_model_call if (job.get("instruction") or job.get("output_schema")) else None,
+        )
+        self.json_response(200 if result.get("ok") else 400, result)
 
     def jobs_review(self, body: bytes) -> None:
         try:
@@ -1458,6 +1488,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             gen = samosa_jobs.run_job(goal, folder, mode=mode, model_call=self.jobs_model_call,
                                       loop_model_call=self.jobs_tool_loop_model_call)
+        elif kind == "definition-run":
+            job = data.get("job")
+            if not isinstance(job, dict):
+                self.json_response(400, {"error": {"message": "job is required"}})
+                return
+            gen = samosa_jobs.run_job_definition(
+                job,
+                model_call=self.jobs_extraction_model_call if (job.get("instruction") or job.get("output_schema")) else None,
+            )
         elif kind in ("apply", "undo"):
             job_id = str(data.get("job_id", "")).strip()
             if not job_id:

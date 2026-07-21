@@ -338,7 +338,7 @@ def select_preview_items(job, sample_count=1):
             'skipped_count': len(skipped), 'artifact_dir': 'preview'}
 
 
-def preview_job(job, file_path=None, sample_count=1):
+def preview_job(job, file_path=None, sample_count=1, model_call=None):
     """Prepare preview artifacts for one or more selected units.
 
     Preview has its own namespace and deliberately avoids the real run's
@@ -361,17 +361,26 @@ def preview_job(job, file_path=None, sample_count=1):
         source_text, source_error = _preview_source_text(item)
         source_path = os.path.join(items_dir, f'{unit_id}.source.txt')
         fs.atomic_write(source_path, source_text)
-        record = {
-            'unit_id': unit_id,
-            'status': 'preview_ready' if source_error is None else 'review_required',
-            'input_path': item.get('input_path'),
-            'input_sha256': item.get('input_sha256'),
-            'media_type': item.get('media_type'),
-            'source_path': source_path,
-            'source_chars': len(source_text),
-        }
+        if model_call is not None and source_error is None:
+            record = _model_extract_record(job, item, source_text, model_call)
+            record.update({'unit_id': unit_id, 'source_path': source_path,
+                           'source_chars': len(source_text)})
+        else:
+            record = {
+                'unit_id': unit_id,
+                'status': 'preview_ready' if source_error is None else 'review_required',
+                'input_path': item.get('input_path'),
+                'input_sha256': item.get('input_sha256'),
+                'media_type': item.get('media_type'),
+                'source_path': source_path,
+                'source_chars': len(source_text),
+            }
         if source_error is not None:
             record['reasons'] = [source_error]
+            record['status'] = 'review_required'
+        record.setdefault('input_path', item.get('input_path'))
+        record.setdefault('input_sha256', item.get('input_sha256'))
+        record.setdefault('media_type', item.get('media_type'))
         record_path = os.path.join(items_dir, f'{unit_id}.record.json')
         fs.atomic_write(record_path, json.dumps(record, indent=2, sort_keys=True) + '\n')
         records.append(record)
@@ -611,6 +620,27 @@ def run_scheduled_job(schedule):
         return _finish_schedule(schedule, 'failed', reason=str(error))
     log.append('scheduled_job_complete', job_id=job_id, **result)
     return _finish_schedule(schedule, 'complete', result=result)
+
+
+def run_job_definition(job, model_call=None, job_id=None):
+    """Run a frozen-style job definition and yield persisted events."""
+    job_id = job_id or job.get('job_id') or slugify(job.get('name') or 'job-definition')
+    jdir = job_dir_for(job_id)
+    os.makedirs(jdir, exist_ok=True)
+    log = fs.EventLog(os.path.join(jdir, 'events.jsonl'))
+    fs.atomic_write(os.path.join(jdir, 'job.json'),
+                    json.dumps(job, indent=2, sort_keys=True) + '\n')
+    yield log.append('scheduled_job_start', job_id=job_id,
+                     job_path=os.path.join(jdir, 'job.json'))
+    try:
+        before = len(log.events)
+        result = _run_job_definition(job, jdir, log, model_call=model_call)
+    except Exception as error:
+        yield log.append('error', message=str(error))
+        return
+    for event in log.events[before:]:
+        yield event
+    yield log.append('scheduled_job_complete', job_id=job_id, **result)
 
 
 def review_items(job_id):
@@ -1275,12 +1305,22 @@ def _finish_schedule(schedule, status, result=None, reason=None):
     return out
 
 
-def _run_job_definition(job, jdir, log):
+def _run_job_definition(job, jdir, log, model_call=None):
     input_cfg = job.get('input') if isinstance(job.get('input'), dict) else {}
     folder = os.path.abspath(input_cfg.get('folder') or '')
     if not os.path.isdir(folder):
         raise ValueError(f'input folder does not exist: {folder}')
     org = job.get('organize') if isinstance(job.get('organize'), dict) else None
+    has_model_work = bool(job.get('instruction') or job.get('output_schema'))
+    extraction_records = None
+    if has_model_work:
+        extraction_records = _run_model_extractions(job, jdir, log, model_call)
+        if not org:
+            passed = [r for r in extraction_records if r.get('status') == 'passed']
+            review = [r for r in extraction_records if r.get('status') == 'review_required']
+            log.append('done', summary=f"Extracted {len(passed)} item{'' if len(passed) == 1 else 's'}"
+                       + (f", {len(review)} need review." if review else "."))
+            return {'kind': 'extract', 'passed': len(passed), 'review': len(review)}
     if not org:
         items, skipped = fs.discover_files(input_cfg, is_metadata_only=True)
         by_type = {k: v['count'] for k, v in fs.count_by_type(items).items()}
@@ -1290,7 +1330,7 @@ def _run_job_definition(job, jdir, log):
         log.append('done', summary=summary)
         return {'kind': 'report', 'total': len(items), 'skipped': len(skipped)}
 
-    plan, err = fs.build_organize_plan(job, jdir)
+    plan, err = fs.build_organize_plan(job, jdir, results=extraction_records)
     if err:
         raise ValueError(err)
     moves = [m for m in plan if 'dst' in m]
@@ -1310,6 +1350,151 @@ def _run_job_definition(job, jdir, log):
     log.append('applied', applied=applied, skipped=skipped)
     log.append('done', summary=f"Scheduled job moved {applied} file{'' if applied == 1 else 's'}.")
     return {'kind': 'organize', 'planned': len(moves), 'applied': applied, 'skipped': skipped}
+
+
+def _run_model_extractions(job, jdir, log, model_call):
+    if model_call is None:
+        raise ValueError('model is required for extraction jobs')
+    input_cfg = job.get('input') if isinstance(job.get('input'), dict) else {}
+    items, skipped = fs.discover_files(input_cfg, is_metadata_only=False)
+    records = []
+    for i, item in enumerate(sorted(items, key=lambda it: it.get('input_path') or ''), 1):
+        unit_id = _preview_unit_id(i, item)
+        source_text, source_error = _preview_source_text(item)
+        if source_error is None:
+            record = _model_extract_record(job, item, source_text, model_call)
+        else:
+            record = {
+                'status': 'review_required',
+                'reasons': [source_error],
+                'input_path': item.get('input_path'),
+                'input_sha256': item.get('input_sha256'),
+                'media_type': item.get('media_type'),
+                'extracted': {},
+            }
+        record['unit_id'] = unit_id
+        records.append(record)
+        if record.get('status') == 'passed':
+            log.append('item_complete', unit_id=unit_id,
+                       input_path=record.get('input_path'), artifact='output.jsonl',
+                       validation={'status': 'passed'})
+        else:
+            log.append('item_review_required', unit_id=unit_id,
+                       input_path=record.get('input_path'),
+                       reasons=record.get('reasons') or [])
+    out_dir = _job_output_dir(job, jdir)
+    os.makedirs(out_dir, exist_ok=True)
+    fs.atomic_write(os.path.join(out_dir, 'output.jsonl'),
+                    ''.join(json.dumps(r, separators=(',', ':'), sort_keys=True) + '\n'
+                            for r in records))
+    if skipped:
+        log.append('input_skipped', skipped=len(skipped),
+                   reasons=[{'path': p, 'reason': r} for p, r in skipped[:20]])
+    return records
+
+
+def _model_extract_record(job, item, source_text, model_call):
+    schema = job.get('output_schema') if isinstance(job.get('output_schema'), dict) else {}
+    instruction = job.get('instruction') or 'Extract the requested fields.'
+    messages = [
+        {'role': 'system',
+         'content': 'Extract structured data. Reply with JSON only, no markdown.'},
+        {'role': 'user',
+         'content': (f"Instruction:\n{instruction}\n\nSchema:\n"
+                     f"{json.dumps(schema, sort_keys=True)}\n\nSource:\n{source_text}")},
+    ]
+    try:
+        reply = model_call(messages)
+    except Exception as error:
+        reply = ''
+        parse_error = f'model_error:{error}'
+    else:
+        parse_error = None
+    extracted, error = _parse_model_json(reply)
+    if error is not None and parse_error is None:
+        parse_error = error
+    errors = []
+    if parse_error:
+        errors.append(parse_error)
+    errors.extend(_validate_extracted(extracted, schema))
+    status = 'review_required' if errors else 'passed'
+    record = {
+        'status': status,
+        'input_path': item.get('input_path'),
+        'input_sha256': item.get('input_sha256'),
+        'media_type': item.get('media_type'),
+        'extracted': extracted,
+    }
+    for key, value in extracted.items():
+        record[key] = value
+    if errors:
+        record['reasons'] = errors
+    return record
+
+
+def _parse_model_json(reply):
+    text = (reply or '').strip()
+    if text.startswith('```'):
+        text = re.sub(r'^```(?:json)?\s*', '', text)
+        text = re.sub(r'\s*```$', '', text).strip()
+    try:
+        value = json.loads(text)
+    except (TypeError, ValueError):
+        return {}, 'malformed_json'
+    if not isinstance(value, dict):
+        return {}, 'json_not_object'
+    return value, None
+
+
+def _validate_extracted(record, schema):
+    errors = []
+    required = schema.get('required') if isinstance(schema.get('required'), list) else []
+    props = schema.get('properties') if isinstance(schema.get('properties'), dict) else {}
+    for field in required:
+        if field not in record or record.get(field) is None:
+            errors.append(f'missing_required_field:{field}')
+    for field, spec in props.items():
+        if field not in record or record[field] is None or not isinstance(spec, dict):
+            continue
+        allowed = spec.get('type')
+        allowed_types = allowed if isinstance(allowed, list) else [allowed]
+        if allowed_types and not _json_type_matches(record[field], allowed_types):
+            errors.append(f'type:{field}')
+        if isinstance(record[field], str) and spec.get('maxLength') is not None:
+            try:
+                if len(record[field]) > int(spec['maxLength']):
+                    errors.append(f'constraint:{field}:maxLength')
+            except (TypeError, ValueError):
+                pass
+        if 'enum' in spec and isinstance(spec.get('enum'), list) and record[field] not in spec['enum']:
+            errors.append(f'constraint:{field}:enum')
+    return errors
+
+
+def _json_type_matches(value, allowed_types):
+    for allowed in allowed_types:
+        if allowed == 'null' and value is None:
+            return True
+        if allowed == 'string' and isinstance(value, str):
+            return True
+        if allowed == 'number' and isinstance(value, (int, float)) and not isinstance(value, bool):
+            return True
+        if allowed == 'integer' and isinstance(value, int) and not isinstance(value, bool):
+            return True
+        if allowed == 'boolean' and isinstance(value, bool):
+            return True
+        if allowed == 'object' and isinstance(value, dict):
+            return True
+        if allowed == 'array' and isinstance(value, list):
+            return True
+    return False
+
+
+def _job_output_dir(job, jdir):
+    output = job.get('output') if isinstance(job.get('output'), dict) else {}
+    if output.get('dir'):
+        return os.path.abspath(output['dir'])
+    return os.path.join(jdir, 'results')
 
 
 def _parse_hhmm(value):

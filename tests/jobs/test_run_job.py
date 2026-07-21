@@ -216,6 +216,22 @@ class JobsLayerTest(unittest.TestCase):
         self.assertEqual(result['sample_count'], 1)
         self.assertEqual(result['records'][0]['input_path'], target)
 
+    def test_preview_job_can_run_model_extraction(self):
+        output = os.path.join(self.work, 'job-output-model-preview')
+        job = {
+            'input': {'folder': self.inbox, 'recursive': False, 'types': ['text/plain']},
+            'instruction': 'Extract merchant and total.',
+            'output_schema': {
+                'type': 'object',
+                'required': ['merchant', 'total'],
+                'properties': {'merchant': {'type': 'string'}, 'total': {'type': 'number'}},
+            },
+            'output': {'dir': output},
+        }
+        result = J.preview_job(job, model_call=lambda _messages: '{"merchant":"A","total":1.25}')
+        self.assertEqual(result['records'][0]['status'], 'passed')
+        self.assertEqual(result['records'][0]['extracted']['total'], 1.25)
+
     # --- report ------------------------------------------------------------
 
     def test_report_stream(self):
@@ -390,6 +406,72 @@ class JobsLayerTest(unittest.TestCase):
             lines = [l for l in f if l.strip()]
         # seq numbers are monotonic and every streamed event was written
         self.assertEqual(len(lines), len(events))
+
+    def test_run_job_definition_extracts_with_model_and_writes_output(self):
+        output = os.path.join(self.work, 'extract-output')
+        job = {
+            'job_id': 'extract-definition',
+            'input': {'folder': self.inbox, 'recursive': False, 'types': ['text/plain']},
+            'instruction': 'Extract merchant and total.',
+            'output_schema': {
+                'type': 'object',
+                'required': ['merchant', 'total'],
+                'properties': {'merchant': {'type': 'string'}, 'total': {'type': 'number'}},
+            },
+            'output': {'dir': output},
+        }
+        events, by = drain(J.run_job_definition(
+            job, model_call=lambda _messages: '{"merchant":"Coffee Shop","total":8.37}'))
+        self.assertIn('item_complete', by)
+        self.assertNotIn('item_review_required', by)
+        with open(os.path.join(output, 'output.jsonl')) as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        self.assertEqual(records[0]['status'], 'passed')
+        self.assertEqual(records[0]['merchant'], 'Coffee Shop')
+
+    def test_run_job_definition_review_required_on_bad_model_output(self):
+        output = os.path.join(self.work, 'extract-review-output')
+        job = {
+            'job_id': 'extract-review',
+            'input': {'folder': self.inbox, 'recursive': False, 'types': ['text/plain']},
+            'instruction': 'Extract merchant and total.',
+            'output_schema': {
+                'type': 'object',
+                'required': ['merchant', 'total'],
+                'properties': {'merchant': {'type': 'string'}, 'total': {'type': 'number'}},
+            },
+            'output': {'dir': output},
+        }
+        _, by = drain(J.run_job_definition(job, model_call=lambda _messages: '{"merchant":42}'))
+        self.assertIn('item_review_required', by)
+        with open(os.path.join(output, 'output.jsonl')) as f:
+            record = json.loads(next(f))
+        self.assertEqual(record['status'], 'review_required')
+        self.assertIn('missing_required_field:total', record['reasons'])
+        self.assertIn('type:merchant', record['reasons'])
+
+    def test_run_job_definition_extracts_then_organizes_by_field(self):
+        receipt_dir = os.path.join(self.work, 'receipts')
+        os.mkdir(receipt_dir)
+        with open(os.path.join(receipt_dir, 'r.txt'), 'w') as f:
+            f.write('Coffee receipt')
+        output = os.path.join(self.work, 'extract-organize-output')
+        job = {
+            'job_id': 'extract-organize',
+            'input': {'folder': receipt_dir, 'recursive': False, 'types': ['text/plain']},
+            'instruction': 'Extract receipt date.',
+            'output_schema': {
+                'type': 'object',
+                'required': ['date'],
+                'properties': {'date': {'type': 'string'}},
+            },
+            'organize': {'rule': {'by': 'field', 'field': 'date'}},
+            'output': {'dir': output},
+        }
+        _, by = drain(J.run_job_definition(job, model_call=lambda _messages: '{"date":"2026-07-21"}'))
+        self.assertIn('item_complete', by)
+        self.assertEqual(by['applied'][0]['applied'], 1)
+        self.assertTrue(os.path.exists(os.path.join(receipt_dir, 'Organized', '2026-07-21', 'r.txt')))
 
     def make_review_job(self):
         job_id = 'review-job'

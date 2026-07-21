@@ -128,6 +128,7 @@ jobs-test: samosa-fs tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py
 	python3 tests/test_gateway_jobs_answer.py
 	python3 tests/test_gateway_jobs_find.py
 	python3 tests/test_gateway_jobs_find_move.py
+	python3 tests/test_gateway_jobs_definition.py
 	python3 tests/test_gateway_jobs_model_call.py
 	python3 tests/test_gateway_chat_tools.py
 
