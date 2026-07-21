@@ -726,13 +726,13 @@ def decode_intent(goal, folder, model_call=None):
     request into a destructive move on its own.
     """
     g = (goal or '').lower()
-    if _REPORT_RE.search(g) and not _ORGANIZE_RE.search(g):
-        return {'kind': 'report',
-                'explain': "Look through the folder and report what is there, by file type."}
-
     if _FIND_RE.search(g) and not _ORGANIZE_RE.search(g):
         return {'kind': 'find',
                 'explain': "Search through the folder using read-only tools and report the matching path."}
+
+    if _REPORT_RE.search(g) and not _ORGANIZE_RE.search(g):
+        return {'kind': 'report',
+                'explain': "Look through the folder and report what is there, by file type."}
 
     if _ORGANIZE_RE.search(g):
         # "by type"/"by extension" → the deterministic extension rule.

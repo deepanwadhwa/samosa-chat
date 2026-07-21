@@ -66,6 +66,11 @@ class JobsLayerTest(unittest.TestCase):
                                  self.inbox)
         self.assertEqual(intent['kind'], 'find')
 
+    def test_explicit_find_wins_over_count_vocabulary(self):
+        intent = J.decode_intent(
+            "find the matching PDF and tell me its total page count", self.inbox)
+        self.assertEqual(intent['kind'], 'find')
+
     def test_decode_ambiguous_defaults_to_report_without_model(self):
         intent = J.decode_intent("do something with these", self.inbox)
         self.assertEqual(intent['kind'], 'report')
