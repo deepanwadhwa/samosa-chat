@@ -167,6 +167,36 @@ class JobsLayerTest(unittest.TestCase):
         self.assertIn('done', resumed)
         self.assertIn('titli_vaccination_2025.pdf', resumed['done'][0]['summary'])
 
+    def test_find_move_stages_then_apply_and_undo(self):
+        scripted = [
+            '{"samosa_tool":"fs_list","path":"."}',
+            '{"samosa_tool":"fs_read_text","path":"a.txt"}',
+            '{"samosa_tool":"fs_move","src":"a.txt","dst":"Found/a.txt"}',
+        ]
+
+        def loop_model_call(_messages):
+            return scripted.pop(0)
+
+        events, by = drain(J.run_job("find the hello note and move it to Found",
+                                     self.inbox, mode='confirm',
+                                     loop_model_call=loop_model_call))
+        self.assertEqual(by['intent'][0]['kind'], 'find')
+        self.assertIn('plan', by)
+        self.assertIn('await_apply', by)
+        self.assertNotIn('action', by)
+        self.assertTrue(os.path.exists(os.path.join(self.inbox, 'a.txt')))
+        job_id = by['await_apply'][0]['job_id']
+
+        _, applied = drain(J.apply_job(job_id))
+        self.assertEqual(applied['applied'][0]['applied'], 1)
+        self.assertTrue(os.path.exists(os.path.join(self.inbox, 'Found', 'a.txt')))
+        self.assertFalse(os.path.exists(os.path.join(self.inbox, 'a.txt')))
+
+        _, undone = drain(J.undo_job(job_id))
+        self.assertEqual(undone['reverted'][0]['reverted'], 1)
+        self.assertTrue(os.path.exists(os.path.join(self.inbox, 'a.txt')))
+        self.assertFalse(os.path.exists(os.path.join(self.inbox, 'Found', 'a.txt')))
+
     # --- organize: confirm then apply -------------------------------------
 
     def test_confirm_pauses_then_apply_and_undo(self):

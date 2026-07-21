@@ -50,6 +50,14 @@ class AwaitUser(Exception):
         self.question = question
 
 
+class AwaitApply(Exception):
+    """A mutating tool call was staged until the user approves it."""
+
+    def __init__(self, call):
+        super().__init__("await apply")
+        self.call = call
+
+
 class ToolContext:
     """Execution context for a run of tools.
 
@@ -58,12 +66,13 @@ class ToolContext:
     emit  — callback(event_type, **fields) for the live action stream.
     """
 
-    def __init__(self, root, mode='preview', emit=None, job_dir=None):
+    def __init__(self, root, mode='preview', emit=None, job_dir=None, stage_mutations=False):
         self.root = os.path.realpath(root)
         if not os.path.isdir(self.root):
             raise ToolError(f"working directory does not exist: {root}")
         self.mode = mode
         self.job_dir = job_dir
+        self.stage_mutations = stage_mutations
         self._emit = emit or (lambda *a, **k: None)
 
     def emit(self, event_type, **fields):
@@ -206,6 +215,8 @@ def execute_tool(call, ctx, tools):
     if tool.mutating and ctx is None:
         return f"tool {name} is not allowed here; it changes files"
     if tool.mutating and ctx.mode != 'execute':
+        if getattr(ctx, 'stage_mutations', False):
+            raise AwaitApply(call)
         return f"tool {name} is not allowed in preview mode; it changes files"
     try:
         if ctx is not None:
@@ -213,6 +224,8 @@ def execute_tool(call, ctx, tools):
         result = tool.run(call, ctx)
         return result if isinstance(result, str) else json.dumps(result)
     except AwaitUser:
+        raise
+    except AwaitApply:
         raise
     except ToolError as e:
         return f"tool {name} refused: {e}"
@@ -249,6 +262,10 @@ def iter_tool_loop(model_call, messages, tools, ctx, max_rounds=MAX_TOOL_ROUNDS,
         except AwaitUser as pause:
             yield {'type': 'await_user', 'question': pause.question, 'call': call,
                    'convo': convo, 'round_i': round_i}
+            return
+        except AwaitApply as pause:
+            yield {'type': 'await_apply', 'call': pause.call, 'convo': convo,
+                   'round_i': round_i}
             return
         yield {'type': 'tool_result', 'call': call, 'result': result}
         last_result = result

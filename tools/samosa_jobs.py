@@ -134,7 +134,7 @@ class _Emitter:
 
 FIND_TOOLS = ['fs_survey', 'fs_list', 'fs_metadata', 'fs_detect_type',
               'fs_read_text', 'fs_read_document', 'fs_read_page',
-              'notes_append', 'notes_read', 'ask_user']
+              'notes_append', 'notes_read', 'ask_user', 'fs_move']
 
 
 def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None):
@@ -193,11 +193,13 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
         def emit_tool_event(event_type, **fields):
             pending.append(log.append(event_type, **fields))
 
-        ctx = ToolContext(folder, mode='preview', emit=emit_tool_event, job_dir=jdir)
+        ctx_mode = 'execute' if mode == 'execute' else 'preview'
+        ctx = ToolContext(folder, mode=ctx_mode, emit=emit_tool_event, job_dir=jdir,
+                          stage_mutations=(mode == 'confirm'))
         tools = samosa_tools.REGISTRY.subset(FIND_TOOLS)
         messages = [
             {'role': 'system',
-             'content': "You are running a read-only local find job. Use metadata first, "
+             'content': "You are running a local find job. Use metadata first, "
                         "read only likely candidates, save notes when useful, and answer "
                         "with plain sentences that include the path and why it matches. "
                         "Always pass relative paths to filesystem tools: '.', 'sub/file.pdf', "
@@ -205,7 +207,10 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
                         "Start with fs_list on '.' using a limit large enough to see likely "
                         "candidates before reading files. If you need clarification, call "
                         "ask_user with the question; do not end with a question as your final "
-                        "answer. You must not ask to move, delete, rename, email, or upload files."},
+                        "answer. If the user's goal asks to move the matching file, confirm "
+                        "the match first, then call fs_move with relative src and dst. In review "
+                        "mode that move will pause for the user to apply. You must not delete, "
+                        "rename, email, or upload files."},
             {'role': 'user',
              'content': f"Goal: {goal}\nThe working folder is already selected; use relative paths only."},
         ]
@@ -217,6 +222,16 @@ def run_job(goal, folder, mode='confirm', model_call=None, loop_model_call=None)
                              loop_event.get('round_i', 0))
                 yield log.append('await_user', job_id=job_id,
                                  question=loop_event.get('question', ''))
+                return
+            if loop_event.get('type') == 'await_apply':
+                moves, err = _stage_tool_move(jdir, folder, loop_event.get('call') or {})
+                if err:
+                    yield log.append('error', message=err)
+                    return
+                yield log.append('plan',
+                                 moves=[{'src': m['src'], 'dst': m['dst']} for m in moves],
+                                 skips=[], dest_root=os.path.dirname(moves[0]['dst']))
+                yield log.append('await_apply', job_id=job_id, moves=len(moves))
                 return
             if loop_event.get('type') == 'final':
                 final_text = (loop_event.get('text') or '').strip()
@@ -299,7 +314,8 @@ def answer_job(job_id, answer, loop_model_call=None):
     def emit_tool_event(event_type, **fields):
         pending.append(log.append(event_type, **fields))
 
-    ctx = ToolContext(folder, mode='preview', emit=emit_tool_event, job_dir=jdir)
+    ctx = ToolContext(folder, mode='preview', emit=emit_tool_event, job_dir=jdir,
+                      stage_mutations=True)
     tools = samosa_tools.REGISTRY.subset(FIND_TOOLS)
     for loop_event in samosa_tools.iter_tool_loop(
             loop_model_call, convo, tools, ctx, add_ability_prompt=False):
@@ -310,6 +326,16 @@ def answer_job(job_id, answer, loop_model_call=None):
                          loop_event.get('round_i', 0))
             yield log.append('await_user', job_id=job_id,
                              question=loop_event.get('question', ''))
+            return
+        if loop_event.get('type') == 'await_apply':
+            moves, err = _stage_tool_move(jdir, folder, loop_event.get('call') or {})
+            if err:
+                yield log.append('error', message=err)
+                return
+            yield log.append('plan',
+                             moves=[{'src': m['src'], 'dst': m['dst']} for m in moves],
+                             skips=[], dest_root=os.path.dirname(moves[0]['dst']))
+            yield log.append('await_apply', job_id=job_id, moves=len(moves))
             return
         if loop_event.get('type') == 'final':
             final_text = (loop_event.get('text') or '').strip()
@@ -359,6 +385,26 @@ def undo_job(job_id):
 
 
 # --- Internals -------------------------------------------------------------
+
+def _stage_tool_move(jdir, folder, call):
+    if call.get('samosa_tool') != 'fs_move':
+        return None, f"cannot stage unsupported mutating tool {call.get('samosa_tool')!r}"
+    try:
+        ctx = ToolContext(folder, mode='preview')
+        src = ctx.resolve(call.get('src'), must_exist=True)
+        dst = ctx.resolve(call.get('dst'))
+    except samosa_tools.ToolError as e:
+        return None, f"move refused: {e}"
+    try:
+        st = os.stat(src)
+    except OSError as e:
+        return None, f"move refused: cannot stat source: {e}"
+    if not fs.stat_is_regular(st):
+        return None, "move refused: source is not a regular file"
+    move = {'src': src, 'dst': dst, 'size': st.st_size, 'mtime': st.st_mtime}
+    _write_plan(jdir, [move])
+    return [move], None
+
 
 def _apply(jdir, log, moves):
     applied = 0

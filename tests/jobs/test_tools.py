@@ -73,6 +73,20 @@ class TestModeGating(unittest.TestCase):
         self.assertIn('not allowed in preview', out)
         self.assertFalse(os.path.exists(os.path.join(self.root, 'NewDir')))
 
+    def test_mutating_tool_can_be_staged_by_opt_in_loop(self):
+        ctx = T.ToolContext(self.root, mode='preview', stage_mutations=True)
+        tools = T.REGISTRY.subset(['fs_move'])
+
+        def model_call(_messages):
+            return '{"samosa_tool":"fs_move","src":"a.txt","dst":"Keep/a.txt"}'
+
+        events = list(T.iter_tool_loop(model_call, [{'role': 'user', 'content': 'move a'}],
+                                       tools, ctx))
+        self.assertEqual(events[0]['type'], 'await_apply')
+        self.assertEqual(events[0]['call']['samosa_tool'], 'fs_move')
+        self.assertTrue(os.path.exists(os.path.join(self.root, 'a.txt')))
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'Keep', 'a.txt')))
+
     def test_mutating_tool_runs_in_execute(self):
         ctx = T.ToolContext(self.root, mode='execute')
         tools = T.REGISTRY.subset(['fs_mkdir'])
