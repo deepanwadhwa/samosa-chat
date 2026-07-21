@@ -33,6 +33,7 @@ typedef struct {
     int public_port;
     int backend_port;
     char home[PATH_MAX];
+    char jobs_root[PATH_MAX];
     char backend[16];
     char app_html[PATH_MAX];
     char app_logo[PATH_MAX];
@@ -209,6 +210,85 @@ static int text_json_string(TextBuffer *buffer, const char *value) {
     }
     int ok = text_add_n(buffer, escaped, used) && text_add(buffer, "\"");
     free(escaped); return ok;
+}
+
+static int text_json_value(TextBuffer *out, jval *value) {
+    if (!value) return text_add(out, "null");
+    char number[64];
+    switch (value->t) {
+        case J_NULL: return text_add(out, "null");
+        case J_BOOL: return text_add(out, value->boolean ? "true" : "false");
+        case J_NUM:
+            snprintf(number, sizeof(number), "%.17g", value->num);
+            return text_add(out, number);
+        case J_STR: return text_json_string(out, value->str);
+        case J_ARR:
+            if (!text_add(out, "[")) return 0;
+            for (int i = 0; i < value->len; ++i)
+                if ((i && !text_add(out, ",")) || !text_json_value(out, value->kids[i])) return 0;
+            return text_add(out, "]");
+        case J_OBJ:
+            if (!text_add(out, "{")) return 0;
+            for (int i = 0; i < value->len; ++i)
+                if ((i && !text_add(out, ",")) || !text_json_string(out, value->keys[i]) ||
+                    !text_add(out, ":") || !text_json_value(out, value->kids[i])) return 0;
+            return text_add(out, "}");
+    }
+    return 0;
+}
+
+static char *read_file_limit(const char *path, size_t limit) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return NULL;
+    struct stat st;
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size < 0 || (size_t)st.st_size > limit) {
+        close(fd); return NULL;
+    }
+    char *data = malloc((size_t)st.st_size + 1);
+    if (!data) { close(fd); return NULL; }
+    size_t used = 0, size = (size_t)st.st_size;
+    while (used < size) {
+        ssize_t n = read(fd, data + used, size - used);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { free(data); close(fd); return NULL; }
+        used += (size_t)n;
+    }
+    close(fd); data[size] = 0; return data;
+}
+
+static int job_state_path(Gateway *g, const char *job_id, const char *name,
+                          char out[PATH_MAX], int create) {
+    if (!job_id || !*job_id) return 0;
+    for (const char *p = job_id; *p; ++p)
+        if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+               (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' )) return 0;
+    char directory[PATH_MAX];
+    if (!path_join(directory, sizeof(directory), g->jobs_root, job_id) ||
+        (create && !mkdirs(directory)) || !path_join(out, PATH_MAX, directory, name)) return 0;
+    return 1;
+}
+
+static int save_job_state(Gateway *g, const char *job_id, const char *goal,
+                          const char *folder) {
+    char path[PATH_MAX]; TextBuffer json = {0};
+    if (!job_state_path(g, job_id, "job.json", path, 1) ||
+        !text_add(&json, "{\"job_id\":") || !text_json_string(&json, job_id) ||
+        !text_add(&json, ",\"goal\":") || !text_json_string(&json, goal) ||
+        !text_add(&json, ",\"folder\":") || !text_json_string(&json, folder) ||
+        !text_add(&json, "}\n")) { free(json.data); return 0; }
+    int ok = write_small_file(path, json.data); free(json.data); return ok;
+}
+
+static int load_job_state(Gateway *g, const char *job_id, char **goal, char **folder) {
+    char path[PATH_MAX], *raw = NULL, *arena = NULL; jval *root = NULL;
+    if (!job_state_path(g, job_id, "job.json", path, 0) || !(raw = read_file_limit(path, 65536)) ||
+        !(root = json_parse(raw, &arena)) || root->t != J_OBJ) goto fail;
+    jval *gval = json_get(root, "goal"), *fval = json_get(root, "folder");
+    if (!gval || gval->t != J_STR || !fval || fval->t != J_STR) goto fail;
+    *goal = strdup(gval->str); *folder = strdup(fval->str);
+    json_free(root); free(arena); free(raw); return *goal && *folder;
+fail:
+    json_free(root); free(arena); free(raw); return 0;
 }
 
 static char *backend_json(Gateway *g, const char *payload) {
@@ -506,7 +586,8 @@ fail:
     json_free(listing); free(arena); free(list_raw); return 0;
 }
 
-static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder) {
+static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder,
+                       const char *existing_job_id) {
     char *argv[] = {g->samosa_fs, "survey", "--max-file-bytes", "104857600",
                     (char *)folder, NULL};
     int status = 0;
@@ -524,7 +605,12 @@ static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder)
     }
     if (!samosa_http_stream_headers(fd)) { json_free(survey); free(arena); free(raw); return 0; }
     char event[16384], job_id[64]; size_t used = 0;
-    snprintf(job_id, sizeof(job_id), "job-%ld-%ld", (long)time(NULL), (long)getpid());
+    if (existing_job_id) path_copy(job_id, sizeof(job_id), existing_job_id);
+    else snprintf(job_id, sizeof(job_id), "job-%ld-%ld", (long)time(NULL), (long)getpid());
+    if (!save_job_state(g, job_id, goal, folder)) {
+        json_free(survey); free(arena); free(raw);
+        return samosa_http_json_error(fd, 500, "job_state_failed", "The job state could not be saved.");
+    }
     used += (size_t)snprintf(event + used, sizeof(event) - used,
         "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":\"%s\",\"goal\":\"", job_id);
     if (!json_escape_to(event, sizeof(event), &used, goal)) goto fail;
@@ -585,8 +671,144 @@ static int jobs_run(Gateway *g, int fd, const SamosaHttpRequest *request) {
     char *goal_copy = strdup(goal->str), *folder_copy = strdup(folder->str);
     json_free(root); free(arena);
     if (!goal_copy || !folder_copy) { free(goal_copy); free(folder_copy); return 0; }
-    int result = jobs_report(g, fd, goal_copy, folder_copy);
+    int result = jobs_report(g, fd, goal_copy, folder_copy, NULL);
     free(goal_copy); free(folder_copy); return result;
+}
+
+static int jobs_answer(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *root = json_parse(request->body, &arena);
+    jval *id = root && root->t == J_OBJ ? json_get(root, "job_id") : NULL;
+    jval *answer = root && root->t == J_OBJ ? json_get(root, "answer") : NULL;
+    if (!id || id->t != J_STR || !answer || answer->t != J_STR || !*answer->str) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_answer", "job_id and answer are required.");
+    }
+    char job_id[128]; path_copy(job_id, sizeof(job_id), id->str);
+    char *answer_copy = strdup(answer->str), *goal = NULL, *folder = NULL;
+    json_free(root); free(arena);
+    if (!answer_copy || !load_job_state(g, job_id, &goal, &folder)) {
+        free(answer_copy); free(goal); free(folder);
+        return samosa_http_json_error(fd, 404, "job_not_found", "That paused job is unavailable.");
+    }
+    TextBuffer expanded = {0};
+    int built = text_add(&expanded, goal) && text_add(&expanded, "\nAdditional detail from the user: ") &&
+                text_add(&expanded, answer_copy);
+    free(answer_copy); free(goal);
+    if (!built) { free(expanded.data); free(folder); return 0; }
+    int ok = jobs_report(g, fd, expanded.data, folder, job_id);
+    free(expanded.data); free(folder); return ok;
+}
+
+static int review_pending(jval *record) {
+    jval *status = record && record->t == J_OBJ ? json_get(record, "status") : NULL;
+    return status && status->t == J_STR &&
+           (!strcmp(status->str, "review_required") || !strcmp(status->str, "needs_review"));
+}
+
+static char *source_preview(jval *record) {
+    jval *path = record && record->t == J_OBJ ? json_get(record, "input_path") : NULL;
+    if (!path || path->t != J_STR) return strdup("");
+    int fd = open(path->str, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return strdup("");
+    struct stat st;
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode)) { close(fd); return strdup(""); }
+    char *text = malloc(4001); if (!text) { close(fd); return NULL; }
+    ssize_t n = read(fd, text, 4000); close(fd);
+    if (n < 0) { free(text); return strdup(""); }
+    text[n] = 0; return text;
+}
+
+static int jobs_review(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *body = json_parse(request->body, &arena);
+    jval *id = body && body->t == J_OBJ ? json_get(body, "job_id") : NULL;
+    char path[PATH_MAX];
+    if (!id || id->t != J_STR || !job_state_path(g, id->str, "results/output.jsonl", path, 0)) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_review", "A valid job_id is required.");
+    }
+    char *raw = read_file_limit(path, 16 << 20);
+    if (!raw) { json_free(body); free(arena); return samosa_http_json_error(fd, 404, "review_not_found", "No review output exists for that job."); }
+    TextBuffer items = {0}; int pending = 0, index = 0;
+    char *save = NULL;
+    for (char *line = strtok_r(raw, "\n", &save); line; line = strtok_r(NULL, "\n", &save), ++index) {
+        char *line_arena = NULL; jval *record = json_parse(line, &line_arena);
+        if (!review_pending(record)) { json_free(record); free(line_arena); continue; }
+        jval *unit = json_get(record, "unit_id"), *input = json_get(record, "input_path");
+        jval *fields = json_get(record, "extracted"), *reasons = json_get(record, "reasons");
+        char *source = source_preview(record); char number[32]; snprintf(number, sizeof(number), "%d", index);
+        if ((pending && !text_add(&items, ",")) || !text_add(&items, "{\"index\":") ||
+            !text_add(&items, number) || !text_add(&items, ",\"unit_id\":") ||
+            !text_json_string(&items, unit && unit->t == J_STR ? unit->str : "") ||
+            !text_add(&items, ",\"input_path\":") || !text_json_string(&items, input && input->t == J_STR ? input->str : "") ||
+            !text_add(&items, ",\"fields\":") || !text_json_value(&items, fields) ||
+            !text_add(&items, ",\"reasons\":") || !text_json_value(&items, reasons) ||
+            !text_add(&items, ",\"source\":") || !text_json_string(&items, source ? source : "") ||
+            !text_add(&items, ",\"done\":false}")) {
+            free(source); json_free(record); free(line_arena); free(items.data); free(raw); json_free(body); free(arena); return 0;
+        }
+        ++pending; free(source); json_free(record); free(line_arena);
+    }
+    TextBuffer response = {0}; char number[32]; snprintf(number, sizeof(number), "%d", pending);
+    text_add(&response, "{\"ok\":true,\"pending\":"); text_add(&response, number);
+    text_add(&response, ",\"items\":["); text_add(&response, items.data ? items.data : ""); text_add(&response, "]}");
+    int ok = samosa_http_response(fd, 200, "application/json", response.data, NULL);
+    free(response.data); free(items.data); free(raw); json_free(body); free(arena); return ok;
+}
+
+static int field_name(jval *fields, const char *name) {
+    if (!fields || fields->t != J_OBJ) return 0;
+    for (int i = 0; i < fields->len; ++i) if (!strcmp(fields->keys[i], name)) return 1;
+    return 0;
+}
+
+static int write_corrected_record(TextBuffer *out, jval *record, jval *fields) {
+    jval *existing = json_get(record, "extracted");
+    jval *chosen = fields && fields->t == J_OBJ ? fields : existing;
+    int first = 1;
+    if (!text_add(out, "{")) return 0;
+    for (int i = 0; i < record->len; ++i) {
+        const char *key = record->keys[i];
+        if (!strcmp(key, "status") || !strcmp(key, "reviewed") || !strcmp(key, "extracted") || field_name(chosen, key)) continue;
+        if ((!first && !text_add(out, ",")) || !text_json_string(out, key) || !text_add(out, ":") ||
+            !text_json_value(out, record->kids[i])) return 0;
+        first = 0;
+    }
+    if (!first && !text_add(out, ",")) return 0;
+    if (!text_add(out, "\"status\":\"passed\",\"reviewed\":true,\"extracted\":") ||
+        !text_json_value(out, chosen)) return 0;
+    if (chosen && chosen->t == J_OBJ) for (int i = 0; i < chosen->len; ++i)
+        if (!text_add(out, ",") || !text_json_string(out, chosen->keys[i]) || !text_add(out, ":") ||
+            !text_json_value(out, chosen->kids[i])) return 0;
+    return text_add(out, "}");
+}
+
+static int jobs_review_correct(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *body = json_parse(request->body, &arena);
+    jval *id = body && body->t == J_OBJ ? json_get(body, "job_id") : NULL;
+    jval *wanted = body && body->t == J_OBJ ? json_get(body, "item") : NULL;
+    jval *fields = body && body->t == J_OBJ ? json_get(body, "fields") : NULL;
+    char path[PATH_MAX];
+    if (!id || id->t != J_STR || !wanted || wanted->t != J_OBJ ||
+        !job_state_path(g, id->str, "results/output.jsonl", path, 0)) {
+        json_free(body); free(arena); return samosa_http_json_error(fd, 400, "invalid_correction", "job_id and item are required.");
+    }
+    char *raw = read_file_limit(path, 16 << 20); if (!raw) { json_free(body); free(arena); return samosa_http_json_error(fd, 404, "review_not_found", "No review output exists for that job."); }
+    jval *wanted_unit = json_get(wanted, "unit_id"), *wanted_index = json_get(wanted, "index");
+    TextBuffer output = {0}; int index = 0, found = 0, pending = 0; char *save = NULL;
+    for (char *line = strtok_r(raw, "\n", &save); line; line = strtok_r(NULL, "\n", &save), ++index) {
+        char *line_arena = NULL; jval *record = json_parse(line, &line_arena); jval *unit = json_get(record, "unit_id");
+        int match = !found && ((wanted_unit && wanted_unit->t == J_STR && unit && unit->t == J_STR && !strcmp(wanted_unit->str, unit->str)) ||
+                    (wanted_index && wanted_index->t == J_NUM && (int)wanted_index->num == index));
+        int ok = match ? write_corrected_record(&output, record, fields) : text_json_value(&output, record);
+        if (match) found = 1; else if (review_pending(record)) ++pending;
+        if (!ok || !text_add(&output, "\n")) { json_free(record); free(line_arena); free(output.data); free(raw); json_free(body); free(arena); return 0; }
+        json_free(record); free(line_arena);
+    }
+    if (!found) { free(output.data); free(raw); json_free(body); free(arena); return samosa_http_json_error(fd, 404, "review_item_not_found", "That review item is unavailable."); }
+    int saved = write_small_file(path, output.data); free(output.data); free(raw);
+    if (!saved) { json_free(body); free(arena); return samosa_http_json_error(fd, 500, "review_save_failed", "The correction could not be saved."); }
+    char response[160]; snprintf(response, sizeof(response), "{\"ok\":true,\"pending\":%d,\"item\":{\"done\":true}}", pending);
+    json_free(body); free(arena); return samosa_http_response(fd, 200, "application/json", response, NULL);
 }
 
 static int backend_available(Gateway *g, const char *name) {
@@ -847,6 +1069,12 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/run"))
         return jobs_run(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/answer"))
+        return jobs_answer(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/review"))
+        return jobs_review(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/review/correct"))
+        return jobs_review_correct(g, fd, request);
     if (!strcmp(request->path, "/v1/chat/completions") ||
         !strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);
@@ -890,6 +1118,9 @@ static int load_config(Gateway *g) {
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
 #undef ENV_PATH
+    const char *jobs_root = getenv("SAMOSA_JOBS_ROOT");
+    if (jobs_root ? !path_copy(g->jobs_root, sizeof(g->jobs_root), jobs_root) :
+                    !path_join(g->jobs_root, sizeof(g->jobs_root), g->home, "jobs")) return 0;
     if (!path_join(g->backend_log, sizeof(g->backend_log), g->home, "backend.log") ||
         !path_join(g->selection_file, sizeof(g->selection_file), g->home, "model-backend") ||
         !mkdirs(g->home)) return 0;

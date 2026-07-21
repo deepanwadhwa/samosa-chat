@@ -26,6 +26,13 @@ printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 /bin/mkdir "$TMP/files"
 printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
+printf "Miso vaccination record.\n" >"$TMP/files/miso-record.txt"
+/bin/mkdir -p "$HOME_DIR/jobs/review-native/results"
+printf 'Coffee Shop\nTotal 8.37\n' >"$TMP/files/receipt.txt"
+printf '{"unit_id":"u1","status":"review_required","input_path":"%s","extracted":{"merchant":"Coffee","total":8.0}}\n' \
+  "$TMP/files/receipt.txt" >"$HOME_DIR/jobs/review-native/results/output.jsonl"
+printf '{"unit_id":"u2","status":"passed","extracted":{"merchant":"Done"}}\n' \
+  >>"$HOME_DIR/jobs/review-native/results/output.jsonl"
 /bin/mkdir "$TMP/slow"
 printf '%s\n' '#!/bin/sh' \
   'last=""; for arg do last=$arg; done' \
@@ -88,6 +95,29 @@ if printf '%s' "$find" | /usr/bin/grep -q 'samosa_tool'; then
   echo "compiled find leaked tool protocol" >&2
   exit 1
 fi
+
+paused=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"goal\":\"find a record\",\"folder\":\"$TMP/files\"}")
+printf '%s' "$paused" | /usr/bin/grep -q '"type":"await_user"'
+JOB_ID=$(printf '%s' "$paused" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$JOB_ID" ]
+resumed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/answer" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"job_id\":\"$JOB_ID\",\"answer\":\"Miso\"}")
+printf '%s' "$resumed" | /usr/bin/grep -q "Found Miso's record at miso-record.txt"
+
+review=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/review" \
+  -H 'Content-Type: application/json' --data-binary '{"job_id":"review-native"}')
+printf '%s' "$review" | /usr/bin/grep -q '"pending":1'
+printf '%s' "$review" | /usr/bin/grep -q 'Coffee Shop'
+corrected=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/review/correct" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"job_id":"review-native","item":{"unit_id":"u1"},"fields":{"merchant":"Coffee Shop","total":8.37}}')
+printf '%s' "$corrected" | /usr/bin/grep -q '"pending":0'
+/usr/bin/grep -q '"status":"passed"' "$HOME_DIR/jobs/review-native/results/output.jsonl"
+/usr/bin/grep -q '"merchant":"Coffee Shop"' "$HOME_DIR/jobs/review-native/results/output.jsonl"
+[ "$(/usr/bin/wc -l <"$HOME_DIR/jobs/review-native/results/output.jsonl" | /usr/bin/tr -d ' ')" = 2 ]
 
 /usr/bin/curl -sS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \

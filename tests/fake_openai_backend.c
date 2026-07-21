@@ -22,6 +22,28 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/health"))
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "No filename was a clear match") &&
+        !strstr(request->body, "Additional detail from the user"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_compiled_ask\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"ask_user\",\"arguments\":\"{\\\"question\\\":\\\"What name should I search for?\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Additional detail from the user: Miso") &&
+        !strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_compiled_resume\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"miso-record.txt\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Miso vaccination"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"Found Miso's record at miso-record.txt.\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "local file-finding job") && !strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
