@@ -24,6 +24,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote_plus, urljoin, urlsplit
 import urllib.request
+import urllib.robotparser
 import xml.etree.ElementTree as ET
 
 # The jobs layer lives beside the gateway (tools/ in source, bin/ when
@@ -52,6 +53,8 @@ CONFIG_FILE = HOME / "config.json"
 MAX_WEB_BYTES = 5 * 1024 * 1024
 MAX_WEB_TEXT = 120_000
 MAX_TOOL_ROUNDS = 4
+MIN_PUBLIC_FETCH_INTERVAL = float(os.environ.get("SAMOSA_WEB_MIN_INTERVAL", "1.0"))
+PUBLIC_FETCH_USER_AGENT = "SamosaChat/1.0 (+local user-initiated fetch)"
 BLOCKED_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
     "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
@@ -59,6 +62,8 @@ BLOCKED_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     "::/128", "::1/128", "fc00::/7", "fe80::/10",
     "::ffff:0:0/96", "64:ff9b::/96", "2002::/16",
 ))
+PUBLIC_FETCH_LOCK = threading.Lock()
+PUBLIC_FETCH_LAST_BY_HOST: dict[str, float] = {}
 
 BACKENDS = {
     "qwen": {
@@ -411,12 +416,58 @@ def public_address(host: str) -> tuple[str, int]:
     return addresses[0], port
 
 
+def public_fetch_host_key(url: str) -> str:
+    parsed = urlsplit(url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return f"{parsed.hostname or ''}:{port}"
+
+
+def wait_public_fetch_turn(url: str) -> None:
+    if MIN_PUBLIC_FETCH_INTERVAL <= 0:
+        return
+    key = public_fetch_host_key(url)
+    with PUBLIC_FETCH_LOCK:
+        now = time.monotonic()
+        wait = PUBLIC_FETCH_LAST_BY_HOST.get(key, 0.0) + MIN_PUBLIC_FETCH_INTERVAL - now
+        if wait > 0:
+            time.sleep(wait)
+            now = time.monotonic()
+        PUBLIC_FETCH_LAST_BY_HOST[key] = now
+
+
+def robots_url_for(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("only public http:// and https:// URLs are allowed")
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port}/robots.txt"
+
+
+def robots_allowed(url: str, user_agent: str = PUBLIC_FETCH_USER_AGENT) -> bool:
+    robots_url = robots_url_for(url)
+    try:
+        final_url, content_type, data = fetch_public(
+            robots_url,
+            user_agent=user_agent,
+            enforce_robots=False,
+        )
+    except Exception:
+        return True
+    if content_type not in {"text/plain", "text/html"}:
+        return True
+    parser = urllib.robotparser.RobotFileParser()
+    parser.set_url(final_url)
+    parser.parse(data.decode("utf-8", errors="replace").splitlines())
+    return parser.can_fetch(user_agent, url)
+
+
 def fetch_public(
     url: str,
     accept_json: bool = False,
     extra_headers: dict[str, str] | None = None,
-    user_agent: str = "SamosaChat/1.0 (+local user-initiated fetch)",
+    user_agent: str = PUBLIC_FETCH_USER_AGENT,
     json_body: bytes | None = None,
+    enforce_robots: bool = True,
 ) -> tuple[str, str, bytes]:
     if offline():
         raise PermissionError("Internet access is disabled")
@@ -427,6 +478,9 @@ def fetch_public(
             raise ValueError("only public http:// and https:// URLs are allowed")
         if parsed.port is not None and parsed.port not in {80, 443}:
             raise ValueError("non-standard URL ports are blocked")
+        if enforce_robots and not robots_allowed(current, user_agent=user_agent):
+            raise PermissionError("robots.txt disallows this URL")
+        wait_public_fetch_turn(current)
         ip, _ = public_address(parsed.hostname)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         with tempfile.TemporaryDirectory(prefix="samosa-web-") as temp:

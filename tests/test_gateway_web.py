@@ -61,6 +61,29 @@ with tempfile.TemporaryDirectory() as temp:
     with mock.patch.object(socket, "getaddrinfo", return_value=answer("93.184.216.34")):
         assert gateway.public_address("example.test")[0] == "93.184.216.34"
 
+    with mock.patch.object(gateway, "robots_allowed", return_value=False):
+        try:
+            gateway.fetch_public("https://example.com/jobs")
+        except PermissionError as error:
+            assert "robots.txt" in str(error)
+        else:
+            raise AssertionError("robots-disallowed URL was fetched")
+
+    robots_body = b"User-agent: *\nDisallow: /private\nAllow: /\n"
+    with mock.patch.object(gateway, "fetch_public", return_value=("https://example.com/robots.txt", "text/plain", robots_body)):
+        assert gateway.robots_allowed("https://example.com/jobs")
+        assert not gateway.robots_allowed("https://example.com/private/listing")
+
+    gateway.MIN_PUBLIC_FETCH_INTERVAL = 2.0
+    gateway.PUBLIC_FETCH_LAST_BY_HOST.clear()
+    monotonic_values = iter([10.0, 10.5, 12.5])
+    with mock.patch.object(gateway.time, "monotonic", side_effect=lambda: next(monotonic_values)):
+        with mock.patch.object(gateway.time, "sleep") as slept:
+            gateway.wait_public_fetch_turn("https://example.com/a")
+            gateway.wait_public_fetch_turn("https://example.com/b")
+    slept.assert_called_once_with(1.5)
+    gateway.MIN_PUBLIC_FETCH_INTERVAL = 0
+
     parser = gateway.DuckDuckGoExtractor()
     parser.feed(
         '<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Freview">'

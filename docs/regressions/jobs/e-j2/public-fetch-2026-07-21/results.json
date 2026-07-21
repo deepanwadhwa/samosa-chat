@@ -1,0 +1,295 @@
+{
+  "generated_at": "2026-07-21T19:05:10.036960+00:00",
+  "repo": "/Users/deepanwadhwa/Documents/samosa-chat",
+  "model_backend": "none (public fetch/extraction only; no model server started)",
+  "user_model_instruction": "Live model tests for this phase use Ornith only; E-J2 did not invoke a model.",
+  "fetch_user_agent": "SamosaChat/1.0 (+local user-initiated fetch)",
+  "min_public_fetch_interval_seconds": 1.0,
+  "url_count": 20,
+  "clean_extractions": 16,
+  "js_failures_flagged": 0,
+  "robots_disallowed": 0,
+  "initial_rejected_candidates": [
+    {
+      "url": "https://www.sqlite.org/careers.html",
+      "observed": "HTTP 404"
+    },
+    {
+      "url": "https://www.djangoproject.com/foundation/jobs/",
+      "observed": "HTTP 404"
+    },
+    {
+      "url": "https://www.postgresql.org/about/news/",
+      "observed": "HTTP 404"
+    },
+    {
+      "url": "https://openai.com/careers/search/",
+      "observed": "HTTP 403"
+    },
+    {
+      "url": "https://www.noaa.gov/work-with-us/careers",
+      "observed": "HTTP 403"
+    },
+    {
+      "url": "https://www.fsf.org/about/staff-and-board/job-opportunities",
+      "observed": "HTTP 404"
+    }
+  ],
+  "acceptance": {
+    "ssrf_blocking": "covered by tests/test_gateway_web.py",
+    "robots_honored": true,
+    "rate_limiter_honored": true,
+    "clean_extraction_target": ">=15/20",
+    "clean_extraction_pass": true
+  },
+  "results": [
+    {
+      "index": 1,
+      "url": "https://www.python.org/jobs/",
+      "ok": true,
+      "final_url": "https://www.python.org/jobs/",
+      "title": "www.python.org",
+      "text_len": 8773,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "\ufffd\b\u0000\u0000\u0000\u0000\u0000\u0000\u0003\ufffd}{s\ufffd\u01b2\ufffd\ufffd\ufffdU\ufffd p\ufffd\ufffd\ufffdI \ufffd \ufffd\ufffd\")G\ufffd_J\ufffd:\ufffd \ufffd\ufffd\u06aa\u0014 C\u00126 \ufffdxH\ufffdon\ufffd~\ufffd\ufffd\ufffd\ufffdI\ufffd\ufffd3\u0003`\ufffd %\u0692,\ufffd8\ufffdD\ufffd\u0010\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffdt?x\ufffd\ufffd77p\ufffdU\u0234y\ufffd\\ < \u0623?\ufffd\ufffd\ufffd\ufffdx\ufffd\ufffd\u0007\ufffd\ufffd\ufffd\ufffd-,\u007f\ufffd\ufffdb~Ks\ufffdh\ufffd\ufffdH\ufffd\ufffd\ufffd\u0003 < \ufffd,\ufffd\ufffd\ufffd\ufffd\u007f\ufffdb'\ufffd\ufffdDs\u0654E\ufffd%\ufffdg\ufffd-\ufffdN\u07637\ufffdSw\u01d9/w\ufffd\ufffdl\ufffd]\ufffd\ufffd\u0667\ufffd\ufffdq\ufffd\ufffd,c\ufffd\ufffd\ufffd\ufffd \ufffd\ufffdN\ufffda\ufffd\ufffd\ufffd\ufffd\ufffdO;\ufffd\ufffd\ufffdU\ufffd\u0335\u0012Kw\ufffd\ufffd\ufffd\ufffd\ufffd\ufffdp\ufffd\ufffd\u0003\ufffd D\ufffd\ufffdCq\ufffd\ufffd\ufffdI\u0012\u01bb\ufffda\ufffd\ufffdb\ufffdxN\ufffd. 7\ufffd\u01c6\ufffd\ufffd\u0361s\ufffds\u007f\u0011Xn\ufffd\u000e\ufffd\ufffd\u000eR\ufffd\ufffd\u0017\ufffd\ufffd!nc\ufffd\u0007{\ufffdQ\u0317Ot\ufffd\u0012Ks\ufffdV\u0014\ufffdd\ufffd\ufffd&S}L\ufffd\ufffd\ufffd[Z\ufffd\u0016\ufffd-\u0002\"\u0012g\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\u0002 \ufb4b\ufffd,\bf f\ufffd^\ufffdv\ufffd%o3\u0016\ufffd \u001b\ufffd?\ufffd,Z\u0019f{\ufffd\ufffd\ufffd/\ufffd\ufffd\ufffds\b\ufffd\ufffd\ufffd\ufffdC\ufffdf\ufffdm\ufffd\ufffd\ufffd\ufffd+FP\ufffd\ufffd[K\ufffd\u07f2\ufffdp\ufffd9V\ufffd\u0005\ufffdN--\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\u0002\ufffd\u00124\ufffd\ufffd\ufffd",
+      "seconds": 1.114
+    },
+    {
+      "index": 2,
+      "url": "https://www.mozilla.org/en-US/careers/listings/",
+      "ok": true,
+      "final_url": "https://www.mozilla.org/en-US/careers/listings/",
+      "title": "Mozilla Careers \u2014 All open positions at Mozilla",
+      "text_len": 4996,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Mozilla Careers \u2014 All open positions at Mozilla\nHelp us improve your Mozilla experience\nIn addition to Cookies necessary for this site to function, we\u2019d like your permission to set some additional Cookies to better understand your browsing needs and improve your experience. Rest assured \u2014 we value your privacy. Accept All Additional Cookies Reject All Additional Cookies Cookie settings Menu\nProduc",
+      "seconds": 1.223
+    },
+    {
+      "index": 3,
+      "url": "https://www.rust-lang.org/governance",
+      "ok": true,
+      "final_url": "https://rust-lang.org/governance/",
+      "title": "Governance - Rust Programming Language",
+      "text_len": 2070,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Governance - Rust Programming Language Rust\nInstall\nLearn\nPlayground\nTools\nGovernance\nFunding\nCommunity\nBlog Language English (en-US) Espa\u00f1ol (es) Fran\u00e7ais (fr) Italiano (it) \u65e5\u672c\u8a9e (ja) Portugu\u00eas (pt-BR) \u0420\u0443\u0441\u0441\u043a\u0438\u0439 (ru) T\u00fcrk\u00e7e (tr) \u7b80\u4f53\u4e2d\u6587 (zh-CN) \u6b63\u9ad4\u4e2d\u6587 (zh-TW)\nGovernance\nHow Rust is built by its community\n\nRFC process\nEach major decision in Rust starts as a Request for Comments (RFC). Everyone is invited ",
+      "seconds": 4.255
+    },
+    {
+      "index": 4,
+      "url": "https://www.gnu.org/jobs/",
+      "ok": true,
+      "final_url": "https://www.fsf.org/resources/jobs/",
+      "title": "Free software jobs \u2014 Free Software Foundation \u2014 Working together for free software",
+      "text_len": 5788,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Free software jobs \u2014 Free Software Foundation \u2014 Working together for free software \u200b\nCommit to freedom\nThe technology overrunning our communities isn't built for the benefit of humanity: it's built so that billionaires can control us. Our lives don't have to be this way. The FSF empowers users with free software , technology built through global collaboration, mutual respect, and above all, freedo",
+      "seconds": 3.677
+    },
+    {
+      "index": 5,
+      "url": "https://www.apple.com/careers/us/",
+      "ok": true,
+      "final_url": "https://www.apple.com/careers/us/",
+      "title": "Apple Roles and Opportunities - Careers at Apple",
+      "text_len": 5553,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Apple Roles and Opportunities - Careers at Apple\nApple\n\nStore\nMac\niPad\niPhone\nWatch\nVision\nAirPods\nTV & Home\nEntertainment\nAccessories\nSupport\n\n0 + Careers at Apple Local Nav Open Menu Local Nav Close Menu\nOverview\n\nWork at Apple\n\nExplore Work at Apple\nLocations\nTeams\nApple Retail\nStudents\n\nLife at Apple\n\nExplore Life at Apple\nDiversity Network Associations\nShared Values\nBenefits\nMy Profile\nSearch",
+      "seconds": 1.325
+    },
+    {
+      "index": 6,
+      "url": "https://www.microsoft.com/en-us/research/careers/",
+      "ok": true,
+      "final_url": "https://www.microsoft.com/en-us/research/careers/",
+      "title": "Research Careers - Microsoft Research",
+      "text_len": 15168,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Research Careers - Microsoft Research Skip to main content Research Publications Code & data People Microsoft Research blog Artificial intelligence Audio & acoustics Computer vision Graphics & multimedia Human-computer interaction Human language technologies Search & information retrieval Data platforms and analytics Hardware & devices Programming languages & software engineering Quantum computing",
+      "seconds": 1.932
+    },
+    {
+      "index": 7,
+      "url": "https://www.nasa.gov/careers/",
+      "ok": true,
+      "final_url": "https://www.nasa.gov/careers/",
+      "title": "Careers - NASA",
+      "text_len": 14412,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Careers - NASA\nExplore Search\nNews & Events\nNews & Events\nNews Releases\nRecently Published\nVideo Series on NASA+\nPodcasts & Audio\nBlogs\nNewsletters\nSocial Media\nMedia Resources\nEvents\nUpcoming Launches & Landings\nVirtual Guest Program\nMultimedia\nMultimedia\nNASA+\nImages\nNASA Live\nNASA Apps\nPodcasts\nImage of the Day\ne-Books\n3D Resources\nInteractives\nSTEM Multimedia\nNASA Brand & Usage Guidelines\nNASA",
+      "seconds": 1.243
+    },
+    {
+      "index": 8,
+      "url": "https://www.w3.org/careers/",
+      "ok": true,
+      "final_url": "https://www.w3.org/careers/",
+      "title": "Careers | W3C",
+      "text_len": 2724,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Careers | W3C Skip to content\n\u65e5\u672c\u8a9e\u30db\u30fc\u30e0\u30da\u30fc\u30b8 Japanese website\n\u7b80\u4f53\u4e2d\u6587\u9996\u9875 Chinese website Visit the W3C homepage\nStandards & groups\nStandards & groups\nUnderstand the various specifications, their maturity levels on the web standards track, their adoption, and the groups that develop them. Explore web standards\nAbout W3C web standards\nW3C standards & drafts\nTypes of documents W3C publishes\nW3C groups\nTransla",
+      "seconds": 1.14
+    },
+    {
+      "index": 9,
+      "url": "https://wikimediafoundation.org/about/jobs/",
+      "ok": true,
+      "final_url": "https://wikimediafoundation.org/jobs/",
+      "title": "Work with us \u2013 Wikimedia Foundation",
+      "text_len": 21424,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Work with us \u2013 Wikimedia Foundation Skip to content\nWho we are\nWe are the non-profit organization behind Wikipedia.\nGet to know us\nPeople\nBoard of Trustees\nExecutive team\nStaff\nReports\nAnnual reports\nFinancial reports\nTransparency reports\nCareers\nFrequently asked questions\nWhat we do\nOur technology supports the backbone of knowledge on the internet.\nLearn more about our work\nWikimedia projects\n\nTe",
+      "seconds": 3.232
+    },
+    {
+      "index": 10,
+      "url": "https://www.debian.org/intro/help",
+      "ok": true,
+      "final_url": "https://www.debian.org/intro/help",
+      "title": "Debian -- Contribute: How you can help Debian",
+      "text_len": 8470,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Debian -- Contribute: How you can help Debian\n\nSkip Quicknav\nBlog\nMicronews\nPlanet\nWiki\n\nContribute: How you can help Debian\nCoding and Maintaining Packages\nTesting and Bug Squashing\nWriting Documentation\nTranslating and Localizing\nHelping other Users\nOrganizing Events\nDonate Money, Hardware, or Bandwidth\nUse Debian\nHow your Organization can support Debian\nDebian is not just an operating system, i",
+      "seconds": 1.242
+    },
+    {
+      "index": 11,
+      "url": "https://careers.state.gov/",
+      "ok": true,
+      "final_url": "https://careers.state.gov/",
+      "title": "Home - Careers",
+      "text_len": 3119,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Home - Careers Skip to content Search for:\nCAREER PATHS\nCareer Paths\nCurrent Vacancies\nForeign Service\nForeign Service Officer\nForeign Service Specialist\nLimited Non-Career Appointments (LNAs)\nCivil Service\nFellowships\nAAAS Science & Technology Policy Fellowship Program\nEmbassy Science Fellows Program\nJefferson Science Fellowship Program\nProfessional Science & Engineering Society Fellows Programs\n",
+      "seconds": 2.114
+    },
+    {
+      "index": 12,
+      "url": "https://www.usajobs.gov/",
+      "ok": true,
+      "final_url": "https://www.usajobs.gov/",
+      "title": "USAJOBS - The Federal Government's official employment site",
+      "text_len": 7330,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "USAJOBS - The Federal Government's official employment site Skip to main content\nAn official website of the United States government Official websites use .gov A .gov website belongs to an official government organization in the United States. Secure .gov websites use HTTPS A lock ( ) or https:// means you've safely connected to the .gov website. Share sensitive information only on official, secur",
+      "seconds": 1.417
+    },
+    {
+      "index": 13,
+      "url": "https://www.redhat.com/en/jobs",
+      "ok": true,
+      "final_url": "https://www.redhat.com/en/jobs",
+      "title": "Red Hat Jobs | Opportunities are open",
+      "text_len": 7447,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Red Hat Jobs | Opportunities are open Skip to content\nAI\n\nOverview\nAI news\nTechnical blog\nLive AI events\nInference explained\nSee our approach\n\nProducts\nRed Hat AI Enterprise\nRed Hat AI Inference\nRed Hat Enterprise Linux AI\nRed Hat OpenShift AI\nExplore Red Hat AI\n\nEngage & learn\nLearning hub\nAI topics\nAI partners\nServices for AI Hybrid cloud\n\nPlatform solutions\nArtificial intelligence\nBuild, deploy",
+      "seconds": 1.449
+    },
+    {
+      "index": 14,
+      "url": "https://jobs.cern/",
+      "ok": true,
+      "final_url": "https://careers.cern/",
+      "title": "careers.cern",
+      "text_len": 15015,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "careers.cern Skip to content\nExplore Fields of Work\nRecruitment Journey\nFind your path\nWorking at CERN\nLife at CERN\nMore about CERN All jobs Follow us\n\nCERN Accelerating science\nSign in\nDirectory\nExplore Fields of Work\nRecruitment Journey\nFind your path\nWorking at CERN\nLife at CERN\nMore about CERN All jobs\nBe part of the journey At CERN, every skill set contributes to unveiling the nature of our u",
+      "seconds": 3.306
+    },
+    {
+      "index": 15,
+      "url": "https://www.usa.gov/government-jobs",
+      "ok": true,
+      "final_url": "https://www.usa.gov/government-jobs",
+      "title": "Redirecting to https://www.usa.gov/job-help",
+      "text_len": 89,
+      "truncated": false,
+      "clean_extraction": false,
+      "js_flagged": false,
+      "sample": "Redirecting to https://www.usa.gov/job-help Redirecting to https://www.usa.gov/job-help .",
+      "seconds": 1.278
+    },
+    {
+      "index": 16,
+      "url": "https://www.nsa.gov/careers/",
+      "ok": false,
+      "error": "fetch failed with HTTP 403",
+      "clean_extraction": false,
+      "js_flagged": false,
+      "seconds": 1.227
+    },
+    {
+      "index": 17,
+      "url": "https://www.loc.gov/careers/",
+      "ok": true,
+      "final_url": "https://www.loc.gov/careers/",
+      "title": "Careers at the Library of Congress | The Library of Congress",
+      "text_len": 16001,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Careers at the Library of Congress | The Library of Congress\nTop of page Skip to main content Library of Congress Search Everything Audio Recordings Books/Printed Material Films, Videos Legislation Manuscripts/Mixed Material Maps Notated Music Newspapers Periodicals Personal Narratives Photos, Prints, Drawings Software, E-Resources Web Archives Web Pages 3D Objects Careers at the Library of Congre",
+      "seconds": 1.18
+    },
+    {
+      "index": 18,
+      "url": "https://www.worldbank.org/en/about/careers",
+      "ok": true,
+      "final_url": "https://www.worldbank.org/ext/en/careers",
+      "title": "Careers | World Bank Group",
+      "text_len": 6288,
+      "truncated": false,
+      "clean_extraction": true,
+      "js_flagged": false,
+      "sample": "Careers | World Bank Group\nHome\nhttps://www.worldbank.org/ext/en/home\nCareers\nhttps://www.worldbank.org/ext/en/careers false\nWork with experts around the globe to improve lives everywhere. video https://delivery-p136806-e1377785.adobeaemcloud.com/adobe/assets/urn:aaid:aem:996a5bd1-7104-4e98-b796-fbbfc295a1f2/play?assetname=WB_Careers_Website+Header+Loop+V2.mp4 metadata autoplay Default alt Search ",
+      "seconds": 3.248
+    },
+    {
+      "index": 19,
+      "url": "https://www.un.org/en/about-us/careers",
+      "ok": false,
+      "error": "fetch failed with HTTP 404",
+      "clean_extraction": false,
+      "js_flagged": false,
+      "seconds": 1.357
+    },
+    {
+      "index": 20,
+      "url": "https://www.unicef.org/careers",
+      "ok": false,
+      "error": "fetch failed with HTTP 403",
+      "clean_extraction": false,
+      "js_flagged": false,
+      "seconds": 1.107
+    }
+  ]
+}
