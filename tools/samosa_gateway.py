@@ -293,6 +293,94 @@ supervisor = Supervisor()
 
 class GatewayServer(ThreadingHTTPServer):
     allow_reuse_address = True
+    daemon_threads = True
+
+
+def related_samosa_pids(exclude: set[int] | None = None) -> list[int]:
+    """Return Samosa-owned gateway/model/job helper processes on this host."""
+    exclude = set(exclude or set())
+    try:
+        raw = subprocess.check_output(["ps", "-axo", "pid=,command="], text=True)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    needles = [
+        str(QWEN_ENGINE),
+        str(BONSAI_SERVER),
+        str(HOME / "current/bin/samosa-gateway"),
+        str(HOME / "current/bin/samosa-fs"),
+        str(HOME / "current/bin/samosa-extract"),
+        "samosa-gateway",
+        "samosa_jobs.py",
+        "jobsd",
+        "llama-server",
+    ]
+    pids: list[int] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        pid_text, _, command = stripped.partition(" ")
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            continue
+        if pid in exclude:
+            continue
+        if _is_related_samosa_command(command, needles):
+            pids.append(pid)
+    return pids
+
+
+def _is_related_samosa_command(command: str, needles: list[str]) -> bool:
+    if not command:
+        return False
+    if str(HOME) in command and any(name in command for name in (
+        "samosa-gateway", "samosa_jobs.py", "samosa-fs", "samosa-extract",
+        "llama-server", "qwen36b",
+    )):
+        return True
+    if str(QWEN_ENGINE) in command and " --serve" in command:
+        return True
+    if str(BONSAI_SERVER) in command:
+        return True
+    return any(needle and needle in command and str(HOME) in command for needle in needles)
+
+
+def terminate_processes(pids: list[int], grace: float = 1.0) -> dict[str, list[int]]:
+    terminated: list[int] = []
+    killed: list[int] = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            terminated.append(pid)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            pass
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if not any(_pid_alive(pid) for pid in pids):
+            break
+        time.sleep(0.05)
+    for pid in pids:
+        if not _pid_alive(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+            killed.append(pid)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            pass
+    return {"terminated": terminated, "killed": killed}
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 class TextExtractor(HTMLParser):
@@ -1182,6 +1270,10 @@ class Handler(BaseHTTPRequestHandler):
             self.jobs_stream(self.body(), "answer")
         elif path == "/v1/cancel":
             self.json_response(200, {"cancelled": supervisor.cancel()})
+        elif path == "/v1/kill":
+            pids = related_samosa_pids(exclude={os.getpid()})
+            self.json_response(200, {"killing": True, "gateway_pid": os.getpid(), "related_pids": pids})
+            threading.Thread(target=self.kill_all, args=(pids,), daemon=True).start()
         elif path == "/v1/shutdown":
             self.json_response(200, {"stopping": True})
             threading.Thread(target=self.shutdown_all, daemon=True).start()
@@ -1682,6 +1774,19 @@ class Handler(BaseHTTPRequestHandler):
         supervisor.stopping = True
         supervisor.stop()
         self.server.shutdown()
+
+    def kill_all(self, pids: list[int]) -> None:
+        time.sleep(0.15)
+        supervisor.stopping = True
+        try:
+            supervisor.stop()
+        except Exception:
+            pass
+        terminate_processes(pids)
+        try:
+            self.server.shutdown()
+        finally:
+            os._exit(0)
 
 
 def main() -> int:

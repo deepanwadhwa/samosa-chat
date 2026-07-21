@@ -124,6 +124,8 @@
     .status-dot.online { background: #42a66b; }
     .status-dot.offline { background: #cf544d; }
     .icon-button { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 8px 11px; cursor: pointer; box-shadow: 0 4px 14px rgba(77, 42, 20, .04); }
+    .kill-button { border-color: color-mix(in srgb, var(--danger) 36%, var(--line)); color: var(--danger); }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
 
     .messages { flex: 1 1 0; min-height: 0; height: 0; overflow-x: hidden; overflow-y: scroll; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 34px max(22px, calc((100% - 820px) / 2)) 24px; scroll-behavior: smooth; }
     .jump-latest { position: absolute; right: 24px; bottom: 143px; z-index: 5; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px rgba(40, 24, 15, .14); backdrop-filter: blur(14px); cursor: pointer; }
@@ -322,7 +324,10 @@
           <button class="view-tab active" id="tabChat" role="tab" aria-selected="true">Chat</button>
           <button class="view-tab" id="tabJobs" role="tab" aria-selected="false">Jobs</button>
         </div>
-        <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
+        <div class="top-actions">
+          <button class="icon-button kill-button" id="killButton" aria-label="Kill local server and models">Kill</button>
+          <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
+        </div>
       </header>
 
       <section class="messages" id="messages" aria-live="polite"></section>
@@ -454,6 +459,7 @@
         speed: $("speedValue"), rss: $("rssValue"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
         imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
+        kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
         webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults")
       };
@@ -636,6 +642,17 @@
         error.hidden=!msg.error; error.textContent=msg.error||"";
       }
       async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
+      async function killLocal() {
+        if (!confirm("Kill the Samosa server, active model backend, and any Samosa job/model helper processes?")) return;
+        els.kill.disabled = true;
+        els.status.textContent = "Killing local Samosa processes…";
+        els.dot.className = "status-dot offline";
+        try { await fetch("/v1/kill", { method: "POST" }); }
+        catch (_) {}
+        generating = false; jobRunning = false;
+        if (activeAssistant) { activeAssistant.streaming = false; activeAssistant.error = "Server killed."; updateAssistantNode(activeAssistant); }
+        els.closure.textContent = "killed";
+      }
       async function health() {
         try {
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
@@ -1073,7 +1090,7 @@
       };
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
-      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel;
+      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
       els.modelBackend.onchange=switchBackend;
       jobEls.tabChat.onclick=()=>showView("chat"); jobEls.tabJobs.onclick=()=>showView("jobs");
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};

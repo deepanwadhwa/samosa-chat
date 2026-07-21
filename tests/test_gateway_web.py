@@ -117,6 +117,15 @@ with tempfile.TemporaryDirectory() as temp:
     assert gateway.classify_reply('{"answer": 42}')[0] == "text"
     assert gateway.classify_reply('```json\n{"samosa_tool":"open_url","url":"https://a.b"}\n```')[0] == "tool"
 
+    ps_output = f"""
+      101 /usr/bin/python {gateway.HOME}/current/bin/samosa-gateway
+      102 {gateway.HOME}/backends/prism-llama.cpp/build/bin/llama-server -m model.gguf --port 8643
+      103 /usr/bin/python {gateway.HOME}/current/bin/samosa_jobs.py run job.json
+      104 /usr/bin/python unrelated.py
+    """
+    with mock.patch.object(gateway.subprocess, "check_output", return_value=ps_output):
+        assert gateway.related_samosa_pids(exclude={101}) == [102, 103]
+
     call = {"samosa_tool": "web_search", "query": "x"}
     gateway.supervisor.backend = "ornith"
     follow = gateway.followup_payload(chat, '{"samosa_tool":"web_search","query":"x"}', call, "RESULT", remaining=2)
