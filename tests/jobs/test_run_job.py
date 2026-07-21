@@ -108,6 +108,11 @@ class JobsLayerTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.inbox, 'a.txt')))
         self.assertFalse(os.path.exists(os.path.join(self.inbox, 'Organized', 'TXT', 'a.txt')))
 
+        # undo again: must not replay its own revert actions as fresh work
+        _, uby2 = drain(J.undo_job(job_id))
+        self.assertIn('error', uby2)
+        self.assertNotIn('reverted', uby2)
+
     # --- organize: execute ------------------------------------------------
 
     def test_execute_moves_immediately(self):

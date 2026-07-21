@@ -204,11 +204,21 @@ def apply_job(job_id, emit_only_new=True):
 
 
 def undo_job(job_id):
-    """Revert the applied moves of a job (dst -> src). Yields events."""
+    """Revert the applied moves of a job (dst -> src). Yields events.
+
+    Safe to call twice: a prior undo's own 'revert' actions, and any move
+    already reverted, are excluded from the re-scan rather than replayed —
+    otherwise a second call would re-report the first undo's work as fresh
+    (spurious) skips instead of cleanly saying there is nothing left to do.
+    """
     jdir = job_dir_for(job_id)
     log = fs.EventLog(os.path.join(jdir, 'events.jsonl'))
     log.load()
-    applied = [e for e in log.events if e['type'] == 'action' and e.get('ok')]
+    already_reverted = {(e['src'], e['dst']) for e in log.events
+                        if e['type'] == 'action' and e.get('op') == 'revert' and e.get('ok')}
+    applied = [e for e in log.events
+              if e['type'] == 'action' and e.get('op') == 'move' and e.get('ok')
+              and (e['src'], e['dst']) not in already_reverted]
     if not applied:
         yield log.append('error', message=f"nothing to undo for job {job_id}")
         return
