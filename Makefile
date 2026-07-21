@@ -148,14 +148,14 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
 jobs-test: samosa-fs tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py tools/samosa_gateway.py
-	python3 -m unittest discover -s tests/jobs -v
-	python3 tests/test_gateway_jobs.py
-	python3 tests/test_gateway_jobs_answer.py
-	python3 tests/test_gateway_jobs_find.py
-	python3 tests/test_gateway_jobs_find_move.py
-	python3 tests/test_gateway_jobs_definition.py
-	python3 tests/test_gateway_jobs_model_call.py
-	python3 tests/test_gateway_chat_tools.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 -m unittest discover -s tests/jobs -v
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_answer.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_find.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_find_move.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_definition.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_model_call.py
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_chat_tools.py
 
 clean:
 	rm -rf $(BUILD_DIR)
