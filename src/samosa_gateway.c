@@ -7,6 +7,9 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -48,6 +51,10 @@ typedef struct {
     char backend_log[PATH_MAX];
     char selection_file[PATH_MAX];
 } Gateway;
+
+#define MAX_PUBLIC_JOB_URLS 20
+#define MAX_PUBLIC_FETCH_BYTES (5u << 20)
+#define MAX_PUBLIC_TEXT_BYTES 120000
 
 static int tcp_connect(int port);
 static int backend_probe(Gateway *g);
@@ -237,6 +244,62 @@ static int text_json_value(TextBuffer *out, jval *value) {
     return 0;
 }
 
+static uint64_t stable_hash_bytes(const unsigned char *data, size_t length) {
+    uint64_t h = 1469598103934665603ull;
+    for (size_t i = 0; i < length; ++i) {
+        h ^= (uint64_t)data[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static int text_hash_hex(TextBuffer *out, const void *data, size_t length) {
+    char hex[17];
+    snprintf(hex, sizeof(hex), "%016llx",
+             (unsigned long long)stable_hash_bytes((const unsigned char *)data, length));
+    return text_add(out, hex);
+}
+
+static const char *path_basename_const(const char *path) {
+    const char *slash = strrchr(path ? path : "", '/');
+    return slash ? slash + 1 : (path ? path : "");
+}
+
+static int valid_job_id(const char *job_id) {
+    if (!job_id || !*job_id) return 0;
+    for (const char *p = job_id; *p; ++p)
+        if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+               (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' )) return 0;
+    return 1;
+}
+
+static int slugify_to(char *out, size_t cap, const char *text) {
+    size_t used = 0; int dash = 0;
+    for (const unsigned char *p = (const unsigned char *)(text ? text : ""); *p && used + 1 < cap; ++p) {
+        char c = 0;
+        if (*p >= 'A' && *p <= 'Z') c = (char)(*p - 'A' + 'a');
+        else if ((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')) c = (char)*p;
+        else dash = used > 0;
+        if (c) {
+            if (dash && used + 1 < cap) out[used++] = '-';
+            dash = 0; out[used++] = c;
+        }
+    }
+    while (used && out[used - 1] == '-') --used;
+    if (!used) {
+        if (cap < 4) return 0;
+        memcpy(out, "job", 4); return 1;
+    }
+    out[used] = 0; return 1;
+}
+
+static int rfc3339_now_to(char *out, size_t cap) {
+    time_t now = time(NULL);
+    struct tm tmv;
+    if (!gmtime_r(&now, &tmv)) return 0;
+    return strftime(out, cap, "%Y-%m-%dT%H:%M:%SZ", &tmv) > 0;
+}
+
 static char *read_file_limit(const char *path, size_t limit) {
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return NULL;
@@ -289,6 +352,360 @@ static int load_job_state(Gateway *g, const char *job_id, char **goal, char **fo
     json_free(root); free(arena); free(raw); return *goal && *folder;
 fail:
     json_free(root); free(arena); free(raw); return 0;
+}
+
+static int parse_hhmm(const char *value) {
+    int h = -1, m = -1; char tail = 0;
+    if (!value || sscanf(value, "%d:%d%c", &h, &m, &tail) != 2 ||
+        h < 0 || h > 23 || m < 0 || m > 59) return -1;
+    return h * 60 + m;
+}
+
+static int minutes_in_window(int now, int start, int end) {
+    if (start == end) return 1;
+    if (start < end) return now >= start && now < end;
+    return now >= start || now < end;
+}
+
+static int current_minutes_local(void) {
+    time_t now = time(NULL);
+    struct tm tmv;
+    if (!localtime_r(&now, &tmv)) return 0;
+    return tmv.tm_hour * 60 + tmv.tm_min;
+}
+
+static int host_on_battery(void) {
+#ifdef __APPLE__
+    FILE *pipe = popen("/usr/bin/pmset -g batt 2>/dev/null", "r");
+    if (!pipe) return 1;
+    char data[512] = {0};
+    size_t n = fread(data, 1, sizeof(data) - 1, pipe);
+    pclose(pipe); data[n] = 0;
+    return strstr(data, "Battery Power") != NULL;
+#else
+    return 0;
+#endif
+}
+
+static int schedule_decision(jval *schedule, int now_minutes, int on_battery,
+                             char *reason, size_t reason_cap) {
+    jval *enabled = json_get(schedule, "enabled");
+    jval *status = json_get(schedule, "last_status");
+    if (enabled && enabled->t == J_BOOL && !enabled->boolean) {
+        path_copy(reason, reason_cap, "disabled"); return 0;
+    }
+    if (status && status->t == J_STR && !strcmp(status->str, "complete")) {
+        path_copy(reason, reason_cap, "complete"); return 0;
+    }
+    jval *run_batt = json_get(schedule, "run_on_battery");
+    if (on_battery && !(run_batt && run_batt->t == J_BOOL && run_batt->boolean)) {
+        path_copy(reason, reason_cap, "on_battery"); return 0;
+    }
+    jval *ws = json_get(schedule, "window_start"), *we = json_get(schedule, "window_end");
+    int start = parse_hhmm(ws && ws->t == J_STR ? ws->str : "22:00");
+    int end = parse_hhmm(we && we->t == J_STR ? we->str : "06:00");
+    if (start < 0 || end < 0) { path_copy(reason, reason_cap, "invalid_window"); return 0; }
+    if (minutes_in_window(now_minutes, start, end)) {
+        path_copy(reason, reason_cap, "inside_window"); return 1;
+    }
+    jval *missed = json_get(schedule, "missed"), *policy = json_get(schedule, "missed_policy");
+    if (missed && missed->t == J_BOOL && missed->boolean &&
+        policy && policy->t == J_STR && !strcmp(policy->str, "run_next_start")) {
+        path_copy(reason, reason_cap, "missed_window"); return 1;
+    }
+    path_copy(reason, reason_cap, "outside_window"); return 0;
+}
+
+static int write_schedule_with_status(const char *path, jval *schedule, const char *status,
+                                      int enabled, const char *reason) {
+    TextBuffer out = {0}; int wrote_enabled = 0, wrote_status = 0, wrote_reason = 0;
+    if (!text_add(&out, "{")) goto fail;
+    for (int i = 0; schedule && schedule->t == J_OBJ && i < schedule->len; ++i) {
+        const char *key = schedule->keys[i];
+        if (!strcmp(key, "enabled")) wrote_enabled = 1;
+        if (!strcmp(key, "last_status")) wrote_status = 1;
+        if (!strcmp(key, "last_reason")) wrote_reason = 1;
+        if (i && !text_add(&out, ",")) goto fail;
+        if (!text_json_string(&out, key) || !text_add(&out, ":")) goto fail;
+        if (!strcmp(key, "enabled")) {
+            if (!text_add(&out, enabled ? "true" : "false")) goto fail;
+        } else if (!strcmp(key, "last_status")) {
+            if (!text_json_string(&out, status)) goto fail;
+        } else if (!strcmp(key, "last_reason")) {
+            if (!text_json_string(&out, reason ? reason : "")) goto fail;
+        } else if (!text_json_value(&out, schedule->kids[i])) goto fail;
+    }
+    if (!wrote_enabled && (!text_add(&out, schedule && schedule->t == J_OBJ && schedule->len ? "," : "") ||
+        !text_add(&out, "\"enabled\":") || !text_add(&out, enabled ? "true" : "false"))) goto fail;
+    if (!wrote_status && (!text_add(&out, ",\"last_status\":") || !text_json_string(&out, status))) goto fail;
+    if (!wrote_reason && reason && (!text_add(&out, ",\"last_reason\":") || !text_json_string(&out, reason))) goto fail;
+    if (!text_add(&out, "}\n")) goto fail;
+    int ok = write_small_file(path, out.data); free(out.data); return ok;
+fail:
+    free(out.data); return 0;
+}
+
+static int jobs_schedule_arm(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *body = json_parse(request->body, &arena);
+    jval *job = body && body->t == J_OBJ ? json_get(body, "job") : NULL;
+    jval *job_path_value = body && body->t == J_OBJ ? json_get(body, "job_path") : NULL;
+    char *job_raw = NULL; char *job_arena = NULL; jval *loaded_job = NULL;
+    if (job_path_value && job_path_value->t == J_STR) {
+        job_raw = read_file_limit(job_path_value->str, 1 << 20);
+        loaded_job = job_raw ? json_parse(job_raw, &job_arena) : NULL;
+        job = loaded_job;
+    }
+    if (!job || job->t != J_OBJ) {
+        json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_schedule", "A job object or job_path is required.");
+    }
+    jval *id = json_get(job, "job_id");
+    char job_id[128];
+    if (id && id->t == J_STR) path_copy(job_id, sizeof(job_id), id->str);
+    else slugify_to(job_id, sizeof(job_id), job_path_value && job_path_value->t == J_STR ? path_basename_const(job_path_value->str) : "scheduled-job");
+    if (!valid_job_id(job_id)) {
+        json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_job_id", "job_id may contain only letters, numbers, dash, and underscore.");
+    }
+    TextBuffer frozen = {0};
+    if (!text_json_value(&frozen, job)) { json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena); return 0; }
+    char hash[17]; snprintf(hash, sizeof(hash), "%016llx",
+                            (unsigned long long)stable_hash_bytes((unsigned char *)frozen.data, frozen.len));
+    char frozen_path[PATH_MAX], schedule_path[PATH_MAX];
+    if (!job_state_path(g, job_id, "job.json", frozen_path, 1) ||
+        !job_state_path(g, job_id, "schedule.json", schedule_path, 1)) {
+        free(frozen.data); json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena); return 0;
+    }
+    char *existing = read_file_limit(frozen_path, 1 << 20);
+    if (existing) {
+        char *existing_arena = NULL; jval *existing_job = json_parse(existing, &existing_arena);
+        TextBuffer existing_json = {0}; text_json_value(&existing_json, existing_job);
+        uint64_t old_hash = stable_hash_bytes((unsigned char *)existing_json.data, existing_json.len);
+        uint64_t new_hash = stable_hash_bytes((unsigned char *)frozen.data, frozen.len);
+        free(existing_json.data); json_free(existing_job); free(existing_arena); free(existing);
+        if (old_hash != new_hash) {
+            free(frozen.data); json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena);
+            return samosa_http_json_error(fd, 409, "schedule_definition_changed", "That job_id is already armed with a different definition.");
+        }
+    }
+    TextBuffer pretty = {0};
+    if (!text_json_value(&pretty, job) || !text_add(&pretty, "\n") ||
+        !write_small_file(frozen_path, pretty.data)) {
+        free(pretty.data); free(frozen.data); json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena); return 0;
+    }
+    free(pretty.data);
+    jval *ws = json_get(body, "window_start"), *we = json_get(body, "window_end");
+    jval *missed = json_get(body, "missed_policy"), *keep = json_get(body, "keep_awake");
+    const char *window_start = ws && ws->t == J_STR ? ws->str : "22:00";
+    const char *window_end = we && we->t == J_STR ? we->str : "06:00";
+    const char *missed_policy = missed && missed->t == J_STR ? missed->str : "skip";
+    if (parse_hhmm(window_start) < 0 || parse_hhmm(window_end) < 0 ||
+        (strcmp(missed_policy, "skip") && strcmp(missed_policy, "run_next_start"))) {
+        free(frozen.data); json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_schedule", "window times must be HH:MM and missed_policy must be skip or run_next_start.");
+    }
+    jval *resources = json_get(job, "resources");
+    jval *run_batt = resources && resources->t == J_OBJ ? json_get(resources, "run_on_battery") : NULL;
+    char now[32]; rfc3339_now_to(now, sizeof(now));
+    TextBuffer schedule = {0};
+    int ok = text_add(&schedule, "{\"schema_version\":1,\"job_id\":") && text_json_string(&schedule, job_id) &&
+        text_add(&schedule, ",\"job_path\":") && text_json_string(&schedule, frozen_path) &&
+        text_add(&schedule, ",\"job_sha256\":") && text_json_string(&schedule, hash) &&
+        text_add(&schedule, ",\"enabled\":true,\"window_start\":") && text_json_string(&schedule, window_start) &&
+        text_add(&schedule, ",\"window_end\":") && text_json_string(&schedule, window_end) &&
+        text_add(&schedule, ",\"missed_policy\":") && text_json_string(&schedule, missed_policy) &&
+        text_add(&schedule, ",\"keep_awake\":") && text_add(&schedule, (keep && keep->t == J_BOOL && !keep->boolean) ? "false" : "true") &&
+        text_add(&schedule, ",\"run_on_battery\":") && text_add(&schedule, (run_batt && run_batt->t == J_BOOL && run_batt->boolean) ? "true" : "false") &&
+        text_add(&schedule, ",\"review_required_policy\":\"queue\",\"armed_at\":") && text_json_string(&schedule, now) &&
+        text_add(&schedule, "}\n") && write_small_file(schedule_path, schedule.data);
+    TextBuffer response = {0};
+    if (ok) ok = text_add(&response, "{\"ok\":true,\"job_id\":") && text_json_string(&response, job_id) &&
+        text_add(&response, ",\"schedule_path\":") && text_json_string(&response, schedule_path) &&
+        text_add(&response, ",\"schedule\":") && text_add_n(&response, schedule.data, schedule.len - 1) &&
+        text_add(&response, "}");
+    int sent = ok ? samosa_http_response(fd, 200, "application/json", response.data, NULL) : 0;
+    free(response.data); free(schedule.data); free(frozen.data);
+    json_free(loaded_job); free(job_arena); free(job_raw); json_free(body); free(arena); return sent;
+}
+
+static int append_job_event_file(const char *path, int *seq, const char *type,
+                                 const char *json_fields) {
+    char *old = read_file_limit(path, 16 << 20);
+    TextBuffer out = {0};
+    if (old) text_add(&out, old);
+    char now[32], number[32]; rfc3339_now_to(now, sizeof(now));
+    snprintf(number, sizeof(number), "%d", (*seq)++);
+    int ok = text_add(&out, "{\"seq\":") && text_add(&out, number) &&
+        text_add(&out, ",\"ts\":") && text_json_string(&out, now) &&
+        text_add(&out, ",\"type\":") && text_json_string(&out, type);
+    if (ok && json_fields && *json_fields) ok = text_add(&out, ",") && text_add(&out, json_fields);
+    ok = ok && text_add(&out, "}\n") && write_small_file(path, out.data);
+    free(old); free(out.data); return ok;
+}
+
+static const char *type_folder_for(const char *name, const char *media) {
+    const char *dot = strrchr(name ? name : "", '.');
+    if (dot && dot[1]) {
+        if (!strcasecmp(dot + 1, "txt")) return "TXT";
+        if (!strcasecmp(dot + 1, "pdf")) return "PDF";
+        if (!strcasecmp(dot + 1, "jpg") || !strcasecmp(dot + 1, "jpeg")) return "JPG";
+        if (!strcasecmp(dot + 1, "png")) return "PNG";
+        if (!strcasecmp(dot + 1, "json")) return "JSON";
+    }
+    if (media && strstr(media, "pdf")) return "PDF";
+    if (media && strstr(media, "image/png")) return "PNG";
+    if (media && strstr(media, "image/jpeg")) return "JPG";
+    if (media && strstr(media, "text")) return "TXT";
+    return "OTHER";
+}
+
+static int run_scheduled_job_native(Gateway *g, const char *schedule_path, jval *schedule) {
+    jval *job_path_value = json_get(schedule, "job_path");
+    jval *job_id_value = json_get(schedule, "job_id");
+    if (!job_path_value || job_path_value->t != J_STR ||
+        !job_id_value || job_id_value->t != J_STR) return 0;
+    char *job_raw = read_file_limit(job_path_value->str, 1 << 20), *job_arena = NULL;
+    jval *job = job_raw ? json_parse(job_raw, &job_arena) : NULL;
+    jval *input = job && job->t == J_OBJ ? json_get(job, "input") : NULL;
+    jval *folder = input && input->t == J_OBJ ? json_get(input, "folder") : NULL;
+    if (!folder || folder->t != J_STR) {
+        json_free(job); free(job_arena); free(job_raw);
+        write_schedule_with_status(schedule_path, schedule, "failed", 1, "job_unavailable");
+        return 0;
+    }
+    char events_path[PATH_MAX];
+    if (!job_state_path(g, job_id_value->str, "events.jsonl", events_path, 1)) {
+        json_free(job); free(job_arena); free(job_raw); return 0;
+    }
+    int seq = 1;
+    TextBuffer fields = {0};
+    text_add(&fields, "\"job_id\":"); text_json_string(&fields, job_id_value->str);
+    text_add(&fields, ",\"job_path\":"); text_json_string(&fields, job_path_value->str);
+    append_job_event_file(events_path, &seq, "scheduled_job_start", fields.data);
+    free(fields.data);
+    jval *organize = json_get(job, "organize");
+    if (!organize || organize->t != J_OBJ) {
+        char *argv[] = {g->samosa_fs, "survey", "--max-file-bytes", "104857600", folder->str, NULL};
+        int status = 0; char *raw = run_capture(g, g->samosa_fs, argv, 1 << 20, &status);
+        int ok = raw && WIFEXITED(status) && !WEXITSTATUS(status);
+        fields.data = NULL; fields.len = fields.cap = 0;
+        text_add(&fields, "\"kind\":\"report\"");
+        append_job_event_file(events_path, &seq, ok ? "scheduled_job_complete" : "error", fields.data);
+        free(fields.data); free(raw); json_free(job); free(job_arena); free(job_raw);
+        write_schedule_with_status(schedule_path, schedule, ok ? "complete" : "failed", ok ? 0 : 1,
+                                   ok ? "complete" : "folder_scan_failed");
+        return ok;
+    }
+    char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", folder->str, NULL};
+    int status = 0; char *list_raw = run_capture(g, g->samosa_fs, argv, 16 << 20, &status);
+    char *list_arena = NULL; jval *listing = list_raw ? json_parse(list_raw, &list_arena) : NULL;
+    jval *items = listing && listing->t == J_OBJ ? json_get(listing, "items") : NULL;
+    if (!items || items->t != J_ARR || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        append_job_event_file(events_path, &seq, "error", "\"message\":\"folder index failed\"");
+        json_free(listing); free(list_arena); free(list_raw); json_free(job); free(job_arena); free(job_raw);
+        write_schedule_with_status(schedule_path, schedule, "failed", 1, "folder_index_failed");
+        return 0;
+    }
+    int moved = 0, skipped = 0;
+    char applied_path[PATH_MAX]; job_state_path(g, job_id_value->str, "applied.jsonl", applied_path, 1);
+    TextBuffer applied = {0};
+    for (int i = 0; i < items->len; ++i) {
+        jval *item = items->kids[i], *path = json_get(item, "path"), *name = json_get(item, "name"), *media = json_get(item, "media_type");
+        if (!path || path->t != J_STR || !name || name->t != J_STR) { ++skipped; continue; }
+        if (strstr(path->str, "/Organized/")) { ++skipped; continue; }
+        const char *type_folder = type_folder_for(name->str, media && media->t == J_STR ? media->str : "");
+        char dst[PATH_MAX];
+        if (snprintf(dst, sizeof(dst), "%s/Organized/%s/%s", folder->str, type_folder, name->str) >= (int)sizeof(dst)) { ++skipped; continue; }
+        char *mvargv[] = {g->samosa_fs, "move", "--root", folder->str, path->str, dst, NULL};
+        int mvstatus = 0; char *mvraw = run_capture(g, g->samosa_fs, mvargv, 65536, &mvstatus);
+        int ok_move = mvraw && WIFEXITED(mvstatus) && !WEXITSTATUS(mvstatus) && strstr(mvraw, "\"moved\":true");
+        if (ok_move) {
+            ++moved;
+            text_add(&applied, "{\"src\":"); text_json_string(&applied, path->str);
+            text_add(&applied, ",\"dst\":"); text_json_string(&applied, dst); text_add(&applied, "}\n");
+        } else ++skipped;
+        free(mvraw);
+    }
+    if (moved) write_small_file(applied_path, applied.data);
+    free(applied.data);
+    char nums[128]; snprintf(nums, sizeof(nums), "\"applied\":%d,\"skipped\":%d", moved, skipped);
+    append_job_event_file(events_path, &seq, "applied", nums);
+    snprintf(nums, sizeof(nums), "\"job_id\":\"%s\",\"applied\":%d,\"skipped\":%d", job_id_value->str, moved, skipped);
+    append_job_event_file(events_path, &seq, "scheduled_job_complete", nums);
+    json_free(listing); free(list_arena); free(list_raw); json_free(job); free(job_arena); free(job_raw);
+    write_schedule_with_status(schedule_path, schedule, "complete", 0, "complete");
+    return 1;
+}
+
+static int jobsd_once_native(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    int now = current_minutes_local(), on_battery = host_on_battery();
+    if (request && request->body_len) {
+        char *arena = NULL; jval *body = json_parse(request->body, &arena);
+        jval *n = body && body->t == J_OBJ ? json_get(body, "now_minutes") : NULL;
+        jval *b = body && body->t == J_OBJ ? json_get(body, "on_battery") : NULL;
+        if (n && n->t == J_NUM) now = (int)n->num;
+        if (b && b->t == J_BOOL) on_battery = b->boolean;
+        json_free(body); free(arena);
+    }
+    DIR *dir = opendir(g->jobs_root);
+    TextBuffer decisions = {0}; int count = 0;
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir))) {
+            if (entry->d_name[0] == '.') continue;
+            char schedule_path[PATH_MAX];
+            if (!job_state_path(g, entry->d_name, "schedule.json", schedule_path, 0)) continue;
+            char *raw = read_file_limit(schedule_path, 1 << 20), *arena = NULL;
+            jval *schedule = raw ? json_parse(raw, &arena) : NULL;
+            if (!schedule || schedule->t != J_OBJ) { json_free(schedule); free(arena); free(raw); continue; }
+            char reason[64]; int should_run = schedule_decision(schedule, now, on_battery, reason, sizeof(reason));
+            int ran = 0;
+            if (should_run) ran = run_scheduled_job_native(g, schedule_path, schedule);
+            else if (!strcmp(reason, "outside_window")) {
+                jval *ws = json_get(schedule, "window_start"), *we = json_get(schedule, "window_end");
+                int start = parse_hhmm(ws && ws->t == J_STR ? ws->str : "22:00");
+                int end = parse_hhmm(we && we->t == J_STR ? we->str : "06:00");
+                if (start >= 0 && end >= 0 && !minutes_in_window(now, start, end))
+                    write_schedule_with_status(schedule_path, schedule, "missed", 1, "outside_window");
+            }
+            if (count++ && !text_add(&decisions, ",")) {}
+            text_add(&decisions, "{\"job_id\":"); text_json_string(&decisions, entry->d_name);
+            text_add(&decisions, ",\"action\":"); text_json_string(&decisions, should_run ? "run" : "defer");
+            text_add(&decisions, ",\"reason\":"); text_json_string(&decisions, reason);
+            if (should_run) { text_add(&decisions, ",\"run\":{\"status\":"); text_json_string(&decisions, ran ? "complete" : "failed"); text_add(&decisions, "}"); }
+            text_add(&decisions, "}");
+            json_free(schedule); free(arena); free(raw);
+        }
+        closedir(dir);
+    }
+    TextBuffer response = {0};
+    text_add(&response, "{\"ok\":true,\"decisions\":["); text_add(&response, decisions.data ? decisions.data : ""); text_add(&response, "]}");
+    int ok = fd >= 0 ? samosa_http_response(fd, 200, "application/json", response.data, NULL) :
+        (printf("%s\n", response.data), 1);
+    free(response.data); free(decisions.data); return ok;
+}
+
+static int jobs_launchd_plist(Gateway *g, int fd) {
+    char program[PATH_MAX];
+    if (!path_join(program, sizeof(program), g->home, "current/bin/samosa-jobsd"))
+        path_copy(program, sizeof(program), "samosa-jobsd");
+    TextBuffer plist = {0};
+    text_add(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                     "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+                     "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+                     "<plist version=\"1.0\"><dict>"
+                     "<key>Label</key><string>com.samosa.jobsd</string>"
+                     "<key>ProgramArguments</key><array><string>");
+    text_add(&plist, program);
+    text_add(&plist, "</string><string>jobsd-once</string></array>"
+                     "<key>RunAtLoad</key><true/><key>StartInterval</key><integer>300</integer>"
+                     "<key>StandardOutPath</key><string>");
+    text_add(&plist, g->home); text_add(&plist, "/logs/jobsd.out.log</string>"
+                     "<key>StandardErrorPath</key><string>");
+    text_add(&plist, g->home); text_add(&plist, "/logs/jobsd.err.log</string>"
+                     "</dict></plist>\n");
+    int ok = samosa_http_response(fd, 200, "application/xml", plist.data, NULL);
+    free(plist.data); return ok;
 }
 
 static char *backend_json(Gateway *g, const char *payload) {
