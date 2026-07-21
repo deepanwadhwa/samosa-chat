@@ -126,6 +126,9 @@ JOB_TEMPLATES = {
         },
     },
 }
+DEFAULT_PREFILL_TOKENS_PER_SECOND = float(os.environ.get('SAMOSA_JOB_PREFILL_TPS', '20'))
+DEFAULT_DECODE_TOKENS_PER_SECOND = float(os.environ.get('SAMOSA_JOB_DECODE_TPS', '6'))
+DEFAULT_JOB_MAX_TOKENS = int(os.environ.get('SAMOSA_JOB_MAX_TOKENS', '512'))
 
 
 def _suggest_template(goal):
@@ -198,11 +201,102 @@ def suggest_job(goal, folder, model_call=None, out_path=None):
             'supported_templates': sorted(JOB_TEMPLATES),
         }
     job = _job_from_template(template_id, goal, folder)
-    result = {'ok': True, 'template': template_id, 'source': source, 'job': job}
+    result = {'ok': True, 'template': template_id, 'source': source, 'job': job,
+              'estimate': estimate_job(job)}
     if out_path:
         fs.atomic_write(out_path, json.dumps(job, indent=2, sort_keys=True) + "\n")
         result['path'] = os.path.abspath(out_path)
     return result
+
+
+def estimate_job(job, token_counter=None):
+    """Estimate unit count and wall-clock for a job definition.
+
+    `token_counter(text) -> int` may provide exact model-token counts. Without
+    it the estimate still reports useful unit/decode cost, but marks token
+    counts as conservative byte/word estimates.
+    """
+    folder = os.path.abspath((job.get('input') or {}).get('folder') or '')
+    instruction = job.get('instruction') or ''
+    schema = job.get('output_schema')
+    has_model_work = bool(instruction or schema)
+    items, skipped = fs.discover_files(job.get('input') or {},
+                                       is_metadata_only=not has_model_work)
+    unit_count = len(items)
+    max_tokens = int((job.get('inference') or {}).get('max_tokens') or DEFAULT_JOB_MAX_TOKENS)
+    if not has_model_work:
+        return {
+            'ok': True,
+            'folder': folder,
+            'unit_count': unit_count,
+            'skipped_count': len(skipped),
+            'model_units': 0,
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'token_counts_exact': True,
+            'prefill_tokens_per_second': DEFAULT_PREFILL_TOKENS_PER_SECOND,
+            'decode_tokens_per_second': DEFAULT_DECODE_TOKENS_PER_SECOND,
+            'estimated_wall_seconds': 0,
+            'battery_policy': 'run manually; daemon battery policy is not active yet',
+        }
+    prompt_prefix = instruction + "\n" + json.dumps(schema, sort_keys=True, separators=(',', ':'))
+    base_tokens, exact = _count_text_tokens(prompt_prefix, token_counter)
+    input_tokens = 0
+    for item in items:
+        path = item['input_path']
+        if item.get('media_type') == 'text/plain':
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            except (OSError, UnicodeDecodeError):
+                text = ''
+                exact = False
+            count, item_exact = _count_text_tokens(text, token_counter)
+            exact = exact and item_exact
+            input_tokens += base_tokens + count
+        else:
+            exact = False
+            input_tokens += base_tokens + max(1, min(8192, int((item.get('size') or 0) / 4)))
+    output_tokens = unit_count * max_tokens
+    prefill_tps = DEFAULT_PREFILL_TOKENS_PER_SECOND
+    decode_tps = DEFAULT_DECODE_TOKENS_PER_SECOND
+    estimated = (input_tokens / prefill_tps if prefill_tps > 0 else 0) + \
+        (output_tokens / decode_tps if decode_tps > 0 else 0)
+    return {
+        'ok': True,
+        'folder': folder,
+        'unit_count': unit_count,
+        'skipped_count': len(skipped),
+        'model_units': unit_count,
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'token_counts_exact': exact,
+        'prefill_tokens_per_second': prefill_tps,
+        'decode_tokens_per_second': decode_tps,
+        'estimated_wall_seconds': round(estimated, 1),
+        'estimated_wall_human': _human_seconds(estimated),
+        'battery_policy': 'run manually; daemon battery policy is not active yet',
+    }
+
+
+def _count_text_tokens(text, token_counter=None):
+    if token_counter is not None:
+        try:
+            return int(token_counter(text or '')), True
+        except Exception:
+            pass
+    return max(1, len(re.findall(r'\S+', text or ''))), False
+
+
+def _human_seconds(seconds):
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {sec}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
 
 
 def decode_intent(goal, folder, model_call=None):
@@ -679,6 +773,7 @@ def main(argv):
     if not argv or argv[0] in ('-h', '--help'):
         print("Usage:\n"
               "  samosa jobs suggest-job \"<goal>\" <folder> [--out <job.json>]\n"
+              "  samosa jobs estimate <job.json>\n"
               "  samosa jobs run \"<goal>\" <folder> [--execute]\n"
               "  samosa jobs apply <job_id>\n"
               "  samosa jobs undo <job_id>", file=sys.stderr)
@@ -702,6 +797,18 @@ def main(argv):
         result = suggest_job(rest[0], rest[1], out_path=out_path)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result.get('ok') else 1
+    if cmd == 'estimate':
+        if len(argv) < 2:
+            print("Usage: samosa jobs estimate <job.json>", file=sys.stderr)
+            return 2
+        try:
+            with open(argv[1]) as f:
+                job = json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"error: could not read job.json: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(estimate_job(job), indent=2, sort_keys=True))
+        return 0
     if cmd == 'run':
         rest = [a for a in argv[1:] if a != '--execute']
         mode = 'execute' if '--execute' in argv[1:] else 'confirm'

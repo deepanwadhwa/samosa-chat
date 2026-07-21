@@ -145,6 +145,14 @@ def main():
             assert suggested["template"] == "sort-by-type"
             assert suggested["job"]["input"]["folder"] == inbox
             assert suggested["job"]["organize"]["rule"] == {"by": "extension"}
+            assert suggested["estimate"]["unit_count"] == 4
+            assert suggested["estimate"]["estimated_wall_seconds"] == 0
+
+            status, estimate = json_post(port, "/v1/jobs/estimate",
+                                         {"job": suggested["job"]})
+            assert status == 200, estimate
+            assert estimate["unit_count"] == 4
+            assert estimate["model_units"] == 0
 
             # 6) validation: missing fields -> 400 (not a stream).
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)

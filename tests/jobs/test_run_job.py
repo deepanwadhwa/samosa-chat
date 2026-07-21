@@ -97,21 +97,43 @@ class JobsLayerTest(unittest.TestCase):
         self.assertEqual(result['job']['schema_version'], 1)
         self.assertEqual(result['job']['input']['folder'], os.path.abspath(self.inbox))
         self.assertEqual(result['job']['organize']['rule'], {'by': 'extension'})
+        self.assertEqual(result['estimate']['unit_count'], 4)
+        self.assertEqual(result['estimate']['model_units'], 0)
+        self.assertEqual(result['estimate']['estimated_wall_seconds'], 0)
 
     def test_suggest_job_uses_model_only_to_select_known_template(self):
-        result = J.suggest_job("handle my errand paperwork", self.inbox,
+        receipts = os.path.join(self.work, 'receipts')
+        os.mkdir(receipts)
+        with open(os.path.join(receipts, 'r.txt'), 'w') as f:
+            f.write('Coffee shop total 8.37')
+        result = J.suggest_job("handle my errand paperwork", receipts,
                                model_call=lambda msgs: '{"template":"receipts-by-date"}')
         self.assertTrue(result['ok'])
         self.assertEqual(result['template'], 'receipts-by-date')
         self.assertEqual(result['source'], 'model')
         self.assertIn('output_schema', result['job'])
         self.assertEqual(result['job']['organize']['rule'], {'by': 'field', 'field': 'date'})
+        self.assertEqual(result['estimate']['unit_count'], 1)
+        self.assertGreater(result['estimate']['input_tokens'], 0)
+        self.assertEqual(result['estimate']['output_tokens'], 512)
 
     def test_suggest_job_rejects_unshipped_template(self):
         result = J.suggest_job("email all the PDFs to Alex", self.inbox,
                                model_call=lambda msgs: '{"template":"email-pdfs"}')
         self.assertFalse(result['ok'])
         self.assertIn('no shipped job shape', result['reason'])
+
+    def test_estimate_job_uses_exact_token_counter_when_supplied(self):
+        receipts = os.path.join(self.work, 'receipts-exact')
+        os.mkdir(receipts)
+        with open(os.path.join(receipts, 'r.txt'), 'w') as f:
+            f.write('Coffee shop total 8.37')
+        job = J.suggest_job("receipts by date", receipts)['job']
+        estimate = J.estimate_job(job, token_counter=lambda text: len(text.split()) + 10)
+        self.assertTrue(estimate['ok'])
+        self.assertEqual(estimate['unit_count'], 1)
+        self.assertTrue(estimate['token_counts_exact'])
+        self.assertGreater(estimate['estimated_wall_seconds'], 0)
 
     # --- report ------------------------------------------------------------
 
