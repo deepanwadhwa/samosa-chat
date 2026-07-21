@@ -774,6 +774,44 @@
         for (const [label, cls, fn] of actions) { const b = document.createElement("button"); b.className = cls; b.textContent = label; b.onclick = fn; jobEls.barActions.appendChild(b); }
         jobEls.bar.hidden = false;
       }
+      function friendlyToolEvent(evt, ctx) {
+        const args = evt.args || {};
+        const path = args.path || args.src || args.dst || "";
+        const rel = path ? relTo(path, ctx.folder) : "";
+        const file = rel ? baseName(rel) : "";
+        switch (evt.tool) {
+          case "fs_survey": return { dot: "▦", title: "Checking what is in the folder" };
+          case "fs_list": return { dot: "·", title: rel && rel !== "." ? `Scanning ${rel}` : "Scanning this folder" };
+          case "fs_metadata": return { dot: "·", title: file ? `Checking details for ${file}` : "Checking file details" };
+          case "fs_detect_type": return { dot: "·", title: file ? `Identifying ${file}` : "Identifying a file" };
+          case "fs_read_text": return { dot: "·", title: file ? `Reading ${file}` : "Reading a text file" };
+          case "fs_read_document": return { dot: "·", title: file ? `Reading document ${file}` : "Reading a document" };
+          case "fs_read_page": return { dot: "·", title: file ? `Reading page ${args.page || ""} of ${file}`.trim() : "Reading a document page" };
+          case "notes_append": return { dot: "·", title: "Saving a note for this job" };
+          case "notes_read": return { dot: "·", title: "Checking job notes" };
+          case "ask_user": return { dot: "?", title: args.question || "Asking for one detail" };
+          case "fs_move": return { dot: "◇", title: args.src ? `Preparing to move ${baseName(args.src)}` : "Preparing a file move" };
+          case "fs_mkdir": return { dot: "·", title: args.path ? `Preparing folder ${args.path}` : "Preparing a folder" };
+          default: return { dot: "·", title: "Working on the job" };
+        }
+      }
+      function friendlyToolResult(evt) {
+        switch (evt.tool) {
+          case "fs_survey": return "Folder check finished";
+          case "fs_list": return "Folder scan finished";
+          case "fs_metadata": return "File details checked";
+          case "fs_detect_type": return "File identified";
+          case "fs_read_text": return "Text file read";
+          case "fs_read_document": return "Document read";
+          case "fs_read_page": return "Document page read";
+          case "notes_append": return "Job note saved";
+          case "notes_read": return "Job notes checked";
+          case "ask_user": return "Question prepared";
+          case "fs_move": return "Move prepared";
+          case "fs_mkdir": return "Folder prepared";
+          default: return "Step finished";
+        }
+      }
       function clearReview() {
         jobEls.review.hidden = true; jobEls.reviewList.innerHTML = ""; jobEls.reviewMeta.textContent = "";
       }
@@ -925,10 +963,14 @@
             break;
           }
           case "tool_call": {
-            const args = evt.args || {};
-            const path = args.path || args.src || args.dst || "";
-            const suffix = path ? ` ${path}` : "";
-            jobLine("·", `${evt.tool}${suffix}`);
+            const item = friendlyToolEvent(evt, ctx);
+            jobLine(item.dot, item.title);
+            break;
+          }
+          case "tool_result": {
+            const item = friendlyToolResult(evt);
+            const l = jobLine("✓", item, "step-done");
+            if (evt.truncated) addSub(l, "Large result summarized for the next step.");
             break;
           }
           case "notes":
