@@ -178,7 +178,7 @@ serve_foreground() {
   if [ -f "$GATEWAY" ]; then
     SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
-      SAMOSA_APP_LOGO="$APP_LOGO" exec python3 "$GATEWAY"
+      SAMOSA_APP_LOGO="$APP_LOGO" exec "$GATEWAY"
   fi
   SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
     SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
@@ -206,7 +206,7 @@ start_server() {
     nohup env SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" \
       SAMOSA_QWEN_MODEL="$MODEL" SAMOSA_TOKENIZER="$TOKENIZER" \
       SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
-      python3 "$GATEWAY" >"$SERVER_LOG" 2>&1 &
+      "$GATEWAY" >"$SERVER_LOG" 2>&1 &
   else
     nohup env SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
       SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
@@ -372,9 +372,10 @@ fi
 
 if [ "${1:-}" = "jobs" ]; then
   shift
-  JOBS_RUNNER="$RELEASE_DIR/bin/samosa_jobs.py"
-  [ -f "$JOBS_RUNNER" ] || fail "Jobs is unavailable in this release; install an updated Samosa release."
-  TOKENIZER="$TOKENIZER" exec python3 "$JOBS_RUNNER" "$@"
+  [ "$#" = 0 ] || fail "Jobs arguments are no longer accepted; run Jobs from the local app."
+  start_server
+  echo "Jobs is available at http://127.0.0.1:$PORT"
+  exit 0
 fi
 
 while [ $# -gt 0 ]; do

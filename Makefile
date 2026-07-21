@@ -60,7 +60,7 @@ test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o test_fake_openai_backend
 
-compiled-gateway-test: samosa-gateway test_fake_openai_backend tests/test_compiled_gateway.sh
+compiled-gateway-test: samosa-gateway samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/samosa-gateway" \
 	SAMOSA_FAKE_BACKEND="$$PWD/test_fake_openai_backend" sh tests/test_compiled_gateway.sh
 

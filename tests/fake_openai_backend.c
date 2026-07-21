@@ -21,6 +21,19 @@ static int handler(SamosaHttpServer *server, int fd,
     (void)opaque;
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/health"))
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "local file-finding job") && !strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_compiled_find\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"cat-medical-note.txt\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"Found the matching record at cat-medical-note.txt. It contains Titli's vaccination record.\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

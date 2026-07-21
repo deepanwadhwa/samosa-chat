@@ -11,19 +11,17 @@ TOKENIZER=${SAMOSA_TOKENIZER:-"$MODEL_ROOT/tokenizer_qwen36.json"}
 HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 ENGINE="$ROOT/qwen36b"
 FS_SIDECAR="$ROOT/samosa-fs"
+GATEWAY="$ROOT/samosa-gateway"
 
-for path in "$ENGINE" "$FS_SIDECAR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
-  "$ROOT/dist/samosa" "$ROOT/tools/samosa_gateway.py" \
-  "$ROOT/tools/samosa_jobs.py" "$ROOT/tools/jobs_fs.py" "$ROOT/tools/samosa_tools.py" \
+for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+  "$ROOT/dist/samosa" \
   "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
   "$SNAPSHOT/manifest.json" "$SNAPSHOT/config.json" \
   "$SNAPSHOT/generation_config.json" "$TOKENIZER"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
 
-release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$ROOT/assets/app.html" "$ROOT/dist/samosa" \
-  "$ROOT/tools/samosa_gateway.py" "$ROOT/tools/samosa_jobs.py" \
-  "$ROOT/tools/jobs_fs.py" "$ROOT/tools/samosa_tools.py" |
+release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/dist/samosa" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
@@ -44,12 +42,7 @@ ln "$TOKENIZER" "$stage/tokenizer_qwen36.json" || {
 cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
-cp "$ROOT/tools/samosa_gateway.py" "$stage/bin/samosa-gateway"
-# The jobs layer imports its siblings by directory, so keep all three in bin/
-# next to the gateway (Models -> Tools -> Jobs).
-cp "$ROOT/tools/samosa_jobs.py" "$stage/bin/samosa_jobs.py"
-cp "$ROOT/tools/jobs_fs.py" "$stage/bin/jobs_fs.py"
-cp "$ROOT/tools/samosa_tools.py" "$stage/bin/samosa_tools.py"
+cp "$GATEWAY" "$stage/bin/samosa-gateway"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway"

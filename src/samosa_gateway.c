@@ -41,9 +41,15 @@ typedef struct {
     char llama_server[PATH_MAX];
     char bonsai_model[PATH_MAX];
     char ornith_model[PATH_MAX];
+    char samosa_fs[PATH_MAX];
+    char samosa_extract[PATH_MAX];
     char backend_log[PATH_MAX];
     char selection_file[PATH_MAX];
 } Gateway;
+
+static int tcp_connect(int port);
+static int backend_probe(Gateway *g);
+static const char *backend_model(const char *name);
 
 static Gateway *signal_gateway;
 
@@ -106,6 +112,464 @@ static int write_small_file(const char *path, const char *text) {
     if (ok) ok = rename(temp, path) == 0;
     if (!ok) unlink(temp);
     return ok;
+}
+
+static char *run_capture(const char *program, char *const argv[], size_t limit, int *status) {
+    int pipefd[2];
+    if (pipe(pipefd)) return NULL;
+    pid_t pid = fork();
+    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); return NULL; }
+    if (pid == 0) {
+        close(pipefd[0]); dup2(pipefd[1], STDOUT_FILENO); close(pipefd[1]);
+        execv(program, argv); _Exit(127);
+    }
+    close(pipefd[1]);
+    char *output = malloc(limit + 1); size_t used = 0;
+    if (!output) { close(pipefd[0]); kill(pid, SIGKILL); waitpid(pid, NULL, 0); return NULL; }
+    while (used < limit) {
+        ssize_t n = read(pipefd[0], output + used, limit - used);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        used += (size_t)n;
+    }
+    close(pipefd[0]); waitpid(pid, status, 0); output[used] = 0;
+    if (used == limit) { free(output); return NULL; }
+    return output;
+}
+
+static int json_escape_to(char *out, size_t cap, size_t *used, const char *text) {
+    static const char hex[] = "0123456789abcdef";
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+        char encoded[7]; const char *part = encoded; size_t length;
+        if (*p == '"' || *p == '\\') { encoded[0] = '\\'; encoded[1] = (char)*p; length = 2; }
+        else if (*p == '\n') { part = "\\n"; length = 2; }
+        else if (*p == '\r') { part = "\\r"; length = 2; }
+        else if (*p == '\t') { part = "\\t"; length = 2; }
+        else if (*p < 0x20) { memcpy(encoded, "\\u00", 4); encoded[4] = hex[*p >> 4]; encoded[5] = hex[*p & 15]; length = 6; }
+        else { encoded[0] = (char)*p; length = 1; }
+        if (*used + length >= cap) return 0;
+        memcpy(out + *used, part, length); *used += length;
+    }
+    out[*used] = 0; return 1;
+}
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} TextBuffer;
+
+static int text_reserve(TextBuffer *buffer, size_t extra) {
+    if (extra > SIZE_MAX - buffer->len - 1) return 0;
+    size_t needed = buffer->len + extra + 1;
+    if (needed <= buffer->cap) return 1;
+    size_t cap = buffer->cap ? buffer->cap : 4096;
+    while (cap < needed) {
+        if (cap > SIZE_MAX / 2) { cap = needed; break; }
+        cap *= 2;
+    }
+    char *next = realloc(buffer->data, cap);
+    if (!next) return 0;
+    buffer->data = next; buffer->cap = cap;
+    return 1;
+}
+
+static int text_add_n(TextBuffer *buffer, const char *text, size_t length) {
+    if (!text_reserve(buffer, length)) return 0;
+    memcpy(buffer->data + buffer->len, text, length);
+    buffer->len += length; buffer->data[buffer->len] = 0;
+    return 1;
+}
+
+static int text_add(TextBuffer *buffer, const char *text) {
+    return text_add_n(buffer, text, strlen(text));
+}
+
+static int text_json_string(TextBuffer *buffer, const char *value) {
+    if (!text_add(buffer, "\"")) return 0;
+    size_t source_len = strlen(value);
+    size_t cap = source_len * 6 + 1;
+    char *escaped = malloc(cap);
+    size_t used = 0;
+    if (!escaped || !json_escape_to(escaped, cap, &used, value)) {
+        free(escaped); return 0;
+    }
+    int ok = text_add_n(buffer, escaped, used) && text_add(buffer, "\"");
+    free(escaped); return ok;
+}
+
+static char *backend_json(Gateway *g, const char *payload) {
+    if (!backend_probe(g)) return NULL;
+    int fd = tcp_connect(g->backend_port);
+    if (fd < 0) return NULL;
+    char header[512];
+    int n = snprintf(header, sizeof(header),
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:%d\r\n"
+        "Content-Type: application/json\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+        g->backend_port, strlen(payload));
+    if (n <= 0 || (size_t)n >= sizeof(header) ||
+        !samosa_send_all(fd, header, (size_t)n) ||
+        !samosa_send_all(fd, payload, strlen(payload))) {
+        close(fd); return NULL;
+    }
+    TextBuffer response = {0}; char chunk[65536];
+    while (response.len < SAMOSA_HTTP_MAX_BODY + SAMOSA_HTTP_MAX_HEADER) {
+        ssize_t got = recv(fd, chunk, sizeof(chunk), 0);
+        if (got < 0 && errno == EINTR) continue;
+        if (got <= 0) break;
+        if (!text_add_n(&response, chunk, (size_t)got)) break;
+    }
+    close(fd);
+    if (!response.data || !strstr(response.data, " 200 ")) {
+        free(response.data); return NULL;
+    }
+    char *body = strstr(response.data, "\r\n\r\n");
+    if (!body) { free(response.data); return NULL; }
+    body += 4;
+    char *copy = strdup(body);
+    free(response.data); return copy;
+}
+
+static int sse_json(int fd, const char *json) {
+    return samosa_send_all(fd, "data: ", 6) && samosa_send_all(fd, json, strlen(json)) &&
+           samosa_send_all(fd, "\n\n", 2);
+}
+
+static int contains_case(const char *text, const char *word) {
+    size_t length = strlen(word);
+    if (!length) return 0;
+    for (; *text; ++text)
+        if (!strncasecmp(text, word, length)) return 1;
+    return 0;
+}
+
+static int find_intent(const char *goal) {
+    static const char *terms[] = {"find", "locate", "search", "look for", "where is", "which file"};
+    for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); ++i)
+        if (contains_case(goal, terms[i])) return 1;
+    return 0;
+}
+
+static int safe_job_path(const char *folder, const char *relative, char out[PATH_MAX]) {
+    if (!relative || !*relative || relative[0] == '/') return 0;
+    char root[PATH_MAX], joined[PATH_MAX], resolved[PATH_MAX];
+    if (!realpath(folder, root) ||
+        snprintf(joined, sizeof(joined), "%s/%s", root, relative) >= (int)sizeof(joined) ||
+        !realpath(joined, resolved)) return 0;
+    size_t root_len = strlen(root);
+    if (strncmp(root, resolved, root_len) ||
+        (resolved[root_len] && resolved[root_len] != '/')) return 0;
+    struct stat st;
+    if (lstat(joined, &st) || S_ISLNK(st.st_mode) || !S_ISREG(st.st_mode)) return 0;
+    return path_copy(out, PATH_MAX, resolved);
+}
+
+static char *read_bounded_text(const char *path) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return strdup("The selected file could not be opened.");
+    char *result = malloc(8193);
+    if (!result) { close(fd); return NULL; }
+    ssize_t n = read(fd, result, 8192);
+    close(fd);
+    if (n < 0) { free(result); return strdup("The selected file could not be read."); }
+    result[n] = 0;
+    return result;
+}
+
+static int candidate_score(const char *goal, const char *name) {
+    char copy[1024];
+    if (!path_copy(copy, sizeof(copy), goal)) return 0;
+    static const char *stop[] = {"find","locate","search","look","file","files","folder",
+        "record","records","please","could","would","should","this","that","with","from","your","my"};
+    int score = 0;
+    for (char *save = NULL, *word = strtok_r(copy, " \\t.,?!:;/\\\"'()[]{}", &save);
+         word; word = strtok_r(NULL, " \\t.,?!:;/\\\"'()[]{}", &save)) {
+        int ignored = strlen(word) < 3;
+        for (size_t i = 0; !ignored && i < sizeof(stop) / sizeof(stop[0]); ++i)
+            ignored = !strcasecmp(word, stop[i]);
+        if (!ignored && contains_case(name, word)) score += 4;
+    }
+    if ((contains_case(goal, "cat") || contains_case(goal, "pet")) &&
+        (contains_case(name, "vet") || contains_case(name, "medical") ||
+         contains_case(name, "vaccin") || contains_case(name, "rabies") ||
+         contains_case(name, "clinic") || contains_case(name, "health"))) score += 3;
+    if (contains_case(goal, "medical") &&
+        (contains_case(name, "medical") || contains_case(name, "health") ||
+         contains_case(name, "clinic") || contains_case(name, "lab") ||
+         contains_case(name, "prescription") || contains_case(name, "vet"))) score += 2;
+    return score;
+}
+
+typedef struct { const char *name; int score; } FindCandidate;
+
+static int build_candidates(const char *goal, jval *items, TextBuffer *out, int *count) {
+    FindCandidate best[40] = {{0}};
+    *count = 0;
+    for (int i = 0; items && items->t == J_ARR && i < items->len; ++i) {
+        jval *name = json_get(items->kids[i], "name");
+        if (!name || name->t != J_STR) continue;
+        int score = candidate_score(goal, name->str);
+        if (score <= 0) continue;
+        if (*count == 40 && (score < best[39].score ||
+            (score == best[39].score && strcasecmp(name->str, best[39].name) >= 0))) continue;
+        int at = *count < 40 ? (*count)++ : 39;
+        best[at].name = name->str; best[at].score = score;
+        while (at > 0 && (best[at].score > best[at - 1].score ||
+               (best[at].score == best[at - 1].score &&
+                strcasecmp(best[at].name, best[at - 1].name) < 0))) {
+            FindCandidate swap = best[at - 1]; best[at - 1] = best[at]; best[at] = swap; --at;
+        }
+    }
+    if (!*count) return text_add(out, "No filename was a clear match. Ask for a distinguishing name, date, or phrase.");
+    if (!text_add(out, "Likely candidates selected from the complete filename index:\n")) return 0;
+    for (int i = 0; i < *count; ++i)
+        if (!text_add(out, "- ") || !text_add(out, best[i].name) || !text_add(out, "\n")) return 0;
+    return 1;
+}
+
+static char *tool_result(Gateway *g, const char *folder, const char *name, jval *args) {
+    jval *path = args && args->t == J_OBJ ? json_get(args, "path") : NULL;
+    char absolute[PATH_MAX];
+    if (strcmp(name, "ask_user") && (!path || path->t != J_STR ||
+        !safe_job_path(folder, path->str, absolute)))
+        return strdup("That path is not a regular file inside the selected folder.");
+    if (!strcmp(name, "fs_metadata")) {
+        char *argv[] = {g->samosa_fs, "metadata", "--max-file-bytes", "104857600", absolute, NULL};
+        int status = 0; char *raw = run_capture(g->samosa_fs, argv, 1 << 20, &status);
+        if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return strdup("File details could not be read."); }
+        return raw;
+    }
+    if (!strcmp(name, "fs_read_text")) return read_bounded_text(absolute);
+    if (!strcmp(name, "fs_read_pages")) {
+        jval *start_value = json_get(args, "start"), *count_value = json_get(args, "count");
+        int start = start_value && start_value->t == J_NUM ? (int)start_value->num : 1;
+        int pages = count_value && count_value->t == J_NUM ? (int)count_value->num : 5;
+        if (start < 1 || pages < 1 || pages > 5)
+            return strdup("Page reads require a start page of 1 or greater and a count from 1 to 5.");
+        char start_text[24], count_text[24];
+        snprintf(start_text, sizeof(start_text), "%d", start);
+        snprintf(count_text, sizeof(count_text), "%d", pages);
+        char *argv[] = {g->samosa_extract, "--json-pages", absolute, start_text, count_text, NULL};
+        int status = 0; char *raw = run_capture(g->samosa_extract, argv, 1 << 20, &status);
+        if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return strdup("Those document pages could not be extracted."); }
+        return raw;
+    }
+    return strdup("Unknown tool request.");
+}
+
+static const char *find_tools_json =
+    "[{\"type\":\"function\",\"function\":{\"name\":\"fs_metadata\",\"description\":\"Check one candidate file's type, size and metadata without reading its content\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_text\",\"description\":\"Read at most 8192 characters from one selected plain text candidate\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_pages\",\"description\":\"Read 1 to 5 consecutive pages from one selected PDF; request another range only if needed\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"start\":{\"type\":\"integer\",\"minimum\":1},\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":5}},\"required\":[\"path\",\"start\",\"count\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"ask_user\",\"description\":\"Ask one clarifying question when the indexed candidates are not reliable\",\"parameters\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"}},\"required\":[\"question\"]}}}]";
+
+static int jobs_find(Gateway *g, int fd, const char *goal, const char *folder,
+                     jval *survey, const char *job_id, int start_seq) {
+    char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", (char *)folder, NULL};
+    int status = 0; char *list_raw = run_capture(g->samosa_fs, argv, 16 << 20, &status);
+    char *arena = NULL; jval *listing = list_raw ? json_parse(list_raw, &arena) : NULL;
+    jval *items = listing && listing->t == J_OBJ ? json_get(listing, "items") : NULL;
+    if (!items || items->t != J_ARR || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        json_free(listing); free(arena); free(list_raw);
+        return sse_json(fd, "{\"type\":\"error\",\"message\":\"The folder index could not be built.\"}");
+    }
+    char event[1024];
+    snprintf(event, sizeof(event), "{\"seq\":%d,\"type\":\"indexing\",\"total\":%d}", start_seq, items->len);
+    if (!sse_json(fd, event)) goto fail;
+    TextBuffer candidates = {0}; int candidate_count = 0;
+    if (!build_candidates(goal, items, &candidates, &candidate_count)) goto fail;
+    snprintf(event, sizeof(event), "{\"seq\":%d,\"type\":\"index_complete\",\"total\":%d,\"candidates\":%d}",
+             start_seq + 1, items->len, candidate_count);
+    if (!sse_json(fd, event)) { free(candidates.data); goto fail; }
+
+    TextBuffer messages = {0};
+    const char *system = "You are completing a local file-finding job. The gateway has checked every filename and supplied the strongest candidates. Inspect only plausible candidates. Use metadata before content. Read plain text only with fs_read_text. Read PDFs only with fs_read_pages in chunks of no more than 5 pages, beginning with the most relevant range and continuing only when required. Never ask to read an entire document. Return a plain-language answer naming the matching relative path and the evidence. If no candidate is reliable, call ask_user. Never print tool JSON or tool names in the answer.";
+    TextBuffer user = {0};
+    if (!text_add(&user, "Goal: ") || !text_add(&user, goal) || !text_add(&user, "\n") ||
+        !text_add(&user, candidates.data)) { free(candidates.data); free(user.data); goto fail; }
+    free(candidates.data);
+    if (!text_add(&messages, "{\"role\":\"system\",\"content\":") ||
+        !text_json_string(&messages, system) || !text_add(&messages, "},{\"role\":\"user\",\"content\":") ||
+        !text_json_string(&messages, user.data) || !text_add(&messages, "}")) {
+        free(user.data); free(messages.data); goto fail;
+    }
+    free(user.data);
+
+    int seq = start_seq + 2;
+    for (int round = 0; round < 8; ++round) {
+        TextBuffer payload = {0};
+        if (!text_add(&payload, "{\"model\":") || !text_json_string(&payload, backend_model(g->backend)) ||
+            !text_add(&payload, ",\"messages\":[") || !text_add(&payload, messages.data) ||
+            !text_add(&payload, "],\"tools\":") || !text_add(&payload, find_tools_json) ||
+            !text_add(&payload, ",\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"stream\":false,\"max_tokens\":1024}")) {
+            free(payload.data); free(messages.data); goto fail;
+        }
+        char *reply_raw = backend_json(g, payload.data); free(payload.data);
+        char *reply_arena = NULL; jval *reply = reply_raw ? json_parse(reply_raw, &reply_arena) : NULL;
+        jval *choices = reply && reply->t == J_OBJ ? json_get(reply, "choices") : NULL;
+        jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
+        jval *calls = message && message->t == J_OBJ ? json_get(message, "tool_calls") : NULL;
+        if (!message || message->t != J_OBJ) {
+            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail;
+        }
+        if (!calls || calls->t != J_ARR || !calls->len) {
+            jval *content = json_get(message, "content");
+            if (!content || content->t != J_STR || !*content->str || strstr(content->str, "samosa_tool") || strstr(content->str, "fs_")) {
+                json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto ask;
+            }
+            TextBuffer done = {0};
+            if (!text_add(&done, "{\"seq\":") ) { free(done.data); goto final_fail; }
+            char number[32]; snprintf(number, sizeof(number), "%d", seq);
+            if (!text_add(&done, number) || !text_add(&done, ",\"type\":\"done\",\"job_id\":") ||
+                !text_json_string(&done, job_id) || !text_add(&done, ",\"summary\":") ||
+                !text_json_string(&done, content->str) || !text_add(&done, "}")) { free(done.data); goto final_fail; }
+            int ok = sse_json(fd, done.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+            free(done.data); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data);
+            json_free(listing); free(arena); free(list_raw); (void)survey; return ok;
+final_fail:
+            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail;
+        }
+        jval *call = calls->kids[0], *function = call && call->t == J_OBJ ? json_get(call, "function") : NULL;
+        jval *id = call && call->t == J_OBJ ? json_get(call, "id") : NULL;
+        jval *name = function && function->t == J_OBJ ? json_get(function, "name") : NULL;
+        jval *arguments = function && function->t == J_OBJ ? json_get(function, "arguments") : NULL;
+        if (!id || id->t != J_STR || !name || name->t != J_STR || !arguments || arguments->t != J_STR) {
+            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail;
+        }
+        char *args_arena = NULL; jval *args = json_parse(arguments->str, &args_arena);
+        if (!args || args->t != J_OBJ) { json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail; }
+        if (!strcmp(name->str, "ask_user")) {
+            jval *question = json_get(args, "question");
+            if (!question || question->t != J_STR || !*question->str) { json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto ask; }
+            TextBuffer paused = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq);
+            text_add(&paused, "{\"seq\":"); text_add(&paused, number); text_add(&paused, ",\"type\":\"await_user\",\"job_id\":");
+            text_json_string(&paused, job_id); text_add(&paused, ",\"question\":"); text_json_string(&paused, question->str); text_add(&paused, "}");
+            int ok = sse_json(fd, paused.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+            free(paused.data); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data);
+            json_free(listing); free(arena); free(list_raw); return ok;
+        }
+        jval *path = json_get(args, "path");
+        TextBuffer call_event = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq++);
+        text_add(&call_event, "{\"seq\":"); text_add(&call_event, number); text_add(&call_event, ",\"type\":\"tool_call\",\"tool\":");
+        text_json_string(&call_event, name->str); text_add(&call_event, ",\"args\":"); text_add(&call_event, arguments->str); text_add(&call_event, "}");
+        if (!sse_json(fd, call_event.data)) { free(call_event.data); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
+        free(call_event.data);
+        char *result = tool_result(g, folder, name->str, args);
+        snprintf(number, sizeof(number), "%d", seq++);
+        TextBuffer result_event = {0}; text_add(&result_event, "{\"seq\":"); text_add(&result_event, number);
+        text_add(&result_event, ",\"type\":\"tool_result\",\"tool\":"); text_json_string(&result_event, name->str);
+        text_add(&result_event, ",\"path\":"); text_json_string(&result_event, path && path->t == J_STR ? path->str : ""); text_add(&result_event, "}");
+        if (!result || !sse_json(fd, result_event.data)) { free(result_event.data); free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
+        free(result_event.data);
+        if (!text_add(&messages, ",")) { free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
+        TextBuffer assistant = {0};
+        text_add(&assistant, "{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":"); text_json_string(&assistant, id->str);
+        text_add(&assistant, ",\"type\":\"function\",\"function\":{\"name\":"); text_json_string(&assistant, name->str);
+        text_add(&assistant, ",\"arguments\":"); text_json_string(&assistant, arguments->str); text_add(&assistant, "}}]}");
+        text_add(&messages, assistant.data); text_add(&messages, ",{\"role\":\"tool\",\"tool_call_id\":"); text_json_string(&messages, id->str);
+        text_add(&messages, ",\"name\":"); text_json_string(&messages, name->str); text_add(&messages, ",\"content\":"); text_json_string(&messages, result); text_add(&messages, "}");
+        free(assistant.data); free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw);
+    }
+    free(messages.data);
+ask:
+    {
+        TextBuffer paused = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq);
+        const char *question = (contains_case(goal, "cat") || contains_case(goal, "pet")) ?
+            "I could not identify the right record yet. What is your pet's name?" :
+            "What filename, name, date, or phrase should I use to narrow the search?";
+        text_add(&paused, "{\"seq\":"); text_add(&paused, number); text_add(&paused, ",\"type\":\"await_user\",\"job_id\":");
+        text_json_string(&paused, job_id); text_add(&paused, ",\"question\":"); text_json_string(&paused, question); text_add(&paused, "}");
+        int ok = sse_json(fd, paused.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        free(paused.data); json_free(listing); free(arena); free(list_raw); return ok;
+    }
+model_fail:
+    sse_json(fd, "{\"type\":\"error\",\"message\":\"The model could not complete this file search.\"}");
+    samosa_send_all(fd, "data: [DONE]\n\n", 14);
+fail:
+    json_free(listing); free(arena); free(list_raw); return 0;
+}
+
+static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder) {
+    char *argv[] = {g->samosa_fs, "survey", "--max-file-bytes", "104857600",
+                    (char *)folder, NULL};
+    int status = 0;
+    char *raw = run_capture(g->samosa_fs, argv, 1 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        free(raw); return samosa_http_json_error(fd, 400, "folder_scan_failed", "The folder could not be inspected.");
+    }
+    char *arena = NULL; jval *survey = json_parse(raw, &arena);
+    jval *total = json_get(survey, "total"), *skipped = json_get(survey, "skipped_count");
+    jval *types = json_get(survey, "by_type");
+    if (!survey || survey->t != J_OBJ || !total || total->t != J_NUM ||
+        !types || types->t != J_OBJ) {
+        json_free(survey); free(arena); free(raw);
+        return samosa_http_json_error(fd, 500, "invalid_sidecar_response", "The filesystem tool returned invalid data.");
+    }
+    if (!samosa_http_stream_headers(fd)) { json_free(survey); free(arena); free(raw); return 0; }
+    char event[16384], job_id[64]; size_t used = 0;
+    snprintf(job_id, sizeof(job_id), "job-%ld-%ld", (long)time(NULL), (long)getpid());
+    used += (size_t)snprintf(event + used, sizeof(event) - used,
+        "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":\"%s\",\"goal\":\"", job_id);
+    if (!json_escape_to(event, sizeof(event), &used, goal)) goto fail;
+    used += (size_t)snprintf(event + used, sizeof(event) - used, "\",\"folder\":\"");
+    if (!json_escape_to(event, sizeof(event), &used, folder)) goto fail;
+    used += (size_t)snprintf(event + used, sizeof(event) - used, "\"}");
+    if (!sse_json(fd, event)) goto fail;
+    int is_find = find_intent(goal);
+    if (!sse_json(fd, is_find ?
+        "{\"seq\":2,\"type\":\"intent\",\"kind\":\"find\",\"rule\":null,\"explain\":\"Search the complete filename index, then inspect likely matches with bounded reads.\"}" :
+        "{\"seq\":2,\"type\":\"intent\",\"kind\":\"report\",\"rule\":null,\"explain\":\"Look through the folder and report what is there, by file type.\"}")) goto fail;
+    used = (size_t)snprintf(event, sizeof(event),
+        "{\"seq\":3,\"type\":\"counting\",\"total\":%d,\"skipped\":%d,\"by_type\":{",
+        (int)total->num, skipped && skipped->t == J_NUM ? (int)skipped->num : 0);
+    for (int i = 0; i < types->len; ++i) {
+        jval *count = json_get(types->kids[i], "count");
+        if (i) event[used++] = ',';
+        event[used++] = '"';
+        if (!json_escape_to(event, sizeof(event), &used, types->keys[i])) goto fail;
+        used += (size_t)snprintf(event + used, sizeof(event) - used, "\":%d",
+                                count && count->t == J_NUM ? (int)count->num : 0);
+    }
+    used += (size_t)snprintf(event + used, sizeof(event) - used, "}}");
+    if (!sse_json(fd, event)) goto fail;
+    if (is_find) {
+        int ok = jobs_find(g, fd, goal, folder, survey, job_id, 4);
+        json_free(survey); free(arena); free(raw); return ok;
+    }
+    event[0] = 0; used = (size_t)snprintf(event, sizeof(event),
+        "{\"seq\":4,\"type\":\"report\",\"total\":%d,\"by_type\":{", (int)total->num);
+    for (int i = 0; i < types->len; ++i) {
+        jval *count = json_get(types->kids[i], "count");
+        if (i) event[used++] = ',';
+        event[used++] = '"';
+        if (!json_escape_to(event, sizeof(event), &used, types->keys[i])) goto fail;
+        used += (size_t)snprintf(event + used, sizeof(event) - used, "\":%d",
+                                count && count->t == J_NUM ? (int)count->num : 0);
+    }
+    used += (size_t)snprintf(event + used, sizeof(event) - used, "}}");
+    if (!sse_json(fd, event)) goto fail;
+    used = (size_t)snprintf(event, sizeof(event),
+        "{\"seq\":5,\"type\":\"done\",\"summary\":\"%d file%s inspected.\"}",
+        (int)total->num, (int)total->num == 1 ? "" : "s");
+    if (!sse_json(fd, event) || !samosa_send_all(fd, "data: [DONE]\n\n", 14)) goto fail;
+    json_free(survey); free(arena); free(raw); return 1;
+fail:
+    json_free(survey); free(arena); free(raw); return 0;
+}
+
+static int jobs_run(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *root = json_parse(request->body, &arena);
+    jval *goal = root && root->t == J_OBJ ? json_get(root, "goal") : NULL;
+    jval *folder = root && root->t == J_OBJ ? json_get(root, "folder") : NULL;
+    if (!goal || goal->t != J_STR || !folder || folder->t != J_STR) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_job", "goal and folder are required.");
+    }
+    char *goal_copy = strdup(goal->str), *folder_copy = strdup(folder->str);
+    json_free(root); free(arena);
+    if (!goal_copy || !folder_copy) { free(goal_copy); free(folder_copy); return 0; }
+    int result = jobs_report(g, fd, goal_copy, folder_copy);
+    free(goal_copy); free(folder_copy); return result;
 }
 
 static int backend_available(Gateway *g, const char *name) {
@@ -353,6 +817,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         samosa_http_server_stop(server);
         return 1;
     }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/run"))
+        return jobs_run(g, fd, request);
     if (!strcmp(request->path, "/v1/chat/completions") ||
         !strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);
@@ -393,6 +859,8 @@ static int load_config(Gateway *g) {
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");
     ENV_PATH(ornith_model, "SAMOSA_ORNITH_MODEL", "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf");
+    ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
+    ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
 #undef ENV_PATH
     if (!path_join(g->backend_log, sizeof(g->backend_log), g->home, "backend.log") ||
         !path_join(g->selection_file, sizeof(g->selection_file), g->home, "model-backend") ||

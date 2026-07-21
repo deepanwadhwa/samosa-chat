@@ -22,6 +22,8 @@ printf 'fixture\n' >"$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf"
 printf 'ornith\n' >"$HOME_DIR/model-backend"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
+/bin/mkdir "$TMP/files"
+printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
 
 # Deliberately expose no external executable through PATH. All utilities used
 # below have absolute paths; the gateway/backend receive the same environment.
@@ -40,6 +42,8 @@ SAMOSA_APP_HTML="$TMP/app.html" \
 SAMOSA_APP_LOGO="$TMP/logo.png" \
 SAMOSA_BONSAI_SERVER="$BACKEND" \
 SAMOSA_ORNITH_MODEL="$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf" \
+SAMOSA_FS="$ROOT/samosa-fs" \
+SAMOSA_EXTRACT="$ROOT/samosa-extract" \
 "$GATEWAY" >"$TMP/gateway.log" 2>&1 &
 PID=$!
 
@@ -58,6 +62,22 @@ reply=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/chat/completions" 
   -H 'Content-Type: application/json' \
   --data-binary '{"messages":[{"role":"user","content":"hello"}],"stream":false}')
 printf '%s' "$reply" | /usr/bin/grep -q 'compiled reply'
+
+report=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"goal\":\"report what is here\",\"folder\":\"$TMP/files\"}")
+printf '%s' "$report" | /usr/bin/grep -q '"type":"report"'
+printf '%s' "$report" | /usr/bin/grep -q '"type":"done"'
+
+find=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"goal\":\"find my cat medical record\",\"folder\":\"$TMP/files\"}")
+printf '%s' "$find" | /usr/bin/grep -q '"tool":"fs_read_text"'
+printf '%s' "$find" | /usr/bin/grep -q "Found the matching record at cat-medical-note.txt"
+if printf '%s' "$find" | /usr/bin/grep -q 'samosa_tool'; then
+  echo "compiled find leaked tool protocol" >&2
+  exit 1
+fi
 /usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/shutdown" >/dev/null
 wait "$PID"
 PID=""
