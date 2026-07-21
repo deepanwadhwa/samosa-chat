@@ -154,7 +154,37 @@ def main():
             assert estimate["unit_count"] == 4
             assert estimate["model_units"] == 0
 
-            # 6) validation: missing fields -> 400 (not a stream).
+            # 6) review corrections persist through the gateway without rerun.
+            review_job = "gateway-review"
+            review_dir = Path(jobsroot) / review_job / "results"
+            review_dir.mkdir(parents=True)
+            receipt = Path(inbox) / "receipt.txt"
+            receipt.write_text("Coffee Shop\nTotal 8.37\n")
+            (review_dir / "output.jsonl").write_text(json.dumps({
+                "unit_id": "u1",
+                "status": "review_required",
+                "input_path": str(receipt),
+                "extracted": {"merchant": "Coffee", "total": 8.0},
+            }) + "\n")
+
+            status, review = json_post(port, "/v1/jobs/review",
+                                       {"job_id": review_job})
+            assert status == 200, review
+            assert review["pending"] == 1
+            assert review["items"][0]["fields"]["total"] == 8.0
+
+            status, corrected = json_post(port, "/v1/jobs/review/correct", {
+                "job_id": review_job,
+                "item": {"unit_id": "u1"},
+                "fields": {"merchant": "Coffee Shop", "total": 8.37},
+            })
+            assert status == 200, corrected
+            assert corrected["pending"] == 0
+            saved = [json.loads(line) for line in (review_dir / "output.jsonl").read_text().splitlines()]
+            assert saved[0]["status"] == "passed"
+            assert saved[0]["extracted"]["merchant"] == "Coffee Shop"
+
+            # 7) validation: missing fields -> 400 (not a stream).
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             b = json.dumps({"goal": "", "folder": ""}).encode()
             conn.request("POST", "/v1/jobs/run", body=b,

@@ -6,6 +6,7 @@ undo, and error handling. The model is mocked; no backend required.
 """
 
 import os
+import json
 import shutil
 import sys
 import tempfile
@@ -134,6 +135,32 @@ class JobsLayerTest(unittest.TestCase):
         self.assertEqual(estimate['unit_count'], 1)
         self.assertTrue(estimate['token_counts_exact'])
         self.assertGreater(estimate['estimated_wall_seconds'], 0)
+
+    def test_preview_selection_defaults_to_one_item(self):
+        job = {
+            'input': {'folder': self.inbox, 'recursive': False},
+            'instruction': 'Extract fields',
+            'output_schema': {'type': 'object'},
+        }
+        result = J.select_preview_items(job)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['artifact_dir'], 'preview')
+        self.assertEqual(result['sample_count'], 1)
+        self.assertEqual(len(result['items']), 1)
+        self.assertEqual(os.path.basename(result['items'][0]['input_path']), 'a.txt')
+
+    def test_preview_selection_expands_deterministically_and_diversely(self):
+        job = {
+            'input': {'folder': self.inbox, 'recursive': False},
+            'instruction': 'Extract fields',
+            'output_schema': {'type': 'object'},
+        }
+        first = J.select_preview_items(job, sample_count=3)
+        second = J.select_preview_items(job, sample_count=3)
+        self.assertEqual(first, second)
+        self.assertEqual(first['sample_count'], 3)
+        self.assertEqual(len({i['media_type'] for i in first['items']}), 3)
+        self.assertEqual(first['artifact_dir'], 'preview')
 
     # --- report ------------------------------------------------------------
 
@@ -309,6 +336,76 @@ class JobsLayerTest(unittest.TestCase):
             lines = [l for l in f if l.strip()]
         # seq numbers are monotonic and every streamed event was written
         self.assertEqual(len(lines), len(events))
+
+    def make_review_job(self):
+        job_id = 'review-job'
+        jdir = os.path.join(self.jobsroot, job_id)
+        os.makedirs(os.path.join(jdir, 'results'))
+        source = os.path.join(self.inbox, 'receipt.txt')
+        with open(source, 'w') as f:
+            f.write('Coffee Shop\nTotal 8.37\n')
+        records = [
+            {
+                'unit_id': 'u1',
+                'status': 'review_required',
+                'input_path': source,
+                'input_sha256': 'sha',
+                'extracted': {'merchant': 'Coffee', 'total': 8.0},
+                'reasons': ['low_confidence:total'],
+            },
+            {
+                'unit_id': 'u2',
+                'status': 'passed',
+                'input_path': os.path.join(self.inbox, 'a.txt'),
+                'extracted': {'merchant': 'Already OK'},
+            },
+        ]
+        with open(os.path.join(jdir, 'results', 'output.jsonl'), 'w') as f:
+            for record in records:
+                f.write(json.dumps(record) + '\n')
+        with open(os.path.join(jdir, 'job.json'), 'w') as f:
+            json.dump({'folder': self.inbox}, f)
+        return job_id, source
+
+    def test_review_correction_persists_to_output_and_marks_done(self):
+        job_id, source = self.make_review_job()
+        listed = J.review_items(job_id)
+        self.assertEqual(listed['pending'], 1)
+        self.assertEqual(listed['items'][0]['source'], 'Coffee Shop\nTotal 8.37\n')
+
+        result = J.correct_review_item(job_id, {'unit_id': 'u1'},
+                                       {'merchant': 'Coffee Shop', 'total': 8.37})
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['pending'], 0)
+        self.assertTrue(result['item']['done'])
+
+        output = os.path.join(self.jobsroot, job_id, 'results', 'output.jsonl')
+        with open(output) as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]['status'], 'passed')
+        self.assertTrue(records[0]['reviewed'])
+        self.assertEqual(records[0]['extracted']['merchant'], 'Coffee Shop')
+        self.assertEqual(records[0]['extracted']['total'], 8.37)
+        self.assertEqual(records[0]['merchant'], 'Coffee Shop')
+        self.assertEqual(records[1]['unit_id'], 'u2')
+
+        log_path = os.path.join(self.jobsroot, job_id, 'events.jsonl')
+        with open(log_path) as f:
+            events = [json.loads(line) for line in f if line.strip()]
+        self.assertEqual(events[-1]['type'], 'review_item_done')
+        self.assertEqual(events[-1]['fields'], ['merchant', 'total'])
+
+    def test_review_accept_as_is_marks_done_without_rerun(self):
+        job_id, _source = self.make_review_job()
+        result = J.correct_review_item(job_id, {'index': 0})
+        self.assertTrue(result['ok'])
+        self.assertEqual(J.review_items(job_id)['pending'], 0)
+        with open(os.path.join(self.jobsroot, job_id, 'results', 'output.jsonl')) as f:
+            first = json.loads(next(f))
+        self.assertEqual(first['status'], 'passed')
+        self.assertTrue(first['reviewed'])
+        self.assertEqual(first['extracted']['total'], 8.0)
 
 
 if __name__ == '__main__':

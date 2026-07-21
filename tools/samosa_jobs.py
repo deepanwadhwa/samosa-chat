@@ -129,6 +129,7 @@ JOB_TEMPLATES = {
 DEFAULT_PREFILL_TOKENS_PER_SECOND = float(os.environ.get('SAMOSA_JOB_PREFILL_TPS', '20'))
 DEFAULT_DECODE_TOKENS_PER_SECOND = float(os.environ.get('SAMOSA_JOB_DECODE_TPS', '6'))
 DEFAULT_JOB_MAX_TOKENS = int(os.environ.get('SAMOSA_JOB_MAX_TOKENS', '512'))
+PREVIEW_SAMPLE_TARGET = 3
 
 
 def _suggest_template(goal):
@@ -277,6 +278,112 @@ def estimate_job(job, token_counter=None):
         'estimated_wall_human': _human_seconds(estimated),
         'battery_policy': 'run manually; daemon battery policy is not active yet',
     }
+
+
+def select_preview_items(job, sample_count=1):
+    """Return deterministic preview input items for a job definition.
+
+    The default remains one unit.  When callers ask for more, choose up to
+    `sample_count` files while spreading picks across media types where the
+    folder contents allow it.  This is selection-only: actual preview runners
+    should write their artifacts under preview/, never results/.
+    """
+    try:
+        requested = int(sample_count)
+    except (TypeError, ValueError):
+        requested = 1
+    requested = max(1, requested)
+    has_model_work = bool(job.get('instruction') or job.get('output_schema'))
+    items, skipped = fs.discover_files(job.get('input') or {},
+                                       is_metadata_only=not has_model_work)
+    path_ordered = sorted(items, key=lambda item: str(item.get('input_path') or ''))
+    items = sorted(items, key=lambda item: (
+        str(item.get('media_type') or ''),
+        str(item.get('input_path') or ''),
+        str(item.get('input_sha256') or ''),
+    ))
+    if requested == 1 or len(items) <= 1:
+        return {'ok': True, 'sample_count': min(1, len(items)),
+                'items': path_ordered[:1], 'skipped_count': len(skipped),
+                'artifact_dir': 'preview'}
+
+    by_type = {}
+    for item in items:
+        by_type.setdefault(item.get('media_type') or '', []).append(item)
+    selected = []
+    selected_keys = set()
+    for media_type in sorted(by_type):
+        item = by_type[media_type][0]
+        key = (item.get('input_path'), item.get('input_sha256'))
+        selected.append(item)
+        selected_keys.add(key)
+        if len(selected) >= requested:
+            break
+    if len(selected) < requested:
+        for item in items:
+            key = (item.get('input_path'), item.get('input_sha256'))
+            if key in selected_keys:
+                continue
+            selected.append(item)
+            selected_keys.add(key)
+            if len(selected) >= requested:
+                break
+    selected.sort(key=lambda item: str(item.get('input_path') or ''))
+    return {'ok': True, 'sample_count': len(selected), 'items': selected,
+            'skipped_count': len(skipped), 'artifact_dir': 'preview'}
+
+
+def review_items(job_id):
+    """List reviewable records from <job_dir>/results/output.jsonl."""
+    jdir = job_dir_for(job_id)
+    records = _read_output_records(jdir)
+    items = []
+    for index, rec in enumerate(records):
+        if not _is_review_pending(rec):
+            continue
+        items.append(_review_item_payload(index, rec))
+    return {'ok': True, 'job_id': job_id, 'pending': len(items), 'items': items}
+
+
+def correct_review_item(job_id, item, fields=None, mark_done=True):
+    """Persist human corrections for one output record without rerunning a job."""
+    jdir = job_dir_for(job_id)
+    records = _read_output_records(jdir)
+    index = _find_output_record(records, item)
+    if index is None:
+        return {'ok': False, 'reason': 'review item not found'}
+    if fields is None:
+        fields = {}
+    if not isinstance(fields, dict):
+        return {'ok': False, 'reason': 'fields must be an object'}
+    fields = dict(fields)
+
+    record = dict(records[index])
+    extracted = record.get('extracted') if isinstance(record.get('extracted'), dict) else {}
+    if not extracted:
+        extracted = {k: v for k, v in record.items()
+                     if k not in _OUTPUT_METADATA_KEYS and not k.startswith('review_')}
+    extracted.update(fields)
+    record['extracted'] = extracted
+    for key, value in fields.items():
+        record[key] = value
+    record['review_state'] = 'done' if mark_done else 'pending'
+    record['reviewed'] = bool(mark_done)
+    record['corrected'] = True
+    record['status'] = 'passed' if mark_done else record.get('status', 'review_required')
+    record['review_corrected_at'] = fs.rfc3339_now()
+    records[index] = record
+    _write_output_records(jdir, records)
+
+    log = fs.EventLog(os.path.join(jdir, 'events.jsonl'))
+    log.load()
+    event = log.append('review_item_done' if mark_done else 'review_item_corrected',
+                       job_id=job_id, item_index=index,
+                       unit_id=record.get('unit_id'),
+                       input_path=record.get('input_path'),
+                       fields=sorted(fields.keys()))
+    return {'ok': True, 'job_id': job_id, 'item': _review_item_payload(index, record),
+            'event': event, 'pending': len([r for r in records if _is_review_pending(r)])}
 
 
 def _count_text_tokens(text, token_counter=None):
@@ -737,6 +844,101 @@ def _dumps(obj):
 
 def _looks_like_question(text):
     return bool(text and text.rstrip().endswith('?'))
+
+
+_OUTPUT_METADATA_KEYS = {
+    'status', 'unit_id', 'input_path', 'input_sha256', 'media_type', 'source',
+    'reason', 'reasons', 'errors', 'warnings', 'provenance', 'attempt',
+    'review_state', 'reviewed', 'corrected', 'review_corrected_at',
+}
+
+
+def _output_path(jdir):
+    return os.path.join(jdir, 'results', 'output.jsonl')
+
+
+def _read_output_records(jdir):
+    path = _output_path(jdir)
+    records = []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    value = json.loads(line)
+                    if isinstance(value, dict):
+                        records.append(value)
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return records
+
+
+def _write_output_records(jdir, records):
+    path = _output_path(jdir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = ''.join(json.dumps(r, separators=(',', ':'), sort_keys=True) + '\n'
+                   for r in records)
+    fs.atomic_write(path, data)
+
+
+def _is_review_pending(record):
+    if record.get('review_state') == 'done' or record.get('reviewed') is True:
+        return False
+    return record.get('status') == 'review_required' or bool(record.get('review_required'))
+
+
+def _review_item_payload(index, record):
+    extracted = record.get('extracted') if isinstance(record.get('extracted'), dict) else None
+    if extracted is None:
+        extracted = {k: v for k, v in record.items()
+                     if k not in _OUTPUT_METADATA_KEYS and not k.startswith('review_')}
+    return {
+        'index': index,
+        'unit_id': record.get('unit_id'),
+        'input_path': record.get('input_path'),
+        'input_sha256': record.get('input_sha256'),
+        'status': record.get('status'),
+        'reasons': record.get('reasons') or record.get('errors') or record.get('reason') or [],
+        'fields': extracted,
+        'source': _source_preview(record.get('input_path')),
+        'done': not _is_review_pending(record),
+    }
+
+
+def _source_preview(path):
+    if not path or not os.path.isfile(path):
+        return ''
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read(4000)
+    except (OSError, UnicodeDecodeError):
+        return os.path.basename(path)
+
+
+def _find_output_record(records, item):
+    if isinstance(item, int):
+        return item if 0 <= item < len(records) else None
+    if not isinstance(item, dict):
+        return None
+    if 'index' in item:
+        try:
+            index = int(item['index'])
+            if 0 <= index < len(records):
+                return index
+        except (TypeError, ValueError):
+            pass
+    for key in ('unit_id', 'input_sha256', 'input_path'):
+        value = item.get(key)
+        if not value:
+            continue
+        for index, record in enumerate(records):
+            if record.get(key) == value:
+                return index
+    return None
 
 
 # --- Minimal terminal CLI --------------------------------------------------

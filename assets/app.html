@@ -276,6 +276,13 @@
     .job-review-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; margin-bottom: 3px; }
     .job-review-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
     .job-review-arrow { color: var(--muted); align-self: end; text-align: center; }
+    .job-review-fields { display: grid; gap: 6px; }
+    .job-review-field { display: grid; grid-template-columns: minmax(92px, .36fr) minmax(0, 1fr); gap: 7px; align-items: center; }
+    .job-review-field label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .job-review-field input { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); padding: 7px 8px; font: 12.5px/1.35 var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
+    .job-review-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+    .job-review-actions button { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); padding: 7px 10px; cursor: pointer; font-weight: 650; font-size: 12px; }
+    .job-review-actions .primary { background: var(--brand); color: #fff; border-color: transparent; }
     @media (max-width: 640px) {
       .job-review-row { grid-template-columns: 1fr; gap: 6px; }
       .job-review-arrow { display: none; }
@@ -737,10 +744,84 @@
         jobEls.review.hidden = false;
       }
       function renderExtractionReview(evt, ctx) {
+        clearReview();
         jobEls.reviewTitle.textContent = "Needs review";
         jobEls.reviewMeta.textContent = "Source and extracted fields";
-        addReviewRow("Source", relTo(evt.input_path || evt.path || "", ctx.folder), "Extraction", JSON.stringify(evt.result || evt.fields || evt.reason || {}));
+        renderEditableReviewItem({
+          index: evt.index,
+          unit_id: evt.unit_id,
+          input_path: evt.input_path || evt.path,
+          input_sha256: evt.input_sha256,
+          reasons: evt.reasons || evt.reason || [],
+          fields: evt.fields || evt.result || {},
+          source: evt.source || ""
+        }, ctx);
         jobEls.review.hidden = false;
+      }
+      function fieldValueToText(value) {
+        if (value === null || value === undefined) return "";
+        return typeof value === "object" ? JSON.stringify(value) : String(value);
+      }
+      function textToFieldValue(text) {
+        const trimmed = text.trim();
+        if (trimmed === "") return null;
+        if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+        if (trimmed === "true" || trimmed === "false") return trimmed === "true";
+        return text;
+      }
+      function renderEditableReviewItem(item, ctx) {
+        const row = document.createElement("div"); row.className = "job-review-row";
+        row.innerHTML = '<div class="job-review-cell"><div class="job-review-label">Source</div><div class="job-review-value"></div><div class="sub"></div></div><div class="job-review-arrow">→</div><div class="job-review-cell"><div class="job-review-label">Fields</div><div class="job-review-fields"></div><div class="job-review-actions"></div></div>';
+        row.querySelector(".job-review-value").textContent = relTo(item.input_path || "", ctx.folder);
+        const sub = row.querySelector(".sub");
+        sub.textContent = item.source || (Array.isArray(item.reasons) ? item.reasons.join(", ") : String(item.reasons || ""));
+        const fields = item.fields && typeof item.fields === "object" ? item.fields : {};
+        const fieldsBox = row.querySelector(".job-review-fields");
+        const entries = Object.entries(fields);
+        if (!entries.length) entries.push(["value", ""]);
+        for (const [key, value] of entries) {
+          const wrap = document.createElement("div"); wrap.className = "job-review-field";
+          const label = document.createElement("label"); label.textContent = key;
+          const input = document.createElement("input"); input.value = fieldValueToText(value); input.dataset.field = key;
+          wrap.append(label, input); fieldsBox.appendChild(wrap);
+        }
+        const actions = row.querySelector(".job-review-actions");
+        const save = document.createElement("button"); save.className = "primary"; save.textContent = "Save";
+        save.onclick = () => saveReviewItem(item, row, ctx, true);
+        const accept = document.createElement("button"); accept.textContent = "Accept";
+        accept.onclick = () => saveReviewItem(item, row, ctx, false);
+        actions.append(save, accept);
+        jobEls.reviewList.appendChild(row);
+      }
+      async function saveReviewItem(item, row, ctx, includeFields) {
+        const fields = {};
+        if (includeFields) row.querySelectorAll("input[data-field]").forEach(input => { fields[input.dataset.field] = textToFieldValue(input.value); });
+        try {
+          const payload = { job_id: ctx.jobId || lastJobId, item, mark_done: true };
+          if (includeFields) payload.fields = fields;
+          const r = await fetch("/v1/jobs/review/correct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+          const data = await r.json();
+          if (!r.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Review update failed");
+          row.remove();
+          jobEls.reviewMeta.textContent = `${data.pending} pending`;
+          if (!data.pending) clearReview();
+          jobLine("✓", includeFields ? "Saved review correction" : "Accepted review item", "step-done");
+        } catch (error) {
+          jobLine("✗", error.message || String(error), "step-error");
+        }
+      }
+      async function loadReviewQueue(jobId, ctx) {
+        if (!jobId) return;
+        try {
+          const r = await fetch("/v1/jobs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
+          const data = await r.json();
+          if (!r.ok || !data.ok || !data.items.length) return;
+          clearReview();
+          jobEls.reviewTitle.textContent = "Needs review";
+          jobEls.reviewMeta.textContent = `${data.pending} pending`;
+          data.items.forEach(item => renderEditableReviewItem(item, ctx));
+          jobEls.review.hidden = false;
+        } catch (_) {}
       }
 
       function renderJobEvent(evt, ctx) {
@@ -813,6 +894,7 @@
             break;
           case "done": {
             jobLine("✓", evt.summary, "step-done");
+            loadReviewQueue(ctx.jobId || lastJobId, ctx);
             if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
             else jobEls.bar.hidden = true;
             break;

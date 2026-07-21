@@ -1016,6 +1016,10 @@ class Handler(BaseHTTPRequestHandler):
             self.jobs_suggest(self.body())
         elif path == "/v1/jobs/estimate":
             self.jobs_estimate(self.body())
+        elif path == "/v1/jobs/review":
+            self.jobs_review(self.body())
+        elif path == "/v1/jobs/review/correct":
+            self.jobs_review_correct(self.body())
         elif path == "/v1/jobs/apply":
             self.jobs_stream(self.body(), "apply")
         elif path == "/v1/jobs/undo":
@@ -1217,6 +1221,36 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(400, {"error": {"message": "job is required"}})
             return
         self.json_response(200, samosa_jobs.estimate_job(job))
+
+    def jobs_review(self, body: bytes) -> None:
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+        job_id = str(data.get("job_id", "")).strip()
+        if not job_id:
+            self.json_response(400, {"error": {"message": "job_id is required"}})
+            return
+        self.json_response(200, samosa_jobs.review_items(job_id))
+
+    def jobs_review_correct(self, body: bytes) -> None:
+        try:
+            data = json.loads(body) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            self.json_response(400, {"error": {"message": "invalid JSON body"}})
+            return
+        job_id = str(data.get("job_id", "")).strip()
+        if not job_id:
+            self.json_response(400, {"error": {"message": "job_id is required"}})
+            return
+        result = samosa_jobs.correct_review_item(
+            job_id,
+            data.get("item", {}),
+            fields=data.get("fields"),
+            mark_done=bool(data.get("mark_done", True)),
+        )
+        self.json_response(200 if result.get("ok") else 404, result)
 
     def jobs_stream(self, body: bytes, kind: str) -> None:
         """Stream a job's live events (decode intent, counting, plan, moves)."""
