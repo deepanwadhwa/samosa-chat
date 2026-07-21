@@ -327,6 +327,29 @@ static char *backend_json(Gateway *g, const char *payload) {
     free(response.data); return copy;
 }
 
+static char *model_extract(Gateway *g, const char *instruction, jval *schema,
+                           const char *source) {
+    TextBuffer schema_json = {0}, user = {0}, payload = {0};
+    if (!text_json_value(&schema_json, schema) ||
+        !text_add(&user, instruction && *instruction ? instruction : "Extract the requested fields.") ||
+        !text_add(&user, "\nReturn only one JSON object matching this schema:\n") ||
+        !text_add(&user, schema_json.data ? schema_json.data : "{\"type\":\"object\"}") ||
+        !text_add(&user, "\nSource:\n") || !text_add(&user, source) ||
+        !text_add(&payload, "{\"model\":") || !text_json_string(&payload, backend_model(g->backend)) ||
+        !text_add(&payload, ",\"messages\":[{\"role\":\"system\",\"content\":\"Extract structured data. Return JSON only, with no markdown or commentary.\"},{\"role\":\"user\",\"content\":") ||
+        !text_json_string(&payload, user.data) ||
+        !text_add(&payload, "}],\"stream\":false,\"thinking\":\"off\",\"max_tokens\":512}")) {
+        free(schema_json.data); free(user.data); free(payload.data); return NULL;
+    }
+    char *raw = backend_json(g, payload.data); free(schema_json.data); free(user.data); free(payload.data);
+    char *arena = NULL; jval *root = raw ? json_parse(raw, &arena) : NULL;
+    jval *choices = root && root->t == J_OBJ ? json_get(root, "choices") : NULL;
+    jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
+    jval *content = message && message->t == J_OBJ ? json_get(message, "content") : NULL;
+    char *result = content && content->t == J_STR ? strdup(content->str) : NULL;
+    json_free(root); free(arena); free(raw); return result;
+}
+
 static int sse_json(int fd, const char *json) {
     return samosa_send_all(fd, "data: ", 6) && samosa_send_all(fd, json, strlen(json)) &&
            samosa_send_all(fd, "\n\n", 2);
@@ -811,6 +834,131 @@ static int jobs_review_correct(Gateway *g, int fd, const SamosaHttpRequest *requ
     json_free(body); free(arena); return samosa_http_response(fd, 200, "application/json", response, NULL);
 }
 
+static char *definition_source(Gateway *g, jval *item) {
+    jval *path = json_get(item, "path"), *media = json_get(item, "media_type");
+    if (!path || path->t != J_STR || !media || media->t != J_STR) return NULL;
+    if (!strcmp(media->str, "text/plain")) return read_bounded_text(path->str);
+    if (!strcmp(media->str, "application/pdf")) {
+        char *argv[] = {g->samosa_extract, "--json-pages", path->str, "1", "5", NULL};
+        int status = 0; char *raw = run_capture(g, g->samosa_extract, argv, 1 << 20, &status);
+        if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return NULL; }
+        char *arena = NULL; jval *result = json_parse(raw, &arena); jval *text_value = json_get(result, "text");
+        char *text = text_value && text_value->t == J_STR ? strdup(text_value->str) : NULL;
+        json_free(result); free(arena); free(raw); return text;
+    }
+    return NULL;
+}
+
+static int definition_record(TextBuffer *record, jval *item, const char *extracted,
+                             int passed) {
+    jval *path = json_get(item, "path"), *hash = json_get(item, "input_sha256");
+    char *arena = NULL; jval *fields = extracted ? json_parse(extracted, &arena) : NULL;
+    if (!fields || fields->t != J_OBJ) passed = 0;
+    if (!text_add(record, "{\"input_path\":") || !text_json_string(record, path && path->t == J_STR ? path->str : "") ||
+        !text_add(record, ",\"input_sha256\":") || !text_json_string(record, hash && hash->t == J_STR ? hash->str : "") ||
+        !text_add(record, passed ? ",\"status\":\"passed\",\"extracted\":" :
+                                  ",\"status\":\"review_required\",\"reasons\":[\"invalid_model_output\"],\"extracted\":") ||
+        !text_json_value(record, fields)) { json_free(fields); free(arena); return 0; }
+    if (fields && fields->t == J_OBJ) for (int i = 0; i < fields->len; ++i)
+        if (!text_add(record, ",") || !text_json_string(record, fields->keys[i]) || !text_add(record, ":") ||
+            !text_json_value(record, fields->kids[i])) { json_free(fields); free(arena); return 0; }
+    int ok = text_add(record, "}"); json_free(fields); free(arena); return ok;
+}
+
+static int definition_request(Gateway *g, int fd, const SamosaHttpRequest *request,
+                              int preview) {
+    char *arena = NULL; jval *body = json_parse(request->body, &arena);
+    jval *job = body && body->t == J_OBJ ? json_get(body, "job") : NULL;
+    jval *input = job && job->t == J_OBJ ? json_get(job, "input") : NULL;
+    jval *folder = input && input->t == J_OBJ ? json_get(input, "folder") : NULL;
+    jval *instruction = job && job->t == J_OBJ ? json_get(job, "instruction") : NULL;
+    jval *schema = job && job->t == J_OBJ ? json_get(job, "output_schema") : NULL;
+    jval *output = job && job->t == J_OBJ ? json_get(job, "output") : NULL;
+    jval *output_dir = output && output->t == J_OBJ ? json_get(output, "dir") : NULL;
+    jval *job_id_value = job && job->t == J_OBJ ? json_get(job, "job_id") : NULL;
+    jval *expanded_value = body && body->t == J_OBJ ? json_get(body, "expanded") : NULL;
+    if (!job || job->t != J_OBJ || !folder || folder->t != J_STR ||
+        !schema || schema->t != J_OBJ || !output_dir || output_dir->t != J_STR) {
+        json_free(body); free(arena); return samosa_http_json_error(fd, 400, "invalid_definition", "The job needs input.folder, output_schema, and output.dir.");
+    }
+    char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", folder->str, NULL};
+    int status = 0; char *list_raw = run_capture(g, g->samosa_fs, argv, 16 << 20, &status);
+    char *list_arena = NULL; jval *listing = list_raw ? json_parse(list_raw, &list_arena) : NULL;
+    jval *items = listing && listing->t == J_OBJ ? json_get(listing, "items") : NULL;
+    if (!items || items->t != J_ARR || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        json_free(listing); free(list_arena); free(list_raw); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "definition_scan_failed", "The input folder could not be inspected.");
+    }
+    int wanted = preview ? (expanded_value && expanded_value->t == J_BOOL && expanded_value->boolean ? 3 : 1) : items->len;
+    int selected[3] = {-1, -1, -1}, selected_count = 0;
+    if (preview) {
+        for (int i = 0; i < items->len && selected_count < wanted; ++i) {
+            jval *media = json_get(items->kids[i], "media_type"); int seen = 0;
+            for (int j = 0; j < selected_count; ++j) {
+                jval *prior = json_get(items->kids[selected[j]], "media_type");
+                if (media && prior && media->t == J_STR && prior->t == J_STR && !strcmp(media->str, prior->str)) seen = 1;
+            }
+            if (!seen) selected[selected_count++] = i;
+        }
+        for (int i = 0; i < items->len && selected_count < wanted; ++i) {
+            int seen = 0; for (int j = 0; j < selected_count; ++j) if (selected[j] == i) seen = 1;
+            if (!seen) selected[selected_count++] = i;
+        }
+    }
+    char job_id[128];
+    if (job_id_value && job_id_value->t == J_STR) path_copy(job_id, sizeof(job_id), job_id_value->str);
+    else snprintf(job_id, sizeof(job_id), "job-%ld-%ld", (long)time(NULL), (long)getpid());
+    save_job_state(g, job_id, instruction && instruction->t == J_STR ? instruction->str : "definition", folder->str);
+    char artifact_dir[PATH_MAX], artifact_path[PATH_MAX];
+    if (preview) {
+        if (!path_join(artifact_dir, sizeof(artifact_dir), output_dir->str, "preview")) goto definition_fail;
+    } else if (!path_copy(artifact_dir, sizeof(artifact_dir), output_dir->str)) goto definition_fail;
+    if (!mkdirs(artifact_dir) || !path_join(artifact_path, sizeof(artifact_path), artifact_dir, "output.jsonl")) goto definition_fail;
+    TextBuffer records_file = {0}, records_array = {0}; int completed = 0;
+    if (!preview && !samosa_http_stream_headers(fd)) goto definition_fail;
+    int count = preview ? selected_count : items->len;
+    for (int n = 0; n < count; ++n) {
+        int item_index = preview ? selected[n] : n; jval *item = items->kids[item_index];
+        char *source = definition_source(g, item);
+        char *extracted = source ? model_extract(g, instruction && instruction->t == J_STR ? instruction->str : "", schema, source) : NULL;
+        free(source); TextBuffer record = {0};
+        if (!definition_record(&record, item, extracted, extracted != NULL)) { free(extracted); free(record.data); free(records_file.data); free(records_array.data); goto definition_fail; }
+        free(extracted);
+        if (!text_add(&records_file, record.data) || !text_add(&records_file, "\n") ||
+            (completed && !text_add(&records_array, ",")) || !text_add(&records_array, record.data)) {
+            free(record.data); free(records_file.data); free(records_array.data); goto definition_fail;
+        }
+        if (!preview) {
+            jval *path = json_get(item, "path"); TextBuffer event = {0}; char number[32]; snprintf(number, sizeof(number), "%d", n + 1);
+            text_add(&event, "{\"type\":\"item_complete\",\"i\":"); text_add(&event, number); text_add(&event, ",\"n\":");
+            snprintf(number, sizeof(number), "%d", count); text_add(&event, number); text_add(&event, ",\"input_path\":");
+            text_json_string(&event, path && path->t == J_STR ? path->str : ""); text_add(&event, "}"); sse_json(fd, event.data); free(event.data);
+        }
+        ++completed; free(record.data);
+    }
+    if (!write_small_file(artifact_path, records_file.data ? records_file.data : "")) { free(records_file.data); free(records_array.data); goto definition_fail; }
+    if (!preview) {
+        char review_dir[PATH_MAX], review_path[PATH_MAX];
+        if (job_state_path(g, job_id, "results", review_dir, 1)) mkdirs(review_dir);
+        if (job_state_path(g, job_id, "results/output.jsonl", review_path, 1)) write_small_file(review_path, records_file.data ? records_file.data : "");
+    }
+    free(records_file.data);
+    int ok;
+    if (preview) {
+        TextBuffer response = {0}; char number[32]; snprintf(number, sizeof(number), "%d", completed);
+        text_add(&response, "{\"ok\":true,\"sample_count\":"); text_add(&response, number);
+        text_add(&response, ",\"artifact_dir\":\"preview\",\"records\":["); text_add(&response, records_array.data ? records_array.data : ""); text_add(&response, "]}");
+        ok = samosa_http_response(fd, 200, "application/json", response.data, NULL); free(response.data);
+    } else {
+        char event[256]; snprintf(event, sizeof(event), "{\"type\":\"done\",\"job_id\":\"%s\",\"summary\":\"Processed %d item%s.\"}", job_id, completed, completed == 1 ? "" : "s");
+        ok = sse_json(fd, event) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+    }
+    free(records_array.data); json_free(listing); free(list_arena); free(list_raw); json_free(body); free(arena); return ok;
+definition_fail:
+    json_free(listing); free(list_arena); free(list_raw); json_free(body); free(arena);
+    return preview ? samosa_http_json_error(fd, 500, "definition_failed", "The definition could not be run.") : 0;
+}
+
 static int backend_available(Gateway *g, const char *name) {
     if (!strcmp(name, "qwen")) {
         char experts[PATH_MAX];
@@ -1075,6 +1223,10 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return jobs_review(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/review/correct"))
         return jobs_review_correct(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/definition/preview"))
+        return definition_request(g, fd, request, 1);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/definition/run"))
+        return definition_request(g, fd, request, 0);
     if (!strcmp(request->path, "/v1/chat/completions") ||
         !strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);

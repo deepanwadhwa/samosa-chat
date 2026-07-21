@@ -27,6 +27,7 @@ printf 'png\n' >"$TMP/logo.png"
 /bin/mkdir "$TMP/files"
 printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
 printf "Miso vaccination record.\n" >"$TMP/files/miso-record.txt"
+printf "Cafe total 4.50\n" >"$TMP/files/receipt-b.txt"
 /bin/mkdir -p "$HOME_DIR/jobs/review-native/results"
 printf 'Coffee Shop\nTotal 8.37\n' >"$TMP/files/receipt.txt"
 printf '{"unit_id":"u1","status":"review_required","input_path":"%s","extracted":{"merchant":"Coffee","total":8.0}}\n' \
@@ -118,6 +119,23 @@ printf '%s' "$corrected" | /usr/bin/grep -q '"pending":0'
 /usr/bin/grep -q '"status":"passed"' "$HOME_DIR/jobs/review-native/results/output.jsonl"
 /usr/bin/grep -q '"merchant":"Coffee Shop"' "$HOME_DIR/jobs/review-native/results/output.jsonl"
 [ "$(/usr/bin/wc -l <"$HOME_DIR/jobs/review-native/results/output.jsonl" | /usr/bin/tr -d ' ')" = 2 ]
+
+definition="{\"job\":{\"job_id\":\"native-definition\",\"input\":{\"folder\":\"$TMP/files\"},\"instruction\":\"Extract merchant and total.\",\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-out\"}}}"
+preview=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/preview" \
+  -H 'Content-Type: application/json' --data-binary "$definition")
+printf '%s' "$preview" | /usr/bin/grep -q '"sample_count":1'
+[ -f "$TMP/definition-out/preview/output.jsonl" ]
+[ ! -f "$TMP/definition-out/output.jsonl" ]
+expanded=$(printf '%s' "$definition" | /usr/bin/sed 's/}$/,"expanded":true}/')
+preview3=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/preview" \
+  -H 'Content-Type: application/json' --data-binary "$expanded")
+printf '%s' "$preview3" | /usr/bin/grep -q '"sample_count":3'
+run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
+  -H 'Content-Type: application/json' --data-binary "$definition")
+printf '%s' "$run" | /usr/bin/grep -q '"type":"item_complete"'
+printf '%s' "$run" | /usr/bin/grep -q '"type":"done"'
+[ -f "$TMP/definition-out/output.jsonl" ]
+/usr/bin/grep -q '"merchant":"Cafe"' "$TMP/definition-out/output.jsonl"
 
 /usr/bin/curl -sS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \

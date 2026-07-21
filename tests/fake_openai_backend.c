@@ -56,6 +56,12 @@ static int handler(SamosaHttpServer *server, int fd,
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
             "\"Found the matching record at cat-medical-note.txt. It contains Titli's vaccination record.\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Extract structured data"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"merchant\\\":\\\"Cafe\\\",\\\"total\\\":4.5}\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
