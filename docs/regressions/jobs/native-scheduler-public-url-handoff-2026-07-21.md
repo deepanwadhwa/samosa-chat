@@ -354,9 +354,16 @@ tested on the **no-stub** gateway (literal blocked IPs resolve without network).
 Gates 1–4, 6–9 are **met and tested offline**. Gate 5 (review-required queued):
 the scheduled runner is non-interactive by construction and never blocks on a
 question; a dedicated review-queue for model-backed scheduled extraction is not
-yet exercised. **Gate 10 (one real public-page change check on the installed
-release) is NOT done** — it needs live network + machine-safety sign-off and is
-the honest "works, measured" bar. **Gate 11 (removing `tools/samosa_gateway.py`
+yet exercised. **Gate 10's real-fetch check PASSED on the built binary
+(2026-07-22, with owner sign-off)** — `new`/`unchanged`/`changed` all verified
+against live sites (`example.com`, `cloudflare.com/cdn-cgi/trace`), SSRF
+allow+block both exercised on real DNS, robots honored, real failures
+(`httpbin` 503/timeout) handled without corrupting state; evidence in
+[`e-gate10-real-fetch-2026-07-22.md`](e-gate10-real-fetch-2026-07-22.md). **Still
+open in Gate 10:** it ran against `build/samosa-gateway`, not a re-installed
+`~/.samosa` release (the installed binary predates the pipeline); re-packaging and
+installing the new binary overwrites the installed release and waits for owner
+confirmation. **Gate 11 (removing `tools/samosa_gateway.py`
 / `tools/samosa_jobs.py`) is deliberately NOT done**: it is owner-gated on gate
 10, and those modules still back the green `make jobs-test` / `make test` Python
 suites. Do not delete them until gate 10 passes and the Python tests are migrated
