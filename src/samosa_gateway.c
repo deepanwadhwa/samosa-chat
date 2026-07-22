@@ -51,6 +51,7 @@ typedef struct {
     char tokenizer[PATH_MAX];
     char llama_server[PATH_MAX];
     char bonsai_model[PATH_MAX];
+    char bonsai_mmproj[PATH_MAX];
     char ornith_model[PATH_MAX];
     char samosa_fs[PATH_MAX];
     char samosa_extract[PATH_MAX];
@@ -2594,6 +2595,16 @@ static int backend_available(Gateway *g, const char *name) {
     return 0;
 }
 
+/* Vision availability per backend. Qwen's tower is built into its C engine, so
+   it is always image-capable. Bonsai (Qwen3.6-27B via llama-server) is
+   image-capable only when its optional mmproj vision pack is present on disk;
+   without it, llama-server runs text-only. Ornith has no vision. */
+static int backend_supports_images(Gateway *g, const char *name) {
+    if (!strcmp(name, "qwen")) return 1;
+    if (!strcmp(name, "bonsai")) return regular_file(g->bonsai_mmproj, 0);
+    return 0;
+}
+
 static int tcp_connect(int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -2671,14 +2682,26 @@ static int backend_start(Gateway *g) {
             execl(g->qwen_engine, g->qwen_engine, "--serve", "--port", port,
                   "--tokenizer", g->tokenizer, (char *)NULL);
         } else {
-            const char *model = !strcmp(g->backend, "ornith") ?
-                                g->ornith_model : g->bonsai_model;
-            const char *alias = !strcmp(g->backend, "ornith") ?
-                                "ornith-1.0-9b" : "bonsai-27b-1bit";
-            execl(g->llama_server, g->llama_server, "-m", model, "-ngl", "99",
-                  "-c", "8192", "-np", "1", "--cache-ram", "0", "--host",
-                  "127.0.0.1", "--port", port, "--no-ui", "--alias", alias,
-                  (char *)NULL);
+            int is_ornith = !strcmp(g->backend, "ornith");
+            char *model = is_ornith ? g->ornith_model : g->bonsai_model;
+            char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
+            char *argv[24]; int a = 0;
+            argv[a++] = g->llama_server; argv[a++] = (char *)"-m"; argv[a++] = model;
+            argv[a++] = (char *)"-ngl"; argv[a++] = (char *)"99";
+            argv[a++] = (char *)"-c"; argv[a++] = (char *)"8192";
+            argv[a++] = (char *)"-np"; argv[a++] = (char *)"1";
+            argv[a++] = (char *)"--cache-ram"; argv[a++] = (char *)"0";
+            argv[a++] = (char *)"--host"; argv[a++] = (char *)"127.0.0.1";
+            argv[a++] = (char *)"--port"; argv[a++] = port;
+            argv[a++] = (char *)"--no-ui"; argv[a++] = (char *)"--alias"; argv[a++] = alias;
+            /* Bonsai is image-capable via its optional mmproj vision pack; load it
+               only when present so image jobs reach a fast local vision backend.
+               Text-only serving (and Ornith) skips it. */
+            if (!is_ornith && backend_supports_images(g, "bonsai")) {
+                argv[a++] = (char *)"--mmproj"; argv[a++] = g->bonsai_mmproj;
+            }
+            argv[a] = NULL;
+            execv(g->llama_server, argv);
         }
         _Exit(127);
     }
@@ -2781,7 +2804,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "\"label\":\"%s\",\"model\":\"%s\",\"supports_images\":%s,"
             "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld}",
             g->backend, backend_label(g->backend), backend_model(g->backend),
-            !strcmp(g->backend, "qwen") ? "true" : "false",
+            backend_supports_images(g, g->backend) ? "true" : "false",
             ready ? "true" : "false", (!ready && pid > 0) ? "true" : "false",
             atomic_load(&g->generating) ? "true" : "false", (long)pid);
         return samosa_http_response(fd, 200, "application/json", body, NULL);
@@ -2807,10 +2830,11 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         char body[1536];
         snprintf(body, sizeof(body),
             "{\"active\":\"%s\",\"backends\":["
-            "{\"id\":\"bonsai\",\"label\":\"Bonsai 27B 1-bit\",\"model\":\"bonsai-27b-1bit\",\"supports_images\":false,\"available\":%s},"
+            "{\"id\":\"bonsai\",\"label\":\"Bonsai 27B 1-bit\",\"model\":\"bonsai-27b-1bit\",\"supports_images\":%s,\"available\":%s},"
             "{\"id\":\"ornith\",\"label\":\"Ornith 9B\",\"model\":\"ornith-1.0-9b\",\"supports_images\":false,\"available\":%s},"
             "{\"id\":\"qwen\",\"label\":\"Qwen3.6 35B A3B\",\"model\":\"qwen3.6-35b-a3b\",\"supports_images\":true,\"available\":%s}]}",
-            g->backend, backend_available(g, "bonsai") ? "true" : "false",
+            g->backend, backend_supports_images(g, "bonsai") ? "true" : "false",
+            backend_available(g, "bonsai") ? "true" : "false",
             backend_available(g, "ornith") ? "true" : "false",
             backend_available(g, "qwen") ? "true" : "false");
         return samosa_http_response(fd, 200, "application/json", body, NULL);
@@ -2941,6 +2965,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");
+    ENV_PATH(bonsai_mmproj, "SAMOSA_BONSAI_MMPROJ", "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf");
     ENV_PATH(ornith_model, "SAMOSA_ORNITH_MODEL", "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf");
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");

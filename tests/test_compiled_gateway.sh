@@ -25,6 +25,7 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$HOME_DIR/models/ornith-9b"
 printf 'fixture\n' >"$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf"
+printf 'mmproj-fixture\n' >"$HOME_DIR/bonsai-mmproj.gguf"
 printf 'ornith\n' >"$HOME_DIR/model-backend"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
@@ -92,6 +93,7 @@ SAMOSA_INTERACTIVE_COOLDOWN_S=0.2 \
 SAMOSA_WEB_MIN_INTERVAL=0 \
 SAMOSA_LAUNCH_AGENTS_DIR="$TMP/agents" \
 SAMOSA_LAUNCHD_DRYRUN=1 \
+SAMOSA_BONSAI_MMPROJ="$HOME_DIR/bonsai-mmproj.gguf" \
 "$GATEWAY" >"$TMP/gateway.log" 2>&1 &
 PID=$!
 
@@ -114,6 +116,12 @@ printf '%s' "$status" | /usr/bin/grep -q '"interactive_cooldown_seconds":0.200'
 app_page=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/")
 printf '%s' "$app_page" | /usr/bin/grep -q 'Compiled Samosa'
 /usr/bin/curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/assets/samosa-chat.png" | /usr/bin/grep -q '200'
+
+# Bonsai reports image support only when its mmproj vision pack is present (the
+# fixture above); Ornith never does.
+backends=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/v1/backends")
+printf '%s' "$backends" | /usr/bin/grep -q '"id":"bonsai","label":"Bonsai 27B 1-bit","model":"bonsai-27b-1bit","supports_images":true'
+printf '%s' "$backends" | /usr/bin/grep -q '"id":"ornith","label":"Ornith 9B","model":"ornith-1.0-9b","supports_images":false'
 
 reply=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' \
