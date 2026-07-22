@@ -28,8 +28,12 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
+# The launchd scheduler's plist runs current/bin/samosa-jobsd, so the installer
+# must build it or the scheduler is broken on a clean install.
+[ -x "$HOME_DIR/current/bin/samosa-jobsd" ]
 [ ! -e "$HOME_DIR/current/bin/jobs_fs.py" ]
 [ ! -e "$HOME_DIR/current/bin/samosa_jobs.py" ]
 file "$HOME_DIR/current/bin/samosa-gateway" | grep -q 'executable'
+file "$HOME_DIR/current/bin/samosa-jobsd" | grep -q 'executable'
 
 echo "gateway installer: PASS"

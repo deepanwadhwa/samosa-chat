@@ -252,10 +252,17 @@ if [ "$GATEWAY_ENABLED" = 1 ]; then
   $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
     "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
     fail "staged gateway compilation failed; live release was not changed"
+  # samosa-jobsd is the same source under a launchd-friendly name (invoked as
+  # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
+  # plist the gateway installs points at current/bin/samosa-jobsd, so the
+  # scheduler is broken on a clean install unless this binary exists.
+  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" ||
+    fail "staged jobs daemon compilation failed; live release was not changed"
   $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
     "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
     fail "staged filesystem sidecar compilation failed; live release was not changed"
-  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-fs"
+  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
 fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
