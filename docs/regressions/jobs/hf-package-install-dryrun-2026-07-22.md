@@ -67,6 +67,11 @@ alongside `samosa-gateway` (same source, launchd-friendly name), and
 executable. Re-packaged and re-ran the dry-run: `samosa-jobsd` now present and
 functional. `make test` and `make jobs-test` green.
 
+Follow-up on the same release-integration class: when document support is
+enabled, `dist/install.sh` now also smoke-tests the staged
+`samosa-extract --json-pages` interface before activation. This prevents a
+rebuilt gateway from shipping against a stale extractor binary.
+
 ## Before the owner uploads — required / open
 
 1. **Re-package with `--repo-id <user/name>`.** This dry-run used the default

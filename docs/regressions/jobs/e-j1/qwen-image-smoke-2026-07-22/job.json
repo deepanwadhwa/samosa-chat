@@ -1,0 +1,17 @@
+{
+  "job": {
+    "job_id": "e-j1-image-qwen-tiny-20260722",
+    "input": {"folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T//samosa-vision-qwen-20260722.qGqxRW/tiny-image-inputs"},
+    "instruction": "Return JSON for this image. Set seen=true if an image was provided. Set kind=\"image\".",
+    "inference": {"max_tokens": 32},
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "seen": {"type": "boolean"},
+        "kind": {"type": "string"}
+      },
+      "required": ["seen", "kind"]
+    },
+    "output": {"dir": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T//samosa-vision-qwen-20260722.qGqxRW/tiny-image-out"}
+  }
+}

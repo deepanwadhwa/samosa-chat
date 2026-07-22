@@ -246,6 +246,17 @@ if [ "$DOCUMENTS_ENABLED" = 1 ]; then
       fail "could not set the staged PDFium runtime path"
   fi
   chmod +x "$STAGE/bin/samosa-extract"
+  EXTRACT_SMOKE_INPUT="$STAGE/.samosa-extract-interface-smoke.txt"
+  EXTRACT_SMOKE_LOG="$STAGE/.samosa-extract-interface-smoke.log"
+  printf 'not a pdf\n' >"$EXTRACT_SMOKE_INPUT"
+  if "$STAGE/bin/samosa-extract" --json-pages "$EXTRACT_SMOKE_INPUT" 1 1 >"$EXTRACT_SMOKE_LOG" 2>&1; then
+    fail "staged document extractor accepted a non-PDF interface smoke input"
+  fi
+  grep -F 'not_pdf' "$EXTRACT_SMOKE_LOG" >/dev/null || {
+    sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
+    fail "staged document extractor does not support the required --json-pages interface"
+  }
+  rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
 fi
 
 if [ "$GATEWAY_ENABLED" = 1 ]; then

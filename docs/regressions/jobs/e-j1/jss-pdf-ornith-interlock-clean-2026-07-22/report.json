@@ -1,0 +1,358 @@
+{
+  "schema_version": 1,
+  "runner": "compiled_gateway_definition_routes",
+  "job_id": "e-j1-jss-pdf-ornith-interlock-clean-20260722",
+  "scope": "user-supplied labeled Jobs corpus; interactive interlock exercised",
+  "inputs": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs",
+  "labels": "/Users/deepanwadhwa/Documents/samosa-chat/jobs/jss-article-metadata.expected.json",
+  "gateway": {
+    "url": "http://127.0.0.1:8642",
+    "healthz": {
+      "gateway": true,
+      "compiled": true,
+      "backend": "ornith",
+      "label": "Ornith 9B",
+      "model": "ornith-1.0-9b",
+      "supports_images": false,
+      "ready": true,
+      "loading": false,
+      "generating": false,
+      "pid": 56250
+    }
+  },
+  "preview": {
+    "endpoint": "/v1/jobs/definition/preview",
+    "status": 200,
+    "returncode": 0,
+    "wall_seconds": 21.756,
+    "output_file": "preview.json"
+  },
+  "preview_result": {
+    "ok": true,
+    "sample_count": 1,
+    "artifact_dir": "preview",
+    "records": [
+      {
+        "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v109i02.pdf",
+        "input_sha256": "e7c90cba68f97daa5b2c0cb747a744c4de74ea5a0d2f411e385bb7a2aebeb69a",
+        "status": "passed",
+        "extracted": {
+          "title": "scikit-fda: A Python Package for Functional Data Analysis",
+          "journal": "Journal of Statistical Software",
+          "publication_month": "2024-05",
+          "volume": 109,
+          "issue": 2,
+          "doi": "10.18637/jss.v109.i02",
+          "authors": "Carlos Ramos-Carre\u00f1o; Jos\u00e9 Luis Torrecilla; Miguel Carbajo-Berrocal; Pablo Marcos; Alberto Su\u00e1rez",
+          "author_emails": "carlos.ramos@uam.es; alberto.suarez@uam.es; joseluis.torrecilla@uam.es",
+          "affiliations": "Universidad Aut\u00f3noma de Madrid",
+          "universities": "Universidad Aut\u00f3noma de Madrid",
+          "submitted_date": "2022-02-04",
+          "accepted_date": "2023-08-23"
+        },
+        "title": "scikit-fda: A Python Package for Functional Data Analysis",
+        "journal": "Journal of Statistical Software",
+        "publication_month": "2024-05",
+        "volume": 109,
+        "issue": 2,
+        "doi": "10.18637/jss.v109.i02",
+        "authors": "Carlos Ramos-Carre\u00f1o; Jos\u00e9 Luis Torrecilla; Miguel Carbajo-Berrocal; Pablo Marcos; Alberto Su\u00e1rez",
+        "author_emails": "carlos.ramos@uam.es; alberto.suarez@uam.es; joseluis.torrecilla@uam.es",
+        "affiliations": "Universidad Aut\u00f3noma de Madrid",
+        "universities": "Universidad Aut\u00f3noma de Madrid",
+        "submitted_date": "2022-02-04",
+        "accepted_date": "2023-08-23"
+      }
+    ]
+  },
+  "run": {
+    "endpoint": "/v1/jobs/definition/run",
+    "status": 200,
+    "returncode": 0,
+    "wall_seconds": 127.615,
+    "output_file": "run.sse"
+  },
+  "interactive_chat_file": "interactive_chat.json",
+  "streamed_events_file": "run.events.jsonl",
+  "safety_before": {
+    "timestamp": "2026-07-22T17:25:44.798814Z",
+    "disk_free_gb": 104.445,
+    "vm": {
+      "pages_throttled": 0,
+      "swapins": 0,
+      "swapouts": 0
+    },
+    "memory_pressure": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 38%",
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=24182883)\t100%; charged; 0:00 remaining present: true",
+    "serve_status": {
+      "inference_busy": false,
+      "interactive_active": false,
+      "last_interactive_ts": null,
+      "last_interactive_age_seconds": null,
+      "interactive_cooldown_seconds": 2.0
+    },
+    "serve_health": {
+      "gateway": true,
+      "compiled": true,
+      "backend": "ornith",
+      "label": "Ornith 9B",
+      "model": "ornith-1.0-9b",
+      "supports_images": false,
+      "ready": true,
+      "loading": false,
+      "generating": false,
+      "pid": 56250
+    }
+  },
+  "safety_after": {
+    "timestamp": "2026-07-22T17:28:14.190295Z",
+    "disk_free_gb": 104.448,
+    "vm": {
+      "pages_throttled": 0,
+      "swapins": 0,
+      "swapouts": 0
+    },
+    "memory_pressure": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 37%",
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=24182883)\t100%; charged; 0:00 remaining present: true",
+    "serve_status": {
+      "inference_busy": false,
+      "interactive_active": false,
+      "last_interactive_ts": 1784741182.559,
+      "last_interactive_age_seconds": 111.657,
+      "interactive_cooldown_seconds": 2.0
+    },
+    "serve_health": {
+      "gateway": true,
+      "compiled": true,
+      "backend": "ornith",
+      "label": "Ornith 9B",
+      "model": "ornith-1.0-9b",
+      "supports_images": false,
+      "ready": true,
+      "loading": false,
+      "generating": false,
+      "pid": 56250
+    }
+  },
+  "active_inference_seconds": 124.93,
+  "active_inference_note": null,
+  "interlock": {
+    "job_paused": 1,
+    "job_resumed": 1,
+    "interactive_chat_pauses": 1,
+    "covered": true
+  },
+  "terminal_units": 4,
+  "record_status_counts": {
+    "passed": 4
+  },
+  "review_required": 0,
+  "failed": 0,
+  "comparison": {
+    "records": 4,
+    "labeled_inputs": 4,
+    "field_correct": 44,
+    "field_total": 48,
+    "field_accuracy": 0.9167,
+    "cases": [
+      {
+        "input": "v109i02.pdf",
+        "record_present": true,
+        "fields": {
+          "title": true,
+          "journal": true,
+          "publication_month": true,
+          "volume": true,
+          "issue": true,
+          "doi": true,
+          "authors": true,
+          "author_emails": false,
+          "affiliations": true,
+          "universities": true,
+          "submitted_date": true,
+          "accepted_date": true
+        },
+        "actual": {
+          "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v109i02.pdf",
+          "input_sha256": "e7c90cba68f97daa5b2c0cb747a744c4de74ea5a0d2f411e385bb7a2aebeb69a",
+          "status": "passed",
+          "extracted": {
+            "title": "scikit-fda: A Python Package for Functional Data Analysis",
+            "journal": "Journal of Statistical Software",
+            "publication_month": "2024-05",
+            "volume": 109,
+            "issue": 2,
+            "doi": "10.18637/jss.v109.i02",
+            "authors": "Carlos Ramos-Carre\u00f1o; Jos\u00e9 Luis Torrecilla; Miguel Carbajo-Berrocal; Pablo Marcos; Alberto Su\u00e1rez",
+            "author_emails": "carlos.ramos@uam.es; alberto.suarez@uam.es; joseluis.torrecilla@uam.es",
+            "affiliations": "Universidad Aut\u00f3noma de Madrid",
+            "universities": "Universidad Aut\u00f3noma de Madrid",
+            "submitted_date": "2022-02-04",
+            "accepted_date": "2023-08-23"
+          },
+          "title": "scikit-fda: A Python Package for Functional Data Analysis",
+          "journal": "Journal of Statistical Software",
+          "publication_month": "2024-05",
+          "volume": 109,
+          "issue": 2,
+          "doi": "10.18637/jss.v109.i02",
+          "authors": "Carlos Ramos-Carre\u00f1o; Jos\u00e9 Luis Torrecilla; Miguel Carbajo-Berrocal; Pablo Marcos; Alberto Su\u00e1rez",
+          "author_emails": "carlos.ramos@uam.es; alberto.suarez@uam.es; joseluis.torrecilla@uam.es",
+          "affiliations": "Universidad Aut\u00f3noma de Madrid",
+          "universities": "Universidad Aut\u00f3noma de Madrid",
+          "submitted_date": "2022-02-04",
+          "accepted_date": "2023-08-23"
+        }
+      },
+      {
+        "input": "v109i03.pdf",
+        "record_present": true,
+        "fields": {
+          "title": true,
+          "journal": true,
+          "publication_month": true,
+          "volume": true,
+          "issue": true,
+          "doi": true,
+          "authors": true,
+          "author_emails": true,
+          "affiliations": true,
+          "universities": true,
+          "submitted_date": true,
+          "accepted_date": true
+        },
+        "actual": {
+          "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v109i03.pdf",
+          "input_sha256": "890de5ce1b0f46ab5cc20b4ad58ab45ecb5c515f5aebceac3be226b5330c15de",
+          "status": "passed",
+          "extracted": {
+            "title": "openTSNE: A Modular Python Library for t-SNE Dimensionality Reduction and Embedding",
+            "journal": "Journal of Statistical Software",
+            "publication_month": "2024-05",
+            "volume": 109,
+            "issue": 3,
+            "doi": "10.18637/jss.v109.i03",
+            "authors": "Pavlin G. Poli\u010dar; Martin Stra\u017ear; Bla\u017e Zupan",
+            "author_emails": "pavlin.policar@fri.uni-lj.si",
+            "affiliations": "University of Ljubljana; Broad Institute",
+            "universities": "University of Ljubljana",
+            "submitted_date": "2022-11-02",
+            "accepted_date": "2023-08-25"
+          },
+          "title": "openTSNE: A Modular Python Library for t-SNE Dimensionality Reduction and Embedding",
+          "journal": "Journal of Statistical Software",
+          "publication_month": "2024-05",
+          "volume": 109,
+          "issue": 3,
+          "doi": "10.18637/jss.v109.i03",
+          "authors": "Pavlin G. Poli\u010dar; Martin Stra\u017ear; Bla\u017e Zupan",
+          "author_emails": "pavlin.policar@fri.uni-lj.si",
+          "affiliations": "University of Ljubljana; Broad Institute",
+          "universities": "University of Ljubljana",
+          "submitted_date": "2022-11-02",
+          "accepted_date": "2023-08-25"
+        }
+      },
+      {
+        "input": "v110i01.pdf",
+        "record_present": true,
+        "fields": {
+          "title": true,
+          "journal": true,
+          "publication_month": true,
+          "volume": true,
+          "issue": true,
+          "doi": true,
+          "authors": true,
+          "author_emails": false,
+          "affiliations": true,
+          "universities": true,
+          "submitted_date": true,
+          "accepted_date": true
+        },
+        "actual": {
+          "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v110i01.pdf",
+          "input_sha256": "35310691c379ba2e1d95936219b8c4102b9207fd6f1103aed6a12ec4fecf0d95",
+          "status": "passed",
+          "extracted": {
+            "title": "anomaly: Detection of Anomalous Structure in Time Series Data",
+            "journal": "Journal of Statistical Software",
+            "publication_month": "2024-08",
+            "volume": 110,
+            "issue": 1,
+            "doi": "10.18637/jss.v110.i01",
+            "authors": "Alex Fisch; Daniel Grose; Idris A. Eckley; Paul Fearnhead; Lawrence Bardwell",
+            "author_emails": "alex.fisch@lancaster.ac.uk; dan.grose@lancaster.ac.uk",
+            "affiliations": "Lancaster University",
+            "universities": "Lancaster University",
+            "submitted_date": "2020-10-15",
+            "accepted_date": "2023-12-21"
+          },
+          "title": "anomaly: Detection of Anomalous Structure in Time Series Data",
+          "journal": "Journal of Statistical Software",
+          "publication_month": "2024-08",
+          "volume": 110,
+          "issue": 1,
+          "doi": "10.18637/jss.v110.i01",
+          "authors": "Alex Fisch; Daniel Grose; Idris A. Eckley; Paul Fearnhead; Lawrence Bardwell",
+          "author_emails": "alex.fisch@lancaster.ac.uk; dan.grose@lancaster.ac.uk",
+          "affiliations": "Lancaster University",
+          "universities": "Lancaster University",
+          "submitted_date": "2020-10-15",
+          "accepted_date": "2023-12-21"
+        }
+      },
+      {
+        "input": "v110i02.pdf",
+        "record_present": true,
+        "fields": {
+          "title": true,
+          "journal": true,
+          "publication_month": true,
+          "volume": true,
+          "issue": true,
+          "doi": true,
+          "authors": false,
+          "author_emails": true,
+          "affiliations": false,
+          "universities": true,
+          "submitted_date": true,
+          "accepted_date": true
+        },
+        "actual": {
+          "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v110i02.pdf",
+          "input_sha256": "268031edf08bee266f7e00a91c03ce44a1a1875dbc4f9d19b1e08ae1f2acb848",
+          "status": "passed",
+          "extracted": {
+            "title": "An Extendable Python Implementation of Robust Optimization Monte Carlo",
+            "journal": "Journal of Statistical Software",
+            "publication_month": "2024-08",
+            "volume": 110,
+            "issue": 2,
+            "doi": "10.18637/jss.v110.i02",
+            "authors": "Vasilis Gkolemis; Michael Gutmann; Henri Pesonen; Thomas O; Dutta R; Corander J; Kaski S",
+            "author_emails": "vgkolemis@athenarc.gr",
+            "affiliations": "ATHENA RC; University of Edinburgh; University of Oslo",
+            "universities": "University of Edinburgh; University of Oslo",
+            "submitted_date": "2022-02-20",
+            "accepted_date": "2023-09-27"
+          },
+          "title": "An Extendable Python Implementation of Robust Optimization Monte Carlo",
+          "journal": "Journal of Statistical Software",
+          "publication_month": "2024-08",
+          "volume": 110,
+          "issue": 2,
+          "doi": "10.18637/jss.v110.i02",
+          "authors": "Vasilis Gkolemis; Michael Gutmann; Henri Pesonen; Thomas O; Dutta R; Corander J; Kaski S",
+          "author_emails": "vgkolemis@athenarc.gr",
+          "affiliations": "ATHENA RC; University of Edinburgh; University of Oslo",
+          "universities": "University of Edinburgh; University of Oslo",
+          "submitted_date": "2022-02-20",
+          "accepted_date": "2023-09-27"
+        }
+      }
+    ]
+  }
+}

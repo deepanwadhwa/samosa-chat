@@ -13,8 +13,9 @@ BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/build"}
 ENGINE="$BUILD_DIR/qwen36b"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
+JOBSD="$BUILD_DIR/samosa-jobsd"
 
-for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/dist/samosa" \
   "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
   "$SNAPSHOT/manifest.json" "$SNAPSHOT/config.json" \
@@ -22,7 +23,7 @@ for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/as
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
 
-release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$ROOT/assets/app.html" "$ROOT/dist/samosa" |
+release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$ROOT/assets/app.html" "$ROOT/dist/samosa" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
@@ -44,9 +45,10 @@ cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"
+cp "$JOBSD" "$stage/bin/samosa-jobsd"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
-chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway"
+chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd"
 
 # Document extraction (PDF text via libpdfium, docs/TASKS_DOCUMENTS.md) is an
 # optional capability, not a hard dependency of this installer: most dev
@@ -67,6 +69,19 @@ if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
   cp "$EXTRACT_BIN" "$stage/bin/samosa-extract"
   cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
   chmod +x "$stage/bin/samosa-extract"
+  EXTRACT_SMOKE_INPUT="$stage/.samosa-extract-interface-smoke.txt"
+  EXTRACT_SMOKE_LOG="$stage/.samosa-extract-interface-smoke.log"
+  printf 'not a pdf\n' >"$EXTRACT_SMOKE_INPUT"
+  if "$stage/bin/samosa-extract" --json-pages "$EXTRACT_SMOKE_INPUT" 1 1 >"$EXTRACT_SMOKE_LOG" 2>&1; then
+    echo "staged document extractor accepted a non-PDF interface smoke input" >&2
+    exit 1
+  fi
+  grep -F 'not_pdf' "$EXTRACT_SMOKE_LOG" >/dev/null || {
+    sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
+    echo "staged document extractor does not support the required --json-pages interface" >&2
+    exit 1
+  }
+  rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
   DOCUMENTS_ENABLED=1
 else
   DOCUMENTS_ENABLED=0

@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""E-J1 harness: run a labeled Samosa Jobs corpus against a live local serve.
+"""E-J1 harness: run a labeled Samosa Jobs corpus against a live gateway.
 
-The harness deliberately does not launch or stop the model server.  Keeping
-server lifecycle explicit prevents a benchmark from interrupting an owner's
-interactive session.  It records the exact jobs commands, host-safety samples,
-Jobs event timing, and strict field-by-field comparison with the supplied
-labels.  Input fixtures are intentionally separate from the harness so a
-real-image/PDF corpus can replace the starter text corpus without code changes.
+The harness deliberately does not launch or stop the model server/gateway.
+Keeping server lifecycle explicit prevents a benchmark from interrupting an
+owner's interactive session.  It records the exact gateway endpoints, host-safety
+samples, streamed Jobs events, and strict field-by-field comparison with the
+supplied labels.  Input fixtures are intentionally separate from the harness so
+a real-image/PDF corpus can replace the starter text corpus without code
+changes.
 
 With no ``--job``, this runs the bundled text-receipt starter corpus.  Pass a
 validated Jobs definition with ``--job`` and its expected-record mapping with
 ``--labels`` to evaluate a representative PDF or image corpus.  The harness
-copies that definition into its results directory and redirects its job state
-and merged output there; it never changes the supplied definition or existing
-Jobs artifacts.
+copies that definition into its results directory and redirects merged output
+there; it never changes the supplied definition or existing Jobs artifacts.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
-import sys
+import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,7 +95,7 @@ def make_job(job_id: str, inputs: Path, output: Path) -> dict[str, object]:
         "reduce": {"mode": "deterministic", "model_fields": []},
         "inference": {
             "thinking": "off", "seed": 11, "temperature": 0,
-            "max_tokens": 256, "timeout_s": None,
+            "max_tokens": 1024, "timeout_s": None,
         },
         "output_schema": {
             "type": "object",
@@ -138,18 +138,136 @@ def load_experiment_job(job_path: Path, inputs: Path | None, output: Path,
     return job, source_inputs
 
 
-def run_command(command: list[str], env: dict[str, str], output: Path) -> dict[str, object]:
+def post_json(url: str, path: str, payload: dict[str, object],
+              output: Path, timeout_s: float | None) -> dict[str, object]:
     started = time.perf_counter()
-    completed = subprocess.run(command, cwd=ROOT, env=env, check=False,
-                               text=True, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT)
-    output.write_text(completed.stdout, encoding="utf-8")
-    return {
-        "command": command,
-        "returncode": completed.returncode,
+    raw = ""
+    status: int | None = None
+    error: str | None = None
+    request = urllib.request.Request(
+        f"{url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            status = response.status
+            raw = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        raw = exc.read().decode("utf-8", "replace")
+        error = str(exc)
+    except Exception as exc:  # noqa: BLE001 - evidence harness records the failure.
+        error = str(exc)
+    output.write_text(raw, encoding="utf-8")
+    ok = status is not None and 200 <= status < 300
+    result: dict[str, object] = {
+        "endpoint": path,
+        "status": status,
+        "returncode": 0 if ok else 1,
         "wall_seconds": round(time.perf_counter() - started, 3),
         "output_file": output.name,
     }
+    if error:
+        result["error"] = error
+    return result
+
+
+def post_json_body(url: str, path: str, payload: dict[str, object],
+                   timeout_s: float | None) -> tuple[int | None, str, str | None]:
+    raw = ""
+    status: int | None = None
+    error: str | None = None
+    request = urllib.request.Request(
+        f"{url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            status = response.status
+            raw = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        raw = exc.read().decode("utf-8", "replace")
+        error = str(exc)
+    except Exception as exc:  # noqa: BLE001 - evidence harness records the failure.
+        error = str(exc)
+    return status, raw, error
+
+
+def start_interactive_chat_probe(url: str, delay_s: float, output: Path,
+                                 timeout_s: float | None) -> threading.Thread:
+    def worker() -> None:
+        time.sleep(delay_s)
+        started = time.perf_counter()
+        payload: dict[str, object] = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "E-J1 interlock probe: answer with exactly OK. "
+                        "This simulates the owner opening chat mid-batch."
+                    ),
+                }
+            ],
+            "stream": False,
+            "temperature": 0,
+            "max_tokens": 16,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        status, raw, error = post_json_body(
+            url, "/v1/chat/completions", payload, timeout_s)
+        record = {
+            "endpoint": "/v1/chat/completions",
+            "delay_seconds": delay_s,
+            "status": status,
+            "wall_seconds": round(time.perf_counter() - started, 3),
+            "error": error,
+            "raw_response": raw,
+        }
+        output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    thread = threading.Thread(target=worker, name="e-j1-interlock-chat",
+                              daemon=False)
+    thread.start()
+    return thread
+
+
+def parse_json_file(path: Path) -> dict[str, object] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def parse_sse_events(path: Path) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return events
+    for line in lines:
+        if not line.startswith("data: "):
+            continue
+        data = line[6:]
+        if data == "[DONE]":
+            continue
+        try:
+            value = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            events.append(value)
+    return events
+
+
+def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
+    path.write_text("".join(json.dumps(record, sort_keys=True) + "\n"
+                            for record in records), encoding="utf-8")
 
 
 def load_records(path: Path) -> list[dict[str, object]]:
@@ -173,7 +291,15 @@ def evaluate(records: list[dict[str, object]], labels: dict[str, dict[str, objec
         actual = records_by_name.get(name)
         fields: dict[str, bool] = {}
         for field, value in expected.items():
-            fields[field] = actual is not None and values_equal(actual.get(field), value)
+            actual_value = None
+            if actual is not None:
+                if field in actual:
+                    actual_value = actual.get(field)
+                else:
+                    extracted = actual.get("extracted")
+                    if isinstance(extracted, dict):
+                        actual_value = extracted.get(field)
+            fields[field] = actual is not None and values_equal(actual_value, value)
             field_total += 1
             field_correct += int(fields[field])
         cases.append({"input": name, "record_present": actual is not None,
@@ -188,15 +314,19 @@ def evaluate(records: list[dict[str, object]], labels: dict[str, dict[str, objec
     }
 
 
-def active_inference_seconds(events: list[dict[str, object]], items_dir: Path) -> float:
+def active_inference_seconds(events: list[dict[str, object]], items_dir: Path | None) -> float | None:
     total = 0.0
+    found = False
     timed_units: set[str] = set()
     for event in events:
         seconds = event.get("model_call_seconds")
         if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
             total += seconds
+            found = True
             if isinstance(event.get("unit_id"), str):
                 timed_units.add(event["unit_id"])
+    if items_dir is None:
+        return round(total, 3) if found else None
     for event in events:
         if event.get("type") != "item_complete":
             continue
@@ -208,9 +338,10 @@ def active_inference_seconds(events: list[dict[str, object]], items_dir: Path) -
             seconds = json.loads(provenance.read_text()).get("wall_seconds")
             if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
                 total += seconds
+                found = True
         except (OSError, json.JSONDecodeError):
             pass
-    return round(total, 3)
+    return round(total, 3) if found else None
 
 
 def main() -> int:
@@ -224,21 +355,29 @@ def main() -> int:
     parser.add_argument("--results", type=Path, required=True,
                         help="new directory for this run's evidence")
     parser.add_argument("--serve-url", default="http://127.0.0.1:8642")
-    parser.add_argument("--engine", type=Path, default=ROOT / "qwen36b")
-    parser.add_argument("--tokenizer", type=Path, default=ROOT / "tokenizer_qwen36.json")
+    parser.add_argument("--engine", type=Path, default=ROOT / "qwen36b",
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--tokenizer", type=Path, default=ROOT / "tokenizer_qwen36.json",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--job-id",
                         help="experiment-local job id (defaults to the supplied job id)")
+    parser.add_argument("--request-timeout-s", type=float, default=None,
+                        help="HTTP timeout per gateway request; default waits indefinitely")
+    parser.add_argument("--interactive-chat-after-s", type=float,
+                        help="open a real chat request this many seconds after run starts")
+    parser.add_argument("--interactive-chat-timeout-s", type=float, default=300.0,
+                        help="timeout for the optional interlock chat request")
     args = parser.parse_args()
 
     if args.results.exists():
         parser.error(f"results directory already exists: {args.results}")
-    if serve_json(args.serve_url, "/healthz") is None:
+    health = serve_json(args.serve_url, "/healthz")
+    if health is None:
         parser.error(f"serve is not healthy at {args.serve_url}")
-    if not args.engine.is_file() or not args.tokenizer.is_file():
-        parser.error("engine or tokenizer is missing")
+    if health.get("compiled") is not True:
+        parser.error(f"serve at {args.serve_url} is not the compiled gateway")
 
     args.results.mkdir(parents=True)
-    jobs_root = args.results / "jobs"
     output_dir = args.results / "output"
     job_path = args.results / "job.json"
     try:
@@ -263,55 +402,93 @@ def main() -> int:
         parser.error(str(error))
 
     job_path.write_text(json.dumps(job, indent=2) + "\n", encoding="utf-8")
-
-    env = os.environ.copy()
-    env.update({
-        "SAMOSA_JOBS_DIR": str(jobs_root),
-        "SAMOSA_SERVE_URL": args.serve_url,
-        "SAMOSA_ENGINE": str(args.engine.resolve()),
-        "TOKENIZER": str(args.tokenizer.resolve()),
-    })
-    runner = [sys.executable, str(ROOT / "dist" / "samosa_jobs.py")]
+    job_id = str(job.get("job_id") or args.job_id or "e-j1")
     first_name = sorted(labels)[0]
     first_input = inputs / first_name
     if not first_input.is_file():
         shutil.rmtree(args.results)
         parser.error(f"labeled input is missing from input folder: {first_name}")
     before = safety_sample(args.results, args.serve_url)
-    preview = run_command(runner + ["preview", str(job_path), "--file", str(first_input)], env,
-                          args.results / "preview.log")
-    run = run_command(runner + ["run", str(job_path)], env, args.results / "run.log")
+    preview = post_json(args.serve_url, "/v1/jobs/definition/preview", {"job": job},
+                        args.results / "preview.json", args.request_timeout_s)
+    chat_thread = None
+    if args.interactive_chat_after_s is not None:
+        chat_thread = start_interactive_chat_probe(
+            args.serve_url, args.interactive_chat_after_s,
+            args.results / "interactive_chat.json",
+            args.interactive_chat_timeout_s)
+    run = post_json(args.serve_url, "/v1/jobs/definition/run", {"job": job},
+                    args.results / "run.sse", args.request_timeout_s)
+    if chat_thread is not None:
+        chat_thread.join()
     after = safety_sample(args.results, args.serve_url)
 
-    event_path = jobs_root / args.job_id / "events.jsonl"
-    events = [json.loads(line) for line in event_path.read_text().splitlines() if line.strip()]
+    events = parse_sse_events(args.results / "run.sse")
+    write_jsonl(args.results / "run.events.jsonl", events)
+    preview_result = parse_json_file(args.results / "preview.json")
     records = load_records(output_dir / "output.jsonl")
     comparison = evaluate(records, labels)
-    terminal = [event for event in events if event["type"] in {
+    terminal = [event for event in events if event.get("type") in {
         "item_complete", "item_review_required", "item_failed"}]
+    status_counts: dict[str, int] = {}
+    for record in records:
+        status = record.get("status")
+        if isinstance(status, str):
+            status_counts[status] = status_counts.get(status, 0) + 1
+    active_seconds = active_inference_seconds(events, None)
+    paused = [event for event in events if event.get("type") == "job_paused"]
+    resumed = [event for event in events if event.get("type") == "job_resumed"]
+    interactive_pauses = [
+        event for event in paused if event.get("reason") == "interactive_chat"
+    ]
+    interlock = {
+        "job_paused": len(paused),
+        "job_resumed": len(resumed),
+        "interactive_chat_pauses": len(interactive_pauses),
+        "covered": bool(interactive_pauses and resumed),
+    }
+    base_scope = ("text-only starter corpus; image/PDF acceptance remains pending"
+                  if not args.job else "user-supplied labeled Jobs corpus")
+    scope = (f"{base_scope}; interactive interlock exercised"
+             if interlock["covered"]
+             else f"{base_scope}; interactive-interlock acceptance remains pending")
     report = {
         "schema_version": 1,
-        "scope": ("text-only starter corpus; image/PDF and interlock acceptance remain pending"
-                  if not args.job else "user-supplied labeled Jobs corpus; interactive-interlock acceptance remains pending"),
+        "runner": "compiled_gateway_definition_routes",
+        "job_id": job_id,
+        "scope": scope,
         "inputs": str(inputs.resolve()),
         "labels": str(labels_path.resolve()),
+        "gateway": {"url": args.serve_url, "healthz": health},
         "preview": preview,
+        "preview_result": preview_result,
         "run": run,
+        "interactive_chat_file": ("interactive_chat.json"
+                                  if args.interactive_chat_after_s is not None
+                                  else None),
+        "streamed_events_file": "run.events.jsonl",
         "safety_before": before,
         "safety_after": after,
-        "active_inference_seconds": active_inference_seconds(
-            events, jobs_root / args.job_id / "results" / "items"),
+        "active_inference_seconds": active_seconds,
+        "active_inference_note": ("no model_call_seconds events were reported"
+                                  if active_seconds is None else None),
+        "interlock": interlock,
         "terminal_units": len(terminal),
-        "review_required": sum(e["type"] == "item_review_required" for e in terminal),
-        "failed": sum(e["type"] == "item_failed" for e in terminal),
+        "record_status_counts": status_counts,
+        "review_required": status_counts.get("review_required", 0),
+        "failed": status_counts.get("failed", 0),
         "comparison": comparison,
     }
+    active_text = ("not reported" if active_seconds is None
+                   else f"{active_seconds} s")
     (args.results / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (args.results / "report.md").write_text(
         "# E-J1 labeled Jobs run\n\n"
         f"- Preview wall time: {preview['wall_seconds']} s\n"
         f"- Run wall time: {run['wall_seconds']} s\n"
-        f"- Active inference time: {report['active_inference_seconds']} s\n"
+        f"- Active inference time: {active_text}\n"
+        f"- Interactive interlock: {'covered' if interlock['covered'] else 'not exercised'} "
+        f"({interlock['interactive_chat_pauses']} pause events)\n"
         f"- Field accuracy: {comparison['field_correct']}/{comparison['field_total']}\n"
         f"- Review required: {report['review_required']}; failed: {report['failed']}\n"
         f"- Scope: {report['scope']}\n"

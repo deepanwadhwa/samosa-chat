@@ -32,6 +32,11 @@ printf 'png\n' >"$TMP/logo.png"
 printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
 printf "Miso vaccination record.\n" >"$TMP/files/miso-record.txt"
 printf "Cafe total 4.50\n" >"$TMP/files/receipt-b.txt"
+/bin/mkdir "$TMP/interlock-files"
+printf "First interlock receipt.\n" >"$TMP/interlock-files/a.txt"
+printf "Second interlock receipt.\n" >"$TMP/interlock-files/b.txt"
+/bin/mkdir "$TMP/image-files"
+/bin/cp "$ROOT/assets/samosa-chat.png" "$TMP/image-files/two.png"
 /bin/mkdir -p "$HOME_DIR/jobs/review-native/results"
 printf 'Coffee Shop\nTotal 8.37\n' >"$TMP/files/receipt.txt"
 printf '{"unit_id":"u1","status":"review_required","input_path":"%s","extracted":{"merchant":"Coffee","total":8.0}}\n' \
@@ -46,6 +51,18 @@ printf '%s\n' '#!/bin/sh' \
   'esac' \
   'exec "'$FS_SIDECAR'" "$@"' >"$TMP/samosa-fs-wrapper"
 /bin/chmod +x "$TMP/samosa-fs-wrapper"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+  'if [ "$1" = "--json-pages" ]; then' \
+  '  /usr/bin/printf "%s %s\n" "$3" "$4" >>"$SAMOSA_EXTRACT_CALLS"' \
+  '  case "$3" in' \
+  '    1) /usr/bin/printf '\''%s\n'\'' '\''{"ok":true,"text_layer":true,"page_count":3,"page_start":1,"page_end":1,"text":"FIRST PAGE TITLE"}'\'' ;;' \
+  '    3) /usr/bin/printf '\''%s\n'\'' '\''{"ok":true,"text_layer":true,"page_count":3,"page_start":3,"page_end":3,"text":"FINAL AFFILIATION"}'\'' ;;' \
+  '    *) /usr/bin/printf '\''%s\n'\'' '\''{"ok":true,"text_layer":true,"page_count":3,"page_start":2,"page_end":2,"text":"MIDDLE PAGE BODY"}'\'' ;;' \
+  '  esac' \
+  '  exit 0' \
+  'fi' \
+  'exec "$SAMOSA_REAL_EXTRACT" "$@"' >"$TMP/samosa-extract-wrapper"
+/bin/chmod +x "$TMP/samosa-extract-wrapper"
 
 # Deliberately expose no external executable through PATH. All utilities used
 # below have absolute paths; the gateway/backend receive the same environment.
@@ -68,7 +85,10 @@ SAMOSA_APP_LOGO="$TMP/logo.png" \
 SAMOSA_BONSAI_SERVER="$BACKEND" \
 SAMOSA_ORNITH_MODEL="$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf" \
 SAMOSA_FS="$TMP/samosa-fs-wrapper" \
-SAMOSA_EXTRACT="$EXTRACTOR" \
+SAMOSA_EXTRACT="$TMP/samosa-extract-wrapper" \
+SAMOSA_EXTRACT_CALLS="$TMP/extract-calls.log" \
+SAMOSA_REAL_EXTRACT="$EXTRACTOR" \
+SAMOSA_INTERACTIVE_COOLDOWN_S=0.2 \
 SAMOSA_WEB_MIN_INTERVAL=0 \
 SAMOSA_LAUNCH_AGENTS_DIR="$TMP/agents" \
 SAMOSA_LAUNCHD_DRYRUN=1 \
@@ -85,6 +105,9 @@ while [ "$i" -lt 100 ]; do
 done
 printf '%s' "$health" | /usr/bin/grep -q '"compiled":true'
 printf '%s' "$health" | /usr/bin/grep -q '"ready":true'
+status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status")
+printf '%s' "$status" | /usr/bin/grep -q '"interactive_active":false'
+printf '%s' "$status" | /usr/bin/grep -q '"interactive_cooldown_seconds":0.200'
 
 # Static web app + logo are served (coverage moved here from the retired Python
 # tests/test_gateway_web.py when Gate 11 removed the Python gateway).
@@ -149,9 +172,76 @@ printf '%s' "$preview3" | /usr/bin/grep -q '"sample_count":3'
 run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
   -H 'Content-Type: application/json' --data-binary "$definition")
 printf '%s' "$run" | /usr/bin/grep -q '"type":"item_complete"'
+printf '%s' "$run" | /usr/bin/grep -q '"model_call_seconds":'
+printf '%s' "$run" | /usr/bin/grep -q '"active_inference_seconds":'
 printf '%s' "$run" | /usr/bin/grep -q '"type":"done"'
 [ -f "$TMP/definition-out/output.jsonl" ]
 /usr/bin/grep -q '"merchant":"Cafe"' "$TMP/definition-out/output.jsonl"
+
+interlock_definition="{\"job\":{\"job_id\":\"native-definition-interlock\",\"input\":{\"folder\":\"$TMP/interlock-files\"},\"instruction\":\"Interlock definition probe.\",\"resources\":{\"pause_when_user_active\":true},\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-interlock-out\"}}}"
+/usr/bin/curl -sS -N -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
+  -H 'Content-Type: application/json' --data-binary "$interlock_definition" \
+  >"$TMP/interlock.sse" &
+INTERLOCK_CURL=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status" 2>/dev/null || true)
+  printf '%s' "$status" | /usr/bin/grep -q '"inference_busy":true' && break
+  /bin/kill -0 "$INTERLOCK_CURL" 2>/dev/null || { /bin/cat "$TMP/interlock.sse" >&2; exit 1; }
+  /bin/sleep 0.02
+  i=$((i + 1))
+done
+printf '%s' "$status" | /usr/bin/grep -q '"inference_busy":true'
+/usr/bin/curl -sS -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"messages":[{"role":"user","content":"slow interactive probe"}],"stream":false}' \
+  >"$TMP/interactive-chat.out" &
+CHAT_CURL=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status" 2>/dev/null || true)
+  printf '%s' "$status" | /usr/bin/grep -q '"interactive_active":true' && break
+  /bin/kill -0 "$CHAT_CURL" 2>/dev/null || { /bin/cat "$TMP/interactive-chat.out" >&2; exit 1; }
+  /bin/sleep 0.02
+  i=$((i + 1))
+done
+printf '%s' "$status" | /usr/bin/grep -q '"interactive_active":true'
+wait "$CHAT_CURL"
+wait "$INTERLOCK_CURL"
+interlock_run=$(/bin/cat "$TMP/interlock.sse")
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"type":"job_paused"'
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"reason":"interactive_chat"'
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"type":"job_resumed"'
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"model_call_seconds":'
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"active_inference_seconds":'
+printf '%s' "$interlock_run" | /usr/bin/grep -q '"type":"done"'
+[ "$(/usr/bin/wc -l <"$TMP/definition-interlock-out/output.jsonl" | /usr/bin/tr -d ' ')" = 2 ]
+
+budget_definition="{\"job\":{\"job_id\":\"native-definition-budget\",\"input\":{\"folder\":\"$TMP/files\"},\"instruction\":\"Require budget probe.\",\"inference\":{\"max_tokens\":1536},\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-budget-out\"}}}"
+budget_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
+  -H 'Content-Type: application/json' --data-binary "$budget_definition")
+printf '%s' "$budget_run" | /usr/bin/grep -q '"type":"item_complete"'
+/usr/bin/grep -q '"merchant":"Budget"' "$TMP/definition-budget-out/output.jsonl"
+
+image_definition="{\"job\":{\"job_id\":\"native-definition-image\",\"input\":{\"folder\":\"$TMP/image-files\"},\"instruction\":\"Image definition probe.\",\"output_schema\":{\"type\":\"object\",\"properties\":{\"people\":{\"type\":\"integer\"}}},\"output\":{\"dir\":\"$TMP/definition-image-out\"}}}"
+image_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
+  -H 'Content-Type: application/json' --data-binary "$image_definition")
+printf '%s' "$image_run" | /usr/bin/grep -q '"type":"item_complete"'
+/usr/bin/grep -q '"people":2' "$TMP/definition-image-out/output.jsonl"
+
+/bin/mkdir "$TMP/pdf-files"
+/usr/bin/printf '%%PDF-1.4\n' >"$TMP/pdf-files/article.pdf"
+pdf_definition="{\"job\":{\"job_id\":\"native-definition-pdf-pages\",\"input\":{\"folder\":\"$TMP/pdf-files\"},\"instruction\":\"PDF first-final page probe.\",\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-pdf-out\"}}}"
+pdf_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
+  -H 'Content-Type: application/json' --data-binary "$pdf_definition")
+printf '%s' "$pdf_run" | /usr/bin/grep -q '"type":"item_complete"'
+/usr/bin/grep -q '"merchant":"PdfPages"' "$TMP/definition-pdf-out/output.jsonl"
+/usr/bin/grep -q '^1 1$' "$TMP/extract-calls.log"
+/usr/bin/grep -q '^3 1$' "$TMP/extract-calls.log"
+if /usr/bin/grep -q '^1 5$' "$TMP/extract-calls.log"; then
+  echo "definition PDF source used the old first-five-page extraction" >&2
+  exit 1
+fi
 
 move_plan=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \

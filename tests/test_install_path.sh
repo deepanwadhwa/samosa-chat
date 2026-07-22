@@ -43,7 +43,7 @@ run_install() {
 }
 
 fail() { echo "install-path: FAIL — $1" >&2; exit 1; }
-# A real PATH is needed for the installer's own tools (clang, python3, ...).
+# A real PATH is needed for the installer's own tools (clang, awk, tar, ...).
 REAL_PATH=$PATH
 
 # --- Case 1: launcher not on PATH -> configure rc, and say so honestly -------

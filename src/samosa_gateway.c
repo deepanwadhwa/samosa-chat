@@ -35,6 +35,9 @@ typedef struct {
     pid_t job_pids[16];
     int upstream_fd;
     atomic_int generating;
+    atomic_int interactive_active;
+    atomic_llong last_interactive_mono_ms;
+    atomic_llong last_interactive_wall_ms;
     atomic_int stopping;
     int public_port;
     int backend_port;
@@ -58,12 +61,36 @@ typedef struct {
 #define MAX_PUBLIC_JOB_URLS 20
 #define MAX_PUBLIC_FETCH_BYTES (5u << 20)
 #define MAX_PUBLIC_TEXT_BYTES 120000
+#define MAX_DEFINITION_IMAGE_BYTES (3u << 20)
 
 static int tcp_connect(int port);
 static int backend_probe(Gateway *g);
 static const char *backend_model(const char *name);
+static int sse_json(int fd, const char *json);
 
 static Gateway *signal_gateway;
+
+static long long monotonic_millis(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+static double monotonic_seconds(void) {
+    return monotonic_millis() / 1000.0;
+}
+
+static long long wall_millis(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+static void sleep_millis(long ms) {
+    if (ms <= 0) return;
+    struct timespec pause = {.tv_sec = ms / 1000, .tv_nsec = (ms % 1000) * 1000000L};
+    while (nanosleep(&pause, &pause) && errno == EINTR) {}
+}
 
 static int path_copy(char *out, size_t cap, const char *value) {
     int n = snprintf(out, cap, "%s", value ? value : "");
@@ -339,14 +366,15 @@ static int rfc3339_now_to(char *out, size_t cap) {
     return strftime(out, cap, "%Y-%m-%dT%H:%M:%SZ", &tmv) > 0;
 }
 
-static char *read_file_limit(const char *path, size_t limit) {
+static unsigned char *read_file_bytes_limit(const char *path, size_t limit, size_t *out_len) {
+    if (out_len) *out_len = 0;
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return NULL;
     struct stat st;
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size < 0 || (size_t)st.st_size > limit) {
         close(fd); return NULL;
     }
-    char *data = malloc((size_t)st.st_size + 1);
+    unsigned char *data = malloc((size_t)st.st_size + 1);
     if (!data) { close(fd); return NULL; }
     size_t used = 0, size = (size_t)st.st_size;
     while (used < size) {
@@ -355,7 +383,37 @@ static char *read_file_limit(const char *path, size_t limit) {
         if (n <= 0) { free(data); close(fd); return NULL; }
         used += (size_t)n;
     }
-    close(fd); data[size] = 0; return data;
+    close(fd); data[size] = 0;
+    if (out_len) *out_len = size;
+    return data;
+}
+
+static char *read_file_limit(const char *path, size_t limit) {
+    return (char *)read_file_bytes_limit(path, limit, NULL);
+}
+
+static char *base64_encode_bytes(const unsigned char *data, size_t length) {
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (length > (SIZE_MAX - 4) / 4 * 3) return NULL;
+    size_t out_len = ((length + 2) / 3) * 4;
+    char *out = malloc(out_len + 1);
+    if (!out) return NULL;
+    size_t i = 0, j = 0;
+    while (i < length) {
+        unsigned a = data[i++];
+        unsigned b = i < length ? data[i++] : 0;
+        unsigned c = i < length ? data[i++] : 0;
+        unsigned triple = (a << 16) | (b << 8) | c;
+        out[j++] = alphabet[(triple >> 18) & 63];
+        out[j++] = alphabet[(triple >> 12) & 63];
+        out[j++] = (i - 1) <= length ? alphabet[(triple >> 6) & 63] : '=';
+        out[j++] = i <= length ? alphabet[triple & 63] : '=';
+    }
+    if (length % 3 == 1) out[out_len - 2] = out[out_len - 1] = '=';
+    else if (length % 3 == 2) out[out_len - 1] = '=';
+    out[out_len] = 0;
+    return out;
 }
 
 static int job_state_path(Gateway *g, const char *job_id, const char *name,
@@ -1521,12 +1579,80 @@ static int jobs_launchd_status(Gateway *g, int fd) {
     free(resp.data); return sent;
 }
 
+static void interactive_start(Gateway *g) {
+    atomic_store(&g->interactive_active, 1);
+}
+
+static void interactive_finish(Gateway *g) {
+    atomic_store(&g->last_interactive_mono_ms, monotonic_millis());
+    atomic_store(&g->last_interactive_wall_ms, wall_millis());
+    atomic_store(&g->interactive_active, 0);
+}
+
+static int interactive_cooldown_ms(void) {
+    const char *env = getenv("SAMOSA_INTERACTIVE_COOLDOWN_S");
+    double seconds = env ? atof(env) : 60.0;
+    if (seconds < 0) seconds = 0;
+    if (seconds > 3600) seconds = 3600;
+    return (int)(seconds * 1000.0 + 0.5);
+}
+
+static int interactive_recent(Gateway *g) {
+    if (atomic_load(&g->interactive_active)) return 1;
+    long long last = atomic_load(&g->last_interactive_mono_ms);
+    int cooldown = interactive_cooldown_ms();
+    return last > 0 && cooldown > 0 && monotonic_millis() - last < cooldown;
+}
+
+static int job_pause_when_user_active(jval *job) {
+    jval *resources = job && job->t == J_OBJ ? json_get(job, "resources") : NULL;
+    jval *value = resources && resources->t == J_OBJ ? json_get(resources, "pause_when_user_active") : NULL;
+    return value && value->t == J_BOOL && value->boolean;
+}
+
+static int definition_interlock(Gateway *g, int fd, const char *job_id, int enabled,
+                                int *seq) {
+    if (!enabled || !interactive_recent(g)) return 1;
+    int number = ++(*seq);
+    TextBuffer paused = {0};
+    char num[32], cooldown[32];
+    snprintf(num, sizeof(num), "%d", number);
+    snprintf(cooldown, sizeof(cooldown), "%.3f", interactive_cooldown_ms() / 1000.0);
+    if (!text_add(&paused, "{\"seq\":") || !text_add(&paused, num) ||
+        !text_add(&paused, ",\"type\":\"job_paused\",\"job_id\":") ||
+        !text_json_string(&paused, job_id) ||
+        !text_add(&paused, ",\"reason\":\"interactive_chat\",\"cooldown_seconds\":") ||
+        !text_add(&paused, cooldown) || !text_add(&paused, "}")) {
+        free(paused.data); return 0;
+    }
+    if (!sse_json(fd, paused.data)) { free(paused.data); return 0; }
+    free(paused.data);
+
+    long long started = monotonic_millis();
+    while (!atomic_load(&g->stopping) && interactive_recent(g)) sleep_millis(50);
+    number = ++(*seq);
+    TextBuffer resumed = {0};
+    char waited[32];
+    snprintf(num, sizeof(num), "%d", number);
+    snprintf(waited, sizeof(waited), "%.3f", (monotonic_millis() - started) / 1000.0);
+    if (!text_add(&resumed, "{\"seq\":") || !text_add(&resumed, num) ||
+        !text_add(&resumed, ",\"type\":\"job_resumed\",\"job_id\":") ||
+        !text_json_string(&resumed, job_id) ||
+        !text_add(&resumed, ",\"reason\":\"interactive_chat\",\"paused_seconds\":") ||
+        !text_add(&resumed, waited) || !text_add(&resumed, "}")) {
+        free(resumed.data); return 0;
+    }
+    int ok = sse_json(fd, resumed.data);
+    free(resumed.data);
+    return ok && !atomic_load(&g->stopping);
+}
+
 static char *backend_json(Gateway *g, const char *payload) {
     if (!backend_probe(g)) return NULL;
     int fd = tcp_connect(g->backend_port);
     if (fd < 0) return NULL;
     pthread_mutex_lock(&g->mu); g->upstream_fd = fd; pthread_mutex_unlock(&g->mu);
-    atomic_store(&g->generating, 1);
+    atomic_fetch_add(&g->generating, 1);
     char header[512];
     int n = snprintf(header, sizeof(header),
         "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:%d\r\n"
@@ -1536,7 +1662,7 @@ static char *backend_json(Gateway *g, const char *payload) {
         !samosa_send_all(fd, header, (size_t)n) ||
         !samosa_send_all(fd, payload, strlen(payload))) {
         pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-        atomic_store(&g->generating, 0); close(fd); return NULL;
+        atomic_fetch_sub(&g->generating, 1); close(fd); return NULL;
     }
     TextBuffer response = {0}; char chunk[65536];
     while (response.len < SAMOSA_HTTP_MAX_BODY + SAMOSA_HTTP_MAX_HEADER) {
@@ -1546,7 +1672,7 @@ static char *backend_json(Gateway *g, const char *payload) {
         if (!text_add_n(&response, chunk, (size_t)got)) break;
     }
     pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-    atomic_store(&g->generating, 0); close(fd);
+    atomic_fetch_sub(&g->generating, 1); close(fd);
     if (!response.data || !strstr(response.data, " 200 ")) {
         free(response.data); return NULL;
     }
@@ -1557,21 +1683,102 @@ static char *backend_json(Gateway *g, const char *payload) {
     free(response.data); return copy;
 }
 
-static char *model_extract(Gateway *g, const char *instruction, jval *schema,
-                           const char *source) {
-    TextBuffer schema_json = {0}, user = {0}, payload = {0};
-    if (!text_json_value(&schema_json, schema) ||
-        !text_add(&user, instruction && *instruction ? instruction : "Extract the requested fields.") ||
-        !text_add(&user, "\nReturn only one JSON object matching this schema:\n") ||
-        !text_add(&user, schema_json.data ? schema_json.data : "{\"type\":\"object\"}") ||
-        !text_add(&user, "\nSource:\n") || !text_add(&user, source) ||
-        !text_add(&payload, "{\"model\":") || !text_json_string(&payload, backend_model(g->backend)) ||
-        !text_add(&payload, ",\"messages\":[{\"role\":\"system\",\"content\":\"Extract structured data. Return JSON only, with no markdown or commentary.\"},{\"role\":\"user\",\"content\":") ||
-        !text_json_string(&payload, user.data) ||
-        !text_add(&payload, "}],\"stream\":false,\"thinking\":\"off\",\"max_tokens\":512}")) {
-        free(schema_json.data); free(user.data); free(payload.data); return NULL;
+static int job_inference_max_tokens(jval *job) {
+    int max_tokens = 1024;
+    jval *inference = job && job->t == J_OBJ ? json_get(job, "inference") : NULL;
+    jval *value = inference && inference->t == J_OBJ ? json_get(inference, "max_tokens") : NULL;
+    if (value && value->t == J_NUM && value->num >= 1 && value->num <= 8192)
+        max_tokens = (int)value->num;
+    return max_tokens;
+}
+
+static int schema_type_prompt(TextBuffer *out, jval *type) {
+    if (!type) return 1;
+    if (type->t == J_STR) return text_add(out, type->str);
+    if (type->t != J_ARR) return 1;
+    int wrote = 0;
+    for (int i = 0; i < type->len; ++i) {
+        if (!type->kids[i] || type->kids[i]->t != J_STR) continue;
+        if (wrote && !text_add(out, " or ")) return 0;
+        if (!text_add(out, type->kids[i]->str)) return 0;
+        wrote = 1;
     }
-    char *raw = backend_json(g, payload.data); free(schema_json.data); free(user.data); free(payload.data);
+    return 1;
+}
+
+static int schema_field_prompt(TextBuffer *out, const char *key, jval *properties) {
+    if (!text_add(out, "- ") || !text_add(out, key)) return 0;
+    jval *property = properties && properties->t == J_OBJ ? json_get(properties, key) : NULL;
+    jval *type = property && property->t == J_OBJ ? json_get(property, "type") : NULL;
+    if (type && (!text_add(out, " (") || !schema_type_prompt(out, type) || !text_add(out, ")")))
+        return 0;
+    return text_add(out, "\n");
+}
+
+static int schema_fields_prompt(TextBuffer *out, jval *schema) {
+    jval *required = schema && schema->t == J_OBJ ? json_get(schema, "required") : NULL;
+    jval *properties = schema && schema->t == J_OBJ ? json_get(schema, "properties") : NULL;
+    if (!text_add(out, "Return exactly one JSON object with these keys and no other keys:\n"))
+        return 0;
+    int wrote = 0;
+    if (required && required->t == J_ARR) {
+        for (int i = 0; i < required->len; ++i) {
+            if (!required->kids[i] || required->kids[i]->t != J_STR) continue;
+            if (!schema_field_prompt(out, required->kids[i]->str, properties)) return 0;
+            wrote = 1;
+        }
+    }
+    if (!wrote && properties && properties->t == J_OBJ) {
+        for (int i = 0; i < properties->len; ++i) {
+            if (!schema_field_prompt(out, properties->keys[i], properties)) return 0;
+            wrote = 1;
+        }
+    }
+    if (!wrote && !text_add(out, "- value\n")) return 0;
+    return text_add(out,
+        "Do not output arrays or nested objects. If a field has multiple values, "
+        "join them into one string with \"; \".\n");
+}
+
+static char *model_extract(Gateway *g, const char *instruction, jval *schema,
+                           const char *source, const char *image_data_uri, int max_tokens,
+                           double *model_call_seconds) {
+    TextBuffer fields = {0}, user = {0}, payload = {0};
+    char max_tokens_text[32];
+    if (max_tokens < 1 || max_tokens > 8192) max_tokens = 1024;
+    snprintf(max_tokens_text, sizeof(max_tokens_text), "%d", max_tokens);
+    if (!schema_fields_prompt(&fields, schema) ||
+        !text_add(&user, instruction && *instruction ? instruction : "Extract the requested fields.") ||
+        !text_add(&user, "\n") || !text_add(&user, fields.data ? fields.data : "") ||
+        !text_add(&user, image_data_uri ? "\nSource image:" : "\nSource:\n") ||
+        (!image_data_uri && !text_add(&user, source ? source : "")) ||
+        !text_add(&payload, "{\"model\":") || !text_json_string(&payload, backend_model(g->backend)) ||
+        !text_add(&payload, ",\"messages\":[{\"role\":\"system\",\"content\":\"Extract structured data. Return exactly one JSON object and no prose.\"},{\"role\":\"user\",\"content\":")) {
+        free(fields.data); free(user.data); free(payload.data); return NULL;
+    }
+    int ok = 1;
+    if (image_data_uri) {
+        ok = text_add(&payload, "[{\"type\":\"text\",\"text\":") &&
+             text_json_string(&payload, user.data) &&
+             text_add(&payload, "},{\"type\":\"image_url\",\"image_url\":{\"url\":") &&
+             text_json_string(&payload, image_data_uri) &&
+             text_add(&payload, "}}]");
+    } else {
+        ok = text_json_string(&payload, user.data);
+    }
+    /* Disable reasoning for both backend families: llama-server (Ornith/Bonsai)
+       reads chat_template_kwargs.enable_thinking; the Qwen C engine ignores that
+       and only honors the top-level "thinking" field. Without "thinking":"off"
+       Qwen burns the token budget reasoning and returns no JSON object. */
+    if (!ok ||
+        !text_add(&payload, "}],\"stream\":false,\"thinking\":\"off\",\"chat_template_kwargs\":{\"enable_thinking\":false},\"response_format\":{\"type\":\"json_object\"},\"max_tokens\":") ||
+        !text_add(&payload, max_tokens_text) || !text_add(&payload, "}")) {
+        free(fields.data); free(user.data); free(payload.data); return NULL;
+    }
+    double started = monotonic_seconds();
+    char *raw = backend_json(g, payload.data);
+    if (model_call_seconds) *model_call_seconds = monotonic_seconds() - started;
+    free(fields.data); free(user.data); free(payload.data);
     char *arena = NULL; jval *root = raw ? json_parse(raw, &arena) : NULL;
     jval *choices = root && root->t == J_OBJ ? json_get(root, "choices") : NULL;
     jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
@@ -2087,19 +2294,75 @@ static int jobs_review_correct(Gateway *g, int fd, const SamosaHttpRequest *requ
     json_free(body); free(arena); return samosa_http_response(fd, 200, "application/json", response, NULL);
 }
 
-static char *definition_source(Gateway *g, jval *item) {
+static char *definition_pdf_page_text(Gateway *g, const char *path, int page,
+                                      int *page_count_out) {
+    char start_text[32];
+    snprintf(start_text, sizeof(start_text), "%d", page);
+    char *argv[] = {g->samosa_extract, "--json-pages", (char *)path, start_text, "1", NULL};
+    int status = 0; char *raw = run_capture(g, g->samosa_extract, argv, 1 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return NULL; }
+    char *arena = NULL; jval *result = json_parse(raw, &arena);
+    jval *text_value = result && result->t == J_OBJ ? json_get(result, "text") : NULL;
+    jval *page_count = result && result->t == J_OBJ ? json_get(result, "page_count") : NULL;
+    if (page_count_out && page_count && page_count->t == J_NUM && page_count->num >= 1)
+        *page_count_out = (int)page_count->num;
+    char *text = text_value && text_value->t == J_STR ? strdup(text_value->str) : NULL;
+    json_free(result); free(arena); free(raw); return text;
+}
+
+static char *definition_pdf_source(Gateway *g, const char *path) {
+    int page_count = 0;
+    char *first = definition_pdf_page_text(g, path, 1, &page_count);
+    if (!first) return NULL;
+    if (page_count <= 1) return first;
+    char *last = definition_pdf_page_text(g, path, page_count, NULL);
+    if (!last) return first;
+    TextBuffer source = {0};
+    int ok = text_add(&source, "Page 1:\n") && text_add(&source, first) &&
+             text_add(&source, "\n\nFinal page:\n") && text_add(&source, last);
+    free(first); free(last);
+    if (!ok) { free(source.data); return NULL; }
+    return source.data;
+}
+
+typedef struct {
+    char *text;
+    char *image_data_uri;
+} DefinitionSource;
+
+static void definition_source_free(DefinitionSource *source) {
+    if (!source) return;
+    free(source->text);
+    free(source->image_data_uri);
+}
+
+static int media_is_definition_image(const char *media) {
+    return media && (!strcmp(media, "image/png") || !strcmp(media, "image/jpeg"));
+}
+
+static char *definition_image_data_uri(const char *path, const char *media) {
+    size_t length = 0;
+    unsigned char *bytes = read_file_bytes_limit(path, MAX_DEFINITION_IMAGE_BYTES, &length);
+    if (!bytes) return NULL;
+    char *encoded = base64_encode_bytes(bytes, length);
+    free(bytes);
+    if (!encoded) return NULL;
+    TextBuffer uri = {0};
+    int ok = text_add(&uri, "data:") && text_add(&uri, media) &&
+             text_add(&uri, ";base64,") && text_add(&uri, encoded);
+    free(encoded);
+    if (!ok) { free(uri.data); return NULL; }
+    return uri.data;
+}
+
+static int definition_source(Gateway *g, jval *item, DefinitionSource *source) {
+    memset(source, 0, sizeof(*source));
     jval *path = json_get(item, "path"), *media = json_get(item, "media_type");
-    if (!path || path->t != J_STR || !media || media->t != J_STR) return NULL;
-    if (!strcmp(media->str, "text/plain")) return read_bounded_text(path->str);
-    if (!strcmp(media->str, "application/pdf")) {
-        char *argv[] = {g->samosa_extract, "--json-pages", path->str, "1", "5", NULL};
-        int status = 0; char *raw = run_capture(g, g->samosa_extract, argv, 1 << 20, &status);
-        if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return NULL; }
-        char *arena = NULL; jval *result = json_parse(raw, &arena); jval *text_value = json_get(result, "text");
-        char *text = text_value && text_value->t == J_STR ? strdup(text_value->str) : NULL;
-        json_free(result); free(arena); free(raw); return text;
-    }
-    return NULL;
+    if (!path || path->t != J_STR || !media || media->t != J_STR) return 0;
+    if (!strcmp(media->str, "text/plain")) source->text = read_bounded_text(path->str);
+    else if (!strcmp(media->str, "application/pdf")) source->text = definition_pdf_source(g, path->str);
+    else if (media_is_definition_image(media->str)) source->image_data_uri = definition_image_data_uri(path->str, media->str);
+    return source->text || source->image_data_uri;
 }
 
 static int definition_record(TextBuffer *record, jval *item, const char *extracted,
@@ -2167,14 +2430,24 @@ static int definition_request(Gateway *g, int fd, const SamosaHttpRequest *reque
         if (!path_join(artifact_dir, sizeof(artifact_dir), output_dir->str, "preview")) goto definition_fail;
     } else if (!path_copy(artifact_dir, sizeof(artifact_dir), output_dir->str)) goto definition_fail;
     if (!mkdirs(artifact_dir) || !path_join(artifact_path, sizeof(artifact_path), artifact_dir, "output.jsonl")) goto definition_fail;
-    TextBuffer records_file = {0}, records_array = {0}; int completed = 0;
+    TextBuffer records_file = {0}, records_array = {0}; int completed = 0, seq = 0;
+    double active_seconds = 0.0;
+    int interlock_enabled = job_pause_when_user_active(job);
     if (!preview && !samosa_http_stream_headers(fd)) goto definition_fail;
     int count = preview ? selected_count : items->len;
     for (int n = 0; n < count; ++n) {
         int item_index = preview ? selected[n] : n; jval *item = items->kids[item_index];
-        char *source = definition_source(g, item);
-        char *extracted = source ? model_extract(g, instruction && instruction->t == J_STR ? instruction->str : "", schema, source) : NULL;
-        free(source); TextBuffer record = {0};
+        if (!preview && !definition_interlock(g, fd, job_id, interlock_enabled, &seq)) {
+            free(records_file.data); free(records_array.data); goto definition_fail;
+        }
+        DefinitionSource source;
+        int have_source = definition_source(g, item, &source);
+        double call_seconds = 0.0;
+        char *extracted = have_source ? model_extract(g, instruction && instruction->t == J_STR ? instruction->str : "",
+                                                      schema, source.text, source.image_data_uri,
+                                                      job_inference_max_tokens(job), &call_seconds) : NULL;
+        active_seconds += call_seconds;
+        definition_source_free(&source); TextBuffer record = {0};
         if (!definition_record(&record, item, extracted, extracted != NULL)) { free(extracted); free(record.data); free(records_file.data); free(records_array.data); goto definition_fail; }
         free(extracted);
         if (!text_add(&records_file, record.data) || !text_add(&records_file, "\n") ||
@@ -2182,10 +2455,18 @@ static int definition_request(Gateway *g, int fd, const SamosaHttpRequest *reque
             free(record.data); free(records_file.data); free(records_array.data); goto definition_fail;
         }
         if (!preview) {
-            jval *path = json_get(item, "path"); TextBuffer event = {0}; char number[32]; snprintf(number, sizeof(number), "%d", n + 1);
-            text_add(&event, "{\"type\":\"item_complete\",\"i\":"); text_add(&event, number); text_add(&event, ",\"n\":");
+            jval *path = json_get(item, "path"); TextBuffer event = {0}; char number[32], seconds[32], active[32];
+            snprintf(number, sizeof(number), "%d", ++seq);
+            snprintf(seconds, sizeof(seconds), "%.3f", call_seconds);
+            snprintf(active, sizeof(active), "%.3f", active_seconds);
+            text_add(&event, "{\"seq\":"); text_add(&event, number);
+            text_add(&event, ",\"type\":\"item_complete\",\"i\":");
+            snprintf(number, sizeof(number), "%d", n + 1); text_add(&event, number); text_add(&event, ",\"n\":");
             snprintf(number, sizeof(number), "%d", count); text_add(&event, number); text_add(&event, ",\"input_path\":");
-            text_json_string(&event, path && path->t == J_STR ? path->str : ""); text_add(&event, "}"); sse_json(fd, event.data); free(event.data);
+            text_json_string(&event, path && path->t == J_STR ? path->str : "");
+            text_add(&event, ",\"model_call_seconds\":"); text_add(&event, seconds);
+            text_add(&event, ",\"active_inference_seconds\":"); text_add(&event, active);
+            text_add(&event, "}"); sse_json(fd, event.data); free(event.data);
         }
         ++completed; free(record.data);
     }
@@ -2203,8 +2484,25 @@ static int definition_request(Gateway *g, int fd, const SamosaHttpRequest *reque
         text_add(&response, ",\"artifact_dir\":\"preview\",\"records\":["); text_add(&response, records_array.data ? records_array.data : ""); text_add(&response, "]}");
         ok = samosa_http_response(fd, 200, "application/json", response.data, NULL); free(response.data);
     } else {
-        char event[256]; snprintf(event, sizeof(event), "{\"type\":\"done\",\"job_id\":\"%s\",\"summary\":\"Processed %d item%s.\"}", job_id, completed, completed == 1 ? "" : "s");
-        ok = sse_json(fd, event) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        TextBuffer event = {0}; char number[32], active[32], summary[80];
+        snprintf(number, sizeof(number), "%d", ++seq);
+        snprintf(active, sizeof(active), "%.3f", active_seconds);
+        snprintf(summary, sizeof(summary), "Processed %d item%s.", completed, completed == 1 ? "" : "s");
+        if (!text_add(&event, "{\"seq\":") || !text_add(&event, number) ||
+            !text_add(&event, ",\"type\":\"done\",\"job_id\":") ||
+            !text_json_string(&event, job_id) ||
+            !text_add(&event, ",\"summary\":") ||
+            !text_json_string(&event, summary) ||
+            !text_add(&event, ",\"completed\":")) {
+            free(event.data); ok = 0;
+        } else {
+            snprintf(number, sizeof(number), "%d", completed);
+            ok = text_add(&event, number) &&
+                 text_add(&event, ",\"active_inference_seconds\":") &&
+                 text_add(&event, active) && text_add(&event, "}") &&
+                 sse_json(fd, event.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+            free(event.data);
+        }
     }
     free(records_array.data); json_free(listing); free(list_arena); free(list_raw); json_free(body); free(arena); return ok;
 definition_fail:
@@ -2389,8 +2687,10 @@ static int proxy_request(Gateway *g, int client, const SamosaHttpRequest *reques
     int upstream = tcp_connect(g->backend_port);
     if (upstream < 0)
         return samosa_http_json_error(client, 503, "backend_unavailable", "The model backend is unavailable.");
+    int interactive = !request->is_background && !strcmp(request->path, "/v1/chat/completions");
+    if (interactive) interactive_start(g);
     pthread_mutex_lock(&g->mu); g->upstream_fd = upstream; pthread_mutex_unlock(&g->mu);
-    atomic_store(&g->generating, 1);
+    atomic_fetch_add(&g->generating, 1);
     char header[1024];
     int n = snprintf(header, sizeof(header),
         "%s %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: application/json\r\n"
@@ -2410,7 +2710,8 @@ static int proxy_request(Gateway *g, int client, const SamosaHttpRequest *reques
     if (g->upstream_fd == upstream) g->upstream_fd = -1;
     pthread_mutex_unlock(&g->mu);
     close(upstream);
-    atomic_store(&g->generating, 0);
+    atomic_fetch_sub(&g->generating, 1);
+    if (interactive) interactive_finish(g);
     return ok;
 }
 
@@ -2453,6 +2754,23 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             !strcmp(g->backend, "qwen") ? "true" : "false",
             ready ? "true" : "false", (!ready && pid > 0) ? "true" : "false",
             atomic_load(&g->generating) ? "true" : "false", (long)pid);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/internal/v1/status")) {
+        char body[1024], age[32], last[32];
+        long long last_mono = atomic_load(&g->last_interactive_mono_ms);
+        long long last_wall = atomic_load(&g->last_interactive_wall_ms);
+        if (last_mono > 0) snprintf(age, sizeof(age), "%.3f", (monotonic_millis() - last_mono) / 1000.0);
+        else snprintf(age, sizeof(age), "null");
+        if (last_wall > 0) snprintf(last, sizeof(last), "%.3f", last_wall / 1000.0);
+        else snprintf(last, sizeof(last), "null");
+        snprintf(body, sizeof(body),
+            "{\"inference_busy\":%s,\"interactive_active\":%s,"
+            "\"last_interactive_ts\":%s,\"last_interactive_age_seconds\":%s,"
+            "\"interactive_cooldown_seconds\":%.3f}",
+            atomic_load(&g->generating) ? "true" : "false",
+            atomic_load(&g->interactive_active) ? "true" : "false",
+            last, age, interactive_cooldown_ms() / 1000.0);
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/backends")) {
@@ -2570,7 +2888,11 @@ static int load_config(Gateway *g) {
     memset(g, 0, sizeof(*g));
     g->backend_pid = 0; g->upstream_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
-    atomic_init(&g->generating, 0); atomic_init(&g->stopping, 0);
+    atomic_init(&g->generating, 0);
+    atomic_init(&g->interactive_active, 0);
+    atomic_init(&g->last_interactive_mono_ms, 0);
+    atomic_init(&g->last_interactive_wall_ms, 0);
+    atomic_init(&g->stopping, 0);
     const char *home = getenv("SAMOSA_HOME");
     const char *user_home = getenv("HOME");
     if (!home) {

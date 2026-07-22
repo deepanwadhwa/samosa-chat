@@ -95,7 +95,7 @@ that is a **follow-up** (new C-level tests), deliberately deferred here per the
 owner's "retire duplicates, note gaps" choice. The behaviors themselves ship in
 `src/samosa_gateway.c` and are exercised end-to-end by the compiled suite.
 
-**Not touched:** `tools/run_e_j1.py` (the E-J1 acceptance harness) still shells
-out to `dist/samosa_jobs.py`, a path that no longer exists — it was already
-stale. When E-J1 resumes it must drive the compiled `/v1/jobs/definition/run`
-route instead; left in place so the E-J1 scaffold is not lost.
+**Follow-up applied after Gate 11:** `tools/run_e_j1.py` now drives the compiled
+gateway directly (`/v1/jobs/definition/preview` and
+`/v1/jobs/definition/run`) and saves the streamed SSE events as run evidence.
+It no longer shells out to the deleted `dist/samosa_jobs.py` path.

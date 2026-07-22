@@ -1,13 +1,32 @@
 # Issue #7 — Samosa Jobs (batch, scheduled, local multimodal work)
 
 **Status: J1 implementation is landed on `issue-7-jobs`; its offline suite is
-green. E-J1 acceptance is still open.** The real four-PDF sidecar/planner check
-is measured, and the first long-PDF preview hit unsafe memory pressure on the
+green. E-J1 is closed for the labeled JSS PDF batch and the live chat interlock,
+but image/multi-image acceptance remains open.** The compiled definition route
+now emits active inference timing and has offline interlock coverage; see
+[`compiled-interlock-telemetry-2026-07-22.md`](regressions/jobs/e-j1/compiled-interlock-telemetry-2026-07-22.md).
+The 2026-07-16 whole-file long-PDF preview hit unsafe memory pressure on the
 16-GiB reference host; see
 [`pdf-preview-aborted-2026-07-16.md`](regressions/jobs/e-j1/pdf-preview-aborted-2026-07-16.md).
-No performance or accuracy claim is implied until the full E-J1 experiment
-completes. Claims about the *current* engine, by contrast, are verified below
-with `file:line` evidence.
+The later 2026-07-22 run rebuilt/installed with the reviewed PDFium archive and
+completed all four labeled JSS PDFs through the compiled `/v1/jobs/definition/*`
+routes on Ornith: 4/4 `passed`, 46/48 fields correct, 0 review/failed records,
+and zero swap/throttled pages; see
+[`jss-pdf-ornith-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-2026-07-22/)
+and the superseded setup note
+[`ornith-metadata-2026-07-22.md`](regressions/jobs/e-j1/ornith-metadata-2026-07-22.md).
+The clean live interlock rerun completed the same four PDFs with an interactive
+chat opened mid-batch: 4/4 `passed`, 44/48 fields correct,
+`active_inference_seconds=124.93`, and one observed
+`job_paused`/`job_resumed` pair; see
+[`jss-pdf-ornith-interlock-clean-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-interlock-clean-2026-07-22/).
+No broad image or multi-image reduction acceptance claim is implied until the
+vision-backend run passes. A narrow Qwen image smoke reached the
+vision-capable backend through the compiled route but returned
+`review_required`/`invalid_model_output`; see
+[`qwen-image-smoke-2026-07-22/`](regressions/jobs/e-j1/qwen-image-smoke-2026-07-22/).
+Claims about the *current* engine, by contrast, are verified below with
+`file:line` evidence.
 
 This card is written to be executed by an agent with **no prior context on this
 repo**. Every task states its goal, its exact interface (file formats, request
@@ -362,7 +381,7 @@ only** if a job exceeds ~10^5 items or concurrent jobs need shared querying.
     result.json  provenance.json
 ```
 
-`<jobs_root>` default `~/.samosa/jobs` (override `SAMOSA_JOBS_DIR`), mode `0700`.
+`<jobs_root>` default `~/.samosa/jobs` (override `SAMOSA_JOBS_ROOT`), mode `0700`.
 `<input_sha256>` = the file's SHA-256; `<unit_id>` = `<input_sha256>` (whole
 file), `<input_sha256>#p<N>` (page N), `<input_sha256>#c<N>` (text chunk N).
 Files stay on the filesystem; the log stores paths + hashes + metadata, never
@@ -1113,13 +1132,44 @@ byte-identical to a J1 job** (same gate pattern as the engine additions):
 
 ### E-J1 — Does the runner work on the real model?  ~1–2 days  **RUN FIRST (after J1 offline tests are green)**
 
-**Current result (2026-07-16): partial, with a recorded negative experiment and
-follow-up cancellation fix.** The sidecar correctly measured/planned all four
-supplied JSS PDFs, but a 20,817-token whole-file preview caused heavy
-compression/swap on the 16-GiB host. The JSS job now forces page units. Bounded
-text-prefill cancellation is measured on a JSS page, but rendered-image prefill,
-full-batch safety, and extraction accuracy remain unmeasured. Exact commands
-and observations are in the linked regression record above.
+**Current result (updated 2026-07-22): labeled JSS PDF batch and live chat
+interlock completed through the compiled gateway.** The sidecar correctly
+measured/planned all four supplied JSS PDFs, but the 2026-07-16 run used a
+20,817-token whole-file preview on the 24 GB model and caused heavy
+compression/swap on the 16-GiB host. The branch now uses a PDFium-backed
+installed `samosa-extract --json-pages`, and the full four-PDF JSS corpus was
+rerun through the compiled `/v1/jobs/definition/*` routes on the lighter Ornith
+backend:
+[`jss-pdf-ornith-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-2026-07-22/).
+Result: 4/4 records `passed`, 46/48 labeled fields correct, 0
+`review_required`, 0 failed, preview 21.888 s, run 135.149 s, and
+`Pages throttled=0`, `Swapins=0`, `Swapouts=0` before/after. The only labeled
+misses were one grouped email-order field and one affiliation over-inclusion.
+
+The PDF release-path blocker is closed for this branch by installing from the
+reviewed PDFium archive and by installer smoke tests in `dist/install.sh` and
+`tools/install_local_dev.sh`. The E-J1 harness now drives the compiled
+`/v1/jobs/definition/*` routes instead of the deleted Python runner. Follow-up
+on 2026-07-22 closed the compiled-observability gap: definition runs emit
+per-item `model_call_seconds`, total `active_inference_seconds`, and
+`job_paused`/`job_resumed` interlock events when
+`resources.pause_when_user_active:true`; see
+[`compiled-interlock-telemetry-2026-07-22.md`](regressions/jobs/e-j1/compiled-interlock-telemetry-2026-07-22.md).
+A clean live real-model rerun with an interactive chat opened mid-batch is now
+captured in
+[`jss-pdf-ornith-interlock-clean-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-interlock-clean-2026-07-22/):
+4/4 records `passed`, 44/48 fields correct, 0 `review_required`, 0 failed,
+`active_inference_seconds=124.93`, one `job_paused` and one `job_resumed`, and
+zero swap/throttled pages.
+
+The compiled route now has single-image request plumbing: PNG/JPEG definition
+items are base64 encoded and sent as OpenAI-compatible `image_url` content, with
+fake-backend coverage in `tests/test_compiled_gateway.sh`. The first live Qwen
+smoke on a 1x1 PNG reached the vision-capable backend and completed with active
+inference timing, but the model returned a scalar (`0`) instead of the requested
+schema object, so the record was `review_required`; see
+[`qwen-image-smoke-2026-07-22/`](regressions/jobs/e-j1/qwen-image-smoke-2026-07-22/).
+Remaining acceptance coverage: labeled image inputs and multi-image reduction.
 
 Real `samosa serve` + the real 24 GB model; full runner + `preview` over 10–20
 real inputs (images+text; PDFs if #5 landed) with a hand-labeled reference.
@@ -1409,17 +1459,22 @@ Being precise about the starting point, per the evidence bar:
   compiled C sidecar — one operation, `--json` out, its own CPU/memory
   sandbox, `@rpath`-linked libpdfium. `fs_read_document` already dispatches
   to it. This is the template, not a research question.
-- **The current Python layer is stdlib-only** (gateway + tools + jobs ≈ 2,900
-  lines, zero pip dependencies) — the "fragile package/version management"
-  critique does not bite *today's code*, and honesty requires saying so. What
-  **does** bite: the release hard-requires the host's `python3`
-  (`dist/install.sh:150` fails install without it); version drift is already
-  observable in-tree (both `cpython-310` and `cpython-314` bytecode in
-  `__pycache__/`); in-process Python tools have no OS-enforced resource
-  limits. The 2026-07-21 15 GB memory spike was a logic bug any language
-  could have written — but a sidecar under rlimits would have been *contained*
-  by the OS instead of eating 15 GB + swap. That containment argument, not
-  "Python is slow," is the strongest concrete case for this decision.
+- **At the decision point, the Python layer was stdlib-only** (gateway + tools +
+  jobs ≈ 2,900 lines, zero pip dependencies) — the "fragile package/version
+  management" critique did not bite that code, and honesty required saying so.
+  What **did** bite then: the release hard-required the host's `python3`;
+  version drift was observable in-tree (both `cpython-310` and `cpython-314`
+  bytecode in `__pycache__/`); in-process Python tools had no OS-enforced
+  resource limits. The 2026-07-21 15 GB memory spike was a logic bug any
+  language could have written — but a sidecar under rlimits would have been
+  *contained* by the OS instead of eating 15 GB + swap. That containment
+  argument, not "Python is slow," was the strongest concrete case for this
+  decision.
+- **Status update (2026-07-22):** Gate 11 removed the shipped Python
+  gateway/jobs runtime. The installed path now uses compiled `samosa-gateway`,
+  `samosa-jobsd`, `samosa-fs`, and `samosa-extract`; the compiled gateway test
+  runs with `python3` unavailable. Python remains repo tooling only (packaging,
+  tests, and regression/evidence harnesses).
 
 ### The sidecar contract (freeze before building more tools)
 
@@ -1446,12 +1501,10 @@ Being precise about the starting point, per the evidence bar:
    the journal) into `samosa-fs`. During transition the Python `Tool` entries
    become thin dispatch shims (build subprocess argv, parse envelope) — the
    registry, jail, and preview/execute gating stay where they are.
-3. **The gateway shrinks to orchestration glue** (HTTP/SSE, agent loop,
-   backend supervision) — still Python for now, explicitly *not* load-bearing
-   for any tool. Long-term option, separate decision: fold orchestration into
-   the C engine (it already serves HTTP) or a compiled gateway, at which
-   point the installer's `python3` requirement disappears and Python is
-   genuinely optional.
+3. **DONE (2026-07-22): Fold orchestration into compiled glue.** The C gateway
+   now owns HTTP/SSE, agent loop, backend supervision, scheduling/jobsd, and the
+   deterministic job routes. `dist/install.sh` builds and installs the compiled
+   executables directly, so the installed runtime no longer depends on Python.
 
 Non-goal, restated from the owner's framing: the model composing *tools* is
 the feature; the model generating *programs* (arbitrary Python/shell) stays

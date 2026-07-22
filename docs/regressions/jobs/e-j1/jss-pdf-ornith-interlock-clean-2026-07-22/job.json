@@ -1,11 +1,13 @@
 {
   "schema_version": 1,
-  "job_id": "jss-article-metadata",
+  "job_id": "e-j1-jss-pdf-ornith-interlock-clean-20260722",
   "name": "Journal article metadata extraction",
   "input": {
-    "folder": "/Users/deepanwadhwa/Documents/samosa-chat",
+    "folder": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs",
     "recursive": false,
-    "types": ["application/pdf"],
+    "types": [
+      "application/pdf"
+    ],
     "max_file_bytes": 26214400
   },
   "unit": "page",
@@ -38,22 +40,85 @@
       "accepted_date"
     ],
     "properties": {
-      "title": {"type": ["string", "null"]},
-      "journal": {"type": ["string", "null"]},
-      "publication_month": {"type": ["string", "null"], "maxLength": 7},
-      "volume": {"type": ["integer", "null"]},
-      "issue": {"type": ["integer", "null"]},
-      "doi": {"type": ["string", "null"]},
-      "authors": {"type": ["string", "null"]},
-      "author_emails": {"type": ["string", "null"]},
-      "affiliations": {"type": ["string", "null"]},
-      "universities": {"type": ["string", "null"]},
-      "submitted_date": {"type": ["string", "null"], "maxLength": 10},
-      "accepted_date": {"type": ["string", "null"], "maxLength": 10}
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "journal": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "publication_month": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 7
+      },
+      "volume": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "issue": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "doi": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "authors": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "author_emails": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "affiliations": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "universities": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "submitted_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 10
+      },
+      "accepted_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 10
+      }
     }
   },
   "output": {
-    "dir": "/Users/deepanwadhwa/Documents/samosa-chat/.jobs-output/jss-article-metadata",
+    "dir": "/Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/jobs/e-j1/jss-pdf-ornith-interlock-clean-2026-07-22/output",
     "format": "jsonl"
   },
   "resources": {
