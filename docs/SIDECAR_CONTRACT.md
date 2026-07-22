@@ -96,7 +96,10 @@ The convention follows `samosa-extract`:
   `{"ok": false, "error": "wall_timeout"}` when possible.
 
 Callers must also enforce their own wall-clock timeout and kill the whole child
-process group on expiry, matching `jobs_fs.extract_document`.
+process group on expiry, as the compiled gateway's `run_capture` /
+`spawn_tracked` path does in `src/samosa_gateway.c` (this was the
+`jobs_fs.extract_document` watchdog pattern before Gate 11 removed the Python
+runner).
 
 ## Resource Limits
 

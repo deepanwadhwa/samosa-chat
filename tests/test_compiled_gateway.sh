@@ -86,6 +86,12 @@ done
 printf '%s' "$health" | /usr/bin/grep -q '"compiled":true'
 printf '%s' "$health" | /usr/bin/grep -q '"ready":true'
 
+# Static web app + logo are served (coverage moved here from the retired Python
+# tests/test_gateway_web.py when Gate 11 removed the Python gateway).
+app_page=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/")
+printf '%s' "$app_page" | /usr/bin/grep -q 'Compiled Samosa'
+/usr/bin/curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/assets/samosa-chat.png" | /usr/bin/grep -q '200'
+
 reply=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' \
   --data-binary '{"messages":[{"role":"user","content":"hello"}],"stream":false}')

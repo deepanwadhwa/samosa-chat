@@ -134,7 +134,7 @@ pagecache-residency: tools/pagecache_residency.c
 pagecache-residency-test: pagecache-residency tests/test_pagecache_residency.sh
 	sh tests/test_pagecache_residency.sh ./$(BUILD_DIR)/pagecache-residency
 
-test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_gateway_web.py tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
+test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
@@ -143,7 +143,6 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	$(CC) -O1 -Isrc tests/test_groupwise_q4.c -o $(BUILD_DIR)/test_groupwise_q4 -lm && ./$(BUILD_DIR)/test_groupwise_q4
 	$(CC) -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/test_samosa_serve -lm && ./$(BUILD_DIR)/test_samosa_serve
 	sh tests/test_samosa_wrapper.sh
-	python3 tests/test_gateway_web.py
 	sh tests/test_atomic_install.sh
 	sh tests/test_install_path.sh
 	sh tests/test_gateway_installer.sh
@@ -156,15 +155,16 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 
-jobs-test: samosa-fs tools/jobs_fs.py tools/samosa_tools.py tools/samosa_jobs.py tools/samosa_gateway.py
+# Jobs acceptance (offline). Gate 11 removed the Python jobs modules
+# (samosa_jobs/samosa_gateway/samosa_tools/jobs_fs) after native parity, so the
+# Jobs runtime under test is the compiled gateway/jobsd/fs. The shipped samosa-fs
+# sidecar has direct CLI coverage in tests/jobs/, and every C job route (chat,
+# run/find/answer, definition preview/run, move/apply/undo, schedule/jobsd,
+# launchd, public-inputs, kill) is exercised by tests/test_compiled_gateway.sh
+# with python3 removed from PATH.
+jobs-test: samosa-fs
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 -m unittest discover -s tests/jobs -v
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_answer.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_find.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_find_move.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_definition.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_jobs_model_call.py
-	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" python3 tests/test_gateway_chat_tools.py
+	$(MAKE) compiled-gateway-test
 
 clean:
 	rm -rf $(BUILD_DIR)

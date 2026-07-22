@@ -199,7 +199,7 @@ not at runtime.
 
 | Actor | Does | Never does |
 |---|---|---|
-| **Runner** (`samosa_jobs.py` — deterministic Python, no AI) | Reads files, magic-byte typing, hashing, planning units, building prompts, validation, joins/merges, the event log | Judgment calls; nothing here consults the model |
+| **Runner** (the compiled gateway `src/samosa_gateway.c` + `samosa-fs` sidecar — deterministic C, no AI; the original `samosa_jobs.py` prototype was retired at Gate 11) | Reads files, magic-byte typing, hashing, planning units, building prompts, validation, joins/merges, the event log | Judgment calls; nothing here consults the model |
 | **Intent author** (a human, at development time) | Decomposes a task class into its shape **once** — e.g. Reconcile = extract-each → deterministic join on declared match rule → exception report — tests it, ships it as a template | — |
 | **Qwen, definition time** (`suggest-job`, one supervised call) | Intent *selection* + parameter *filling*: maps the user's English onto a shipped intent, proposes schema/rules; user edits and previews | Inventing a new workflow shape |
 | **Qwen, runtime** | Answers one bounded, pre-built prompt per unit (read this receipt, summarize this page) | Touching raw files, choosing tools, planning, deciding what "done" means |
@@ -1636,9 +1636,15 @@ The work is complete only when all of the following are true:
    exactly one new unit and updates state atomically.
 10. The installed release passes scheduler and public-input integration tests
     with Python unavailable, followed by one real public-page change check.
-11. Only after gates 1–10 pass are `tools/samosa_gateway.py`,
-    `tools/samosa_jobs.py`, and their runtime-only helpers removed or reduced to
-    non-shipping historical fixtures.
+11. **DONE (2026-07-22).** Gates 1–10 passed, so `tools/samosa_gateway.py`,
+    `tools/samosa_jobs.py` and their runtime-only helpers (`tools/samosa_tools.py`,
+    `tools/jobs_fs.py`) were **removed** (owner-approved "retire duplicates" path),
+    along with the duplicate Python tests they backed (`tests/test_gateway_jobs*`,
+    `test_gateway_chat_tools`, `test_gateway_web`, `tests/jobs/test_run_job`,
+    `test_tools`). The shipped `samosa-fs` sidecar keeps direct CLI coverage in the
+    new `tests/jobs/test_samosa_fs.py`; every C job route stays covered by
+    `tests/test_compiled_gateway.sh`. `make jobs-test` and `make test` are green.
+    Retired coverage and evidence: [`gate11-python-removal-2026-07-22.md`](regressions/jobs/gate11-python-removal-2026-07-22.md).
 
 ### Deliberate non-goals
 
