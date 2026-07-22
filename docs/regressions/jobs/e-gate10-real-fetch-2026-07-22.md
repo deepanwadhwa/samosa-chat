@@ -71,12 +71,47 @@ The same URL returning different bytes 3 s apart was correctly detected as
 timeout); the batch still returned `200`, no item was written, and `state.json`
 was left intact. No crash, no partial state.
 
+## Install + re-run on the installed release (2026-07-22, owner-authorized)
+
+The new gateway was then **installed** into `~/.samosa` and the check re-run
+against the installed binary — closing the "installed release" half of the gate.
+
+Install method (matches `dist/install.sh`'s release model without a 24 GB copy):
+
+- APFS copy-on-write clone of the active release `dev-6d62f84ec2a4` into a staged
+  dir (`cp -Rc` — clonefile, no data duplication);
+- dropped in the freshly built `bin/samosa-gateway` (compiled with the installer's
+  exact flags: `-O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread`)
+  and added `bin/samosa-jobsd`;
+- smoke-tested the staged binary (healthz ready, SSRF block, jobsd one-shot)
+  **before** activation;
+- atomic activation via the installer's own step: `ln -s releases/<id> .current.next`
+  then `mv -fh .current.next current`.
+
+New release: `dev-a24a14f99624`. `~/.samosa/current` now points at it. The prior
+release `dev-6d62f84ec2a4` is retained for rollback (flip the symlink back).
+
+Re-run against `~/.samosa/current/bin/samosa-gateway`:
+
+```
+example.com  #1 -> status:new, changed:1, title "Example Domain"
+example.com  #2 -> status:unchanged, changed:0
+cloudflare/cdn-cgi/trace #1 -> status:new,     hash faf024efd8b6fdc9
+cloudflare/cdn-cgi/trace #2 -> status:changed, hash 6de78db8ab3d96d1, changed:1
+http://169.254.169.254/... -> error "blocked non-public address"
+```
+
 ## Verdict
 
-Gate 10's real-fetch check **passes on the built binary**: all three change
-transitions (`new` / `unchanged` / `changed`) verified against live sites, SSRF
-allow+block both exercised on real DNS, robots honored, real failures handled
-without corrupting state. **Open:** re-package + install the new binary and
-re-run from the `~/.samosa` release (owner-gated, overwrites the installed
-release). Until then, do not describe the *installed release* as covering this
-feature.
+Gate 10's real-fetch check **passes on the installed release**
+(`~/.samosa/current -> releases/dev-a24a14f99624`): all three change transitions
+(`new` / `unchanged` / `changed`) verified against live sites, SSRF allow+block
+both exercised on real DNS, robots honored, real failures handled without
+corrupting state — on the binary a user actually runs. Rollback: repoint
+`~/.samosa/current` at `releases/dev-6d62f84ec2a4`.
+
+**Remaining beyond Gate 10:** the release was assembled by cloning the active
+release and swapping the compiled binary, not by the full HF-download installer
+path (`dist/install.sh` fetches from a placeholder repo and runs a real-model
+smoke test). The gateway binary itself is byte-for-byte the tested build. A
+publish-to-HF + clean-machine install remains an owner-gated release step.

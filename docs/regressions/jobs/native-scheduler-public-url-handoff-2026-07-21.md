@@ -359,11 +359,13 @@ yet exercised. **Gate 10's real-fetch check PASSED on the built binary
 against live sites (`example.com`, `cloudflare.com/cdn-cgi/trace`), SSRF
 allow+block both exercised on real DNS, robots honored, real failures
 (`httpbin` 503/timeout) handled without corrupting state; evidence in
-[`e-gate10-real-fetch-2026-07-22.md`](e-gate10-real-fetch-2026-07-22.md). **Still
-open in Gate 10:** it ran against `build/samosa-gateway`, not a re-installed
-`~/.samosa` release (the installed binary predates the pipeline); re-packaging and
-installing the new binary overwrites the installed release and waits for owner
-confirmation. **Gate 11 (removing `tools/samosa_gateway.py`
+[`e-gate10-real-fetch-2026-07-22.md`](e-gate10-real-fetch-2026-07-22.md).
+**Gate 10 is now closed on the installed release**: with owner sign-off the new
+gateway was installed (`~/.samosa/current -> releases/dev-a24a14f99624`, prior
+release kept for rollback) and the real-fetch check re-passed against
+`~/.samosa/current/bin/samosa-gateway`. The only step beyond is a publish-to-HF +
+clean-machine install via the full `dist/install.sh`, which stays an owner-gated
+release action. **Gate 11 (removing `tools/samosa_gateway.py`
 / `tools/samosa_jobs.py`) is deliberately NOT done**: it is owner-gated on gate
 10, and those modules still back the green `make jobs-test` / `make test` Python
 suites. Do not delete them until gate 10 passes and the Python tests are migrated
