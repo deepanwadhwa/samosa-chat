@@ -1048,16 +1048,24 @@ static void html_to_text(const char *html, char **out_text, char **out_title) {
         }
         ++p;
     }
-    /* collapse spaces around newlines and runs of blank lines */
+    /* Collapse each whitespace run to one char (newline if the run held any),
+       and drop leading/trailing whitespace. */
     if (text.data) {
         char *r = text.data, *w = text.data;
         while (*r) {
-            if (*r == '\n') { while (w > text.data && w[-1] == ' ') --w; *w++ = '\n';
-                while (r[1] == '\n' || r[1] == ' ') { if (r[1] == ' ') ++r; else if (r[2] == '\n' || r[2] == ' ') ++r; else break; }
-                ++r; while (*r == ' ') ++r; continue; }
-            *w++ = *r++;
+            if (*r == '\n' || *r == ' ' || *r == '\t' || *r == '\r') {
+                int newline = 0;
+                while (*r == '\n' || *r == ' ' || *r == '\t' || *r == '\r') { if (*r == '\n') newline = 1; ++r; }
+                if (w > text.data && *r) *w++ = newline ? '\n' : ' ';
+            } else {
+                *w++ = *r++;
+            }
         }
         *w = 0;
+    }
+    if (title.data) {   /* trim a trailing space left by the whitespace collapse */
+        size_t tl = strlen(title.data);
+        while (tl && (title.data[tl - 1] == ' ' || title.data[tl - 1] == '\n')) title.data[--tl] = 0;
     }
     *out_text = text.data ? text.data : strdup("");
     *out_title = title.data ? title.data : strdup("");
@@ -1374,7 +1382,7 @@ static int jobsd_once_native(Gateway *g, int fd, const SamosaHttpRequest *reques
             jval *schedule = raw ? json_parse(raw, &arena) : NULL;
             if (!schedule || schedule->t != J_OBJ) { json_free(schedule); free(arena); free(raw); continue; }
             jval *dl = json_get(schedule, "deadline_epoch");
-            int window_expired = dl && dl->t == J_NUM && now_epoch >= (long)dl->num;
+            int window_expired = dl && dl->t == J_NUM && (long)dl->num > 0 && now_epoch >= (long)dl->num;
             char reason[64];
             int should_run = schedule_decision(schedule, now, on_battery, window_expired, reason, sizeof(reason));
             int ran = 0;
