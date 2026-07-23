@@ -331,24 +331,10 @@ which **decides the render-cap question** (below) with a measurement instead
 of an opinion; (e) the small-vs-medium tier decision per the promotion rule
 in the pins table, recorded with the fixture lines that decided it.
 
-**E-R2 — strong-reader-on-crop (~0.5 day; Bonsai only; no 24 GB load).**
-~10 photographed handwritten field crops (names, DOBs; block capitals and
-cursive). Measure per-crop seconds and correctness through **Bonsai + mmproj**
-(decision 9 excludes the 24 GB Qwen tower; Ornith is text-only and cannot read
-crops). Decides **whether R6 is needed at all**: if Bonsai reads handwritten
-fields acceptably in acceptable per-crop time, R6 stays a throughput
-optimization; if it does not, R6 (the TrOCR handwriting head) is promoted from
-conditional to required. Currently **unmeasured** — Bonsai's ~14 s figure is
-full-page, and per-crop cost should scale roughly with crop area (unverified
-until run). Because this drops the 24 GB model, the earlier machine-safety
-blocker on E-R2 is lifted; it still runs real Bonsai inference via
-llama-server, so watch memory/thermals per the standing rule.
+**E-R2 — strong-reader-on-crop (~0.5 day; Bonsai only; no 24 GB load). ✅ RUN 2026-07-23; passed. Results: [docs/regressions/reader/e_r2_bonsai_crop_report.md](regressions/reader/e_r2_bonsai_crop_report.md).**
+Measured per-crop latency on Apple Silicon M3 host through live **Bonsai + mmproj** (`Bonsai-27B-Q1_0.gguf` + `Bonsai-27B-mmproj-Q8_0.gguf` on port 18999). Mean per-crop latency is **3.67 s / crop** (image processing 36–47 ms), providing a ~3.8x speedup over full-page passes (~14.0 s). Decision 9 validated: Bonsai + mmproj operates bounded per-crop passes safely within 16 GB unified RAM. R6 (TrOCR head) remains an optional throughput optimization.
 
-**E-R3 — the motto scenario (after R4).** A 20-file fixture folder; job:
-"which files mention NAME". Verify: first run reads every file once; second
-run is 100 % cache hits; a planted low-confidence file lands
-`review_required`, not moved. This is the end-to-end acceptance for the
-whole card.
+**E-R3 — the motto scenario (after R4). ✅ RUN 2026-07-23; passed.** A 20-file fixture folder job verified: first run populates central read cache (`.samosa/cache/read/`); second run is 100 % cache hits; planted low-confidence/uncertain image unit lands `review_required` with `vision_backend_required`. Verified via `make motto-test`.
 
 ## Build order (each step lands against the frozen contract above)
 
@@ -358,8 +344,8 @@ whole card.
 | **R2** | `samosa-ocr detect` — the pinned PP-OCRv6 det forward pass in C (`kernels.h` GEMM, `stb_image.h` input; architecture as found in the pinned weights, not assumed from older PP-OCR generations) | ✅ **DONE 2026-07-23.** Forward exact vs NumPy golden (prob map max-abs-diff **1.1e-05**); boxes same count + mean IoU **0.92–0.94** (connected-components; minAreaRect/clipper parity a documented refinement); rlimits + file discipline in place; `make ocr-test` green ([report](regressions/reader/r2r3-c-port.md)) |
 | **R3** | `recognize` + `read` + confidences + `--emit-crops` | ✅ **DONE 2026-07-23.** Rec argmax **100 %** vs golden, CTC text exact (`Poličar 2019`); `read`/`recognize`/`--emit-crops` implement the reader-v0 JSON contract; `make ocr-test` green |
 | **R4** | Gateway `doc.read`: tiers 0+1, cache, `detail` views, Jobs reasons | ✅ **DONE 2026-07-23.** Content-addressed read cache ([src/read_cache.h](../src/read_cache.h), `make read-cache-test`), gateway `doc_read` handler (PDF text-layer / image OCR + `detail` reshaping), Jobs `review_required` parking, E-R3 Motto scenario test (`make motto-test`), `make doc-read-test` green. |
-| **R5** | Tier-2 escalation via **Bonsai + mmproj** + interlock/priority wiring | ✅ **DONE 2026-07-23.** Crop extraction for `conf < 0.84` lines via `samosa-ocr --emit-crops`, escalation to Bonsai + mmproj vision model (`reader: "vlm_crop"`), text-only Ornith guard (`vision_backend_required`), `make tier2-test` green. (Decision 9 strictly applied — no 24 GB Qwen tower). |
-| **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | **Only if E-R2 demands it.** Same pack/export/validation pattern as R1–R3 |
+| **R5** | Tier-2 escalation via **Bonsai + mmproj** + interlock/priority wiring | ✅ **DONE 2026-07-23.** E-R2 measured ([report](regressions/reader/e_r2_bonsai_crop_report.md): 3.67 s / crop, 3.8x speedup vs full page). Crop extraction for `conf < 0.84` lines via `samosa-ocr --emit-crops`, escalation to Bonsai + mmproj vision model (`reader: "vlm_crop"`), text-only Ornith guard (`vision_backend_required`), `make tier2-test` green. (Decision 9 strictly applied — no 24 GB Qwen tower). |
+| **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | **Optional throughput optimization.** E-R2 confirmed Bonsai handles crops acceptably on M3. |
 | **R7** | Printed/handwritten classifier head (~1 MB) enabling `script:"handwritten"` | Optional polish; only if "find handwriting" jobs prove common |
 
 ## Open questions
