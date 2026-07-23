@@ -144,6 +144,7 @@ find=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   --data-binary "{\"goal\":\"find my cat medical records; my cat is named Titli\",\"folder\":\"$TMP/files\"}")
 printf '%s' "$find" | /usr/bin/grep -q '"type":"triage_progress"'
 printf '%s' "$find" | /usr/bin/grep -q '"type":"index_complete"'
+printf '%s' "$find" | /usr/bin/grep -q '"type":"skim_progress"'
 printf '%s' "$find" | /usr/bin/grep -q '"tool":"fs_read_text"'
 printf '%s' "$find" | /usr/bin/grep -q '"type":"result"'
 printf '%s' "$find" | /usr/bin/grep -q 'cat-medical-note.txt'
@@ -161,9 +162,12 @@ FIND_JOB=$(printf '%s' "$find" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/
 [ -n "$FIND_JOB" ]
 # Durable state persisted: Phase A verdicts, the loop conversation, the result.
 [ -f "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl" ]
+[ -f "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl" ]
 [ -f "$HOME_DIR/jobs/$FIND_JOB/convo.json" ]
 [ -f "$HOME_DIR/jobs/$FIND_JOB/result.json" ]
 /usr/bin/grep -q '"verdict":' "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"
+# skim index is the owner's dictionary: filename -> first lines of content.
+/usr/bin/grep -q '"first_lines":"Titli vaccination record' "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl"
 
 # Pause == resume (JI.6): a model-authored question pauses; the answer re-enters
 # the loop as the tool result. The finish only fires when run-1's read result

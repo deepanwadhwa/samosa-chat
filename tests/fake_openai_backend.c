@@ -59,9 +59,11 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"name\":\"finish\",\"arguments\":\"{\\\"matches\\\":[{\\\"path\\\":\\\"receipt-b.txt\\\","
             "\\\"evidence\\\":\\\"Cafe total 4.50\\\",\\\"confidence\\\":\\\"high\\\"}],"
             "\\\"rejected_count\\\":1,\\\"notes\\\":\\\"Found the cafe receipt.\\\"}\"}}]}}]}", NULL);
-    /* Run-1 receipt sweep: after reading receipt-b.txt, ask which receipt. */
+    /* Run-1 receipt sweep: after reading receipt-b.txt, ask which receipt.
+       Keyed on the goal, not on content, because the skim index now puts every
+       file's first lines (incl. "Cafe total") into every verify turn. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Cafe total"))
+        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "find my receipt"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
@@ -69,7 +71,7 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"name\":\"ask_user\",\"arguments\":\"{\\\"question\\\":\\\"Which receipt: the cafe or the coffee shop?\\\"}\"}}]}}]}", NULL);
     /* Cat-medical verify: after reading cat-medical-note.txt, finish (JI.5). */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Titli vaccination"))
+        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "cat medical"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"

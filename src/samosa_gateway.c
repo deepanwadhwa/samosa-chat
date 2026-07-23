@@ -2455,13 +2455,14 @@ static int triage_row_cmp(const void *a, const void *b) {
 
 /* Phase A (JI.2): the model triages EVERY filename, in token-sized batches.
    No C keyword logic (design law 1). "likely" and "unknown" both survive into
-   the verify loop; only "no" is dropped. An anonymous scan name comes back
+   the skim + verify; only "no" is dropped. An anonymous scan name comes back
    "unknown" and its content is read later — the invariant that makes the Titli
-   scenario winnable (JI.8-b). Verdicts land in verdicts.jsonl; survivors are
-   accumulated into `survivors` as a numbered list for the verify user message. */
+   scenario winnable (JI.8-b). Verdicts land in verdicts.jsonl and in the
+   caller's per-item verdict array: 0 = "no" (dropped), 1 = "likely", 2 =
+   "unknown". Both 1 and 2 flow into the skim (Phase B). */
 static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
-                       jval *items, const char *job_id, TextBuffer *survivors,
-                       int *survivor_count, int *checked, int *seq) {
+                       jval *items, const char *job_id, int *verdict,
+                       int *checked, int *seq) {
     const char *system =
         "You are triaging filenames for a local file-finding job. For each numbered "
         "file, output a JSON array of objects {\"i\": <index>, \"v\": \"likely\"|"
@@ -2470,7 +2471,8 @@ static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
         "anonymous scan like CamScanner or IMG_1234) says nothing about content — those "
         "files are read later. Output JSON only, one object per file.";
     int total = items->len;
-    *survivor_count = 0; *checked = 0;
+    *checked = 0;
+    for (int i = 0; i < total; ++i) verdict[i] = 0;
     TriageRow *rows = malloc((size_t)(total > 0 ? total : 1) * sizeof(*rows));
     if (!rows) return 0;
     int nrows = 0;
@@ -2529,11 +2531,7 @@ static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
                 text_add(&vl, ",\"why\":") && text_json_string(&vl, why) && text_add(&vl, "}"))
                 job_append_jsonl(g, job_id, "verdicts.jsonl", vl.data);
             free(vl.data);
-            if (strcmp(v, "no")) {
-                jval *mt = json_get(it, "media_type"), *sz = json_get(it, "size"), *mtm = json_get(it, "mtime");
-                append_file_row(survivors, ++(*survivor_count), rel, mt && mt->t == J_STR ? mt->str : "unknown",
-                                sz && sz->t == J_NUM ? (long long)sz->num : 0, mtm && mtm->t == J_NUM ? mtm->num : 0);
-            }
+            verdict[gi] = !strcmp(v, "likely") ? 1 : (!strcmp(v, "no") ? 0 : 2);
         }
         json_free(verdicts); free(varena); free(arr);
         done += n; *checked = done;
@@ -2548,6 +2546,150 @@ static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
                  (*seq)++, total, done, batches);
         ok = sse_json(fd, ev);
     }
+    return ok;
+}
+
+/* Readability for the skim: 0 = not a readable document, 1 = plain text
+   (fs_read_text head, no OCR), 2 = pdf/image (doc.read page 1). */
+static int ji_readable_kind(const char *mt) {
+    if (!mt) return 0;
+    if (!strncmp(mt, "text/", 5)) return 1;
+    if (!strcmp(mt, "application/pdf") || !strncmp(mt, "image/", 6)) return 2;
+    return 0;
+}
+
+typedef struct { int idx; int verdict; double mtime; } SkimRow;
+static int skim_row_cmp(const void *a, const void *b) {
+    const SkimRow *x = a, *y = b;
+    if (x->verdict != y->verdict) return x->verdict - y->verdict;  /* likely(1) before unknown(2) */
+    if (x->mtime < y->mtime) return 1;                              /* then mtime descending */
+    if (x->mtime > y->mtime) return -1;
+    return 0;
+}
+
+/* Truncate to JI_SKIM_CHARS at a line boundary (heap copy; caller frees). */
+static char *ji_first_lines(const char *text) {
+    if (!text) return strdup("");
+    size_t n = strlen(text), cap = JI_SKIM_CHARS;
+    if (n <= cap) return strdup(text);
+    size_t cut = cap;
+    for (size_t i = cap; i > 0; --i) if (text[i] == '\n') { cut = i; break; }
+    char *out = malloc(cut + 1);
+    if (!out) return strdup("");
+    memcpy(out, text, cut); out[cut] = 0;
+    return out;
+}
+
+/* Phase B (JI.3): the skim index — the owner's "filename: first few lines"
+   dictionary, made durable in skim.jsonl. For every survivor (likely first,
+   then unknown by mtime), read page 1 through doc.read (cache-backed, so once
+   per file content ever) or a text head, cap to JI_SKIM_CHARS, record source
+   and parked. Parked files (no vision backend / no OCR) are surfaced, never
+   dropped. Builds skim_context: the numbered {rel_path, first_lines} rows the
+   verify loop reads. Budget JI_SKIM_MAX_FILES / JI_SKIM_MAX_SECONDS; survivors
+   past the budget are listed unskimmed so the loop can still read them. */
+static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
+                     jval *items, const int *verdict, TextBuffer *skim_context,
+                     int *listed, int *parked_count, int *seq) {
+    int total = items->len;
+    *listed = 0; *parked_count = 0;
+    SkimRow *order = malloc((size_t)(total > 0 ? total : 1) * sizeof(*order));
+    if (!order) return 0;
+    int nsurv = 0;
+    for (int i = 0; i < total; ++i) {
+        if (verdict[i] != 1 && verdict[i] != 2) continue;
+        jval *it = items->kids[i];
+        jval *mtm = it && it->t == J_OBJ ? json_get(it, "mtime") : NULL;
+        order[nsurv].idx = i; order[nsurv].verdict = verdict[i];
+        order[nsurv].mtime = mtm && mtm->t == J_NUM ? mtm->num : 0;
+        nsurv++;
+    }
+    qsort(order, (size_t)nsurv, sizeof(*order), skim_row_cmp);
+
+    double started = monotonic_seconds();
+    int ok = 1, budget_hit = 0;
+    for (int s = 0; ok && s < nsurv; ++s) {
+        int gi = order[s].idx;
+        jval *it = items->kids[gi];
+        jval *nm = json_get(it, "name"), *pv = json_get(it, "path");
+        jval *mt = json_get(it, "media_type"), *sz = json_get(it, "size"), *sha = json_get(it, "input_sha256");
+        const char *name = nm && nm->t == J_STR ? nm->str : "";
+        const char *rel = rel_to_folder(folder, pv && pv->t == J_STR ? pv->str : name, name);
+        const char *type = mt && mt->t == J_STR ? mt->str : "unknown";
+        long long size = sz && sz->t == J_NUM ? (long long)sz->num : 0;
+
+        (*listed)++;
+        int within_budget = !budget_hit && *listed <= JI_SKIM_MAX_FILES &&
+                            (monotonic_seconds() - started) < JI_SKIM_MAX_SECONDS;
+        if (!within_budget) budget_hit = 1;
+        int kind = within_budget ? ji_readable_kind(type) : 0;
+        char *first_lines = NULL; char source_buf[64]; int parked = 0, needs_review = 0, page_count = 0;
+        snprintf(source_buf, sizeof(source_buf), "%s", within_budget ? "not_readable" : "budget");
+
+        if (kind == 1) {
+            TextBuffer aj = {0}; char *aa = NULL; jval *args = NULL;
+            if (text_add(&aj, "{\"path\":") && text_json_string(&aj, rel) && text_add(&aj, "}"))
+                args = json_parse(aj.data, &aa);
+            char *res = args ? tool_result(g, folder, "fs_read_text", args) : NULL;
+            first_lines = ji_first_lines(res ? res : "");
+            snprintf(source_buf, sizeof(source_buf), "text"); page_count = 1;
+            free(res); json_free(args); free(aa); free(aj.data);
+        } else if (kind == 2) {
+            TextBuffer aj = {0}; char *aa = NULL; jval *args = NULL;
+            if (text_add(&aj, "{\"path\":") && text_json_string(&aj, rel) &&
+                text_add(&aj, ",\"pages\":[1,1],\"detail\":\"text\"}"))
+                args = json_parse(aj.data, &aa);
+            char *res = args ? tool_result(g, folder, "doc.read", args) : NULL;
+            char *rarena = NULL; jval *rr = res ? json_parse(res, &rarena) : NULL;
+            jval *okv = rr && rr->t == J_OBJ ? json_get(rr, "ok") : NULL;
+            if (okv && okv->t == J_BOOL && okv->boolean) {
+                jval *txt = json_get(rr, "text"), *pc = json_get(rr, "page_count"), *nr = json_get(rr, "needs_review"), *pgs = json_get(rr, "pages");
+                first_lines = ji_first_lines(txt && txt->t == J_STR ? txt->str : "");
+                page_count = pc && pc->t == J_NUM ? (int)pc->num : 1;
+                needs_review = nr && nr->t == J_BOOL && nr->boolean;
+                jval *sc = pgs && pgs->t == J_ARR && pgs->len ? json_get(pgs->kids[0], "source") : NULL;
+                snprintf(source_buf, sizeof(source_buf), "%s", sc && sc->t == J_STR ? sc->str : "ocr");
+            } else {
+                jval *err = rr && rr->t == J_OBJ ? json_get(rr, "error") : NULL;
+                parked = 1; (*parked_count)++;
+                snprintf(source_buf, sizeof(source_buf), "%s", err && err->t == J_STR ? err->str : "unreadable");
+                first_lines = strdup("");
+            }
+            json_free(rr); free(rarena); free(res);
+        } else {
+            first_lines = strdup("");
+        }
+
+        TextBuffer sl = {0}; char nums[96];
+        snprintf(nums, sizeof(nums), ",\"size\":%lld,\"mtime\":%.0f,\"page_count\":%d", size, order[s].mtime, page_count);
+        if (text_add(&sl, "{\"path\":") && text_json_string(&sl, rel) &&
+            text_add(&sl, ",\"sha256\":") && text_json_string(&sl, sha && sha->t == J_STR ? sha->str : "") &&
+            text_add(&sl, ",\"type\":") && text_json_string(&sl, type) && text_add(&sl, nums) &&
+            text_add(&sl, ",\"first_lines\":") && text_json_string(&sl, first_lines ? first_lines : "") &&
+            text_add(&sl, ",\"source\":") && text_json_string(&sl, source_buf) &&
+            text_add(&sl, ",\"needs_review\":") && text_add(&sl, needs_review ? "true" : "false") &&
+            text_add(&sl, ",\"parked\":") && text_add(&sl, parked ? "true" : "false") && text_add(&sl, "}"))
+            job_append_jsonl(g, job_id, "skim.jsonl", sl.data);
+        free(sl.data);
+
+        char head[32]; snprintf(head, sizeof(head), "%d. ", *listed);
+        text_add(skim_context, head); text_add(skim_context, rel);
+        text_add(skim_context, " ("); text_add(skim_context, type); text_add(skim_context, ")\n");
+        if (parked) { text_add(skim_context, "   (could not read: "); text_add(skim_context, source_buf); text_add(skim_context, ")\n"); }
+        else if (first_lines && *first_lines) { text_add(skim_context, "   "); text_add(skim_context, first_lines); text_add(skim_context, "\n"); }
+        else if (!within_budget) text_add(skim_context, "   (not yet skimmed)\n");
+
+        TextBuffer ev = {0}; char nb[32];
+        snprintf(nb, sizeof(nb), "%d", (*seq)++);
+        int e = text_add(&ev, "{\"seq\":") && text_add(&ev, nb) && text_add(&ev, ",\"type\":\"skim_progress\",\"done\":");
+        snprintf(nb, sizeof(nb), "%d", *listed); e = e && text_add(&ev, nb) && text_add(&ev, ",\"total\":");
+        snprintf(nb, sizeof(nb), "%d", nsurv); e = e && text_add(&ev, nb) &&
+            text_add(&ev, ",\"current\":") && text_json_string(&ev, rel) &&
+            text_add(&ev, ",\"source\":") && text_json_string(&ev, source_buf) && text_add(&ev, "}");
+        if (!e || !sse_json(fd, ev.data)) ok = 0;
+        free(ev.data); free(first_lines);
+    }
+    free(order);
     return ok;
 }
 
@@ -2732,8 +2874,9 @@ fail:
     free(messages->data); return 0;
 }
 
-/* Fresh find job: list the folder, triage every filename (Phase A), seed the
-   verify conversation with the goal + survivors, then run the loop. */
+/* Fresh find job: list the folder, triage every filename (Phase A), build the
+   skim index (Phase B), seed the verify conversation with the goal + skim, then
+   run the loop (Phase D). */
 static int find_start(Gateway *g, int fd, const char *goal, const char *folder,
                       const char *job_id, int seq) {
     char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", (char *)folder, NULL};
@@ -2748,21 +2891,30 @@ static int find_start(Gateway *g, int fd, const char *goal, const char *folder,
     }
     char ev[128]; snprintf(ev, sizeof(ev), "{\"seq\":%d,\"type\":\"indexing\",\"total\":%d}", seq++, items->len);
     if (!sse_json(fd, ev)) { json_free(listing); free(arena); free(list_raw); return 0; }
-    TextBuffer survivors = {0}; int scount = 0, checked = 0;
-    if (!find_triage(g, fd, goal, folder, items, job_id, &survivors, &scount, &checked, &seq)) {
-        free(survivors.data); json_free(listing); free(arena); free(list_raw);
+    int *verdict = calloc((size_t)(items->len > 0 ? items->len : 1), sizeof(int));
+    int checked = 0;
+    if (!verdict || !find_triage(g, fd, goal, folder, items, job_id, verdict, &checked, &seq)) {
+        free(verdict); json_free(listing); free(arena); free(list_raw);
         sse_json(fd, "{\"type\":\"error\",\"message\":\"Filename triage failed.\"}");
         samosa_send_all(fd, "data: [DONE]\n\n", 14);
         return 0;
     }
+    TextBuffer skim = {0}; int listed = 0, parked = 0;
+    if (!find_skim(g, fd, folder, job_id, items, verdict, &skim, &listed, &parked, &seq)) {
+        free(skim.data); free(verdict); json_free(listing); free(arena); free(list_raw);
+        sse_json(fd, "{\"type\":\"error\",\"message\":\"The skim index failed.\"}");
+        samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        return 0;
+    }
+    free(verdict);
     TextBuffer user = {0};
     int ok = text_add(&user, "Goal: ") && text_add(&user, goal) && text_add(&user, "\n\n");
-    if (ok && scount > 0)
-        ok = text_add(&user, "Plausible files after filename triage (read them to confirm or reject):\n") &&
-             text_add(&user, survivors.data ? survivors.data : "");
+    if (ok && listed > 0)
+        ok = text_add(&user, "Plausible files with the first lines of each (the skim index). Confirm or reject each by reading more of it if needed:\n") &&
+             text_add(&user, skim.data ? skim.data : "");
     else if (ok)
         ok = text_add(&user, "Filename triage flagged no plausible files by name. If the goal implies content that a filename could hide, reading is still worthwhile; otherwise finish with no matches.\n");
-    free(survivors.data);
+    free(skim.data);
     TextBuffer messages = {0};
     if (ok) ok = text_add(&messages, "{\"role\":\"system\",\"content\":") && text_json_string(&messages, ji_verify_system) &&
                  text_add(&messages, "},{\"role\":\"user\",\"content\":") && text_json_string(&messages, user.data) && text_add(&messages, "}");
@@ -2770,7 +2922,7 @@ static int find_start(Gateway *g, int fd, const char *goal, const char *folder,
     json_free(listing); free(arena); free(list_raw);
     if (!ok) { free(messages.data); sse_json(fd, "{\"type\":\"error\",\"message\":\"The search could not start.\"}"); samosa_send_all(fd, "data: [DONE]\n\n", 14); return 0; }
     save_convo(g, job_id, messages.data);
-    save_phase(g, job_id, "D", 0, items->len, scount, 0);
+    save_phase(g, job_id, "D", 0, listed, parked, 0);
     return find_loop(g, fd, goal, folder, job_id, &messages, seq);
 }
 
