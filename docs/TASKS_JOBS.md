@@ -47,7 +47,10 @@ claim is scoped wider than what was run. Read [ISSUE_TASKS.md](ISSUE_TASKS.md)
 first. This card **absorbs the internet work** — [TASKS_INTERNET.md](TASKS_INTERNET.md)'s
 verified security groundwork is reused, not replaced (§J3) — and sits on top of
 the document extractor from [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md) (#5) and the
-vision tower from [TASKS_VISION.md](TASKS_VISION.md) (#3, landed).
+vision tower from [TASKS_VISION.md](TASKS_VISION.md) (#3, landed). The general
+document-reading tool (`doc.read` — OCR cascade, handwriting escalation, read
+cache, `low_confidence_read` wiring) is a **Tools-layer contract specified
+separately in [TASKS_READER.md](TASKS_READER.md)**, not part of this card.
 
 ## Start here — handoff preflight
 
