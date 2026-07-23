@@ -12,8 +12,9 @@ render cap stays 768; ship the small tier. Evidence:
 [E-R1](regressions/reader/report.md), [R2/R3](regressions/reader/r2r3-c-port.md).
 R4 (gateway `doc.read`, cache, Jobs `review_required`) and R5–R7 remain **design
 until built and measured**; E-R2 (strong-reader-on-crop) is the R5/R6 gate and
-needs the real backends. Every remaining model size, speed, and accuracy figure
-is an upstream report, *unverified*, until measured here. Program bar per
+runs on **Bonsai + mmproj only — no 24 GB Qwen tower** (decision 9). Every
+remaining model size, speed, and accuracy figure is an upstream report,
+*unverified*, until measured here. Program bar per
 [ISSUE_TASKS.md](ISSUE_TASKS.md): acceptance is measured, a negative result is a
 result, "should work" is not a status.
 
@@ -53,8 +54,10 @@ measured numbers:
 
 The cascade inverts this: a cheap printed-OCR pass handles the bulk of most
 real documents at CNN cost, and only the crops that resist it are escalated to
-an expensive strong reader. Cost concentrates exactly where the hard pixels
-are. VLM-class generality at 16 GB is manufactured, not bought.
+the strong reader — **Bonsai + mmproj**, a bounded per-crop request, not a
+full-page pass and **not** the 24 GB Qwen tower (decision 9). Cost concentrates
+exactly where the hard pixels are. VLM-class generality at 16 GB is
+manufactured, not bought.
 
 ## Decisions locked (do not reopen without the owner)
 
@@ -83,6 +86,12 @@ are. VLM-class generality at 16 GB is manufactured, not bought.
    disqualifying, full stop (house precedent: PyMuPDF, rejected in
    [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md)). If a named candidate fails
    this check, the candidate is replaced; the policy is not.
+9. **Tier-2 strong reader is Bonsai + mmproj — never the 24 GB Qwen tower
+   (owner, 2026-07-23).** The read path must not load the 24 GB model. Ornith
+   is the text orchestrator and is text-only (`backend_supports_images` returns
+   0 for it), so it cannot serve tier-2 crops; when Ornith is the active
+   backend, a needed escalation surfaces `vision_backend_required` and the page
+   parks for review. E-R2 therefore measures Bonsai only.
 
 ## The tool — `doc.read`
 
@@ -160,13 +169,18 @@ Cheapest reader first; escalate only what resists.
 - **Tier 1 — printed OCR (fast path).** `samosa-ocr read`: text detector
   finds line boxes, printed recognizer reads each crop, per-line `conf` comes
   back. Lines with `conf >= T_ACCEPT` are accepted as `script:"printed"`.
-- **Tier 2 — strong reader (expensive, bounded).** Lines with
-  `conf < T_ACCEPT` are re-read from their crops by the strong reader —
-  **v1: a crop-sized request to the active vision backend** (Bonsai mmproj or
-  the Qwen tower; per-crop cost unmeasured until E-R2). The tier-2 result
-  replaces the text, keeps `reader:"vlm_crop"`, and the line is labeled
-  `script:"uncertain"` — low printed-OCR confidence means handwriting *or*
-  blur *or* a stamp; v1 does not pretend to know which.
+- **Tier 2 — strong reader (bounded).** Lines with `conf < T_ACCEPT` are
+  re-read from their crops by the strong reader — **v1: a crop-sized request to
+  Bonsai + mmproj**, the vision backend. The **24 GB Qwen tower is excluded
+  from this path** (owner, 2026-07-23; decision 9) — no 24 GB model load for
+  reading. Ornith is the text orchestrator and has **no vision** (see
+  `backend_supports_images` in [src/samosa_gateway.c](../src/samosa_gateway.c)),
+  so when Ornith is the active backend and tier 2 is needed the tool surfaces
+  `vision_backend_required` and the page parks for review. Per-crop cost on
+  Bonsai is unmeasured until E-R2. The tier-2 result replaces the text, keeps
+  `reader:"vlm_crop"`, and the line is labeled `script:"uncertain"` — low
+  printed-OCR confidence means handwriting *or* blur *or* a stamp; v1 does not
+  pretend to know which.
 
 **Escalation rule (deterministic, calibrated not assumed):**
 
@@ -331,15 +345,18 @@ which **decides the render-cap question** (below) with a measurement instead
 of an opinion; (e) the small-vs-medium tier decision per the promotion rule
 in the pins table, recorded with the fixture lines that decided it.
 
-**E-R2 — strong-reader-on-crop (~0.5 day; real backends; machine-safety
-rules apply).** ~10 photographed handwritten field crops (names, DOBs; block
-capitals and cursive). Measure per-crop seconds and correctness through
-(a) Bonsai + mmproj and (b) the Qwen tower. Decides which backend is tier-2
-v1 — and whether R6 is needed at all: if neither reads handwritten fields
-acceptably, R6 is promoted from conditional to required; if the tower reads
-them in acceptable per-crop time, R6 stays a throughput optimization.
-Currently **unmeasured** — the 8-min figure is full-page, and cost should
-scale roughly with crop area (unverified until run).
+**E-R2 — strong-reader-on-crop (~0.5 day; Bonsai only; no 24 GB load).**
+~10 photographed handwritten field crops (names, DOBs; block capitals and
+cursive). Measure per-crop seconds and correctness through **Bonsai + mmproj**
+(decision 9 excludes the 24 GB Qwen tower; Ornith is text-only and cannot read
+crops). Decides **whether R6 is needed at all**: if Bonsai reads handwritten
+fields acceptably in acceptable per-crop time, R6 stays a throughput
+optimization; if it does not, R6 (the TrOCR handwriting head) is promoted from
+conditional to required. Currently **unmeasured** — Bonsai's ~14 s figure is
+full-page, and per-crop cost should scale roughly with crop area (unverified
+until run). Because this drops the 24 GB model, the earlier machine-safety
+blocker on E-R2 is lifted; it still runs real Bonsai inference via
+llama-server, so watch memory/thermals per the standing rule.
 
 **E-R3 — the motto scenario (after R4).** A 20-file fixture folder; job:
 "which files mention NAME". Verify: first run reads every file once; second
@@ -355,7 +372,7 @@ whole card.
 | **R2** | `samosa-ocr detect` — the pinned PP-OCRv6 det forward pass in C (`kernels.h` GEMM, `stb_image.h` input; architecture as found in the pinned weights, not assumed from older PP-OCR generations) | ✅ **DONE 2026-07-23.** Forward exact vs NumPy golden (prob map max-abs-diff **1.1e-05**); boxes same count + mean IoU **0.92–0.94** (connected-components; minAreaRect/clipper parity a documented refinement); rlimits + file discipline in place; `make ocr-test` green ([report](regressions/reader/r2r3-c-port.md)) |
 | **R3** | `recognize` + `read` + confidences + `--emit-crops` | ✅ **DONE 2026-07-23.** Rec argmax **100 %** vs golden, CTC text exact (`Poličar 2019`); `read`/`recognize`/`--emit-crops` implement the reader-v0 JSON contract; `make ocr-test` green |
 | **R4** | Gateway `doc.read`: tiers 0+1, cache, `detail` views, Jobs reasons | 🟡 **PARTIAL 2026-07-23.** Content-addressed read **cache** built + tested ([src/read_cache.h](../src/read_cache.h), `make read-cache-test`: SHA-256 keying, moved-file hit, fingerprint/contract-miss guard, 0600/0700 perms, no companion files). **Pending:** the gateway `doc_read` handler (tier-0 PDF text-layer / tier-1 image OCR orchestration + `detail` reshaping), Jobs `review_required` states, and the E-R3 end-to-end acceptance |
-| **R5** | Tier-2 escalation via vision backend + interlock/priority wiring | Gated on E-R2's backend choice; guarded live run on the reference machine; evidence committed |
+| **R5** | Tier-2 escalation via **Bonsai + mmproj** + interlock/priority wiring | Gated on E-R2 (Bonsai per-crop cost / whether R6 is needed); the 24 GB Qwen tower is not used (decision 9); guarded live run on the reference machine; evidence committed |
 | **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | **Only if E-R2 demands it.** Same pack/export/validation pattern as R1–R3 |
 | **R7** | Printed/handwritten classifier head (~1 MB) enabling `script:"handwritten"` | Optional polish; only if "find handwriting" jobs prove common |
 

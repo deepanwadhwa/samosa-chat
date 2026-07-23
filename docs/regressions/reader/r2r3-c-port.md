@@ -68,5 +68,6 @@ GEMM path, BatchNorm folding at export) are open; correctness came first.
 - Architecture is specialized to the small tier's block tables (weights,
   thresholds, charset are pack-driven); a medium pack would add medium tables.
 - R4 (gateway `doc.read`, cache, Jobs `review_required`) and R5 (tier-2
-  escalation) are not built. E-R2 (strong-reader-on-crop, real backends) is the
-  gate for R5/R6 and needs the machine free.
+  escalation) are not built. E-R2 (strong-reader-on-crop) is the gate for R5/R6
+  and runs on **Bonsai + mmproj only** — the 24 GB Qwen tower is excluded
+  (TASKS_READER decision 9), so there is no 24 GB model load in the read path.
