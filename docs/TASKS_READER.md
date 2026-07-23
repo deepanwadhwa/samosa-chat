@@ -1,16 +1,19 @@
 # Samosa Reader — `doc.read` tools contract + build card
 
-**Status: R1 / E-R1 RUN and passed (2026-07-23); R2–R7 not built.** The
-run-first gate has been measured on the reference machine — the pack format is
-frozen, the pinned det+rec are exported to a Samosa flat pack (licenses/sizes/
-SHA verified), and a dependency-free NumPy port reproduces PaddleOCR 3.7.0's own
-forward pass to float32 rounding (det max-abs-diff 9.7e-05, rec argmax 100 %,
-line-for-line exact on clean printed fixtures). Thresholds calibrated
-(T_ACCEPT 0.84, T_DECIDE 0.99); render cap stays 768; ship the small tier.
-Evidence: [docs/regressions/reader/report.md](regressions/reader/report.md).
-Everything below R1 remains **design until built and measured** — every
-remaining model size, speed, and accuracy figure is an upstream report,
-*unverified*, until measured here. Program bar per
+**Status: R1/E-R1 + R2 + R3 RUN and passed (2026-07-23); R4–R7 not built.** The
+run-first gate and the C forward-pass port are measured on the reference
+machine — the pack format is frozen, the pinned det+rec are exported to a Samosa
+flat pack (licenses/sizes/SHA verified), the NumPy port reproduces PaddleOCR
+3.7.0 to float32 rounding (det 9.7e-05, rec argmax 100 %, line-for-line exact on
+clean fixtures), and the dependency-free C sidecar `samosa-ocr` reproduces that
+NumPy port (det prob map 1.1e-05, rec argmax 100 %, CTC text exact) with
+`make ocr-test` green. Thresholds calibrated (T_ACCEPT 0.84, T_DECIDE 0.99);
+render cap stays 768; ship the small tier. Evidence:
+[E-R1](regressions/reader/report.md), [R2/R3](regressions/reader/r2r3-c-port.md).
+R4 (gateway `doc.read`, cache, Jobs `review_required`) and R5–R7 remain **design
+until built and measured**; E-R2 (strong-reader-on-crop) is the R5/R6 gate and
+needs the real backends. Every remaining model size, speed, and accuracy figure
+is an upstream report, *unverified*, until measured here. Program bar per
 [ISSUE_TASKS.md](ISSUE_TASKS.md): acceptance is measured, a negative result is a
 result, "should work" is not a status.
 
@@ -349,8 +352,8 @@ whole card.
 | Step | What | Gate / definition of done |
 |---|---|---|
 | **R1** | `tools/export_ocr_pack.py` + **E-R1** | ✅ **DONE 2026-07-23.** Pack frozen ([tools/ocr_pack.py](../tools/ocr_pack.py)); NumPy port ([tools/ocr_ref.py](../tools/ocr_ref.py)) matches paddle; thresholds recorded ([report](regressions/reader/report.md), [results](regressions/reader/e_r1_results.json)) |
-| **R2** | `samosa-ocr detect` — the pinned PP-OCRv6 det forward pass in C (`kernels.h` GEMM, `stb_image.h` input; architecture as found in the pinned weights, not assumed from older PP-OCR generations) | Boxes match the E-R1 NumPy reference on all fixtures within stated tolerance; SIDECAR_CONTRACT limits in place; `make ocr-test` (own target, like `jobs-test`) green offline |
-| **R3** | `recognize` + `read` + confidences + `--emit-crops` | Line texts match the E-R1 reference; deterministic across runs; `make ocr-test` green |
+| **R2** | `samosa-ocr detect` — the pinned PP-OCRv6 det forward pass in C (`kernels.h` GEMM, `stb_image.h` input; architecture as found in the pinned weights, not assumed from older PP-OCR generations) | ✅ **DONE 2026-07-23.** Forward exact vs NumPy golden (prob map max-abs-diff **1.1e-05**); boxes same count + mean IoU **0.92–0.94** (connected-components; minAreaRect/clipper parity a documented refinement); rlimits + file discipline in place; `make ocr-test` green ([report](regressions/reader/r2r3-c-port.md)) |
+| **R3** | `recognize` + `read` + confidences + `--emit-crops` | ✅ **DONE 2026-07-23.** Rec argmax **100 %** vs golden, CTC text exact (`Poličar 2019`); `read`/`recognize`/`--emit-crops` implement the reader-v0 JSON contract; `make ocr-test` green |
 | **R4** | Gateway `doc.read`: tiers 0+1, cache, `detail` views, Jobs reasons | Offline tests against fixtures; the no-jobs/no-tool path stays byte-identical to today (the standing #3/#4 gate); E-R3 passes |
 | **R5** | Tier-2 escalation via vision backend + interlock/priority wiring | Gated on E-R2's backend choice; guarded live run on the reference machine; evidence committed |
 | **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | **Only if E-R2 demands it.** Same pack/export/validation pattern as R1–R3 |

@@ -56,6 +56,23 @@ samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
+# samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
+# faster on a first read (reads are cached forever after). stb_image is compiled
+# with -Wno-unused-function like the engine.
+samosa-ocr: src/samosa_ocr.c src/kernels.h src/json.h src/stb_image.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O3 -Wno-unused-function -std=c11 -Isrc src/samosa_ocr.c -o $(BUILD_DIR)/samosa-ocr -lm
+
+samosa-ocr-omp: src/samosa_ocr.c src/kernels.h src/json.h src/stb_image.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) -std=c11 -Isrc \
+	  src/samosa_ocr.c $(OMP_LDFLAGS) -o $(BUILD_DIR)/samosa-ocr-omp -lm
+
+# ocr-test: offline gate. Validates the C forward pass numerically against the
+# NumPy golden tensors (tools/testdata/ocr) that E-R1 verified against PaddleOCR.
+ocr-test: samosa-ocr tests/test_samosa_ocr.sh tools/testdata/ocr/det.gold
+	SAMOSA_OCR="$$PWD/$(BUILD_DIR)/samosa-ocr" sh tests/test_samosa_ocr.sh
+
 samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
