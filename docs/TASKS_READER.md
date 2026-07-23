@@ -1,10 +1,18 @@
 # Samosa Reader — `doc.read` tools contract + build card
 
-**Status: design only. Nothing in this card is built, and no experiment has
-run.** Every model size, speed, accuracy figure, and license named below is an
-upstream report — marked *unverified* — until it is pinned and measured on the
-reference machine. Program bar per [ISSUE_TASKS.md](ISSUE_TASKS.md): acceptance
-is measured, a negative result is a result, "should work" is not a status.
+**Status: R1 / E-R1 RUN and passed (2026-07-23); R2–R7 not built.** The
+run-first gate has been measured on the reference machine — the pack format is
+frozen, the pinned det+rec are exported to a Samosa flat pack (licenses/sizes/
+SHA verified), and a dependency-free NumPy port reproduces PaddleOCR 3.7.0's own
+forward pass to float32 rounding (det max-abs-diff 9.7e-05, rec argmax 100 %,
+line-for-line exact on clean printed fixtures). Thresholds calibrated
+(T_ACCEPT 0.84, T_DECIDE 0.99); render cap stays 768; ship the small tier.
+Evidence: [docs/regressions/reader/report.md](regressions/reader/report.md).
+Everything below R1 remains **design until built and measured** — every
+remaining model size, speed, and accuracy figure is an upstream report,
+*unverified*, until measured here. Program bar per
+[ISSUE_TASKS.md](ISSUE_TASKS.md): acceptance is measured, a negative result is a
+result, "should work" is not a status.
 
 This card fixes the **Tools-layer contract for general document reading** —
 printed or handwritten, image or PDF — so the build order underneath it
@@ -298,8 +306,16 @@ written.
 
 ## Experiments — run these before the C
 
-**E-R1 — export + numeric validation (RUN THIS FIRST; ~1 day; pure Python,
-no C, no 24 GB model).** The E-V1 pattern. Export the pinned det+rec to the
+**E-R1 — export + numeric validation. ✅ RUN 2026-07-23; passed. Results:
+[docs/regressions/reader/report.md](regressions/reader/report.md).** All five
+deliverables measured: (a) pack frozen; (b) NumPy port matches PaddleOCR 3.7.0
+line-for-line on clean fixtures (tensor max-abs-diff det 9.7e-05 / rec 2.1e-05,
+argmax 100 %); (c) T_ACCEPT 0.84 (Youden J 0.923), T_DECIDE 0.99 — genuine
+errors all ≤ 0.834, correct all ≥ 0.96; (d) keep 768 render cap; (e) ship small
+tier (medium only helps heavily-degraded pages, where tier-2 is the remedy). The
+original design text is preserved below for provenance.
+
+The E-V1 pattern. Export the pinned det+rec to the
 flat pack; re-implement both forward passes in NumPy; run **PaddleOCR
 ≥ 3.7.0** (the PP-OCRv6 release) as the reference implementation on ≥20
 fixture images — printed forms, receipts, a dense page, and the JSS page
@@ -332,7 +348,7 @@ whole card.
 
 | Step | What | Gate / definition of done |
 |---|---|---|
-| **R1** | `tools/export_ocr_pack.py` + **E-R1** | E-R1 deliverables committed under `docs/regressions/reader/`; thresholds recorded |
+| **R1** | `tools/export_ocr_pack.py` + **E-R1** | ✅ **DONE 2026-07-23.** Pack frozen ([tools/ocr_pack.py](../tools/ocr_pack.py)); NumPy port ([tools/ocr_ref.py](../tools/ocr_ref.py)) matches paddle; thresholds recorded ([report](regressions/reader/report.md), [results](regressions/reader/e_r1_results.json)) |
 | **R2** | `samosa-ocr detect` — the pinned PP-OCRv6 det forward pass in C (`kernels.h` GEMM, `stb_image.h` input; architecture as found in the pinned weights, not assumed from older PP-OCR generations) | Boxes match the E-R1 NumPy reference on all fixtures within stated tolerance; SIDECAR_CONTRACT limits in place; `make ocr-test` (own target, like `jobs-test`) green offline |
 | **R3** | `recognize` + `read` + confidences + `--emit-crops` | Line texts match the E-R1 reference; deterministic across runs; `make ocr-test` green |
 | **R4** | Gateway `doc.read`: tiers 0+1, cache, `detail` views, Jobs reasons | Offline tests against fixtures; the no-jobs/no-tool path stays byte-identical to today (the standing #3/#4 gate); E-R3 passes |
@@ -342,11 +358,11 @@ whole card.
 
 ## Open questions
 
-- **Render resolution.** `samosa-extract --render-ppm` caps at 768 px long
-  edge; TASKS_JOBS already records that small text needs full resolution.
-  E-R1(d) measures the OCR accuracy delta at 1536 px; raising the sidecar's
-  bounded cap for the OCR path is a `samosa-extract` contract change with
-  memory implications — owner-visible, decided on the E-R1 number.
+- **Render resolution.** ✅ **Answered by E-R1(d) 2026-07-23: keep 768.** Mean
+  char accuracy 768 px = 0.9957 vs 1536 px = 0.9918 (no gain — slightly worse).
+  The det model caps its input long edge at 960 internally, so a 1536 render is
+  downscaled for detection anyway and cubic-upscaling small text adds no real
+  information. No `samosa-extract` contract change for the OCR path.
 - **Annotated printed pages.** Tier 0 takes a page's text layer and never
   looks at the pixels, so handwritten margin notes on an otherwise clean
   printed PDF are missed in v1. Documented gap; a v2 could OCR only regions

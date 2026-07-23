@@ -1,0 +1,10 @@
+# Fixtures are regenerable deterministically by tools/run_e_r1.py (seed 1234).
+# Ignore the bulk PNGs; a handful of representative samples are force-added,
+# and ground_truth.json is tracked.
+*.png
+_base_*.png
+!f01_diacritics.png
+!f02_receipt.png
+!f04_dense.png
+!f09_tiny.png
+!f26_blurnoisehard.png

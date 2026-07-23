@@ -1,0 +1,720 @@
+{
+  "fixtures": 27,
+  "gt_lines": 127,
+  "validation_b": {
+    "numeric": {
+      "det_max_abs_diff": 9.721517562866211e-05,
+      "det_shape": [
+        1,
+        1,
+        384,
+        992
+      ],
+      "rec_max_abs_diff": 2.0548701286315918e-05,
+      "rec_argmax_agree": 1.0,
+      "rec_shape": [
+        6,
+        173,
+        18710
+      ]
+    },
+    "line_agreement_vs_paddle": 0.916,
+    "line_agreement_clean_only": 1.0,
+    "mean_page_agreement_vs_paddle": 0.9716,
+    "seconds_for_all_fixtures": 47.1
+  },
+  "calibration_c": {
+    "n_lines": 131,
+    "n_correct": 118,
+    "n_incorrect": 13,
+    "t_accept": 0.84,
+    "t_accept_youden_j": 0.9231,
+    "t_decide": 0.99,
+    "max_conf_of_incorrect": 0.9869717955589294,
+    "min_conf_of_correct": 0.9596408009529114,
+    "histogram": [
+      {
+        "bin": "[0.0,0.1)",
+        "n": 0,
+        "correct": 0,
+        "incorrect": 0
+      },
+      {
+        "bin": "[0.1,0.2)",
+        "n": 4,
+        "correct": 0,
+        "incorrect": 4
+      },
+      {
+        "bin": "[0.2,0.3)",
+        "n": 0,
+        "correct": 0,
+        "incorrect": 0
+      },
+      {
+        "bin": "[0.3,0.4)",
+        "n": 0,
+        "correct": 0,
+        "incorrect": 0
+      },
+      {
+        "bin": "[0.4,0.5)",
+        "n": 0,
+        "correct": 0,
+        "incorrect": 0
+      },
+      {
+        "bin": "[0.5,0.6)",
+        "n": 0,
+        "correct": 0,
+        "incorrect": 0
+      },
+      {
+        "bin": "[0.6,0.7)",
+        "n": 1,
+        "correct": 0,
+        "incorrect": 1
+      },
+      {
+        "bin": "[0.7,0.8)",
+        "n": 2,
+        "correct": 0,
+        "incorrect": 2
+      },
+      {
+        "bin": "[0.8,0.9)",
+        "n": 5,
+        "correct": 0,
+        "incorrect": 5
+      },
+      {
+        "bin": "[0.9,1.0)",
+        "n": 119,
+        "correct": 118,
+        "incorrect": 1
+      }
+    ],
+    "incorrect_examples": [
+      {
+        "file": "f26_blurnoisehard.png",
+        "conf": 0.133,
+        "read": "ととたラことーた",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f26_blurnoisehard.png",
+        "conf": 0.14,
+        "read": "のーはにドーーは",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f26_blurnoisehard.png",
+        "conf": 0.15,
+        "read": "はまいにはここしし",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f26_blurnoisehard.png",
+        "conf": 0.154,
+        "read": "こたとでは、はいーのーにによたた",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f25_jpegtiny.png",
+        "conf": 0.617,
+        "read": "mo 58a2t r9% 4",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f22_microblur.png",
+        "conf": 0.76,
+        "read": "nico id 88a2r see 4",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f25_jpegtiny.png",
+        "conf": 0.796,
+        "read": "sal mote 12 subsection ",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f22_microblur.png",
+        "conf": 0.808,
+        "read": "Fimo petint clause T dalied 2019",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f25_jpegtiny.png",
+        "conf": 0.813,
+        "read": "banance 100218 usd net.30",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f25_jpegtiny.png",
+        "conf": 0.822,
+        "read": "Fine pheit ciaase 7 dined2019",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f22_microblur.png",
+        "conf": 0.834,
+        "read": "bolence 1042.18 usd net 30",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f22_microblur.png",
+        "conf": 0.834,
+        "read": "see note 12 suitrseclion b",
+        "tags": [
+          "degraded",
+          "hard"
+        ]
+      },
+      {
+        "file": "f01_diacritics.png",
+        "conf": 0.987,
+        "read": "Håkon AErøskøbing 2019",
+        "tags": [
+          "diacritics",
+          "clean"
+        ]
+      }
+    ]
+  },
+  "per_fixture": [
+    {
+      "file": "f01_diacritics.png",
+      "tags": [
+        "diacritics",
+        "clean"
+      ],
+      "my_lines": 6,
+      "gt_lines": 6,
+      "paddle_lines": 6,
+      "page_char_acc_vs_gt": 0.9867,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f02_receipt.png",
+      "tags": [
+        "receipt",
+        "clean"
+      ],
+      "my_lines": 14,
+      "gt_lines": 9,
+      "paddle_lines": 14,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f03_form.png",
+      "tags": [
+        "form",
+        "clean"
+      ],
+      "my_lines": 7,
+      "gt_lines": 7,
+      "paddle_lines": 7,
+      "page_char_acc_vs_gt": 0.9964,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f04_dense.png",
+      "tags": [
+        "dense",
+        "clean"
+      ],
+      "my_lines": 8,
+      "gt_lines": 8,
+      "paddle_lines": 8,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f05_codes.png",
+      "tags": [
+        "codes",
+        "clean"
+      ],
+      "my_lines": 6,
+      "gt_lines": 6,
+      "paddle_lines": 6,
+      "page_char_acc_vs_gt": 0.9969,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f06_font0.png",
+      "tags": [
+        "fonts",
+        "clean"
+      ],
+      "my_lines": 3,
+      "gt_lines": 3,
+      "paddle_lines": 3,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f07_font1.png",
+      "tags": [
+        "fonts",
+        "clean"
+      ],
+      "my_lines": 3,
+      "gt_lines": 3,
+      "paddle_lines": 3,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f08_font2.png",
+      "tags": [
+        "fonts",
+        "clean"
+      ],
+      "my_lines": 3,
+      "gt_lines": 3,
+      "paddle_lines": 3,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f09_tiny.png",
+      "tags": [
+        "degraded",
+        "small"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f10_blur.png",
+      "tags": [
+        "degraded",
+        "blur"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f11_noise.png",
+      "tags": [
+        "degraded",
+        "noise"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f12_rot.png",
+      "tags": [
+        "degraded",
+        "rotate"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f13_jpeg.png",
+      "tags": [
+        "degraded",
+        "jpeg"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f14_lowcon.png",
+      "tags": [
+        "degraded",
+        "lowcontrast"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f15_blurnoise.png",
+      "tags": [
+        "degraded",
+        "blur",
+        "noise"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f16_smallrot.png",
+      "tags": [
+        "degraded",
+        "small",
+        "rotate"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f22_microblur.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 0.8517,
+      "page_agree_vs_paddle": 0.9573
+    },
+    {
+      "file": "f23_heavyblur.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 0.9941,
+      "page_agree_vs_paddle": 0.9941
+    },
+    {
+      "file": "f24_heavynoise.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f25_jpegtiny.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 0.7857,
+      "page_agree_vs_paddle": 0.9043
+    },
+    {
+      "file": "f26_blurnoisehard.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 4,
+      "gt_lines": 4,
+      "paddle_lines": 4,
+      "page_char_acc_vs_gt": 0.0408,
+      "page_agree_vs_paddle": 0.3765
+    },
+    {
+      "file": "f27_bigrot.png",
+      "tags": [
+        "degraded",
+        "hard"
+      ],
+      "my_lines": 3,
+      "gt_lines": 4,
+      "paddle_lines": 3,
+      "page_char_acc_vs_gt": 0.8889,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f17_statement.png",
+      "tags": [
+        "statement",
+        "clean"
+      ],
+      "my_lines": 6,
+      "gt_lines": 6,
+      "paddle_lines": 6,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f18_notes.png",
+      "tags": [
+        "notes",
+        "clean"
+      ],
+      "my_lines": 5,
+      "gt_lines": 5,
+      "paddle_lines": 5,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f19_menu.png",
+      "tags": [
+        "menu",
+        "diacritics",
+        "clean"
+      ],
+      "my_lines": 5,
+      "gt_lines": 5,
+      "paddle_lines": 5,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f20_label.png",
+      "tags": [
+        "label",
+        "clean"
+      ],
+      "my_lines": 5,
+      "gt_lines": 5,
+      "paddle_lines": 5,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    },
+    {
+      "file": "f21_rx.png",
+      "tags": [
+        "medical",
+        "clean"
+      ],
+      "my_lines": 5,
+      "gt_lines": 5,
+      "paddle_lines": 5,
+      "page_char_acc_vs_gt": 1.0,
+      "page_agree_vs_paddle": 1.0
+    }
+  ],
+  "resolution_d": {
+    "note": "det caps long-edge at 960; higher render mainly feeds rec crops",
+    "mean_acc_768": 0.9957,
+    "mean_acc_1536": 0.9918,
+    "rows": [
+      {
+        "file": "f04_dense.png",
+        "orig_long_edge": 980,
+        "acc_768": 1.0,
+        "acc_1536": 1.0
+      },
+      {
+        "file": "f05_codes.png",
+        "orig_long_edge": 820,
+        "acc_768": 0.9876,
+        "acc_1536": 0.9969
+      },
+      {
+        "file": "f09_tiny.png",
+        "orig_long_edge": 560,
+        "acc_768": 1.0,
+        "acc_1536": 0.9802
+      },
+      {
+        "file": "f16_smallrot.png",
+        "orig_long_edge": 560,
+        "acc_768": 0.9951,
+        "acc_1536": 0.9902
+      }
+    ]
+  },
+  "tier_e": {
+    "pages_medium_better": 3,
+    "pages_small_better": 0,
+    "mean_small": 0.9457,
+    "mean_medium": 0.9677,
+    "rows": [
+      {
+        "file": "f01_diacritics.png",
+        "small_acc": 0.9867,
+        "medium_acc": 0.9821
+      },
+      {
+        "file": "f02_receipt.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f03_form.png",
+        "small_acc": 0.9964,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f04_dense.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f05_codes.png",
+        "small_acc": 0.9969,
+        "medium_acc": 0.9969
+      },
+      {
+        "file": "f06_font0.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f07_font1.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f08_font2.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f09_tiny.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f10_blur.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f11_noise.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f12_rot.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f13_jpeg.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f14_lowcon.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f15_blurnoise.png",
+        "small_acc": 1.0,
+        "medium_acc": 0.9903
+      },
+      {
+        "file": "f16_smallrot.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f22_microblur.png",
+        "small_acc": 0.8462,
+        "medium_acc": 0.9082
+      },
+      {
+        "file": "f23_heavyblur.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f24_heavynoise.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f25_jpegtiny.png",
+        "small_acc": 0.7778,
+        "medium_acc": 0.8159
+      },
+      {
+        "file": "f26_blurnoisehard.png",
+        "small_acc": 0.0417,
+        "medium_acc": 0.5543
+      },
+      {
+        "file": "f27_bigrot.png",
+        "small_acc": 0.8889,
+        "medium_acc": 0.8889
+      },
+      {
+        "file": "f17_statement.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f18_notes.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f19_menu.png",
+        "small_acc": 1.0,
+        "medium_acc": 0.9902
+      },
+      {
+        "file": "f20_label.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      },
+      {
+        "file": "f21_rx.png",
+        "small_acc": 1.0,
+        "medium_acc": 1.0
+      }
+    ]
+  }
+}

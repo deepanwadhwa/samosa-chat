@@ -1,0 +1,375 @@
+[
+ {
+  "file": "f01_diacritics.png",
+  "lines": [
+   "Poličar Jana 1987",
+   "Zoë Brontë résumé",
+   "Håkon Ærøskøbing 2019",
+   "François Peña über",
+   "Søren Kaffée 1923",
+   "Måns Öström naïve"
+  ],
+  "tags": [
+   "diacritics",
+   "clean"
+  ]
+ },
+ {
+  "file": "f02_receipt.png",
+  "lines": [
+   "GROCERY MART #418",
+   "Date 2023-04-17 14:22",
+   "Milk 2% 1gal    4.29",
+   "Sourdough loaf     5.50",
+   "Eggs dozen large   3.99",
+   "Coffee beans 12oz 12.75",
+   "SUBTOTAL          26.53",
+   "TAX 8.25%          2.19",
+   "TOTAL             28.72"
+  ],
+  "tags": [
+   "receipt",
+   "clean"
+  ]
+ },
+ {
+  "file": "f03_form.png",
+  "lines": [
+   "PATIENT INTAKE FORM",
+   "Name: John Q. Doe",
+   "DOB: 03/14/1987",
+   "MRN: 8842190",
+   "Phone: (415) 555-0182",
+   "Allergies: penicillin",
+   "Primary: Dr. Sarah Whitfield"
+  ],
+  "tags": [
+   "form",
+   "clean"
+  ]
+ },
+ {
+  "file": "f04_dense.png",
+  "lines": [
+   "The quick brown fox jumps over the lazy dog while 12 storks fly south.",
+   "Invoice number 44821 was issued on 2022-11-03 for the amount of 1,204.55.",
+   "Please remit payment to account 000-1234-5678 within thirty (30) days.",
+   "Contact support@example.com or call +1-800-555-0199 for any questions.",
+   "Reference codes: AB-7743, XG-0091, and QQ-1288 must appear on the check.",
+   "Late fees of 1.5% per month accrue on balances past the due date shown.",
+   "Terms and conditions apply; see section 4.2 of the master agreement.",
+   "Shipment tracking 1Z999AA10123456784 delivered on Friday at 3:47 PM."
+  ],
+  "tags": [
+   "dense",
+   "clean"
+  ]
+ },
+ {
+  "file": "f05_codes.png",
+  "lines": [
+   "SN: 4F2A-99B1-7C03-DDE8",
+   "IBAN GB29 NWBK 6016 1331 9268 19",
+   "$1,299.00  €1,150.75  £980.20",
+   "Lat 37.7749 Lon -122.4194",
+   "Order #A-5567/2024 x3 @ 19.99",
+   "ISBN 978-3-16-148410-0"
+  ],
+  "tags": [
+   "codes",
+   "clean"
+  ]
+ },
+ {
+  "file": "f06_font0.png",
+  "lines": [
+   "Sample Trebuchet MS line one 2021",
+   "Recognition test of printed English text",
+   "Amount due: 3,417.60 on 09/30/2024"
+  ],
+  "tags": [
+   "fonts",
+   "clean"
+  ]
+ },
+ {
+  "file": "f07_font1.png",
+  "lines": [
+   "Sample Georgia line one 2021",
+   "Recognition test of printed English text",
+   "Amount due: 3,417.60 on 09/30/2024"
+  ],
+  "tags": [
+   "fonts",
+   "clean"
+  ]
+ },
+ {
+  "file": "f08_font2.png",
+  "lines": [
+   "Sample Arial line one 2021",
+   "Recognition test of printed English text",
+   "Amount due: 3,417.60 on 09/30/2024"
+  ],
+  "tags": [
+   "fonts",
+   "clean"
+  ]
+ },
+ {
+  "file": "f09_tiny.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "small"
+  ]
+ },
+ {
+  "file": "f10_blur.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "blur"
+  ]
+ },
+ {
+  "file": "f11_noise.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "noise"
+  ]
+ },
+ {
+  "file": "f12_rot.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "rotate"
+  ]
+ },
+ {
+  "file": "f13_jpeg.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "jpeg"
+  ]
+ },
+ {
+  "file": "f14_lowcon.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "lowcontrast"
+  ]
+ },
+ {
+  "file": "f15_blurnoise.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "blur",
+   "noise"
+  ]
+ },
+ {
+  "file": "f16_smallrot.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "small",
+   "rotate"
+  ]
+ },
+ {
+  "file": "f22_microblur.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f23_heavyblur.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f24_heavynoise.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f25_jpegtiny.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f26_blurnoisehard.png",
+  "lines": [
+   "Fine print clause 7 dated 2019",
+   "micro id 88a2f rev 4",
+   "balance 1042.18 usd net 30",
+   "see note 12 subsection b"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f27_bigrot.png",
+  "lines": [
+   "Claim 55810 approved 2020",
+   "Adjuster: M. Delacroix",
+   "Payout 4,210.00 net",
+   "Policy PX-7742-Q"
+  ],
+  "tags": [
+   "degraded",
+   "hard"
+  ]
+ },
+ {
+  "file": "f17_statement.png",
+  "lines": [
+   "MONTHLY STATEMENT",
+   "Opening balance 12,004.19",
+   "Deposits 3,200.00",
+   "Withdrawals 4,118.44",
+   "Closing balance 11,085.75",
+   "As of 2024-06-30"
+  ],
+  "tags": [
+   "statement",
+   "clean"
+  ]
+ },
+ {
+  "file": "f18_notes.png",
+  "lines": [
+   "Meeting notes 2025-01-08",
+   "Attendees: Ana, Bjorn, Chloe",
+   "Action: ship v2 by Q2",
+   "Budget cap 45,000 EUR",
+   "Next sync Thursday 10am"
+  ],
+  "tags": [
+   "notes",
+   "clean"
+  ]
+ },
+ {
+  "file": "f19_menu.png",
+  "lines": [
+   "Café Ménu du Jour",
+   "Crème brûlée — 8.50",
+   "Naïve salad — 11.00",
+   "Jalapeño soup — 7.25",
+   "Total ~ 26.75 incl. tip"
+  ],
+  "tags": [
+   "menu",
+   "diacritics",
+   "clean"
+  ]
+ },
+ {
+  "file": "f20_label.png",
+  "lines": [
+   "Shipping label 2023",
+   "To: 742 Evergreen Terrace",
+   "Springfield, USA 49007",
+   "Weight 3.4 kg  Zone 5",
+   "Tracking 9400 1000 0000 1234"
+  ],
+  "tags": [
+   "label",
+   "clean"
+  ]
+ },
+ {
+  "file": "f21_rx.png",
+  "lines": [
+   "Prescription Rx 55129",
+   "Amoxicillin 500mg",
+   "Take 1 capsule 3x daily",
+   "Refills: 2  Dr. Okonkwo",
+   "Filled 2024-02-11"
+  ],
+  "tags": [
+   "medical",
+   "clean"
+  ]
+ }
+]
