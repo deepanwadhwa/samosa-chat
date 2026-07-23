@@ -2453,23 +2453,28 @@ static int triage_row_cmp(const void *a, const void *b) {
     return strcasecmp(((const TriageRow *)a)->name, ((const TriageRow *)b)->name);
 }
 
-/* Phase A (JI.2): the model triages EVERY filename, in token-sized batches.
-   No C keyword logic (design law 1). "likely" and "unknown" both survive into
-   the skim + verify; only "no" is dropped. An anonymous scan name comes back
-   "unknown" and its content is read later — the invariant that makes the Titli
-   scenario winnable (JI.8-b). Verdicts land in verdicts.jsonl and in the
-   caller's per-item verdict array: 0 = "no" (dropped), 1 = "likely", 2 =
-   "unknown". Both 1 and 2 flow into the skim (Phase B). */
+/* Phase A (JI.2, revised 2026-07-23 after E-JI1): the model assigns a
+   CONFIDENCE to EVERY filename, in token-sized batches. No C keyword logic
+   (design law 1) and — the E-JI1 lesson — NO hard drop: real Ornith excluded an
+   anonymous CamScanner scan as "no" and its pixel content was lost. Triage now
+   ranks, it does not filter; the skim budget bounds the work. Confidence lands
+   in verdicts.jsonl and in the caller's per-item rank array: 3 = high, 2 =
+   medium (incl. uninformative/anonymous names — read to know), 1 = low (name
+   names a clearly different subject). All ranks flow into the skim (Phase B),
+   highest confidence first. */
 static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
                        jval *items, const char *job_id, int *verdict,
                        int *checked, int *seq) {
     const char *system =
-        "You are triaging filenames for a local file-finding job. For each numbered "
-        "file, output a JSON array of objects {\"i\": <index>, \"v\": \"likely\"|"
-        "\"unknown\"|\"no\", \"why\": \"<short>\"}. Judge only from the name, type, "
-        "size and date. \"unknown\" is the correct verdict when a name (for example an "
-        "anonymous scan like CamScanner or IMG_1234) says nothing about content — those "
-        "files are read later. Output JSON only, one object per file.";
+        "You are triaging filenames for a local file-finding job. For each numbered file, "
+        "output a JSON array of {\"i\": <index>, \"conf\": \"high\"|\"medium\"|\"low\", "
+        "\"why\": \"<short>\"} — your confidence, judged ONLY from the name, type, size and "
+        "date, that reading this file's CONTENT is worth it for the goal. high = the name "
+        "strongly indicates a match. medium = the name is plausible OR uninformative — an "
+        "anonymous scan (CamScanner, IMG_1234, a bare date/number) says nothing about "
+        "content, so it MUST be read to know: that is medium, never low. low = the name "
+        "clearly names a DIFFERENT, unrelated subject. Do NOT exclude any file; low only "
+        "means read it last. Output JSON only, one object per file.";
     int total = items->len;
     *checked = 0;
     for (int i = 0; i < total; ++i) verdict[i] = 0;
@@ -2513,25 +2518,29 @@ static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
             jval *it = items->kids[gi];
             jval *pv = json_get(it, "path");
             const char *rel = rel_to_folder(folder, pv && pv->t == J_STR ? pv->str : rows[first + li].name, rows[first + li].name);
-            const char *v = "unknown", *why = "";
+            /* Fail open to "medium": an unparsed or missing verdict still gets
+               its content read (never silently dropped — the E-JI1 lesson). */
+            const char *conf = "medium", *why = "";
             if (verdicts && verdicts->t == J_ARR)
                 for (int k = 0; k < verdicts->len; ++k) {
                     jval *e = verdicts->kids[k];
                     jval *iv = e && e->t == J_OBJ ? json_get(e, "i") : NULL;
                     if (iv && iv->t == J_NUM && (int)iv->num == li + 1) {
-                        jval *vv = json_get(e, "v"), *wv = json_get(e, "why");
-                        if (vv && vv->t == J_STR && (!strcmp(vv->str, "likely") || !strcmp(vv->str, "no") || !strcmp(vv->str, "unknown"))) v = vv->str;
+                        jval *cv = json_get(e, "conf"), *wv = json_get(e, "why");
+                        if (cv && cv->t == J_STR && (!strcmp(cv->str, "high") || !strcmp(cv->str, "medium") || !strcmp(cv->str, "low"))) conf = cv->str;
                         if (wv && wv->t == J_STR) why = wv->str;
                         break;
                     }
                 }
             TextBuffer vl = {0};
             if (text_add(&vl, "{\"rel_path\":") && text_json_string(&vl, rel) &&
-                text_add(&vl, ",\"verdict\":") && text_json_string(&vl, v) &&
+                text_add(&vl, ",\"confidence\":") && text_json_string(&vl, conf) &&
                 text_add(&vl, ",\"why\":") && text_json_string(&vl, why) && text_add(&vl, "}"))
                 job_append_jsonl(g, job_id, "verdicts.jsonl", vl.data);
             free(vl.data);
-            verdict[gi] = !strcmp(v, "likely") ? 1 : (!strcmp(v, "no") ? 0 : 2);
+            /* Confidence rank for skim ordering. No file is dropped (design law
+               1 + the E-JI1 lesson): triage ranks, the skim budget bounds. */
+            verdict[gi] = !strcmp(conf, "high") ? 3 : (!strcmp(conf, "low") ? 1 : 2);
         }
         json_free(verdicts); free(varena); free(arr);
         done += n; *checked = done;
@@ -2558,11 +2567,11 @@ static int ji_readable_kind(const char *mt) {
     return 0;
 }
 
-typedef struct { int idx; int verdict; double mtime; } SkimRow;
+typedef struct { int idx; int conf; double mtime; } SkimRow;
 static int skim_row_cmp(const void *a, const void *b) {
     const SkimRow *x = a, *y = b;
-    if (x->verdict != y->verdict) return x->verdict - y->verdict;  /* likely(1) before unknown(2) */
-    if (x->mtime < y->mtime) return 1;                              /* then mtime descending */
+    if (x->conf != y->conf) return y->conf - x->conf;  /* highest confidence first */
+    if (x->mtime < y->mtime) return 1;                 /* then mtime descending */
     if (x->mtime > y->mtime) return -1;
     return 0;
 }
@@ -2580,27 +2589,30 @@ static char *ji_first_lines(const char *text) {
     return out;
 }
 
-/* Phase B (JI.3): the skim index — the owner's "filename: first few lines"
-   dictionary, made durable in skim.jsonl. For every survivor (likely first,
-   then unknown by mtime), read page 1 through doc.read (cache-backed, so once
-   per file content ever) or a text head, cap to JI_SKIM_CHARS, record source
-   and parked. Parked files (no vision backend / no OCR) are surfaced, never
-   dropped. Builds skim_context: the numbered {rel_path, first_lines} rows the
-   verify loop reads. Budget JI_SKIM_MAX_FILES / JI_SKIM_MAX_SECONDS; survivors
-   past the budget are listed unskimmed so the loop can still read them. */
+/* Phase B (JI.3, revised for confidence): the skim index — the owner's
+   "filename: first few lines" dictionary, made durable in skim.jsonl. Every
+   triaged file is a survivor (nothing is dropped); the skim reads them in
+   CONFIDENCE order (high → medium → low), so when the budget bites on a big
+   folder it is the low-confidence tail that is deferred, not a coin toss. For
+   each file within budget, read page 1 through doc.read (cache-backed, so once
+   per file content ever) or a text head, cap to JI_SKIM_CHARS, record source /
+   parked. Files past JI_SKIM_MAX_FILES / JI_SKIM_MAX_SECONDS are recorded
+   deferred:true (surfaced with confidence, re-readable by a follow-up — the
+   continuity requirement), never lost. Parked files (no vision backend / no
+   OCR) are likewise surfaced, never dropped (design law 5). */
 static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
                      jval *items, const int *verdict,
-                     int *listed, int *parked_count, int *seq) {
+                     int *listed, int *parked_count, int *deferred_count, int *seq) {
     int total = items->len;
-    *listed = 0; *parked_count = 0;
+    *listed = 0; *parked_count = 0; *deferred_count = 0;
     SkimRow *order = malloc((size_t)(total > 0 ? total : 1) * sizeof(*order));
     if (!order) return 0;
     int nsurv = 0;
     for (int i = 0; i < total; ++i) {
-        if (verdict[i] != 1 && verdict[i] != 2) continue;
+        if (verdict[i] < 1) continue;   /* every triaged file survives; rank only orders */
         jval *it = items->kids[i];
         jval *mtm = it && it->t == J_OBJ ? json_get(it, "mtime") : NULL;
-        order[nsurv].idx = i; order[nsurv].verdict = verdict[i];
+        order[nsurv].idx = i; order[nsurv].conf = verdict[i];
         order[nsurv].mtime = mtm && mtm->t == J_NUM ? mtm->num : 0;
         nsurv++;
     }
@@ -2617,14 +2629,17 @@ static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
         const char *rel = rel_to_folder(folder, pv && pv->t == J_STR ? pv->str : name, name);
         const char *type = mt && mt->t == J_STR ? mt->str : "unknown";
         long long size = sz && sz->t == J_NUM ? (long long)sz->num : 0;
+        const char *conf_label = order[s].conf == 3 ? "high" : (order[s].conf == 1 ? "low" : "medium");
 
         (*listed)++;
         int within_budget = !budget_hit && *listed <= JI_SKIM_MAX_FILES &&
                             (monotonic_seconds() - started) < JI_SKIM_MAX_SECONDS;
         if (!within_budget) budget_hit = 1;
+        int deferred = !within_budget;
+        if (deferred) (*deferred_count)++;
         int kind = within_budget ? ji_readable_kind(type) : 0;
         char *first_lines = NULL; char source_buf[64]; int parked = 0, needs_review = 0, page_count = 0;
-        snprintf(source_buf, sizeof(source_buf), "%s", within_budget ? "not_readable" : "budget");
+        snprintf(source_buf, sizeof(source_buf), "%s", deferred ? "deferred" : "not_readable");
 
         if (kind == 1) {
             TextBuffer aj = {0}; char *aa = NULL; jval *args = NULL;
@@ -2664,11 +2679,13 @@ static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
         snprintf(nums, sizeof(nums), ",\"size\":%lld,\"mtime\":%.0f,\"page_count\":%d", size, order[s].mtime, page_count);
         if (text_add(&sl, "{\"path\":") && text_json_string(&sl, rel) &&
             text_add(&sl, ",\"sha256\":") && text_json_string(&sl, sha && sha->t == J_STR ? sha->str : "") &&
-            text_add(&sl, ",\"type\":") && text_json_string(&sl, type) && text_add(&sl, nums) &&
+            text_add(&sl, ",\"type\":") && text_json_string(&sl, type) &&
+            text_add(&sl, ",\"confidence\":") && text_json_string(&sl, conf_label) && text_add(&sl, nums) &&
             text_add(&sl, ",\"first_lines\":") && text_json_string(&sl, first_lines ? first_lines : "") &&
             text_add(&sl, ",\"source\":") && text_json_string(&sl, source_buf) &&
             text_add(&sl, ",\"needs_review\":") && text_add(&sl, needs_review ? "true" : "false") &&
-            text_add(&sl, ",\"parked\":") && text_add(&sl, parked ? "true" : "false") && text_add(&sl, "}"))
+            text_add(&sl, ",\"parked\":") && text_add(&sl, parked ? "true" : "false") &&
+            text_add(&sl, ",\"deferred\":") && text_add(&sl, deferred ? "true" : "false") && text_add(&sl, "}"))
             job_append_jsonl(g, job_id, "skim.jsonl", sl.data);
         free(sl.data);
 
@@ -2678,6 +2695,8 @@ static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
         snprintf(nb, sizeof(nb), "%d", *listed); e = e && text_add(&ev, nb) && text_add(&ev, ",\"total\":");
         snprintf(nb, sizeof(nb), "%d", nsurv); e = e && text_add(&ev, nb) &&
             text_add(&ev, ",\"current\":") && text_json_string(&ev, rel) &&
+            text_add(&ev, ",\"confidence\":") && text_json_string(&ev, conf_label) &&
+            text_add(&ev, ",\"deferred\":") && text_add(&ev, deferred ? "true" : "false") &&
             text_add(&ev, ",\"source\":") && text_json_string(&ev, source_buf) && text_add(&ev, "}");
         if (!e || !sse_json(fd, ev.data)) ok = 0;
         free(ev.data); free(first_lines);
@@ -2686,7 +2705,7 @@ static int find_skim(Gateway *g, int fd, const char *folder, const char *job_id,
     return ok;
 }
 
-typedef struct { char *rel; char *first_lines; int parked; char *reason; } ClRow;
+typedef struct { char *rel; char *first_lines; int parked; int deferred; char *reason; char *confidence; } ClRow;
 
 /* Phase C (JI.4): cheap batch classification over the skim's {rel_path,
    first_lines} rows, to narrow to a shortlist before the expensive verify loop.
@@ -2709,12 +2728,15 @@ static int find_classify(Gateway *g, int fd, const char *goal, const char *job_i
         char *la = NULL; jval *o = json_parse(line, &la);
         if (o && o->t == J_OBJ) {
             jval *p = json_get(o, "path"), *fl = json_get(o, "first_lines");
-            jval *pk = json_get(o, "parked"), *sc = json_get(o, "source");
+            jval *pk = json_get(o, "parked"), *df = json_get(o, "deferred");
+            jval *sc = json_get(o, "source"), *cf = json_get(o, "confidence");
             rows[nrows].rel = strdup(p && p->t == J_STR ? p->str : "");
             rows[nrows].first_lines = strdup(fl && fl->t == J_STR ? fl->str : "");
             rows[nrows].parked = pk && pk->t == J_BOOL && pk->boolean;
+            rows[nrows].deferred = df && df->t == J_BOOL && df->boolean;
             rows[nrows].reason = strdup(sc && sc->t == J_STR ? sc->str : "");
-            if (rows[nrows].rel && rows[nrows].first_lines && rows[nrows].reason) nrows++;
+            rows[nrows].confidence = strdup(cf && cf->t == J_STR ? cf->str : "medium");
+            if (rows[nrows].rel && rows[nrows].first_lines && rows[nrows].reason && rows[nrows].confidence) nrows++;
         }
         json_free(o); free(la);
     }
@@ -2726,10 +2748,11 @@ static int find_classify(Gateway *g, int fd, const char *goal, const char *job_i
         "{\"i\": <index>, \"v\": \"match\"|\"maybe\"|\"no\", \"why\": \"<short>\"}: match = the "
         "content clearly satisfies the goal; maybe = it plausibly could; no = it does not. "
         "Output JSON only, one object per file.";
-    /* readable (non-parked) row indices, in file order */
+    /* rows with content (not parked, not deferred) get classified; the rest are
+       surfaced afterward so the loop still reports them. */
     int *readable = malloc((size_t)(nrows > 0 ? nrows : 1) * sizeof(int));
     int nread = 0, ok = readable != NULL;
-    for (int i = 0; ok && i < nrows; ++i) if (!rows[i].parked) readable[nread++] = i;
+    for (int i = 0; ok && i < nrows; ++i) if (!rows[i].parked && !rows[i].deferred) readable[nread++] = i;
 
     int done = 0, ri = 0;
     while (ok && ri < nread) {
@@ -2779,14 +2802,21 @@ static int find_classify(Gateway *g, int fd, const char *goal, const char *job_i
                  (*seq)++, done, nread, *shortlist_count);
         if (!sse_json(fd, ev)) ok = 0;
     }
-    /* Parked files: never classifiable by content — surface them so the loop
-       lists them under "could not read" in finish (design law 5). */
+    /* Unread files, surfaced so the loop reports them (design law 5): parked =
+       could-not-read (no vision/OCR); deferred = not-yet-read (past the skim
+       budget), re-readable by a follow-up. Neither is silently dropped. */
     for (int i = 0; ok && i < nrows; ++i) if (rows[i].parked) {
         char head[32]; snprintf(head, sizeof(head), "%d. ", ++(*shortlist_count));
         text_add(shortlist, head); text_add(shortlist, rows[i].rel);
         text_add(shortlist, " (could not read: "); text_add(shortlist, rows[i].reason); text_add(shortlist, ")\n");
     }
-    for (int i = 0; i < nrows; ++i) { free(rows[i].rel); free(rows[i].first_lines); free(rows[i].reason); }
+    for (int i = 0; ok && i < nrows; ++i) if (rows[i].deferred) {
+        char head[32]; snprintf(head, sizeof(head), "%d. ", ++(*shortlist_count));
+        text_add(shortlist, head); text_add(shortlist, rows[i].rel);
+        text_add(shortlist, " (not yet read — "); text_add(shortlist, rows[i].confidence);
+        text_add(shortlist, " confidence; ask to check the deferred files)\n");
+    }
+    for (int i = 0; i < nrows; ++i) { free(rows[i].rel); free(rows[i].first_lines); free(rows[i].reason); free(rows[i].confidence); }
     free(rows); free(readable);
     return ok;
 }
@@ -2997,13 +3027,14 @@ static int find_start(Gateway *g, int fd, const char *goal, const char *folder,
         samosa_send_all(fd, "data: [DONE]\n\n", 14);
         return 0;
     }
-    int listed = 0, parked = 0;
-    if (!find_skim(g, fd, folder, job_id, items, verdict, &listed, &parked, &seq)) {
+    int listed = 0, parked = 0, deferred = 0;
+    if (!find_skim(g, fd, folder, job_id, items, verdict, &listed, &parked, &deferred, &seq)) {
         free(verdict); json_free(listing); free(arena); free(list_raw);
         sse_json(fd, "{\"type\":\"error\",\"message\":\"The skim index failed.\"}");
         samosa_send_all(fd, "data: [DONE]\n\n", 14);
         return 0;
     }
+    (void)deferred;
     free(verdict);
     TextBuffer shortlist = {0}; int shortcount = 0;
     if (!find_classify(g, fd, goal, job_id, &shortlist, &shortcount, &seq)) {

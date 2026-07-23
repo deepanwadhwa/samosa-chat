@@ -35,18 +35,18 @@ static int handler(SamosaHttpServer *server, int fd,
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"slow interactive reply\"}}]}", NULL);
     }
-    /* Phase A triage (JI.2): the classifier system prompt asks for a JSON array
-       of per-file verdicts. Index 1 (sorted) is "likely"; the rest "unknown" —
-       so every file survives into the verify loop and no content is dropped. */
+    /* Phase A triage (JI.2, confidence): the system prompt asks for a JSON array
+       of per-file confidence. Index 1 (sorted) is high; the rest medium — so
+       every file is a survivor and nothing is dropped (the E-JI1 lesson). */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "triaging filenames"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"[{\\\"i\\\":1,\\\"v\\\":\\\"likely\\\",\\\"why\\\":\\\"name matches\\\"},"
-            "{\\\"i\\\":2,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"},"
-            "{\\\"i\\\":3,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"},"
-            "{\\\"i\\\":4,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"}]\"}}]}", NULL);
+            "\"[{\\\"i\\\":1,\\\"conf\\\":\\\"high\\\",\\\"why\\\":\\\"name matches\\\"},"
+            "{\\\"i\\\":2,\\\"conf\\\":\\\"medium\\\",\\\"why\\\":\\\"uninformative\\\"},"
+            "{\\\"i\\\":3,\\\"conf\\\":\\\"medium\\\",\\\"why\\\":\\\"uninformative\\\"},"
+            "{\\\"i\\\":4,\\\"conf\\\":\\\"medium\\\",\\\"why\\\":\\\"uninformative\\\"}]\"}}]}", NULL);
     /* Phase C classify (JI.4): the skim rows come back match/maybe so every
        readable survivor stays on the shortlist for the verify loop. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&

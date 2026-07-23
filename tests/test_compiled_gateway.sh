@@ -166,7 +166,12 @@ FIND_JOB=$(printf '%s' "$find" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/
 [ -f "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl" ]
 [ -f "$HOME_DIR/jobs/$FIND_JOB/convo.json" ]
 [ -f "$HOME_DIR/jobs/$FIND_JOB/result.json" ]
-/usr/bin/grep -q '"verdict":' "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"
+# Phase A assigns confidence (high|medium|low), never a hard drop (E-JI1 lesson).
+/usr/bin/grep -q '"confidence":' "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"
+if /usr/bin/grep -q '"verdict":"no"' "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"; then
+  echo "triage still hard-drops files (should assign confidence, not exclude)" >&2
+  exit 1
+fi
 # skim index is the owner's dictionary: filename -> first lines of content.
 /usr/bin/grep -q '"first_lines":"Titli vaccination record' "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl"
 
