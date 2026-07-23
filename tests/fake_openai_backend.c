@@ -35,28 +35,48 @@ static int handler(SamosaHttpServer *server, int fd,
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"slow interactive reply\"}}]}", NULL);
     }
+    /* Phase A triage (JI.2): the classifier system prompt asks for a JSON array
+       of per-file verdicts. Index 1 (sorted) is "likely"; the rest "unknown" —
+       so every file survives into the verify loop and no content is dropped. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "No filename was a clear match") &&
-        !strstr(request->body, "Additional detail from the user"))
-        return samosa_http_response(fd, 200, "application/json",
-            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
-            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
-            "\"id\":\"call_compiled_ask\",\"type\":\"function\",\"function\":{"
-            "\"name\":\"ask_user\",\"arguments\":\"{\\\"question\\\":\\\"What name should I search for?\\\"}\"}}]}}]}", NULL);
-    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "Additional detail from the user: Miso") &&
-        !strstr(request->body, "\"role\":\"tool\""))
-        return samosa_http_response(fd, 200, "application/json",
-            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
-            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
-            "\"id\":\"call_compiled_resume\",\"type\":\"function\",\"function\":{"
-            "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"miso-record.txt\\\"}\"}}]}}]}", NULL);
-    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Miso vaccination"))
+        strstr(request->body, "triaging filenames"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"Found Miso's record at miso-record.txt.\"}}]}", NULL);
+            "\"[{\\\"i\\\":1,\\\"v\\\":\\\"likely\\\",\\\"why\\\":\\\"name matches\\\"},"
+            "{\\\"i\\\":2,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"},"
+            "{\\\"i\\\":3,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"},"
+            "{\\\"i\\\":4,\\\"v\\\":\\\"unknown\\\",\\\"why\\\":\\\"anonymous\\\"}]\"}}]}", NULL);
+    /* Answer-resume finish (JI.6): only fires when BOTH the user's answer
+       ("the cafe one") and the run-1 read result ("Cafe total") are in the
+       conversation — a direct lock on RC4 (the run-1 tool result must survive). */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "the cafe one") && strstr(request->body, "Cafe total"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_finish_receipt\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"finish\",\"arguments\":\"{\\\"matches\\\":[{\\\"path\\\":\\\"receipt-b.txt\\\","
+            "\\\"evidence\\\":\\\"Cafe total 4.50\\\",\\\"confidence\\\":\\\"high\\\"}],"
+            "\\\"rejected_count\\\":1,\\\"notes\\\":\\\"Found the cafe receipt.\\\"}\"}}]}}]}", NULL);
+    /* Run-1 receipt sweep: after reading receipt-b.txt, ask which receipt. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Cafe total"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_ask_receipt\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"ask_user\",\"arguments\":\"{\\\"question\\\":\\\"Which receipt: the cafe or the coffee shop?\\\"}\"}}]}}]}", NULL);
+    /* Cat-medical verify: after reading cat-medical-note.txt, finish (JI.5). */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "Titli vaccination"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_finish_cat\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"finish\",\"arguments\":\"{\\\"matches\\\":[{\\\"path\\\":\\\"cat-medical-note.txt\\\","
+            "\\\"evidence\\\":\\\"Titli vaccination record\\\",\\\"confidence\\\":\\\"high\\\"}],"
+            "\\\"rejected_count\\\":3,\\\"notes\\\":\\\"Found Titli's vaccination record.\\\"}\"}}]}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "find cat image document with doc.read") && !strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",
@@ -64,20 +84,24 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
             "\"id\":\"call_compiled_doc_read\",\"type\":\"function\",\"function\":{"
             "\"name\":\"doc.read\",\"arguments\":\"{\\\"path\\\":\\\"cat-medical-note.png\\\",\\\"detail\\\":\\\"lines\\\"}\"}}]}}]}", NULL);
+    /* Cat-medical verify (first turn): read the plain-text record. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "local file-finding job") && !strstr(request->body, "\"role\":\"tool\""))
+        strstr(request->body, "cat medical") && !strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
-            "\"id\":\"call_compiled_find\",\"type\":\"function\",\"function\":{"
+            "\"id\":\"call_read_cat\",\"type\":\"function\",\"function\":{"
             "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"cat-medical-note.txt\\\"}\"}}]}}]}", NULL);
+    /* Receipt verify (first turn): read the cafe receipt. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "move it to Archive") && strstr(request->body, "\"role\":\"tool\""))
+        strstr(request->body, "find my receipt") && !strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
-            "\"id\":\"call_compiled_move\",\"type\":\"function\",\"function\":{"
-            "\"name\":\"fs_move\",\"arguments\":\"{\\\"src\\\":\\\"cat-medical-note.txt\\\",\\\"dst\\\":\\\"Archive/cat-medical-note.txt\\\"}\"}}]}}]}", NULL);
+            "\"id\":\"call_read_receipt\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"receipt-b.txt\\\"}\"}}]}}]}", NULL);
+    /* Generic tool-result fallback (the shared doc.read tests round 2): a prose
+       reply, which the JI loop nudges once and then ends as model_no_finish. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",

@@ -136,26 +136,51 @@ report=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
 printf '%s' "$report" | /usr/bin/grep -q '"type":"report"'
 printf '%s' "$report" | /usr/bin/grep -q '"type":"done"'
 
+# Phase JI find: model triages every filename (Phase A), the verify loop reads
+# content and ends with a structured finish() result card (JI.2/JI.4/JI.5). No
+# C keyword scoring, no canned question, no prose "answer" as the ending.
 find=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \
-  --data-binary "{\"goal\":\"find my cat medical record\",\"folder\":\"$TMP/files\"}")
+  --data-binary "{\"goal\":\"find my cat medical records; my cat is named Titli\",\"folder\":\"$TMP/files\"}")
+printf '%s' "$find" | /usr/bin/grep -q '"type":"triage_progress"'
+printf '%s' "$find" | /usr/bin/grep -q '"type":"index_complete"'
 printf '%s' "$find" | /usr/bin/grep -q '"tool":"fs_read_text"'
-printf '%s' "$find" | /usr/bin/grep -q "Found the matching record at cat-medical-note.txt"
+printf '%s' "$find" | /usr/bin/grep -q '"type":"result"'
+printf '%s' "$find" | /usr/bin/grep -q 'cat-medical-note.txt'
+printf '%s' "$find" | /usr/bin/grep -q 'Titli vaccination record'
+printf '%s' "$find" | /usr/bin/grep -q '"type":"done"'
+if printf '%s' "$find" | /usr/bin/grep -qi 'what is your pet'; then
+  echo "compiled find emitted the demolished canned pet question (RC2)" >&2
+  exit 1
+fi
 if printf '%s' "$find" | /usr/bin/grep -q 'samosa_tool'; then
   echo "compiled find leaked tool protocol" >&2
   exit 1
 fi
+FIND_JOB=$(printf '%s' "$find" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$FIND_JOB" ]
+# Durable state persisted: Phase A verdicts, the loop conversation, the result.
+[ -f "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl" ]
+[ -f "$HOME_DIR/jobs/$FIND_JOB/convo.json" ]
+[ -f "$HOME_DIR/jobs/$FIND_JOB/result.json" ]
+/usr/bin/grep -q '"verdict":' "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"
 
+# Pause == resume (JI.6): a model-authored question pauses; the answer re-enters
+# the loop as the tool result. The finish only fires when run-1's read result
+# ("Cafe total") survived into the resumed conversation — a live RC4 lock.
 paused=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \
-  --data-binary "{\"goal\":\"find a record\",\"folder\":\"$TMP/files\"}")
+  --data-binary "{\"goal\":\"find my receipt\",\"folder\":\"$TMP/files\"}")
 printf '%s' "$paused" | /usr/bin/grep -q '"type":"await_user"'
+printf '%s' "$paused" | /usr/bin/grep -q 'Which receipt'
 JOB_ID=$(printf '%s' "$paused" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
 [ -n "$JOB_ID" ]
 resumed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/answer" \
   -H 'Content-Type: application/json' \
-  --data-binary "{\"job_id\":\"$JOB_ID\",\"answer\":\"Miso\"}")
-printf '%s' "$resumed" | /usr/bin/grep -q "Found Miso's record at miso-record.txt"
+  --data-binary "{\"job_id\":\"$JOB_ID\",\"answer\":\"the cafe one\"}")
+printf '%s' "$resumed" | /usr/bin/grep -q '"type":"result"'
+printf '%s' "$resumed" | /usr/bin/grep -q 'receipt-b.txt'
+printf '%s' "$resumed" | /usr/bin/grep -q '"type":"done"'
 
 review=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/review" \
   -H 'Content-Type: application/json' --data-binary '{"job_id":"review-native"}')
@@ -291,11 +316,15 @@ if /usr/bin/grep -q '^1 5$' "$TMP/extract-calls.log"; then
   exit 1
 fi
 
-move_plan=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
-  -H 'Content-Type: application/json' \
-  --data-binary "{\"goal\":\"find cat medical record and move it to Archive\",\"folder\":\"$TMP/files\"}")
-printf '%s' "$move_plan" | /usr/bin/grep -q '"type":"await_apply"'
-MOVE_JOB=$(printf '%s' "$move_plan" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/tail -1)
+# find→move is out of the find loop now (JI.5): find is strictly read-only, and
+# organize is a JO follow-up over the same plan/apply/undo machinery. Since find
+# no longer stages moves, exercise apply/undo directly from a seeded plan.
+MOVE_JOB="move-native"
+/bin/mkdir -p "$HOME_DIR/jobs/$MOVE_JOB"
+/usr/bin/printf '{"job_id":"%s","goal":"organize","folder":"%s","schema_version":1}\n' \
+  "$MOVE_JOB" "$TMP/files" >"$HOME_DIR/jobs/$MOVE_JOB/job.json"
+/usr/bin/printf '{"src":"%s/cat-medical-note.txt","dst":"%s/Archive/cat-medical-note.txt"}\n' \
+  "$TMP/files" "$TMP/files" >"$HOME_DIR/jobs/$MOVE_JOB/plan.jsonl"
 applied=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
   -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$MOVE_JOB\"}")
 printf '%s' "$applied" | /usr/bin/grep -q '"applied":1'

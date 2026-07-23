@@ -432,14 +432,98 @@ static int job_state_path(Gateway *g, const char *job_id, const char *name,
     return 1;
 }
 
+/* -------- Phase JI: model-driven find pipeline (TASKS_JOBS_INTELLIGENCE.md) --
+   The gateway executes; the model decides. C never tokenizes, scores, or
+   otherwise interprets natural-language goal text or file contents. C owns the
+   path jail, budgets, caching, event streaming, the durable job conversation,
+   and the finish contract. Pause == resume: convo.json + phase.json persist
+   every step so a question, a budget checkpoint, or a crash never repays work
+   already paid for (design laws 1 and 3). */
+#define JI_SCHEMA_VERSION        1
+#define JI_TRIAGE_BATCH_TOKENS   3000  /* calibrate in E-JI1; never encodes meaning */
+#define JI_CLASSIFY_BATCH_TOKENS 3000
+#define JI_SKIM_CHARS            400
+#define JI_SKIM_MAX_FILES        300
+#define JI_SKIM_MAX_SECONDS      1800
+#define JI_VERIFY_MAX_ROUNDS     24
+
 static int save_job_state(Gateway *g, const char *job_id, const char *goal,
                           const char *folder) {
-    char path[PATH_MAX]; TextBuffer json = {0};
+    char path[PATH_MAX], created[32]; TextBuffer json = {0};
+    if (!rfc3339_now_to(created, sizeof(created))) created[0] = 0;
     if (!job_state_path(g, job_id, "job.json", path, 1) ||
         !text_add(&json, "{\"job_id\":") || !text_json_string(&json, job_id) ||
         !text_add(&json, ",\"goal\":") || !text_json_string(&json, goal) ||
         !text_add(&json, ",\"folder\":") || !text_json_string(&json, folder) ||
-        !text_add(&json, "}\n")) { free(json.data); return 0; }
+        !text_add(&json, ",\"created\":") || !text_json_string(&json, created) ||
+        !text_add(&json, ",\"schema_version\":1}\n")) { free(json.data); return 0; }
+    int ok = write_small_file(path, json.data); free(json.data); return ok;
+}
+
+/* Append one complete JSON line to <job_dir>/<name> (verdicts/skim jsonl). */
+static int job_append_jsonl(Gateway *g, const char *job_id, const char *name,
+                            const char *line) {
+    char path[PATH_MAX];
+    if (!job_state_path(g, job_id, name, path, 1)) return 0;
+    int out = open(path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0600);
+    if (out < 0) return 0;
+    /* A regular-file write loop — samosa_send_all is send(), socket-only. */
+    TextBuffer row = {0};
+    int ok = text_add(&row, line) && text_add(&row, "\n");
+    size_t off = 0, len = ok ? row.len : 0;
+    while (ok && off < len) {
+        ssize_t n = write(out, row.data + off, len - off);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { ok = 0; break; }
+        off += (size_t)n;
+    }
+    free(row.data);
+    if (fsync(out)) ok = 0;
+    if (close(out)) ok = 0;
+    return ok;
+}
+
+/* convo.json holds the full model conversation as {"messages":[...]} so the
+   verify loop can be re-entered in place after any pause (JI.6). `messages` is
+   the inner array text without the surrounding brackets. */
+static int save_convo(Gateway *g, const char *job_id, const char *messages) {
+    char path[PATH_MAX]; TextBuffer json = {0};
+    if (!job_state_path(g, job_id, "convo.json", path, 1) ||
+        !text_add(&json, "{\"messages\":[") || !text_add(&json, messages) ||
+        !text_add(&json, "]}\n")) { free(json.data); return 0; }
+    int ok = write_small_file(path, json.data); free(json.data); return ok;
+}
+
+/* Returns the inner messages-array text (heap, no surrounding brackets), or
+   NULL when convo.json is missing or malformed. Caller frees. */
+static char *load_convo(Gateway *g, const char *job_id) {
+    char path[PATH_MAX], *raw = NULL, *arena = NULL; jval *root = NULL, *msgs = NULL;
+    char *out = NULL;
+    if (!job_state_path(g, job_id, "convo.json", path, 0) ||
+        !(raw = read_file_limit(path, 8 << 20)) ||
+        !(root = json_parse(raw, &arena)) || root->t != J_OBJ) goto done;
+    msgs = json_get(root, "messages");
+    if (!msgs || msgs->t != J_ARR) goto done;
+    TextBuffer buf = {0}; int ok = 1;
+    for (int i = 0; ok && i < msgs->len; ++i)
+        ok = (!i || text_add(&buf, ",")) && text_json_value(&buf, msgs->kids[i]);
+    if (ok) out = buf.data ? buf.data : strdup("");
+    else free(buf.data);
+done:
+    json_free(root); free(arena); free(raw); return out;
+}
+
+/* phase.json records where a paused job resumes: which phase, a cursor into it,
+   and the running counts an honest progress line binds to (design law 4). */
+static int save_phase(Gateway *g, const char *job_id, const char *phase,
+                      int cursor, int total, int shortlist, int rounds_spent) {
+    char path[PATH_MAX], tail[192]; TextBuffer json = {0};
+    snprintf(tail, sizeof(tail),
+             "\",\"cursor\":%d,\"total\":%d,\"shortlist\":%d,\"rounds_spent\":%d}\n",
+             cursor, total, shortlist, rounds_spent);
+    if (!job_state_path(g, job_id, "phase.json", path, 1) ||
+        !text_add(&json, "{\"phase\":\"") || !text_add(&json, phase) ||
+        !text_add(&json, tail)) { free(json.data); return 0; }
     int ok = write_small_file(path, json.data); free(json.data); return ok;
 }
 
@@ -1842,55 +1926,51 @@ static char *read_bounded_text(const char *path) {
     return result;
 }
 
-static int candidate_score(const char *goal, const char *name) {
-    char copy[1024];
-    if (!path_copy(copy, sizeof(copy), goal)) return 0;
-    static const char *stop[] = {"find","locate","search","look","file","files","folder",
-        "record","records","please","could","would","should","this","that","with","from","your","my"};
-    int score = 0;
-    for (char *save = NULL, *word = strtok_r(copy, " \\t.,?!:;/\\\"'()[]{}", &save);
-         word; word = strtok_r(NULL, " \\t.,?!:;/\\\"'()[]{}", &save)) {
-        int ignored = strlen(word) < 3;
-        for (size_t i = 0; !ignored && i < sizeof(stop) / sizeof(stop[0]); ++i)
-            ignored = !strcasecmp(word, stop[i]);
-        if (!ignored && contains_case(name, word)) score += 4;
-    }
-    if ((contains_case(goal, "cat") || contains_case(goal, "pet")) &&
-        (contains_case(name, "vet") || contains_case(name, "medical") ||
-         contains_case(name, "vaccin") || contains_case(name, "rabies") ||
-         contains_case(name, "clinic") || contains_case(name, "health"))) score += 3;
-    if (contains_case(goal, "medical") &&
-        (contains_case(name, "medical") || contains_case(name, "health") ||
-         contains_case(name, "clinic") || contains_case(name, "lab") ||
-         contains_case(name, "prescription") || contains_case(name, "vet"))) score += 2;
-    return score;
+/* Path relative to the job folder, for the model to pass back to the jailed
+   tools. Non-recursive listings are flat, so this is the basename; the prefix
+   strip keeps it correct if the listing ever goes recursive. */
+static const char *rel_to_folder(const char *folder, const char *path, const char *name) {
+    size_t flen = strlen(folder);
+    if (!strncmp(path, folder, flen) && path[flen] == '/') return path + flen + 1;
+    return name;
 }
 
-typedef struct { const char *name; int score; } FindCandidate;
+/* One "N. name (type, size bytes, YYYY-MM-DD)" row for a triage/classify batch.
+   Filename judgment is the model's job (design law 1); C only lays out facts. */
+static int append_file_row(TextBuffer *out, int index, const char *name,
+                           const char *media_type, long long size, double mtime) {
+    char head[64]; snprintf(head, sizeof(head), "%d. ", index);
+    char date[16] = "unknown"; time_t t = (time_t)mtime; struct tm tmv;
+    if (mtime > 0 && gmtime_r(&t, &tmv)) strftime(date, sizeof(date), "%Y-%m-%d", &tmv);
+    char meta[96];
+    snprintf(meta, sizeof(meta), " (%s, %lld bytes, %s)\n",
+             media_type ? media_type : "unknown", size, date);
+    return text_add(out, head) && text_add(out, name) && text_add(out, meta);
+}
 
-static int build_candidates(const char *goal, jval *items, TextBuffer *out, int *count) {
-    FindCandidate best[40] = {{0}};
-    *count = 0;
-    for (int i = 0; items && items->t == J_ARR && i < items->len; ++i) {
-        jval *name = json_get(items->kids[i], "name");
-        if (!name || name->t != J_STR) continue;
-        int score = candidate_score(goal, name->str);
-        if (score <= 0) continue;
-        if (*count == 40 && (score < best[39].score ||
-            (score == best[39].score && strcasecmp(name->str, best[39].name) >= 0))) continue;
-        int at = *count < 40 ? (*count)++ : 39;
-        best[at].name = name->str; best[at].score = score;
-        while (at > 0 && (best[at].score > best[at - 1].score ||
-               (best[at].score == best[at - 1].score &&
-                strcasecmp(best[at].name, best[at - 1].name) < 0))) {
-            FindCandidate swap = best[at - 1]; best[at - 1] = best[at]; best[at] = swap; --at;
-        }
+/* Heap copy of the first balanced JSON array in s (string-aware brace/bracket
+   scan), recovering it from fences or prose exactly as first_json_object does
+   for objects. The triage/classify contract is "output a JSON array". */
+static char *first_json_array(const char *s) {
+    if (!s) return NULL;
+    const char *start = strchr(s, '[');
+    if (!start) return NULL;
+    int depth = 0, in_str = 0, esc = 0;
+    const char *p = start;
+    for (; *p; ++p) {
+        char c = *p;
+        if (in_str) {
+            if (esc) esc = 0; else if (c == '\\') esc = 1; else if (c == '"') in_str = 0;
+        } else if (c == '"') in_str = 1;
+        else if (c == '[') ++depth;
+        else if (c == ']' && --depth == 0) { ++p; break; }
     }
-    if (!*count) return text_add(out, "No filename was a clear match. Ask for a distinguishing name, date, or phrase.");
-    if (!text_add(out, "Likely candidates selected from the complete filename index:\n")) return 0;
-    for (int i = 0; i < *count; ++i)
-        if (!text_add(out, "- ") || !text_add(out, best[i].name) || !text_add(out, "\n")) return 0;
-    return 1;
+    if (depth != 0) return NULL;
+    size_t len = (size_t)(p - start);
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, start, len); out[len] = 0;
+    return out;
 }
 
 static char *reshape_doc_read_result(const char *full_lines_json, const char *requested_detail, int page_start, int page_count_req) {
@@ -2325,160 +2405,392 @@ static char *tool_result(Gateway *g, const char *folder, const char *name, jval 
     return strdup("Unknown tool request.");
 }
 
-static const char *find_tools_json =
-    "[{\"type\":\"function\",\"function\":{\"name\":\"fs_metadata\",\"description\":\"Check one candidate file's type, size and metadata without reading its content\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
-    "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_text\",\"description\":\"Read at most 8192 characters from one selected plain text candidate\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
-    "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_pages\",\"description\":\"Read 1 to 5 consecutive pages from one selected PDF; request another range only if needed\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"start\":{\"type\":\"integer\",\"minimum\":1},\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":5}},\"required\":[\"path\",\"start\",\"count\"]}}},"
-    "{\"type\":\"function\",\"function\":{\"name\":\"doc.read\",\"description\":\"Read document text using tiered OCR and text layer fallback\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"text\",\"lines\"]},\"pages\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"refresh\":{\"type\":\"boolean\"}},\"required\":[\"path\"]}}},"
-    "{\"type\":\"function\",\"function\":{\"name\":\"ask_user\",\"description\":\"Ask one clarifying question when the indexed candidates are not reliable\",\"parameters\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"}},\"required\":[\"question\"]}}},"
-    "{\"type\":\"function\",\"function\":{\"name\":\"fs_move\",\"description\":\"Stage one confirmed matching file to move after user approval\",\"parameters\":{\"type\":\"object\",\"properties\":{\"src\":{\"type\":\"string\"},\"dst\":{\"type\":\"string\"}},\"required\":[\"src\",\"dst\"]}}}]";
+/* The verify-loop tool set (JI.4). doc.read is the instructed reader for PDFs
+   and images (RC5's fix); fs_read_text/fs_metadata are raw tier-0 tools;
+   ask_user is model-authored only (RC2's fix); finish is the ONLY legal ending
+   (JI.5). No fs_move — find is read-only; organize is a JO follow-up. */
+static const char *ji_tools_json =
+    "[{\"type\":\"function\",\"function\":{\"name\":\"doc.read\",\"description\":\"Read a PDF or image with the tiered OCR + text-layer reader. pages is [start,count] with count up to 5.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"text\",\"lines\"]},\"pages\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"refresh\":{\"type\":\"boolean\"}},\"required\":[\"path\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_text\",\"description\":\"Read at most 8192 characters from one plain text file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"fs_metadata\",\"description\":\"Check one file's type, size and metadata without reading content\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"ask_user\",\"description\":\"Ask the user one question, only for genuine ambiguity the goal does not resolve\",\"parameters\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"}},\"required\":[\"question\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"finish\",\"description\":\"End the find job with the verified result. This is the only way to finish.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"matches\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"evidence\":{\"type\":\"string\"},\"page\":{\"type\":\"integer\"},\"confidence\":{\"type\":\"string\",\"enum\":[\"high\",\"medium\"]}},\"required\":[\"path\",\"evidence\"]}},\"rejected_count\":{\"type\":\"integer\"},\"unreadable\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}}}},\"notes\":{\"type\":\"string\"}},\"required\":[\"matches\"]}}}]";
 
-static int jobs_find(Gateway *g, int fd, const char *goal, const char *folder,
-                     jval *survey, const char *job_id, int start_seq) {
-    char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", (char *)folder, NULL};
-    int status = 0; char *list_raw = run_capture(g, g->samosa_fs, argv, 16 << 20, &status);
-    char *arena = NULL; jval *listing = list_raw ? json_parse(list_raw, &arena) : NULL;
-    jval *items = listing && listing->t == J_OBJ ? json_get(listing, "items") : NULL;
-    if (!items || items->t != J_ARR || !WIFEXITED(status) || WEXITSTATUS(status)) {
-        json_free(listing); free(arena); free(list_raw);
-        return sse_json(fd, "{\"type\":\"error\",\"message\":\"The folder index could not be built.\"}");
+static const char *ji_verify_system =
+    "You are completing a local file-finding job. The goal and a list of plausible "
+    "files are given. Confirm or reject each plausible file by reading its content. "
+    "Read PDFs and images with doc.read (it uses OCR with a text-layer fallback); "
+    "read plain-text files with fs_read_text; check type, size or date with fs_metadata. "
+    "doc.read returns pages in [start,count] chunks of up to 5 pages — ask for more "
+    "pages only when needed. This is a sweep: consider every plausible file and collect "
+    "ALL matches, each with a short evidence quote and its page number. Call ask_user "
+    "only for genuine ambiguity the goal does not resolve — the goal is in this "
+    "conversation, so never ask for a detail it already contains (a name, a date, a "
+    "phrase). End by calling finish exactly once with your matches, the count you "
+    "rejected, any files you could not read, and a short note. Do not answer in prose; "
+    "finish and ask_user are the only ways to end.";
+
+/* One non-streaming chat turn with no tools; returns assistant content (heap)
+   or NULL. Used for the Phase A/C batch classifiers (plain JSON out). */
+static char *ji_model_text(Gateway *g, const char *system, const char *user) {
+    TextBuffer payload = {0};
+    int ok = text_add(&payload, "{\"model\":") && text_json_string(&payload, backend_model(g->backend)) &&
+             text_add(&payload, ",\"messages\":[{\"role\":\"system\",\"content\":") && text_json_string(&payload, system) &&
+             text_add(&payload, "},{\"role\":\"user\",\"content\":") && text_json_string(&payload, user) &&
+             text_add(&payload, "}],\"stream\":false,\"thinking\":\"off\",\"chat_template_kwargs\":{\"enable_thinking\":false},\"max_tokens\":1024}");
+    if (!ok) { free(payload.data); return NULL; }
+    char *raw = backend_json(g, payload.data); free(payload.data);
+    char *arena = NULL; jval *root = raw ? json_parse(raw, &arena) : NULL;
+    jval *choices = root && root->t == J_OBJ ? json_get(root, "choices") : NULL;
+    jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
+    jval *content = message && message->t == J_OBJ ? json_get(message, "content") : NULL;
+    char *out = content && content->t == J_STR ? strdup(content->str) : NULL;
+    json_free(root); free(arena); free(raw); return out;
+}
+
+typedef struct { int idx; const char *name; } TriageRow;
+static int triage_row_cmp(const void *a, const void *b) {
+    return strcasecmp(((const TriageRow *)a)->name, ((const TriageRow *)b)->name);
+}
+
+/* Phase A (JI.2): the model triages EVERY filename, in token-sized batches.
+   No C keyword logic (design law 1). "likely" and "unknown" both survive into
+   the verify loop; only "no" is dropped. An anonymous scan name comes back
+   "unknown" and its content is read later — the invariant that makes the Titli
+   scenario winnable (JI.8-b). Verdicts land in verdicts.jsonl; survivors are
+   accumulated into `survivors` as a numbered list for the verify user message. */
+static int find_triage(Gateway *g, int fd, const char *goal, const char *folder,
+                       jval *items, const char *job_id, TextBuffer *survivors,
+                       int *survivor_count, int *checked, int *seq) {
+    const char *system =
+        "You are triaging filenames for a local file-finding job. For each numbered "
+        "file, output a JSON array of objects {\"i\": <index>, \"v\": \"likely\"|"
+        "\"unknown\"|\"no\", \"why\": \"<short>\"}. Judge only from the name, type, "
+        "size and date. \"unknown\" is the correct verdict when a name (for example an "
+        "anonymous scan like CamScanner or IMG_1234) says nothing about content — those "
+        "files are read later. Output JSON only, one object per file.";
+    int total = items->len;
+    *survivor_count = 0; *checked = 0;
+    TriageRow *rows = malloc((size_t)(total > 0 ? total : 1) * sizeof(*rows));
+    if (!rows) return 0;
+    int nrows = 0;
+    for (int i = 0; i < total; ++i) {
+        jval *it = items->kids[i];
+        jval *name = it && it->t == J_OBJ ? json_get(it, "name") : NULL;
+        if (name && name->t == J_STR) { rows[nrows].idx = i; rows[nrows].name = name->str; nrows++; }
     }
-    char event[1024];
-    snprintf(event, sizeof(event), "{\"seq\":%d,\"type\":\"indexing\",\"total\":%d}", start_seq, items->len);
-    if (!sse_json(fd, event)) goto fail;
-    TextBuffer candidates = {0}; int candidate_count = 0;
-    if (!build_candidates(goal, items, &candidates, &candidate_count)) goto fail;
-    snprintf(event, sizeof(event), "{\"seq\":%d,\"type\":\"index_complete\",\"total\":%d,\"candidates\":%d}",
-             start_seq + 1, items->len, candidate_count);
-    if (!sse_json(fd, event)) { free(candidates.data); goto fail; }
+    qsort(rows, (size_t)nrows, sizeof(*rows), triage_row_cmp);
 
-    TextBuffer messages = {0};
-    const char *system = "You are completing a local file-finding job. The gateway has checked every filename and supplied the strongest candidates. Inspect only plausible candidates. Use metadata before content. Read plain text only with fs_read_text. Read PDFs only with fs_read_pages in chunks of no more than 5 pages, beginning with the most relevant range and continuing only when required. Never ask to read an entire document. Return a plain-language answer naming the matching relative path and the evidence. When inspected content directly matches the requested subject, report it immediately even if the user did not provide a person or pet name. Do not ask for details that the matching file itself supplies. If the request also asks to move the confirmed match, call fs_move with relative source and destination paths; the gateway will pause for approval. Call ask_user only when no inspected candidate provides reliable evidence. Never print tool JSON or tool names in the answer.";
-    TextBuffer user = {0};
-    if (!text_add(&user, "Goal: ") || !text_add(&user, goal) || !text_add(&user, "\n") ||
-        !text_add(&user, candidates.data)) { free(candidates.data); free(user.data); goto fail; }
-    free(candidates.data);
-    if (!text_add(&messages, "{\"role\":\"system\",\"content\":") ||
-        !text_json_string(&messages, system) || !text_add(&messages, "},{\"role\":\"user\",\"content\":") ||
-        !text_json_string(&messages, user.data) || !text_add(&messages, "}")) {
-        free(user.data); free(messages.data); goto fail;
+    int batches = 0, ri = 0, done = 0, ok = 1;
+    while (ok && ri < nrows) {
+        TextBuffer batch = {0};
+        if (!text_add(&batch, "Goal: ") || !text_add(&batch, goal) || !text_add(&batch, "\nFiles:\n")) { free(batch.data); ok = 0; break; }
+        int n = 0, first = ri;
+        for (; ri < nrows; ) {
+            jval *it = items->kids[rows[ri].idx];
+            jval *mt = json_get(it, "media_type"), *sz = json_get(it, "size"), *mtm = json_get(it, "mtime");
+            if (!append_file_row(&batch, n + 1, rows[ri].name, mt && mt->t == J_STR ? mt->str : "unknown",
+                                 sz && sz->t == J_NUM ? (long long)sz->num : 0, mtm && mtm->t == J_NUM ? mtm->num : 0)) { ok = 0; break; }
+            n++; ri++;
+            if (batch.len >= (size_t)JI_TRIAGE_BATCH_TOKENS * 4) break;
+        }
+        if (!ok) { free(batch.data); break; }
+        batches++;
+        /* One malformed retry, then default the whole batch to "unknown"
+           (fail open into the verify loop — never silently drop a file). */
+        char *arr = NULL;
+        for (int attempt = 0; attempt < 2 && !arr; ++attempt) {
+            char *content = ji_model_text(g, system, batch.data);
+            arr = content ? first_json_array(content) : NULL;
+            free(content);
+        }
+        free(batch.data);
+        char *varena = NULL; jval *verdicts = arr ? json_parse(arr, &varena) : NULL;
+        for (int li = 0; li < n; ++li) {
+            int gi = rows[first + li].idx;
+            jval *it = items->kids[gi];
+            jval *pv = json_get(it, "path");
+            const char *rel = rel_to_folder(folder, pv && pv->t == J_STR ? pv->str : rows[first + li].name, rows[first + li].name);
+            const char *v = "unknown", *why = "";
+            if (verdicts && verdicts->t == J_ARR)
+                for (int k = 0; k < verdicts->len; ++k) {
+                    jval *e = verdicts->kids[k];
+                    jval *iv = e && e->t == J_OBJ ? json_get(e, "i") : NULL;
+                    if (iv && iv->t == J_NUM && (int)iv->num == li + 1) {
+                        jval *vv = json_get(e, "v"), *wv = json_get(e, "why");
+                        if (vv && vv->t == J_STR && (!strcmp(vv->str, "likely") || !strcmp(vv->str, "no") || !strcmp(vv->str, "unknown"))) v = vv->str;
+                        if (wv && wv->t == J_STR) why = wv->str;
+                        break;
+                    }
+                }
+            TextBuffer vl = {0};
+            if (text_add(&vl, "{\"rel_path\":") && text_json_string(&vl, rel) &&
+                text_add(&vl, ",\"verdict\":") && text_json_string(&vl, v) &&
+                text_add(&vl, ",\"why\":") && text_json_string(&vl, why) && text_add(&vl, "}"))
+                job_append_jsonl(g, job_id, "verdicts.jsonl", vl.data);
+            free(vl.data);
+            if (strcmp(v, "no")) {
+                jval *mt = json_get(it, "media_type"), *sz = json_get(it, "size"), *mtm = json_get(it, "mtime");
+                append_file_row(survivors, ++(*survivor_count), rel, mt && mt->t == J_STR ? mt->str : "unknown",
+                                sz && sz->t == J_NUM ? (long long)sz->num : 0, mtm && mtm->t == J_NUM ? mtm->num : 0);
+            }
+        }
+        json_free(verdicts); free(varena); free(arr);
+        done += n; *checked = done;
+        char ev[160];
+        snprintf(ev, sizeof(ev), "{\"seq\":%d,\"type\":\"triage_progress\",\"done\":%d,\"total\":%d}", (*seq)++, done, nrows);
+        if (!sse_json(fd, ev)) { ok = 0; break; }
     }
-    free(user.data);
+    free(rows);
+    if (ok) {
+        char ev[160];
+        snprintf(ev, sizeof(ev), "{\"seq\":%d,\"type\":\"index_complete\",\"total\":%d,\"checked\":%d,\"batches\":%d}",
+                 (*seq)++, total, done, batches);
+        ok = sse_json(fd, ev);
+    }
+    return ok;
+}
 
-    int seq = start_seq + 2;
-    for (int round = 0; round < 8; ++round) {
+/* JI.5: validate a finish() payload, write result.json, emit the result card
+   and done. Returns 1 = finished, 0 = invalid payload (caller retries once,
+   then fails the job honestly). Unknown keys, non-jail paths, or a match with
+   empty evidence are all rejected. */
+static int handle_finish(Gateway *g, int fd, const char *folder, const char *job_id,
+                         jval *args, int *seq) {
+    for (int i = 0; i < args->len; ++i) {
+        const char *k = args->keys[i];
+        if (strcmp(k, "matches") && strcmp(k, "rejected_count") &&
+            strcmp(k, "unreadable") && strcmp(k, "notes")) return 0;
+    }
+    jval *matches = json_get(args, "matches");
+    if (matches && matches->t != J_ARR) return 0;
+    if (matches) for (int i = 0; i < matches->len; ++i) {
+        jval *m = matches->kids[i];
+        if (!m || m->t != J_OBJ) return 0;
+        jval *p = json_get(m, "path"), *e = json_get(m, "evidence");
+        char abs[PATH_MAX];
+        if (!p || p->t != J_STR || !safe_job_path(folder, p->str, abs)) return 0;
+        if (!e || e->t != J_STR || !*e->str) return 0;
+    }
+    jval *unreadable = json_get(args, "unreadable");
+    if (unreadable && unreadable->t != J_ARR) return 0;
+    jval *rc = json_get(args, "rejected_count");
+    jval *notes = json_get(args, "notes");
+    char rcbuf[24]; snprintf(rcbuf, sizeof(rcbuf), "%d", rc && rc->t == J_NUM ? (int)rc->num : 0);
+    TextBuffer fields = {0};
+    int ok = text_add(&fields, "\"job_id\":") && text_json_string(&fields, job_id) &&
+             text_add(&fields, ",\"matches\":") &&
+             (matches ? text_json_value(&fields, matches) : text_add(&fields, "[]")) &&
+             text_add(&fields, ",\"rejected_count\":") && text_add(&fields, rcbuf) &&
+             text_add(&fields, ",\"unreadable\":") &&
+             (unreadable ? text_json_value(&fields, unreadable) : text_add(&fields, "[]")) &&
+             text_add(&fields, ",\"notes\":") &&
+             text_json_string(&fields, notes && notes->t == J_STR ? notes->str : "");
+    if (!ok) { free(fields.data); return 0; }
+    char rpath[PATH_MAX]; TextBuffer file = {0};
+    if (text_add(&file, "{") && text_add(&file, fields.data) && text_add(&file, "}\n") &&
+        job_state_path(g, job_id, "result.json", rpath, 1))
+        write_small_file(rpath, file.data);
+    free(file.data);
+    TextBuffer ev = {0}; char nb[32]; snprintf(nb, sizeof(nb), "%d", (*seq)++);
+    int e2 = text_add(&ev, "{\"seq\":") && text_add(&ev, nb) && text_add(&ev, ",\"type\":\"result\",") &&
+             text_add(&ev, fields.data) && text_add(&ev, "}");
+    if (e2) sse_json(fd, ev.data);
+    free(ev.data); free(fields.data);
+    TextBuffer d = {0}; snprintf(nb, sizeof(nb), "%d", (*seq)++);
+    if (text_add(&d, "{\"seq\":") && text_add(&d, nb) && text_add(&d, ",\"type\":\"done\",\"job_id\":") &&
+        text_json_string(&d, job_id) && text_add(&d, ",\"summary\":") &&
+        text_json_string(&d, notes && notes->t == J_STR ? notes->str : "Search complete.") && text_add(&d, "}"))
+        { sse_json(fd, d.data); samosa_send_all(fd, "data: [DONE]\n\n", 14); }
+    free(d.data);
+    return 1;
+}
+
+/* Append the assistant tool_call message for one round to `messages`. */
+static int ji_append_assistant(TextBuffer *messages, const char *id, const char *name, const char *arguments) {
+    return text_add(messages, ",{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":") &&
+           text_json_string(messages, id) &&
+           text_add(messages, ",\"type\":\"function\",\"function\":{\"name\":") && text_json_string(messages, name) &&
+           text_add(messages, ",\"arguments\":") && text_json_string(messages, arguments) && text_add(messages, "}}]}");
+}
+
+/* The Phase D verify loop (JI.4). Drives the persistent job conversation; every
+   round is saved to convo.json so a pause, checkpoint, or crash resumes in
+   place (JI.6). `messages` (inner array text) is owned and freed here. */
+static int find_loop(Gateway *g, int fd, const char *goal, const char *folder,
+                     const char *job_id, TextBuffer *messages, int seq) {
+    (void)goal;
+    int nudged = 0;
+    for (int round = 0; round < JI_VERIFY_MAX_ROUNDS; ++round) {
         TextBuffer payload = {0};
         if (!text_add(&payload, "{\"model\":") || !text_json_string(&payload, backend_model(g->backend)) ||
-            !text_add(&payload, ",\"messages\":[") || !text_add(&payload, messages.data) ||
-            !text_add(&payload, "],\"tools\":") || !text_add(&payload, find_tools_json) ||
+            !text_add(&payload, ",\"messages\":[") || !text_add(&payload, messages->data) ||
+            !text_add(&payload, "],\"tools\":") || !text_add(&payload, ji_tools_json) ||
             !text_add(&payload, ",\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"stream\":false,\"max_tokens\":1024}")) {
-            free(payload.data); free(messages.data); goto fail;
+            free(payload.data); goto fail;
         }
         char *reply_raw = backend_json(g, payload.data); free(payload.data);
-        char *reply_arena = NULL; jval *reply = reply_raw ? json_parse(reply_raw, &reply_arena) : NULL;
+        char *ra = NULL; jval *reply = reply_raw ? json_parse(reply_raw, &ra) : NULL;
         jval *choices = reply && reply->t == J_OBJ ? json_get(reply, "choices") : NULL;
         jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
-        jval *calls = message && message->t == J_OBJ ? json_get(message, "tool_calls") : NULL;
-        if (!message || message->t != J_OBJ) {
-            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail;
-        }
+        if (!message || message->t != J_OBJ) { json_free(reply); free(ra); free(reply_raw); goto model_fail; }
+        jval *calls = json_get(message, "tool_calls");
         if (!calls || calls->t != J_ARR || !calls->len) {
-            jval *content = json_get(message, "content");
-            if (!content || content->t != J_STR || !*content->str || strstr(content->str, "samosa_tool") || strstr(content->str, "fs_")) {
-                json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto ask;
+            /* Content-only reply: nudge once toward finish/ask_user, then fail
+               the job honestly. Kills the "Would you like me to..." endings. */
+            if (!nudged) {
+                nudged = 1;
+                int ok = text_add(messages, ",{\"role\":\"user\",\"content\":\"Call finish with your matches, or ask_user. Do not answer in prose.\"}");
+                json_free(reply); free(ra); free(reply_raw);
+                if (!ok) goto fail;
+                save_convo(g, job_id, messages->data);
+                continue;
             }
-            TextBuffer done = {0};
-            if (!text_add(&done, "{\"seq\":") ) { free(done.data); goto final_fail; }
-            char number[32]; snprintf(number, sizeof(number), "%d", seq);
-            if (!text_add(&done, number) || !text_add(&done, ",\"type\":\"done\",\"job_id\":") ||
-                !text_json_string(&done, job_id) || !text_add(&done, ",\"summary\":") ||
-                !text_json_string(&done, content->str) || !text_add(&done, "}")) { free(done.data); goto final_fail; }
-            int ok = sse_json(fd, done.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
-            free(done.data); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data);
-            json_free(listing); free(arena); free(list_raw); (void)survey; return ok;
-final_fail:
-            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail;
+            json_free(reply); free(ra); free(reply_raw); goto no_finish;
         }
         jval *call = calls->kids[0], *function = call && call->t == J_OBJ ? json_get(call, "function") : NULL;
         jval *id = call && call->t == J_OBJ ? json_get(call, "id") : NULL;
         jval *name = function && function->t == J_OBJ ? json_get(function, "name") : NULL;
         jval *arguments = function && function->t == J_OBJ ? json_get(function, "arguments") : NULL;
         if (!id || id->t != J_STR || !name || name->t != J_STR || !arguments || arguments->t != J_STR) {
-            json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail;
+            json_free(reply); free(ra); free(reply_raw); goto model_fail;
         }
-        char *args_arena = NULL; jval *args = json_parse(arguments->str, &args_arena);
-        if (!args || args->t != J_OBJ) { json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto model_fail; }
+        char *aa = NULL; jval *args = json_parse(arguments->str, &aa);
+        if (!args || args->t != J_OBJ) { json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw); goto model_fail; }
+
+        if (!strcmp(name->str, "finish")) {
+            int fr = handle_finish(g, fd, folder, job_id, args, &seq);
+            if (fr == 1) { json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw); free(messages->data); return 1; }
+            int ok = ji_append_assistant(messages, id->str, name->str, arguments->str) &&
+                     text_add(messages, ",{\"role\":\"tool\",\"tool_call_id\":") && text_json_string(messages, id->str) &&
+                     text_add(messages, ",\"name\":\"finish\",\"content\":") &&
+                     text_json_string(messages, "Rejected: every match needs a path inside the folder and a non-empty evidence quote, and only the keys matches/rejected_count/unreadable/notes are allowed. Call finish again.") &&
+                     text_add(messages, "}");
+            json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw);
+            if (!ok) goto fail;
+            save_convo(g, job_id, messages->data);
+            continue;
+        }
         if (!strcmp(name->str, "ask_user")) {
-            jval *question = json_get(args, "question");
-            if (!question || question->t != J_STR || !*question->str) { json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto ask; }
-            TextBuffer paused = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq);
-            text_add(&paused, "{\"seq\":"); text_add(&paused, number); text_add(&paused, ",\"type\":\"await_user\",\"job_id\":");
-            text_json_string(&paused, job_id); text_add(&paused, ",\"question\":"); text_json_string(&paused, question->str); text_add(&paused, "}");
-            int ok = sse_json(fd, paused.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
-            free(paused.data); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data);
-            json_free(listing); free(arena); free(list_raw); return ok;
+            jval *q = json_get(args, "question");
+            if (!q || q->t != J_STR || !*q->str) { json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw); goto model_fail; }
+            int ok = ji_append_assistant(messages, id->str, name->str, arguments->str);
+            char *qcopy = ok ? strdup(q->str) : NULL;
+            json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw);
+            if (!ok || !qcopy) { free(qcopy); goto fail; }
+            save_convo(g, job_id, messages->data);
+            save_phase(g, job_id, "D", round, 0, 0, round);
+            TextBuffer paused = {0}; char nb[32]; snprintf(nb, sizeof(nb), "%d", seq);
+            int e2 = text_add(&paused, "{\"seq\":") && text_add(&paused, nb) &&
+                     text_add(&paused, ",\"type\":\"await_user\",\"job_id\":") && text_json_string(&paused, job_id) &&
+                     text_add(&paused, ",\"question\":") && text_json_string(&paused, qcopy) && text_add(&paused, "}");
+            int done = e2 && sse_json(fd, paused.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+            free(paused.data); free(qcopy); free(messages->data);
+            return done;
         }
-        if (!strcmp(name->str, "fs_move")) {
-            jval *src = json_get(args, "src"), *dst = json_get(args, "dst"); char src_abs[PATH_MAX], dst_abs[PATH_MAX];
-            int valid_dst = dst && dst->t == J_STR && dst->str[0] != '/' && !strstr(dst->str, "../") && strcmp(dst->str, "..") &&
-                            snprintf(dst_abs, sizeof(dst_abs), "%s/%s", folder, dst->str) < (int)sizeof(dst_abs);
-            if (!src || src->t != J_STR || !safe_job_path(folder, src->str, src_abs) || !valid_dst) {
-                json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto ask;
-            }
-            char plan_path[PATH_MAX]; TextBuffer plan = {0};
-            if (!job_state_path(g, job_id, "plan.jsonl", plan_path, 1) || !text_add(&plan, "{\"src\":") ||
-                !text_json_string(&plan, src_abs) || !text_add(&plan, ",\"dst\":") || !text_json_string(&plan, dst_abs) ||
-                !text_add(&plan, "}\n") || !write_small_file(plan_path, plan.data)) {
-                free(plan.data); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail;
-            }
-            free(plan.data); TextBuffer event = {0};
-            text_add(&event, "{\"type\":\"plan\",\"moves\":[{\"src\":"); text_json_string(&event, src_abs);
-            text_add(&event, ",\"dst\":"); text_json_string(&event, dst_abs); text_add(&event, "}],\"skips\":[],\"dest_root\":");
-            text_json_string(&event, folder); text_add(&event, "}"); int ok = sse_json(fd, event.data); free(event.data);
-            TextBuffer waiting = {0}; text_add(&waiting, "{\"type\":\"await_apply\",\"job_id\":"); text_json_string(&waiting, job_id);
-            text_add(&waiting, ",\"moves\":1}"); ok = ok && sse_json(fd, waiting.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14); free(waiting.data);
-            json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data);
-            json_free(listing); free(arena); free(list_raw); return ok;
-        }
+        /* A read tool: doc.read / fs_read_text / fs_metadata. */
         jval *path = json_get(args, "path");
-        TextBuffer call_event = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq++);
-        text_add(&call_event, "{\"seq\":"); text_add(&call_event, number); text_add(&call_event, ",\"type\":\"tool_call\",\"tool\":");
-        text_json_string(&call_event, name->str); text_add(&call_event, ",\"args\":"); text_add(&call_event, arguments->str); text_add(&call_event, "}");
-        if (!sse_json(fd, call_event.data)) { free(call_event.data); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
-        free(call_event.data);
+        char *rel = path && path->t == J_STR ? strdup(path->str) : strdup("");
+        TextBuffer ce = {0}; char nb[32]; snprintf(nb, sizeof(nb), "%d", seq++);
+        int e1 = text_add(&ce, "{\"seq\":") && text_add(&ce, nb) && text_add(&ce, ",\"type\":\"tool_call\",\"tool\":") &&
+                 text_json_string(&ce, name->str) && text_add(&ce, ",\"path\":") && text_json_string(&ce, rel) && text_add(&ce, "}");
+        int okc = e1 && sse_json(fd, ce.data); free(ce.data);
+        if (!okc) { free(rel); json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw); goto fail; }
         char *result = tool_result(g, folder, name->str, args);
-        snprintf(number, sizeof(number), "%d", seq++);
-        TextBuffer result_event = {0}; text_add(&result_event, "{\"seq\":"); text_add(&result_event, number);
-        text_add(&result_event, ",\"type\":\"tool_result\",\"tool\":"); text_json_string(&result_event, name->str);
-        text_add(&result_event, ",\"path\":"); text_json_string(&result_event, path && path->t == J_STR ? path->str : ""); text_add(&result_event, "}");
-        if (!result || !sse_json(fd, result_event.data)) { free(result_event.data); free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
-        free(result_event.data);
-        if (!text_add(&messages, ",")) { free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw); free(messages.data); goto fail; }
-        TextBuffer assistant = {0};
-        text_add(&assistant, "{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":"); text_json_string(&assistant, id->str);
-        text_add(&assistant, ",\"type\":\"function\",\"function\":{\"name\":"); text_json_string(&assistant, name->str);
-        text_add(&assistant, ",\"arguments\":"); text_json_string(&assistant, arguments->str); text_add(&assistant, "}}]}");
-        text_add(&messages, assistant.data); text_add(&messages, ",{\"role\":\"tool\",\"tool_call_id\":"); text_json_string(&messages, id->str);
-        text_add(&messages, ",\"name\":"); text_json_string(&messages, name->str); text_add(&messages, ",\"content\":"); text_json_string(&messages, result); text_add(&messages, "}");
-        free(assistant.data); free(result); json_free(args); free(args_arena); json_free(reply); free(reply_arena); free(reply_raw);
+        TextBuffer re = {0}; snprintf(nb, sizeof(nb), "%d", seq++);
+        int e3 = text_add(&re, "{\"seq\":") && text_add(&re, nb) && text_add(&re, ",\"type\":\"tool_result\",\"tool\":") &&
+                 text_json_string(&re, name->str) && text_add(&re, ",\"path\":") && text_json_string(&re, rel) && text_add(&re, "}");
+        int okr = result && e3 && sse_json(fd, re.data); free(re.data); free(rel);
+        if (!okr) { free(result); json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw); goto fail; }
+        int okm = ji_append_assistant(messages, id->str, name->str, arguments->str) &&
+                  text_add(messages, ",{\"role\":\"tool\",\"tool_call_id\":") && text_json_string(messages, id->str) &&
+                  text_add(messages, ",\"name\":") && text_json_string(messages, name->str) &&
+                  text_add(messages, ",\"content\":") && text_json_string(messages, result) && text_add(messages, "}");
+        free(result); json_free(args); free(aa); json_free(reply); free(ra); free(reply_raw);
+        if (!okm) goto fail;
+        save_convo(g, job_id, messages->data);
     }
-    free(messages.data);
-ask:
+    /* Round budget exhausted: an honest mechanical checkpoint, never a canned
+       question. State persists, so /v1/jobs/continue resumes in place (JI.3/6). */
+    save_phase(g, job_id, "D", JI_VERIFY_MAX_ROUNDS, 0, 0, JI_VERIFY_MAX_ROUNDS);
     {
-        TextBuffer paused = {0}; char number[32]; snprintf(number, sizeof(number), "%d", seq);
-        const char *question = (contains_case(goal, "cat") || contains_case(goal, "pet")) ?
-            "I could not identify the right record yet. What is your pet's name?" :
-            "What filename, name, date, or phrase should I use to narrow the search?";
-        text_add(&paused, "{\"seq\":"); text_add(&paused, number); text_add(&paused, ",\"type\":\"await_user\",\"job_id\":");
-        text_json_string(&paused, job_id); text_add(&paused, ",\"question\":"); text_json_string(&paused, question); text_add(&paused, "}");
-        int ok = sse_json(fd, paused.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
-        free(paused.data); json_free(listing); free(arena); free(list_raw); return ok;
+        TextBuffer ac = {0}; char nb[32]; snprintf(nb, sizeof(nb), "%d", seq);
+        int e2 = text_add(&ac, "{\"seq\":") && text_add(&ac, nb) &&
+                 text_add(&ac, ",\"type\":\"await_continue\",\"job_id\":") && text_json_string(&ac, job_id) &&
+                 text_add(&ac, ",\"rounds_spent\":") && text_add(&ac, "24") && text_add(&ac, "}");
+        int ok = e2 && sse_json(fd, ac.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        free(ac.data); free(messages->data); return ok;
     }
+no_finish:
+    sse_json(fd, "{\"type\":\"error\",\"code\":\"model_no_finish\",\"message\":\"The search ended without a finish call.\"}");
+    samosa_send_all(fd, "data: [DONE]\n\n", 14);
+    free(messages->data); return 0;
 model_fail:
     sse_json(fd, "{\"type\":\"error\",\"message\":\"The model could not complete this file search.\"}");
     samosa_send_all(fd, "data: [DONE]\n\n", 14);
 fail:
-    json_free(listing); free(arena); free(list_raw); return 0;
+    free(messages->data); return 0;
+}
+
+/* Fresh find job: list the folder, triage every filename (Phase A), seed the
+   verify conversation with the goal + survivors, then run the loop. */
+static int find_start(Gateway *g, int fd, const char *goal, const char *folder,
+                      const char *job_id, int seq) {
+    char *argv[] = {g->samosa_fs, "list", "--max-file-bytes", "104857600", (char *)folder, NULL};
+    int status = 0; char *list_raw = run_capture(g, g->samosa_fs, argv, 16 << 20, &status);
+    char *arena = NULL; jval *listing = list_raw ? json_parse(list_raw, &arena) : NULL;
+    jval *items = listing && listing->t == J_OBJ ? json_get(listing, "items") : NULL;
+    if (!items || items->t != J_ARR || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        json_free(listing); free(arena); free(list_raw);
+        sse_json(fd, "{\"type\":\"error\",\"message\":\"The folder index could not be built.\"}");
+        samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        return 0;
+    }
+    char ev[128]; snprintf(ev, sizeof(ev), "{\"seq\":%d,\"type\":\"indexing\",\"total\":%d}", seq++, items->len);
+    if (!sse_json(fd, ev)) { json_free(listing); free(arena); free(list_raw); return 0; }
+    TextBuffer survivors = {0}; int scount = 0, checked = 0;
+    if (!find_triage(g, fd, goal, folder, items, job_id, &survivors, &scount, &checked, &seq)) {
+        free(survivors.data); json_free(listing); free(arena); free(list_raw);
+        sse_json(fd, "{\"type\":\"error\",\"message\":\"Filename triage failed.\"}");
+        samosa_send_all(fd, "data: [DONE]\n\n", 14);
+        return 0;
+    }
+    TextBuffer user = {0};
+    int ok = text_add(&user, "Goal: ") && text_add(&user, goal) && text_add(&user, "\n\n");
+    if (ok && scount > 0)
+        ok = text_add(&user, "Plausible files after filename triage (read them to confirm or reject):\n") &&
+             text_add(&user, survivors.data ? survivors.data : "");
+    else if (ok)
+        ok = text_add(&user, "Filename triage flagged no plausible files by name. If the goal implies content that a filename could hide, reading is still worthwhile; otherwise finish with no matches.\n");
+    free(survivors.data);
+    TextBuffer messages = {0};
+    if (ok) ok = text_add(&messages, "{\"role\":\"system\",\"content\":") && text_json_string(&messages, ji_verify_system) &&
+                 text_add(&messages, "},{\"role\":\"user\",\"content\":") && text_json_string(&messages, user.data) && text_add(&messages, "}");
+    free(user.data);
+    json_free(listing); free(arena); free(list_raw);
+    if (!ok) { free(messages.data); sse_json(fd, "{\"type\":\"error\",\"message\":\"The search could not start.\"}"); samosa_send_all(fd, "data: [DONE]\n\n", 14); return 0; }
+    save_convo(g, job_id, messages.data);
+    save_phase(g, job_id, "D", 0, items->len, scount, 0);
+    return find_loop(g, fd, goal, folder, job_id, &messages, seq);
+}
+
+/* Pending ask_user tool-call id from the persisted conversation (heap), or NULL
+   when the last message is not a model question awaiting an answer. */
+static char *ji_pending_ask_id(const char *convo_inner) {
+    TextBuffer wrap = {0};
+    if (!text_add(&wrap, "[") || !text_add(&wrap, convo_inner) || !text_add(&wrap, "]")) { free(wrap.data); return NULL; }
+    char *arena = NULL; jval *arr = json_parse(wrap.data, &arena); free(wrap.data);
+    char *out = NULL;
+    if (arr && arr->t == J_ARR && arr->len) {
+        jval *last = arr->kids[arr->len - 1];
+        jval *tc = last && last->t == J_OBJ ? json_get(last, "tool_calls") : NULL;
+        jval *c0 = tc && tc->t == J_ARR && tc->len ? tc->kids[0] : NULL;
+        jval *fn = c0 && c0->t == J_OBJ ? json_get(c0, "function") : NULL;
+        jval *nm = fn && fn->t == J_OBJ ? json_get(fn, "name") : NULL;
+        jval *id = c0 && c0->t == J_OBJ ? json_get(c0, "id") : NULL;
+        if (nm && nm->t == J_STR && !strcmp(nm->str, "ask_user") && id && id->t == J_STR) out = strdup(id->str);
+    }
+    json_free(arr); free(arena); return out;
 }
 
 static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder,
@@ -2531,8 +2843,8 @@ static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder,
     used += (size_t)snprintf(event + used, sizeof(event) - used, "}}");
     if (!sse_json(fd, event)) goto fail;
     if (is_find) {
-        int ok = jobs_find(g, fd, goal, folder, survey, job_id, 4);
-        json_free(survey); free(arena); free(raw); return ok;
+        json_free(survey); free(arena); free(raw);
+        return find_start(g, fd, goal, folder, job_id, 4);
     }
     event[0] = 0; used = (size_t)snprintf(event, sizeof(event),
         "{\"seq\":4,\"type\":\"report\",\"total\":%d,\"by_type\":{", (int)total->num);
@@ -2570,11 +2882,14 @@ static int jobs_run(Gateway *g, int fd, const SamosaHttpRequest *request) {
     free(goal_copy); free(folder_copy); return result;
 }
 
+/* JI.6: the user's answer to a model question re-enters the verify loop as the
+   tool result of the pending ask_user call. The goal is never mutated and the
+   run-1 conversation is preserved intact — the RC3/RC4 fix. */
 static int jobs_answer(Gateway *g, int fd, const SamosaHttpRequest *request) {
     char *arena = NULL; jval *root = json_parse(request->body, &arena);
     jval *id = root && root->t == J_OBJ ? json_get(root, "job_id") : NULL;
     jval *answer = root && root->t == J_OBJ ? json_get(root, "answer") : NULL;
-    if (!id || id->t != J_STR || !answer || answer->t != J_STR || !*answer->str) {
+    if (!id || id->t != J_STR || !valid_job_id(id->str) || !answer || answer->t != J_STR || !*answer->str) {
         json_free(root); free(arena);
         return samosa_http_json_error(fd, 400, "invalid_answer", "job_id and answer are required.");
     }
@@ -2585,13 +2900,50 @@ static int jobs_answer(Gateway *g, int fd, const SamosaHttpRequest *request) {
         free(answer_copy); free(goal); free(folder);
         return samosa_http_json_error(fd, 404, "job_not_found", "That paused job is unavailable.");
     }
-    TextBuffer expanded = {0};
-    int built = text_add(&expanded, goal) && text_add(&expanded, "\nAdditional detail from the user: ") &&
-                text_add(&expanded, answer_copy);
-    free(answer_copy); free(goal);
-    if (!built) { free(expanded.data); free(folder); return 0; }
-    int ok = jobs_report(g, fd, expanded.data, folder, job_id);
-    free(expanded.data); free(folder); return ok;
+    char *convo = load_convo(g, job_id);
+    char *pending = convo ? ji_pending_ask_id(convo) : NULL;
+    if (!convo || !pending) {
+        free(convo); free(pending); free(answer_copy); free(goal); free(folder);
+        return samosa_http_json_error(fd, 409, "no_pending_question", "That job is not waiting on an answer.");
+    }
+    TextBuffer messages = {0};
+    int built = text_add(&messages, convo) &&
+                text_add(&messages, ",{\"role\":\"tool\",\"tool_call_id\":") && text_json_string(&messages, pending) &&
+                text_add(&messages, ",\"name\":\"ask_user\",\"content\":") && text_json_string(&messages, answer_copy) &&
+                text_add(&messages, "}");
+    free(convo); free(pending); free(answer_copy);
+    if (!built) { free(messages.data); free(goal); free(folder); return samosa_http_json_error(fd, 500, "resume_failed", "The job could not be resumed."); }
+    if (!samosa_http_stream_headers(fd)) { free(messages.data); free(goal); free(folder); return 0; }
+    save_convo(g, job_id, messages.data);
+    int ok = find_loop(g, fd, goal, folder, job_id, &messages, 100);
+    free(goal); free(folder); return ok;
+}
+
+/* JI.6: the Continue button (budget checkpoints, crash recovery). Reloads the
+   persisted conversation and re-enters the loop with no new message. */
+static int jobs_continue(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *root = json_parse(request->body, &arena);
+    jval *id = root && root->t == J_OBJ ? json_get(root, "job_id") : NULL;
+    if (!id || id->t != J_STR || !valid_job_id(id->str)) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_continue", "job_id is required.");
+    }
+    char job_id[128]; path_copy(job_id, sizeof(job_id), id->str);
+    char *goal = NULL, *folder = NULL;
+    json_free(root); free(arena);
+    if (!load_job_state(g, job_id, &goal, &folder)) {
+        free(goal); free(folder);
+        return samosa_http_json_error(fd, 404, "job_not_found", "That paused job is unavailable.");
+    }
+    char *convo = load_convo(g, job_id);
+    if (!convo) { free(convo); free(goal); free(folder); return samosa_http_json_error(fd, 409, "nothing_to_continue", "That job has no saved conversation."); }
+    TextBuffer messages = {0};
+    int built = text_add(&messages, convo);
+    free(convo);
+    if (!built) { free(messages.data); free(goal); free(folder); return samosa_http_json_error(fd, 500, "resume_failed", "The job could not be resumed."); }
+    if (!samosa_http_stream_headers(fd)) { free(messages.data); free(goal); free(folder); return 0; }
+    int ok = find_loop(g, fd, goal, folder, job_id, &messages, 100);
+    free(goal); free(folder); return ok;
 }
 
 static int review_pending(jval *record) {
@@ -3309,6 +3661,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return jobs_run(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/answer"))
         return jobs_answer(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/continue"))
+        return jobs_continue(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/review"))
         return jobs_review(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/review/correct"))
