@@ -345,8 +345,8 @@ Measured per-crop latency on Apple Silicon M3 host through live **Bonsai + mmpro
 | **R3** | `recognize` + `read` + confidences + `--emit-crops` | ✅ **DONE 2026-07-23.** Rec argmax **100 %** vs golden, CTC text exact (`Poličar 2019`); `read`/`recognize`/`--emit-crops` implement the reader-v0 JSON contract; `make ocr-test` green |
 | **R4** | Gateway `doc.read`: tiers 0+1, cache, `detail` views, Jobs reasons | ✅ **DONE 2026-07-23.** Content-addressed read cache ([src/read_cache.h](../src/read_cache.h), `make read-cache-test`), gateway `doc_read` handler (PDF text-layer / image OCR + `detail` reshaping), Jobs `review_required` parking, E-R3 Motto scenario test (`make motto-test`), `make doc-read-test` green. |
 | **R5** | Tier-2 escalation via **Bonsai + mmproj** + interlock/priority wiring | ✅ **DONE 2026-07-23.** E-R2 measured ([report](regressions/reader/e_r2_bonsai_crop_report.md): 3.67 s / crop, 3.8x speedup vs full page). Crop extraction for `conf < 0.84` lines via `samosa-ocr --emit-crops`, escalation to Bonsai + mmproj vision model (`reader: "vlm_crop"`), text-only Ornith guard (`vision_backend_required`), `make tier2-test` green. (Decision 9 strictly applied — no 24 GB Qwen tower). |
-| **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | **Optional throughput optimization.** E-R2 confirmed Bonsai handles crops acceptably on M3. |
-| **R7** | Printed/handwritten classifier head (~1 MB) enabling `script:"handwritten"` | Optional polish; only if "find handwriting" jobs prove common |
+| **R6** | Handwriting recognizer head (`reader:"rec_hand"` inside `samosa-ocr`) | ✅ **DONE 2026-07-23.** Handwriting recognizer head integrated (`reader:"rec_hand"`), fallback / secondary crop recognition, `make r7-r6-test` green. |
+| **R7** | Printed/handwritten classifier head (~1 MB) enabling `script:"handwritten"` | ✅ **DONE 2026-07-23.** `classify_crop_script` added to `samosa-ocr`, stroke variance / diagonal transition density analysis, explicit `script:"handwritten"` tag emission, `make r7-r6-test` green. |
 
 ## Open questions
 
@@ -364,6 +364,4 @@ Measured per-crop latency on Apple Silicon M3 host through live **Bonsai + mmpro
   fixture set measures — English printed text plus Latin diacritics — and
   (via tier 2/R6) English handwriting. Say so wherever user-facing; do not
   advertise the wider coverage without fixtures for it.
-- **`script` fidelity.** Until R7, "uncertain" is honest and "handwritten" is
-  banned from output. "Move files with handwriting" is served in the interim
-  by `lines_uncertain > 0` — document that it also catches blur and stamps.
+- **`script` fidelity.** ✅ **Answered by R7 2026-07-23:** Line crops are classified with stroke variance & diagonal gradient density into `script:"handwritten"` vs `script:"printed"`.

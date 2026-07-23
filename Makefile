@@ -91,6 +91,10 @@ motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_
 tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_escalation.sh
 	sh tests/test_tier2_escalation.sh
 
+# r7-r6-test: offline gate for R7 classifier and R6 rec_hand handwriting recognizer head.
+r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
+	sh tests/test_r7_r6_handwriting.sh
+
 samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \

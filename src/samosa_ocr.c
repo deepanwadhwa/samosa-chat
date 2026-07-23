@@ -94,6 +94,13 @@ static Pack *pack_open(const char *path) {
     return p;
 }
 
+static void pack_free(Pack *p) {
+    if (!p) return;
+    free(p->raw);
+    free(p->ents);
+    free(p);
+}
+
 static const float *pack_get(Pack *p, const char *name, int *shape, int *ndim) {
     for (int i = 0; i < p->n_ents; i++)
         if (strcmp(p->ents[i].name, name) == 0) {
@@ -773,8 +780,38 @@ static int recognize_crop(Pack *rp, Charset *cs, const unsigned char *crop, int 
     return 0;
 }
 
+static const char *classify_crop_script(const unsigned char *bgr, int w, int h, float conf) {
+    if (conf >= 0.84f) return "printed";
+    if (!bgr || w < 4 || h < 4) return "uncertain";
+    
+    double mean = 0.0, var = 0.0, diag_trans = 0.0;
+    int total = w * h;
+    for (int i = 0; i < total; i++) {
+        double gray = (bgr[i*3] + bgr[i*3+1] + bgr[i*3+2]) / 3.0;
+        mean += gray;
+    }
+    mean /= total;
+    for (int i = 0; i < total; i++) {
+        double gray = (bgr[i*3] + bgr[i*3+1] + bgr[i*3+2]) / 3.0;
+        var += (gray - mean) * (gray - mean);
+    }
+    var /= total;
+
+    for (int y = 0; y < h - 1; y++) {
+        for (int x = 0; x < w - 1; x++) {
+            double g1 = (bgr[(y * w + x) * 3] + bgr[(y * w + x) * 3 + 1] + bgr[(y * w + x) * 3 + 2]) / 3.0;
+            double g2 = (bgr[((y + 1) * w + (x + 1)) * 3] + bgr[((y + 1) * w + (x + 1)) * 3 + 1] + bgr[((y + 1) * w + (x + 1)) * 3 + 2]) / 3.0;
+            if (fabs(g1 - g2) > 40.0) diag_trans += 1.0;
+        }
+    }
+    double trans_density = diag_trans / (w * h);
+    if (var > 1200.0 && trans_density > 0.08) return "handwritten";
+    return "uncertain";
+}
+
 static int cmd_read(const char *dir, const char *image, const char *emit_dir, float below) {
     Pack *dp = open_pack_role(dir, "det"), *rp = open_pack_role(dir, "rec");
+    Pack *hp = open_pack_role(dir, "rec_hand");
     if (!dp || !rp) return die("ocr_unavailable", 65), 65;
     Charset cs = charset_load(dir);
     if (!cs.n) return die("ocr_unavailable", 65), 65;
@@ -797,19 +834,36 @@ static int cmd_read(const char *dir, const char *image, const char *emit_dir, fl
         if (!c) continue;
         char text[4096]; float conf; recognize_crop(rp, &cs, c, cw, chh, mwr, text, sizeof text, &conf);
         char esc[8192]; json_escape(text, esc, sizeof esc);
-        const char *script = conf >= 0.84f ? "printed" : "uncertain";
-        const char *reader = conf >= 0.84f ? "rec_print" : "vlm_crop";
+        const char *script = classify_crop_script(c, cw, chh, conf);
+        const char *reader = "vlm_crop";
+        if (conf >= 0.84f) {
+            reader = "rec_print";
+        } else if (!strcmp(script, "handwritten")) {
+            if (hp) {
+                float hconf = 0.0f;
+                char htext[4096];
+                recognize_crop(hp, &cs, c, cw, chh, mwr, htext, sizeof htext, &hconf);
+                if (hconf > conf) {
+                    conf = hconf;
+                    json_escape(htext, esc, sizeof esc);
+                }
+            }
+            reader = "rec_hand";
+        }
         printf("%s{\"bbox\":[%d,%d,%d,%d],\"text\":\"%s\",\"conf\":%.4f,\"script\":\"%s\",\"reader\":\"%s\"}",
                i ? "," : "", boxes[i].x0, boxes[i].y0, boxes[i].x1, boxes[i].y1, esc, conf, script, reader);
         if (emit_dir && conf < below) {
             char cp[1200]; snprintf(cp, sizeof cp, "%s/crop_%03d.ppm", emit_dir, i);
             FILE *cf = fopen(cp, "wb");
             if (cf) { fprintf(cf, "P6\n%d %d\n255\n", cw, chh);
-                for (int q = 0; q < cw * chh; q++) { unsigned char rgb[3] = {c[q*3+2], c[q*3+1], c[q*3]}; fwrite(rgb, 1, 3, cf); }
+                for (int q = 0; q < cw * chh; q++) { unsigned char rgb[3] = {c[q*3+2], c[q*3+1], c[q*3]} ; fwrite(rgb, 1, 3, cf); }
                 fclose(cf); chmod(cp, 0600); emitted++; }
         }
         free(c);
     }
+    if (hp) pack_free(hp);
+    pack_free(dp);
+    pack_free(rp);
     printf("],\"emitted_crops\":%d}\n", emitted);
     free(im.bgr);
     return 0;
