@@ -27,6 +27,7 @@
 
 #include "json.h"
 #include "samosa_http.h"
+#include "read_cache.h"
 
 typedef struct {
     SamosaHttpServer *server;
@@ -55,6 +56,7 @@ typedef struct {
     char ornith_model[PATH_MAX];
     char samosa_fs[PATH_MAX];
     char samosa_extract[PATH_MAX];
+    char samosa_ocr[PATH_MAX];
     char backend_log[PATH_MAX];
     char selection_file[PATH_MAX];
 } Gateway;
@@ -1891,6 +1893,310 @@ static int build_candidates(const char *goal, jval *items, TextBuffer *out, int 
     return 1;
 }
 
+static char *reshape_doc_read_result(const char *full_lines_json, const char *requested_detail, int page_start, int page_count_req) {
+    char *arena = NULL;
+    jval *root = json_parse(full_lines_json, &arena);
+    if (!root || root->t != J_OBJ) {
+        if (arena) free(arena);
+        if (root) json_free(root);
+        return strdup(full_lines_json);
+    }
+    jval *ok_v = json_get(root, "ok");
+    if (!ok_v || ok_v->t != J_BOOL || !ok_v->boolean) {
+        json_free(root); free(arena);
+        return strdup(full_lines_json);
+    }
+    jval *pages_v = json_get(root, "pages");
+    int total_pages = pages_v && pages_v->t == J_ARR ? pages_v->len : 0;
+    
+    int start_idx = page_start - 1;
+    if (start_idx < 0) start_idx = 0;
+    if (start_idx > total_pages) start_idx = total_pages;
+    int end_idx = total_pages;
+    if (page_count_req > 0 && start_idx + page_count_req < total_pages) {
+        end_idx = start_idx + page_count_req;
+    }
+
+    TextBuffer out = {0};
+    text_add(&out, "{\"ok\":true,\"page_count\":");
+    char numbuf[32];
+    snprintf(numbuf, sizeof(numbuf), "%d", total_pages);
+    text_add(&out, numbuf);
+
+    TextBuffer text_buf = {0};
+    int any_unc = 0;
+    int needs_rev = 0;
+
+    text_add(&out, ",\"pages\":[");
+    int emitted_p = 0;
+    for (int i = start_idx; i < end_idx; i++) {
+        jval *p = pages_v->kids[i];
+        jval *p_idx = json_get(p, "index");
+        jval *p_src = json_get(p, "source");
+        jval *p_lt = json_get(p, "lines_total");
+        jval *p_lu = json_get(p, "lines_uncertain");
+        jval *p_mc = json_get(p, "min_conf");
+        jval *p_nr = json_get(p, "needs_review");
+        jval *p_lines = json_get(p, "lines");
+
+        if (p_lu && p_lu->num > 0) any_unc = 1;
+        if (p_nr && p_nr->t == J_BOOL && p_nr->boolean) needs_rev = 1;
+
+        if (emitted_p > 0) text_add(&out, ",");
+        text_add(&out, "{\"index\":");
+        snprintf(numbuf, sizeof(numbuf), "%d", p_idx ? (int)p_idx->num : (i + 1));
+        text_add(&out, numbuf);
+        text_add(&out, ",\"source\":");
+        text_json_string(&out, p_src && p_src->t == J_STR ? p_src->str : "ocr");
+        text_add(&out, ",\"lines_total\":");
+        snprintf(numbuf, sizeof(numbuf), "%d", p_lt ? (int)p_lt->num : 0);
+        text_add(&out, numbuf);
+        text_add(&out, ",\"lines_uncertain\":");
+        snprintf(numbuf, sizeof(numbuf), "%d", p_lu ? (int)p_lu->num : 0);
+        text_add(&out, numbuf);
+        text_add(&out, ",\"min_conf\":");
+        snprintf(numbuf, sizeof(numbuf), "%.4f", p_mc ? p_mc->num : 1.0);
+        text_add(&out, numbuf);
+        text_add(&out, ",\"needs_review\":");
+        text_add(&out, (p_nr && p_nr->boolean) ? "true" : "false");
+
+        if (p_lines && p_lines->t == J_ARR) {
+            for (int l = 0; l < p_lines->len; l++) {
+                jval *ltxt = json_get(p_lines->kids[l], "text");
+                if (ltxt && ltxt->t == J_STR) {
+                    if (text_buf.len > 0) text_add(&text_buf, "\n");
+                    text_add(&text_buf, ltxt->str);
+                }
+            }
+        }
+
+        if (!strcmp(requested_detail, "lines") && p_lines && p_lines->t == J_ARR) {
+            text_add(&out, ",\"lines\":");
+            text_json_value(&out, p_lines);
+        }
+
+        text_add(&out, "}");
+        emitted_p++;
+    }
+    text_add(&out, "],\"text\":");
+    text_json_string(&out, text_buf.data ? text_buf.data : "");
+    text_add(&out, ",\"any_uncertain\":");
+    text_add(&out, any_unc ? "true" : "false");
+    text_add(&out, ",\"needs_review\":");
+    text_add(&out, needs_rev ? "true" : "false");
+    text_add(&out, "}");
+
+    free(text_buf.data);
+    json_free(root); free(arena);
+    return out.data;
+}
+
+static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
+    const char *detail = "text";
+    jval *detail_v = args ? json_get(args, "detail") : NULL;
+    if (detail_v && detail_v->t == J_STR && (!strcmp(detail_v->str, "lines") || !strcmp(detail_v->str, "text"))) {
+        detail = detail_v->str;
+    }
+    int page_start = 1, page_count_req = -1;
+    jval *pages_v = args ? json_get(args, "pages") : NULL;
+    if (pages_v && pages_v->t == J_ARR && pages_v->len >= 2) {
+        if (pages_v->kids[0]->t == J_NUM) page_start = (int)pages_v->kids[0]->num;
+        if (pages_v->kids[1]->t == J_NUM) page_count_req = (int)pages_v->kids[1]->num;
+        if (page_start < 1) page_start = 1;
+        if (page_count_req < 1 || page_count_req > 5) page_count_req = 5;
+    }
+    int refresh = 0;
+    jval *refresh_v = args ? json_get(args, "refresh") : NULL;
+    if (refresh_v && refresh_v->t == J_BOOL) refresh = refresh_v->boolean;
+
+    char hex_key[65];
+    if (read_cache_key_file(absolute, hex_key) != 0) {
+        return strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
+    }
+    char cache_root[PATH_MAX];
+    read_cache_default_root(cache_root, sizeof(cache_root));
+    const char *contract_ver = "reader-v0";
+    const char *pack_fp = "reader-v0-small";
+
+    char *cached_lines_json = NULL;
+    if (!refresh) {
+        cached_lines_json = read_cache_get(cache_root, hex_key, contract_ver, pack_fp);
+    }
+    if (cached_lines_json) {
+        char *res = reshape_doc_read_result(cached_lines_json, detail, page_start, page_count_req);
+        free(cached_lines_json);
+        return res;
+    }
+
+    size_t path_len = strlen(absolute);
+    int is_pdf = (path_len >= 4 && strcasecmp(absolute + path_len - 4, ".pdf") == 0);
+
+    TextBuffer full_lines = {0};
+
+    if (is_pdf) {
+        char *argv_ext[] = {g->samosa_extract, "--json-pages", (char *)absolute, "1", "100", NULL};
+        int status_ext = 0;
+        char *ext_raw = run_capture(g, g->samosa_extract, argv_ext, 16 << 20, &status_ext);
+        if (!ext_raw || !WIFEXITED(status_ext) || WEXITSTATUS(status_ext) != 0) {
+            free(ext_raw);
+            return strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
+        }
+        char *arena_ext = NULL;
+        jval *ext_json = json_parse(ext_raw, &arena_ext);
+        if (!ext_json || json_get(ext_json, "ok") == NULL || !json_get(ext_json, "ok")->boolean) {
+            jval *err_v = ext_json ? json_get(ext_json, "error") : NULL;
+            char err_buf[256];
+            snprintf(err_buf, sizeof(err_buf), "{\"ok\":false,\"error\":\"%s\"}",
+                     err_v && err_v->t == J_STR ? err_v->str : "image_invalid");
+            json_free(ext_json); free(arena_ext); free(ext_raw);
+            return strdup(err_buf);
+        }
+
+        jval *pages_arr = json_get(ext_json, "pages");
+        int num_pages = pages_arr && pages_arr->t == J_ARR ? pages_arr->len : 0;
+        jval *pc_v = json_get(ext_json, "page_count");
+        int total_doc_pages = pc_v ? (int)pc_v->num : num_pages;
+
+        text_add(&full_lines, "{\"ok\":true,\"page_count\":");
+        char numbuf[32]; snprintf(numbuf, sizeof(numbuf), "%d", total_doc_pages);
+        text_add(&full_lines, numbuf);
+        text_add(&full_lines, ",\"pages\":[");
+
+        for (int p = 0; p < num_pages; p++) {
+            jval *p_obj = pages_arr->kids[p];
+            jval *p_chars = json_get(p_obj, "text_chars");
+            jval *p_toks = json_get(p_obj, "tokens");
+            jval *p_rf = json_get(p_obj, "has_raster_figure");
+            jval *p_txt = json_get(p_obj, "text");
+
+            int chars = p_chars ? (int)p_chars->num : 0;
+            int toks = p_toks ? (int)p_toks->num : 0;
+            int has_rf = p_rf ? p_rf->boolean : 0;
+
+            int needs_image = (toks > 0 ? (toks < 20) : (chars < 50)) || has_rf;
+
+            if (p > 0) text_add(&full_lines, ",");
+            text_add(&full_lines, "{\"index\":");
+            snprintf(numbuf, sizeof(numbuf), "%d", p + 1);
+            text_add(&full_lines, numbuf);
+
+            if (!needs_image && p_txt && p_txt->t == J_STR) {
+                text_add(&full_lines, ",\"source\":\"text_layer\"");
+                int line_cnt = 0;
+                const char *s = p_txt->str;
+                while (*s) {
+                    const char *next = strchr(s, '\n');
+                    line_cnt++;
+                    if (!next) break;
+                    s = next + 1;
+                }
+                snprintf(numbuf, sizeof(numbuf), "%d", line_cnt);
+                text_add(&full_lines, ",\"lines_total\":"); text_add(&full_lines, numbuf);
+                text_add(&full_lines, ",\"lines_uncertain\":0,\"min_conf\":1.0000,\"needs_review\":false,\"lines\":[");
+                s = p_txt->str;
+                int l_idx = 0;
+                while (*s) {
+                    const char *next = strchr(s, '\n');
+                    size_t len = next ? (size_t)(next - s) : strlen(s);
+                    char *line_buf = malloc(len + 1);
+                    memcpy(line_buf, s, len); line_buf[len] = 0;
+                    if (l_idx > 0) text_add(&full_lines, ",");
+                    text_add(&full_lines, "{\"bbox\":[0,0,0,0],\"text\":");
+                    text_json_string(&full_lines, line_buf);
+                    text_add(&full_lines, ",\"conf\":1.0000,\"script\":\"printed\",\"reader\":\"text_layer\"}");
+                    free(line_buf);
+                    l_idx++;
+                    if (!next) break;
+                    s = next + 1;
+                }
+                text_add(&full_lines, "]");
+            } else {
+                char tmp_ppm[PATH_MAX];
+                snprintf(tmp_ppm, sizeof(tmp_ppm), "%s/doc_read_%d_p%d.ppm", g->home, (int)getpid(), p + 1);
+                char p_str[24]; snprintf(p_str, sizeof(p_str), "%d", p + 1);
+                char *argv_rnd[] = {g->samosa_extract, "--render-ppm", (char *)absolute, p_str, tmp_ppm, NULL};
+                int status_rnd = 0;
+                char *rnd_raw = run_capture(g, g->samosa_extract, argv_rnd, 1 << 20, &status_rnd);
+                free(rnd_raw);
+
+                char *argv_ocr[] = {g->samosa_ocr, "read", tmp_ppm, NULL};
+                int status_ocr = 0;
+                char *ocr_raw = run_capture(g, g->samosa_ocr, argv_ocr, 16 << 20, &status_ocr);
+                unlink(tmp_ppm);
+
+                if (!ocr_raw || !WIFEXITED(status_ocr) || WEXITSTATUS(status_ocr) != 0) {
+                    free(ocr_raw); json_free(ext_json); free(arena_ext); free(ext_raw);
+                    free(full_lines.data);
+                    return strdup("{\"ok\":false,\"error\":\"ocr_unavailable\"}");
+                }
+
+                char *arena_ocr = NULL;
+                jval *ocr_json = json_parse(ocr_raw, &arena_ocr);
+                jval *lines_arr = ocr_json ? json_get(ocr_json, "lines") : NULL;
+
+                int l_tot = lines_arr && lines_arr->t == J_ARR ? lines_arr->len : 0;
+                int l_unc = 0;
+                double min_c = 1.0;
+                for (int i = 0; i < l_tot; i++) {
+                    jval *cf = json_get(lines_arr->kids[i], "conf");
+                    double c = cf ? cf->num : 0.0;
+                    if (c < 0.84) l_unc++;
+                    if (i == 0 || c < min_c) min_c = c;
+                }
+                text_add(&full_lines, ",\"source\":\"ocr\",");
+                snprintf(numbuf, sizeof(numbuf), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
+                         l_tot, l_unc, min_c, l_unc > 0 ? "true" : "false");
+                text_add(&full_lines, numbuf);
+                if (lines_arr) text_json_value(&full_lines, lines_arr);
+                else text_add(&full_lines, "[]");
+
+                json_free(ocr_json); free(arena_ocr); free(ocr_raw);
+            }
+            text_add(&full_lines, "}");
+        }
+        text_add(&full_lines, "]}");
+        json_free(ext_json); free(arena_ext); free(ext_raw);
+    } else {
+        char *argv_ocr[] = {g->samosa_ocr, "read", (char *)absolute, NULL};
+        int status_ocr = 0;
+        char *ocr_raw = run_capture(g, g->samosa_ocr, argv_ocr, 16 << 20, &status_ocr);
+        if (!ocr_raw || !WIFEXITED(status_ocr) || WEXITSTATUS(status_ocr) != 0) {
+            free(ocr_raw);
+            free(full_lines.data);
+            return strdup("{\"ok\":false,\"error\":\"ocr_unavailable\"}");
+        }
+        char *arena_ocr = NULL;
+        jval *ocr_json = json_parse(ocr_raw, &arena_ocr);
+        jval *lines_arr = ocr_json ? json_get(ocr_json, "lines") : NULL;
+
+        int l_tot = lines_arr && lines_arr->t == J_ARR ? lines_arr->len : 0;
+        int l_unc = 0;
+        double min_c = 1.0;
+        for (int i = 0; i < l_tot; i++) {
+            jval *cf = json_get(lines_arr->kids[i], "conf");
+            double c = cf ? cf->num : 0.0;
+            if (c < 0.84) l_unc++;
+            if (i == 0 || c < min_c) min_c = c;
+        }
+        text_add(&full_lines, "{\"ok\":true,\"page_count\":1,\"pages\":[{\"index\":1,\"source\":\"ocr\",");
+        char numbuf[128];
+        snprintf(numbuf, sizeof(numbuf), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
+                 l_tot, l_unc, min_c, l_unc > 0 ? "true" : "false");
+        text_add(&full_lines, numbuf);
+        if (lines_arr) text_json_value(&full_lines, lines_arr);
+        else text_add(&full_lines, "[]");
+        text_add(&full_lines, "}]}");
+
+        json_free(ocr_json); free(arena_ocr); free(ocr_raw);
+    }
+
+    read_cache_put(cache_root, hex_key, contract_ver, pack_fp, full_lines.data);
+
+    char *res = reshape_doc_read_result(full_lines.data, detail, page_start, page_count_req);
+    free(full_lines.data);
+    return res;
+}
+
 static char *tool_result(Gateway *g, const char *folder, const char *name, jval *args) {
     jval *path = args && args->t == J_OBJ ? json_get(args, "path") : NULL;
     char absolute[PATH_MAX];
@@ -1918,6 +2224,7 @@ static char *tool_result(Gateway *g, const char *folder, const char *name, jval 
         if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); return strdup("Those document pages could not be extracted."); }
         return raw;
     }
+    if (!strcmp(name, "doc.read") || !strcmp(name, "doc_read")) return doc_read_handler(g, absolute, args);
     return strdup("Unknown tool request.");
 }
 
@@ -1925,6 +2232,7 @@ static const char *find_tools_json =
     "[{\"type\":\"function\",\"function\":{\"name\":\"fs_metadata\",\"description\":\"Check one candidate file's type, size and metadata without reading its content\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
     "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_text\",\"description\":\"Read at most 8192 characters from one selected plain text candidate\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},"
     "{\"type\":\"function\",\"function\":{\"name\":\"fs_read_pages\",\"description\":\"Read 1 to 5 consecutive pages from one selected PDF; request another range only if needed\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"start\":{\"type\":\"integer\",\"minimum\":1},\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":5}},\"required\":[\"path\",\"start\",\"count\"]}}},"
+    "{\"type\":\"function\",\"function\":{\"name\":\"doc.read\",\"description\":\"Read document text using tiered OCR and text layer fallback\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"text\",\"lines\"]},\"pages\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"refresh\":{\"type\":\"boolean\"}},\"required\":[\"path\"]}}},"
     "{\"type\":\"function\",\"function\":{\"name\":\"ask_user\",\"description\":\"Ask one clarifying question when the indexed candidates are not reliable\",\"parameters\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"}},\"required\":[\"question\"]}}},"
     "{\"type\":\"function\",\"function\":{\"name\":\"fs_move\",\"description\":\"Stage one confirmed matching file to move after user approval\",\"parameters\":{\"type\":\"object\",\"properties\":{\"src\":{\"type\":\"string\"},\"dst\":{\"type\":\"string\"}},\"required\":[\"src\",\"dst\"]}}}]";
 
@@ -2988,6 +3296,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(ornith_model, "SAMOSA_ORNITH_MODEL", "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf");
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
+    ENV_PATH(samosa_ocr, "SAMOSA_OCR", "current/bin/samosa-ocr");
 #undef ENV_PATH
     const char *jobs_root = getenv("SAMOSA_JOBS_ROOT");
     if (jobs_root ? !path_copy(g->jobs_root, sizeof(g->jobs_root), jobs_root) :

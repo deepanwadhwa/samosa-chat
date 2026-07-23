@@ -58,6 +58,13 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":"
             "\"Found Miso's record at miso-record.txt.\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "find cat image document with doc.read") && !strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_compiled_doc_read\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"doc.read\",\"arguments\":\"{\\\"path\\\":\\\"cat-medical-note.png\\\",\\\"detail\\\":\\\"lines\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "local file-finding job") && !strstr(request->body, "\"role\":\"tool\""))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","

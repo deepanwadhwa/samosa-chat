@@ -79,6 +79,14 @@ read-cache-test: tests/test_read_cache.c src/read_cache.h src/json.h
 	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 tests/test_read_cache.c -o $(BUILD_DIR)/test_read_cache
 	$(BUILD_DIR)/test_read_cache
 
+# doc-read-test: offline gate for doc.read tool handler and cascade (R4).
+doc-read-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_doc_read.sh
+	sh tests/test_doc_read.sh
+
+# motto-test: offline gate for E-R3 20-file motto scenario + cache + review_required parking.
+motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_scenario.sh
+	sh tests/test_motto_scenario.sh
+
 samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
