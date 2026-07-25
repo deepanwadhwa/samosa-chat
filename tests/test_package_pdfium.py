@@ -68,6 +68,24 @@ class PackagePdfiumTest(unittest.TestCase):
                 manifest[name] = digest
             self.assertEqual({name: manifest[name] for name in expected}, expected)
 
+    def test_bakes_the_version_into_the_launcher(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            tokenizer = self.prepare_model(root)
+            pdfium = root / "pdfium"
+            pdfium.mkdir()
+            for name in ARCHIVES:
+                (pdfium / name).write_bytes(f"fixture {name}\n".encode())
+            output = root / "out"
+            subprocess.run(self.command(root, tokenizer, pdfium, output), check=True,
+                           text=True, capture_output=True)
+            version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+            launcher = (output / "samosa").read_text(encoding="utf-8")
+            # The real number is baked in; the empty marker must be gone so the
+            # packaged launcher never falls back to reporting "unknown".
+            self.assertIn(f'SAMOSA_VERSION="{version}"', launcher)
+            self.assertNotIn('SAMOSA_VERSION=""', launcher)
+
 
 if __name__ == "__main__":
     unittest.main()

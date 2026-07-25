@@ -73,4 +73,16 @@ if run --seed nope test >/dev/null 2>&1; then
   exit 1
 fi
 
+# Version reporting: an unpackaged checkout reads the VERSION file; the
+# `version` subcommand and the -v/--version flags must all agree with it.
+expected_version=$(sed -n '1p' "$ROOT/VERSION" | tr -d '[:space:]')
+[ -n "$expected_version" ] || { echo "VERSION file is empty" >&2; exit 1; }
+for form in "version" "--version" "-v"; do
+  got=$(run "$form" | sed -n '1p')
+  if [ "$got" != "samosa $expected_version" ]; then
+    echo "samosa $form reported [$got], expected [samosa $expected_version]" >&2
+    exit 1
+  fi
+done
+
 echo "samosa wrapper: PASS"

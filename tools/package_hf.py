@@ -102,6 +102,12 @@ def main() -> int:
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
 
+    version_file = ROOT / "VERSION"
+    if not version_file.exists():
+        print(f"missing VERSION file: {version_file}", file=sys.stderr)
+        return 1
+    version = version_file.read_text(encoding="utf-8").strip()
+
     staged: list[pathlib.Path] = []
     for name in MODEL_FILES:
         src = args.snapshot / name
@@ -151,6 +157,19 @@ def main() -> int:
             print(f"missing dist file: {src}", file=sys.stderr)
             return 1
         place(src, dst, link=False)
+        # Bake the version into the launcher so a packaged release reports it
+        # without shipping the VERSION file into the release dir. The marker
+        # appears once in the launcher (the empty assignment), so this whole-
+        # string replace cannot disturb the runtime fallback logic.
+        if dst.name == "samosa":
+            text = dst.read_text(encoding="utf-8")
+            if 'SAMOSA_VERSION=""' not in text:
+                print("launcher is missing the SAMOSA_VERSION=\"\" marker",
+                      file=sys.stderr)
+                return 1
+            dst.write_text(
+                text.replace('SAMOSA_VERSION=""', f'SAMOSA_VERSION="{version}"'),
+                encoding="utf-8")
         if (args.repo_id != "REPO_ID_PLACEHOLDER" and
                 dst.name in {"install.sh", "samosa", "README.md"}):
             text = dst.read_text(encoding="utf-8")
