@@ -170,7 +170,7 @@ exactly 510 durable verdict rows (the first 16 are not repeated).
 
 Build batches of listing rows sized by *measured* tokens (reuse the
 engine tokenizer via the existing serve path or a conservative
-chars/4 estimate) with budget `JI_TRIAGE_BATCH_TOKENS` (initial 3,000;
+chars/4 estimate) with budget `JI_TRIAGE_BATCH_TOKENS` (initial 500;
 calibrated in E-JI1 against the orchestrator's context). Per batch, one
 model call, strict contract:
 
