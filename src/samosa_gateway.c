@@ -4065,6 +4065,19 @@ static int backend_supports_images(Gateway *g, const char *name) {
     return 0;
 }
 
+/* T1.1: backend_state is the single field a caller (setup UI, /healthz,
+   future model-selection status) can switch on without re-deriving it from
+   pid/ready/generating separately. "none" means nothing is installed for
+   the currently selected backend name at all -- distinct from "failed",
+   where a model IS installed but no process is currently up. */
+static const char *backend_state_string(Gateway *g, int ready, pid_t pid) {
+    if (atomic_load(&g->generating)) return "generating";
+    if (ready) return "ready";
+    if (pid > 0) return "loading";
+    if (!backend_available(g, g->backend)) return "none";
+    return "failed";
+}
+
 static int tcp_connect(int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -4195,6 +4208,14 @@ static int static_file(int fd, const char *path, const char *type, const char *e
 }
 
 static int proxy_request(Gateway *g, int client, const SamosaHttpRequest *request) {
+    /* T1.1/T1.0: distinguish "nothing installed at all" (409 model_required,
+       a stable state the setup UI routes on) from "installed but this
+       process isn't answering yet" (503, transient/retryable). Checked
+       before backend_probe()'s network probe since "no model" is a config
+       fact, not a timing question. */
+    if (!backend_available(g, g->backend))
+        return samosa_http_json_error(client, 409, "model_required",
+                                      "No model is installed or selected yet.");
     if (!backend_probe(g))
         return samosa_http_json_error(client, 503, "backend_loading", "The model is still loading.");
     int upstream = tcp_connect(g->backend_port);
@@ -4262,11 +4283,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         snprintf(body, sizeof(body),
             "{\"gateway\":true,\"compiled\":true,\"backend\":\"%s\","
             "\"label\":\"%s\",\"model\":\"%s\",\"supports_images\":%s,"
-            "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld}",
+            "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld,"
+            "\"installed\":%s,\"backend_state\":\"%s\"}",
             g->backend, backend_label(g->backend), backend_model(g->backend),
             backend_supports_images(g, g->backend) ? "true" : "false",
             ready ? "true" : "false", (!ready && pid > 0) ? "true" : "false",
-            atomic_load(&g->generating) ? "true" : "false", (long)pid);
+            atomic_load(&g->generating) ? "true" : "false", (long)pid,
+            backend_available(g, g->backend) ? "true" : "false",
+            backend_state_string(g, ready, pid));
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/internal/v1/status")) {
@@ -4463,9 +4487,18 @@ int main(int argc, char **argv) {
         pthread_mutex_destroy(&gateway.mu);
         return ok ? 0 : 1;
     }
-    if (!backend_start(&gateway)) {
-        fprintf(stderr, "samosa-gateway: backend %s is not installed\n", gateway.backend); return 2;
-    }
+    /* T1.1 (docs/TASKS_UI_CHUTNI.md): the control plane must serve setup,
+       health, and diagnostics with zero models installed -- it must NOT
+       exit before ever binding the port. A failed backend_start() (no
+       model installed for the selected backend, or a genuine start
+       failure) leaves gateway.backend_pid at 0 / gateway.upstream_fd at -1
+       (backend_start()'s own early-return path never forks), which is
+       exactly the state /healthz, /v1/backends, and proxy_request() already
+       know how to report honestly as "not ready" -- so no other state needs
+       inventing here. */
+    if (!backend_start(&gateway))
+        fprintf(stderr, "samosa-gateway: backend %s is not installed or failed to start; "
+                        "serving the control plane without an active model\n", gateway.backend);
     SamosaHttpServer server;
     if (!samosa_http_server_init(&server, gateway.public_port, gateway_handler, &gateway)) {
         fprintf(stderr, "samosa-gateway: cannot bind 127.0.0.1:%d: %s\n",
@@ -4473,8 +4506,8 @@ int main(int argc, char **argv) {
     }
     gateway.server = &server; signal_gateway = &gateway;
     signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
-    fprintf(stderr, "[gateway] compiled ready http://127.0.0.1:%d backend=%s\n",
-            server.port, gateway.backend); fflush(stderr);
+    fprintf(stderr, "[gateway] compiled ready http://127.0.0.1:%d backend=%s ready=%s\n",
+            server.port, gateway.backend, backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
     int ok = samosa_http_server_run(&server);
     jobs_stop(&gateway);
     backend_stop(&gateway);

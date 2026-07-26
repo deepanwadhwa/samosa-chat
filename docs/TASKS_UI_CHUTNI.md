@@ -2026,6 +2026,12 @@ control plane; it does not define zero-model gateway behavior.
 
 #### T1.1 — Start the gateway with zero installed models
 
+**Status: DONE (2026-07-26), scoped to the control-plane/backend-state work
+this task owns.** Evidence:
+[docs/regressions/ui-chutni/t1.1-evidence.md](../regressions/ui-chutni/t1.1-evidence.md).
+Setup UI screens (Name/Welcome/Model/Chat) are T1.2/T2.4's work, not this
+task's; see the evidence doc for the exact scope line.
+
 **Work**
 
 - Separate the control plane from the inference backend.
