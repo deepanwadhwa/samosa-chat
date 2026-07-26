@@ -12,6 +12,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -44,6 +45,9 @@ typedef struct {
     int public_port;
     int backend_port;
     char home[PATH_MAX];
+    char user_home[PATH_MAX]; /* real OS user home for the T1.3 fs chooser -- distinct
+                                  from `home`, which is Samosa's own app-state directory
+                                  and may be redirected via SAMOSA_HOME in tests. */
     char jobs_root[PATH_MAX];
     char backend[16];
     char app_html[PATH_MAX];
@@ -4592,6 +4596,281 @@ static int setup_status_handler(Gateway *g, int fd) {
     return sent;
 }
 
+/* ============================================================================
+   T1.3: safe browser directory chooser (docs/TASKS_UI_CHUTNI.md sec5.4).
+   ============================================================================ */
+
+#define MAX_CHOOSER_ROOTS 32
+#define MAX_CHOOSER_ENTRIES 5000
+
+typedef struct {
+    char id[80];
+    char label[256];
+    char path[PATH_MAX]; /* always realpath()'d */
+    char kind[16]; /* "home" or "volume" */
+    char volume_identity[32];
+    int readable;
+    int connected;
+} ChooserRoot;
+
+typedef struct {
+    char name[512];
+    char path[PATH_MAX];
+    int readable;
+} ChooserEntry;
+
+/* The only safe starting points for the chooser: the real OS user home
+   (g->user_home -- NOT g->home, which is Samosa's own app-state directory
+   and gets redirected via SAMOSA_HOME in tests) and, on macOS, mounted
+   volumes under /Volumes. Every root is realpath()'d once here so later
+   containment checks are simple prefix comparisons against a symlink-free
+   string. Linux/Windows volume discovery is not implemented yet -- a
+   container target never offers Drive/This-computer scopes anyway (see the
+   T0.1 capability matrix), so Home-only is a correct, honestly scoped
+   starting point there, not a shortcut. */
+static size_t list_chooser_roots(Gateway *g, ChooserRoot *out, size_t max) {
+    size_t n = 0;
+    char resolved[PATH_MAX];
+    struct stat st;
+    if (n < max && g->user_home[0] && realpath(g->user_home, resolved) &&
+        !stat(resolved, &st) && S_ISDIR(st.st_mode)) {
+        ChooserRoot *r = &out[n];
+        path_copy(r->id, sizeof(r->id), "home");
+        path_copy(r->label, sizeof(r->label), "Home");
+        path_copy(r->path, sizeof(r->path), resolved);
+        path_copy(r->kind, sizeof(r->kind), "home");
+        snprintf(r->volume_identity, sizeof(r->volume_identity), "%llx", (unsigned long long)st.st_dev);
+        r->readable = access(resolved, R_OK | X_OK) == 0;
+        r->connected = 1;
+        n++;
+    }
+#ifdef __APPLE__
+    DIR *vols = opendir("/Volumes");
+    if (vols) {
+        struct dirent *entry;
+        while (n < max && (entry = readdir(vols))) {
+            if (entry->d_name[0] == '.') continue;
+            char candidate[PATH_MAX], vol_resolved[PATH_MAX];
+            struct stat vol_st;
+            if (!path_join(candidate, sizeof(candidate), "/Volumes", entry->d_name)) continue;
+            if (!realpath(candidate, vol_resolved)) continue;
+            /* The boot volume commonly appears under /Volumes as a symlink
+               to "/" itself -- that's not another place to browse, it's the
+               same filesystem Home already lives on, so skip the redundant
+               alias rather than surface raw "/" (System, Library, private)
+               as a first-class chooser root. */
+            if (!strcmp(vol_resolved, "/")) continue;
+            if (stat(vol_resolved, &vol_st) || !S_ISDIR(vol_st.st_mode)) continue;
+            int dup = 0;
+            for (size_t i = 0; i < n; ++i)
+                if (!strcmp(out[i].path, vol_resolved)) { dup = 1; break; }
+            if (dup) continue;
+            ChooserRoot *r = &out[n];
+            snprintf(r->id, sizeof(r->id), "volume-%llx", (unsigned long long)vol_st.st_dev);
+            path_copy(r->label, sizeof(r->label), entry->d_name);
+            path_copy(r->path, sizeof(r->path), vol_resolved);
+            path_copy(r->kind, sizeof(r->kind), "volume");
+            snprintf(r->volume_identity, sizeof(r->volume_identity), "%llx", (unsigned long long)vol_st.st_dev);
+            r->readable = access(vol_resolved, R_OK | X_OK) == 0;
+            r->connected = 1;
+            n++;
+        }
+        closedir(vols);
+    }
+#endif
+    return n;
+}
+
+static int hex_nibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Percent-decodes one query-string value. '+' is left literal (never
+   decoded to space) because the frontend encodes with encodeURIComponent,
+   which never emits '+' for a space -- treating it as a literal keeps a
+   path containing a real '+' character intact. Rejects an embedded NUL and
+   any raw control byte outright rather than silently truncating. */
+static int url_decode_value(const char *in, size_t in_len, char *out, size_t cap) {
+    size_t oi = 0;
+    for (size_t i = 0; i < in_len; ++i) {
+        char c = in[i];
+        if (c == '%') {
+            if (i + 2 >= in_len) return 0;
+            int hi = hex_nibble(in[i + 1]), lo = hex_nibble(in[i + 2]);
+            if (hi < 0 || lo < 0) return 0;
+            c = (char)((hi << 4) | lo);
+            i += 2;
+        }
+        if ((unsigned char)c < 0x20) return 0;
+        if (oi + 1 >= cap) return 0;
+        out[oi++] = c;
+    }
+    out[oi] = 0;
+    return oi > 0;
+}
+
+/* Finds `key` in a raw (still percent-encoded) query string and decodes its
+   value. Query strings only ever come from the trusted local browser UI or
+   a headless caller, but every byte is still attacker-controlled input. */
+static int query_param(const char *query, const char *key, char *out, size_t cap) {
+    size_t key_len = strlen(key);
+    const char *p = query;
+    while (p && *p) {
+        const char *eq = strchr(p, '=');
+        const char *amp = strchr(p, '&');
+        if (amp && (!eq || amp < eq)) eq = NULL;
+        size_t name_len = eq ? (size_t)(eq - p) : (amp ? (size_t)(amp - p) : strlen(p));
+        if (name_len == key_len && !strncmp(p, key, key_len) && eq) {
+            const char *val_start = eq + 1;
+            size_t val_len = amp ? (size_t)(amp - val_start) : strlen(val_start);
+            return url_decode_value(val_start, val_len, out, cap);
+        }
+        if (!amp) break;
+        p = amp + 1;
+    }
+    return 0;
+}
+
+static int chooser_entry_cmp(const void *a, const void *b) {
+    return strcasecmp(((const ChooserEntry *)a)->name, ((const ChooserEntry *)b)->name);
+}
+
+static int emit_chooser_root_json(TextBuffer *body, const ChooserRoot *r) {
+    return text_add(body, "{\"chooser_root_id\":") && text_json_string(body, r->id) &&
+        text_add(body, ",\"label\":") && text_json_string(body, r->label) &&
+        text_add(body, ",\"path\":") && text_json_string(body, r->path) &&
+        text_add(body, ",\"kind\":") && text_json_string(body, r->kind) &&
+        text_add(body, ",\"volume_identity\":") && text_json_string(body, r->volume_identity) &&
+        text_add(body, ",\"readable\":") && text_add(body, r->readable ? "true" : "false") &&
+        text_add(body, ",\"connected\":") && text_add(body, r->connected ? "true" : "false") &&
+        text_add(body, "}");
+}
+
+static int fs_roots_handler(Gateway *g, int fd) {
+    ChooserRoot roots[MAX_CHOOSER_ROOTS];
+    size_t n = list_chooser_roots(g, roots, MAX_CHOOSER_ROOTS);
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"roots\":[");
+    for (size_t i = 0; ok && i < n; ++i)
+        ok = (i == 0 || text_add(&body, ",")) && emit_chooser_root_json(&body, &roots[i]);
+    ok = ok && text_add(&body, "]}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+/* GET /v1/fs/directories?path=<encoded-canonical-path>. The client always
+   passes back a path this API previously returned (a root's `path`, or a
+   prior response's `path`/child `path`), but the server never trusts that:
+   every request is realpath()'d fresh and must resolve inside one of the
+   roots list_chooser_roots() currently reports. That prefix check against a
+   symlink-free string -- not the client's claim -- is what actually stops
+   `..`, encoded traversal, and symlink escape. Listed children are
+   directories only, never symlinks (so a later request can't walk through
+   one), and hidden (dot-prefixed) entries are excluded outright; an entry
+   the process can't itself enter is still listed with readable:false rather
+   than omitted, so the UI can show it as unavailable instead of guessing. */
+static int fs_directories_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char raw_path[PATH_MAX];
+    if (!query_param(request->query, "path", raw_path, sizeof(raw_path)) || raw_path[0] != '/')
+        return samosa_http_json_error(fd, 400, "invalid_path", "A path query parameter is required.");
+
+    char resolved[PATH_MAX];
+    if (!realpath(raw_path, resolved)) {
+        int denied = errno == EACCES;
+        return samosa_http_json_error(fd, denied ? 403 : 404,
+            denied ? "path_denied" : "directory_not_found",
+            denied ? "That directory cannot be read." : "That directory was not found.");
+    }
+    struct stat st;
+    if (lstat(resolved, &st) || !S_ISDIR(st.st_mode))
+        return samosa_http_json_error(fd, 404, "directory_not_found", "That path is not a directory.");
+
+    ChooserRoot roots[MAX_CHOOSER_ROOTS];
+    size_t root_count = list_chooser_roots(g, roots, MAX_CHOOSER_ROOTS);
+    const ChooserRoot *matched = NULL;
+    for (size_t i = 0; i < root_count; ++i) {
+        size_t rl = strlen(roots[i].path);
+        int inside = !strcmp(roots[i].path, "/") ? resolved[0] == '/' :
+            (!strcmp(roots[i].path, resolved) ||
+             (!strncmp(roots[i].path, resolved, rl) && resolved[rl] == '/'));
+        if (inside) { matched = &roots[i]; break; }
+    }
+    if (!matched)
+        return samosa_http_json_error(fd, 403, "path_denied", "That directory is outside the allowed chooser roots.");
+
+    int flags = O_RDONLY;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+#ifdef O_DIRECTORY
+    flags |= O_DIRECTORY;
+#endif
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    int dfd = open(resolved, flags);
+    if (dfd < 0) {
+        int denied = errno == EACCES;
+        return samosa_http_json_error(fd, denied ? 403 : 404,
+            denied ? "path_denied" : "directory_not_found",
+            denied ? "That directory cannot be read." : "That directory could not be opened.");
+    }
+    DIR *dir = fdopendir(dfd);
+    if (!dir) { close(dfd); return samosa_http_json_error(fd, 500, "internal_error", "The directory could not be listed."); }
+
+    ChooserEntry *entries = malloc(sizeof(ChooserEntry) * MAX_CHOOSER_ENTRIES);
+    if (!entries) { closedir(dir); return samosa_http_json_error(fd, 500, "internal_error", "Out of memory."); }
+    size_t count = 0; int truncated = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') continue; /* also skips "." / ".." */
+        struct stat child_st;
+        if (fstatat(dfd, entry->d_name, &child_st, AT_SYMLINK_NOFOLLOW)) continue;
+        if (S_ISLNK(child_st.st_mode) || !S_ISDIR(child_st.st_mode)) continue;
+        if (count >= MAX_CHOOSER_ENTRIES) { truncated = 1; break; }
+        ChooserEntry *e = &entries[count];
+        if (!path_copy(e->name, sizeof(e->name), entry->d_name) ||
+            !path_join(e->path, sizeof(e->path), resolved, entry->d_name)) continue;
+        e->readable = faccessat(dfd, entry->d_name, R_OK | X_OK, AT_EACCESS) == 0;
+        count++;
+    }
+    closedir(dir);
+    qsort(entries, count, sizeof(ChooserEntry), chooser_entry_cmp);
+
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"path\":") && text_json_string(&body, resolved) &&
+        text_add(&body, ",\"chooser_root_id\":") && text_json_string(&body, matched->id) &&
+        text_add(&body, ",\"parent\":");
+    if (ok) {
+        if (!strcmp(resolved, matched->path)) {
+            ok = text_add(&body, "null");
+        } else {
+            char parent[PATH_MAX];
+            path_copy(parent, sizeof(parent), resolved);
+            char *slash = strrchr(parent, '/');
+            if (slash == parent) parent[1] = 0; else if (slash) *slash = 0;
+            ok = text_json_string(&body, parent);
+        }
+    }
+    ok = ok && text_add(&body, ",\"directories\":[");
+    for (size_t i = 0; ok && i < count; ++i) {
+        ok = (i == 0 || text_add(&body, ",")) &&
+            text_add(&body, "{\"name\":") && text_json_string(&body, entries[i].name) &&
+            text_add(&body, ",\"path\":") && text_json_string(&body, entries[i].path) &&
+            text_add(&body, ",\"readable\":") && text_add(&body, entries[i].readable ? "true" : "false") &&
+            text_add(&body, "}");
+    }
+    ok = ok && text_add(&body, "],\"truncated\":") && text_add(&body, truncated ? "true" : "false") && text_add(&body, "}");
+    free(entries);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
@@ -4611,6 +4890,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/setup/welcome/complete")) {
         if (!require_ui_session(g, fd, request)) return 1;
         return welcome_complete_handler(g, fd);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/fs/roots")) {
+        if (!require_ui_session(g, fd, request)) return 1;
+        return fs_roots_handler(g, fd);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/fs/directories")) {
+        if (!require_ui_session(g, fd, request)) return 1;
+        return fs_directories_handler(g, fd, request);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
         if (static_file(fd, g->app_logo, "image/png", NULL)) return 1;
@@ -4775,10 +5062,17 @@ static int load_config(Gateway *g) {
     atomic_init(&g->stopping, 0);
     const char *home = getenv("SAMOSA_HOME");
     const char *user_home = getenv("HOME");
+    char pw_home[PATH_MAX] = {0};
+    if (!user_home || !*user_home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (pw && pw->pw_dir && path_copy(pw_home, sizeof(pw_home), pw->pw_dir))
+            user_home = pw_home;
+    }
     if (!home) {
         if (!user_home || snprintf(g->home, sizeof(g->home), "%s/.samosa", user_home) >=
                           (int)sizeof(g->home)) return 0;
     } else if (!path_copy(g->home, sizeof(g->home), home)) return 0;
+    if (!user_home || !path_copy(g->user_home, sizeof(g->user_home), user_home)) return 0;
     g->public_port = getenv("SAMOSA_PORT") ? atoi(getenv("SAMOSA_PORT")) : 8642;
     g->backend_port = getenv("SAMOSA_BACKEND_PORT") ? atoi(getenv("SAMOSA_BACKEND_PORT")) : g->public_port + 1;
 #define ENV_PATH(field, name, fallback) do { const char *v = getenv(name); \

@@ -22,6 +22,7 @@
 typedef struct {
     char method[8];
     char path[256];
+    char query[256]; /* raw (still percent-encoded) query string after '?', empty if absent */
     char *body;
     size_t body_len;
     int is_background;
@@ -140,7 +141,13 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
     if (sscanf(buffer,"%7s %255s",request->method,request->path)!=2) {
         free(buffer); return 0;
     }
-    char *query=strchr(request->path,'?'); if(query)*query=0;
+    char *query=strchr(request->path,'?');
+    if (query) {
+        *query=0;
+        size_t qn=strlen(query+1);
+        if (qn>=sizeof(request->query)) qn=sizeof(request->query)-1;
+        memcpy(request->query,query+1,qn); request->query[qn]=0;
+    }
     size_t content_length=0;
     char *cursor=line_end+2;
     while (cursor<buffer+header_bytes-2) {

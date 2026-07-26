@@ -2082,6 +2082,18 @@ task's; see the evidence doc for the exact scope line.
 
 #### T1.3 — Implement the safe browser directory chooser
 
+**Status: DONE (2026-07-26), except real multi-browser interactive
+verification (no browser-automation tool is available in this environment;
+see the evidence doc).** Evidence:
+[docs/regressions/ui-chutni/t1.3-evidence.md](../regressions/ui-chutni/t1.3-evidence.md).
+Linux/Windows volume ("Drive") discovery is not implemented -- Home only
+there for now; a container target doesn't offer Drive/This-computer scopes
+at all per the T0.1 capability matrix, so this isn't a blocker for that
+target. Not yet wired into the composer `+` menu or the Chutni Add-Chutni
+flow -- neither exists yet (that's T2.4/T3.x and a later Chutni-specific
+task); the dialog is reachable today via a labeled "Folder access
+(preview)" control in Settings.
+
 **Work**
 
 - Add filesystem roots/listing APIs and per-launch UI-token validation.
