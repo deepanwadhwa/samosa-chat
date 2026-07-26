@@ -29,8 +29,25 @@ def build(num_pages: int) -> bytes:
     objs[font_id] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
     for i, cid in enumerate(content_ids):
         page_num = i + 1
-        text = f"Page {page_num} of {num_pages}"
-        stream = f"BT\n/F1 24 Tf\n72 720 Td\n({text}) Tj\nET\n".encode()
+        # Real documents never have ~11 characters of text per page; a short
+        # page trips doc_read_handler's needs_image heuristic (chars < 50)
+        # and forces an OCR fallback that a real-extractor test shouldn't
+        # need. Multiple lines keep every page comfortably over that bound
+        # while remaining a distinguishable, deterministic marker per page.
+        lines = [
+            f"Page {page_num} of {num_pages}",
+            "Samosa Chat synthetic fixture document for extractor tests.",
+            "This paragraph exists only to keep the text layer well above "
+            "the short-page OCR-fallback threshold.",
+        ]
+        parts = [b"BT\n/F1 14 Tf\n72 720 Td\n"]
+        for j, line in enumerate(lines):
+            escaped = line.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+            if j > 0:
+                parts.append(b"0 -18 Td\n")
+            parts.append(f"({escaped}) Tj\n".encode())
+        parts.append(b"ET\n")
+        stream = b"".join(parts)
         objs[cid] = (f"<< /Length {len(stream)} >>\nstream\n".encode()
                       + stream + b"\nendstream")
 

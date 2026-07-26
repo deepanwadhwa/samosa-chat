@@ -28,6 +28,12 @@
 #include "fpdfview.h"
 #include "tok.h"
 
+/* Bump this whenever the extraction contract changes (page batch cap, text
+   normalization, page-object shape, etc.) -- the gateway's read-cache
+   fingerprint (T0.3, docs/TASKS_UI_CHUTNI.md) includes this string so a
+   contract change invalidates old cache entries automatically. */
+#define EXTRACT_VERSION "samosa-extract 0 (reader-v0)"
+
 #define DEFAULT_MAX_BYTES (20UL * 1024UL * 1024UL)
 #define MAX_PAGE_CHARS 2000000
 #define MAX_JSON_BYTES (16UL * 1024UL * 1024UL)
@@ -527,7 +533,8 @@ static void usage(void) {
     fputs("usage: samosa-extract --json FILE\n"
           "       samosa-extract --json FILE --tokenizer tokenizer.json\n"
           "       samosa-extract --json-pages FILE.pdf START COUNT\n"
-          "       samosa-extract --render-ppm FILE.pdf PAGE OUTPUT.ppm\n", stderr);
+          "       samosa-extract --render-ppm FILE.pdf PAGE OUTPUT.ppm\n"
+          "       samosa-extract --version\n", stderr);
 }
 
 int main(int argc, char **argv) {
@@ -547,6 +554,10 @@ int main(int argc, char **argv) {
     Tok *tokenizer_ptr = NULL;
     const char *tokenizer_path = NULL;
 
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        puts(EXTRACT_VERSION);
+        return 0;
+    }
     if (argc == 3 && strcmp(argv[1], "--json") == 0) {
         input_path = argv[2];
     } else if (argc == 5 && strcmp(argv[1], "--json-pages") == 0) {

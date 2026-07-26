@@ -78,10 +78,11 @@ samosa-ocr-omp: src/samosa_ocr.c src/kernels.h src/json.h src/stb_image.h
 ocr-test: samosa-ocr tests/test_samosa_ocr.sh tools/testdata/ocr/det.gold
 	SAMOSA_OCR="$$PWD/$(BUILD_DIR)/samosa-ocr" sh tests/test_samosa_ocr.sh
 
-# read-cache-test: offline gate for the content-addressed doc.read cache (R4).
+# read-cache-test: offline gate for the content-addressed doc.read cache (R4,
+# plus T0.3's locking/fsync/pruning correctness work).
 read-cache-test: tests/test_read_cache.c src/read_cache.h src/json.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 tests/test_read_cache.c -o $(BUILD_DIR)/test_read_cache
+	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -pthread tests/test_read_cache.c -o $(BUILD_DIR)/test_read_cache
 	$(BUILD_DIR)/test_read_cache
 
 # doc-read-test: offline gate for doc.read tool handler and cascade (R4).
@@ -143,6 +144,16 @@ compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_ba
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" sh tests/test_compiled_gateway.sh
+
+# doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor
+# regression for the PDF page-batch-cap fix. Skips gracefully (exit 0) if no
+# real samosa-extract is available -- it deliberately does NOT depend on the
+# samosa-extract Makefile target, which hard-fails without PDFIUM_DIR.
+doc-read-pdf-paging-test: samosa-gateway samosa-fs test_fake_openai_backend tests/test_doc_read_pdf_paging.sh
+	SAMOSA_EXTRACT="$${SAMOSA_EXTRACT:-$$PWD/$(BUILD_DIR)/samosa-extract}" \
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" \
+	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
+	sh tests/test_doc_read_pdf_paging.sh
 
 extract-test: samosa-extract tests/test_samosa_extract.sh tests/fixtures/documents/hello.pdf
 	SAMOSA_EXTRACT=./$(BUILD_DIR)/samosa-extract sh tests/test_samosa_extract.sh

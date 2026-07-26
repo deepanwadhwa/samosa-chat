@@ -42,6 +42,46 @@ static int handler(SamosaHttpServer *server, int fd,
     (void)opaque;
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/health"))
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
+    /* T0.3 (docs/TASKS_UI_CHUTNI.md): real-extractor regression for the PDF
+       page-batch-cap fix. Placed first so its specific goal text always
+       shadows the generic "triaging filenames"/"classifying skimmed files"
+       fallbacks further down. Drives doc.read against a real >5-page PDF
+       through the real samosa-extract, then finishes on text that only
+       appears on page 7 -- provable only if every batch was actually read. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "triaging filenames") && strstr(request->body, "find pdf paging probe"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"[{\\\"i\\\":1,\\\"conf\\\":\\\"high\\\",\\\"why\\\":\\\"only candidate\\\"}]\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "classifying skimmed files") && strstr(request->body, "find pdf paging probe"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"[{\\\"i\\\":1,\\\"v\\\":\\\"match\\\",\\\"why\\\":\\\"content fits\\\"}]\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "find pdf paging probe") && !strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_read_pdf_paging\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"doc.read\",\"arguments\":\"{\\\"path\\\":\\\"multipage_7pages.pdf\\\",\\\"detail\\\":\\\"text\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "find pdf paging probe") && strstr(request->body, "\"role\":\"tool\"")) {
+        if (!strstr(request->body, "Page 7 of 7"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"Page 7 was not in the tool result -- pagination is broken.\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_finish_pdf_paging\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"finish\",\"arguments\":\"{\\\"matches\\\":[{\\\"path\\\":\\\"multipage_7pages.pdf\\\","
+            "\\\"evidence\\\":\\\"Page 7 of 7\\\",\\\"confidence\\\":\\\"high\\\"}],"
+            "\\\"rejected_count\\\":0,\\\"notes\\\":\\\"Read all seven pages.\\\"}\"}}]}}]}", NULL);
+    }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "slow interactive probe")) {
         sleep_ms(1200);

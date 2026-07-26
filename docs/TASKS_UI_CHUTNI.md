@@ -1897,6 +1897,9 @@ the rest of the browser control plane is built.
 
 #### T0.3 — Fix extraction and read-cache correctness
 
+**Status: DONE (2026-07-26).** Evidence:
+[docs/regressions/ui-chutni/t0.3-evidence.md](../regressions/ui-chutni/t0.3-evidence.md).
+
 **Work**
 
 - Page through PDFs using the extractor's supported per-call batch instead of

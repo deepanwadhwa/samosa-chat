@@ -59,6 +59,7 @@ typedef struct {
     char samosa_ocr[PATH_MAX];
     char backend_log[PATH_MAX];
     char selection_file[PATH_MAX];
+    char reader_fingerprint[192]; /* lazily computed; see reader_fingerprint() */
 } Gateway;
 
 #define MAX_PUBLIC_JOB_URLS 20
@@ -190,6 +191,56 @@ static char *run_capture(Gateway *g, const char *program, char *const argv[], si
     close(pipefd[0]); waitpid(pid, status, 0); track_job_pid(g, pid, 0); output[used] = 0;
     if (used == limit) { free(output); return NULL; }
     return output;
+}
+
+/* T0.3 (docs/TASKS_UI_CHUTNI.md): the doc.read cache used to gate on hardcoded
+   "reader-v0"/"reader-v0-small" literals, so a real extractor/OCR contract
+   change would silently keep serving stale cached results forever. Query
+   each sidecar's own --version once (self-reporting, so it can never drift
+   from the binary that will actually run) and cache the composite string for
+   the life of the process. A missing/failing sidecar degrades to a stable
+   "unavailable" tag rather than crashing -- worst case is extra cache misses,
+   never a wrong answer. */
+static const char *reader_fingerprint(Gateway *g) {
+    /* Check-then-compute-then-cache, but never hold g->mu while calling
+       run_capture(): run_capture() forks a child and calls track_job_pid(),
+       which itself locks g->mu. Holding the lock across that call would
+       self-deadlock this thread against its own second lock attempt (g->mu
+       is a plain, non-recursive mutex). A harmless race is possible if two
+       threads both miss the cache and both compute the fingerprint
+       concurrently -- both computations are identical and idempotent, so
+       the second write just overwrites the first with the same value. */
+    pthread_mutex_lock(&g->mu);
+    int cached = g->reader_fingerprint[0] != 0;
+    pthread_mutex_unlock(&g->mu);
+    if (cached) return g->reader_fingerprint;
+
+    char extract_v[80] = "extract:unavailable";
+    char ocr_v[80] = "ocr:unavailable";
+    {
+        char *argv_v[] = {g->samosa_extract, "--version", NULL};
+        int status = 0;
+        char *raw = run_capture(g, g->samosa_extract, argv_v, 4096, &status);
+        if (raw && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            size_t n = strcspn(raw, "\r\n");
+            snprintf(extract_v, sizeof(extract_v), "extract:%.*s", (int)n, raw);
+        }
+        free(raw);
+    }
+    {
+        char *argv_v[] = {g->samosa_ocr, "--version", NULL};
+        int status = 0;
+        char *raw = run_capture(g, g->samosa_ocr, argv_v, 4096, &status);
+        if (raw && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            size_t n = strcspn(raw, "\r\n");
+            snprintf(ocr_v, sizeof(ocr_v), "ocr:%.*s", (int)n, raw);
+        }
+        free(raw);
+    }
+    pthread_mutex_lock(&g->mu);
+    snprintf(g->reader_fingerprint, sizeof(g->reader_fingerprint), "%s|%s", extract_v, ocr_v);
+    pthread_mutex_unlock(&g->mu);
+    return g->reader_fingerprint;
 }
 
 /* Fork/exec a long-lived helper (e.g. caffeinate) whose stdout we discard and
@@ -2202,6 +2253,19 @@ static void escalate_low_conf_crops(Gateway *g, const char *absolute, jval *line
     rmdir(crop_dir);
 }
 
+/* Nanosecond mtime, matching src/samosa_fs.c's stat_mtime() -- kept as a
+   small local duplicate rather than a shared header, consistent with this
+   file already having its own independent SHA-256 (T0.3 identity check). */
+static double gw_stat_mtime(const struct stat *st) {
+#if defined(__APPLE__) && defined(__MACH__)
+    return (double)st->st_mtimespec.tv_sec + (double)st->st_mtimespec.tv_nsec / 1000000000.0;
+#elif defined(_BSD_SOURCE) || defined(_SVID_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_POSIX_C_SOURCE)
+    return (double)st->st_mtim.tv_sec + (double)st->st_mtim.tv_nsec / 1000000000.0;
+#else
+    return (double)st->st_mtime;
+#endif
+}
+
 static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
     const char *detail = "text";
     jval *detail_v = args ? json_get(args, "detail") : NULL;
@@ -2220,6 +2284,10 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
     jval *refresh_v = args ? json_get(args, "refresh") : NULL;
     if (refresh_v && refresh_v->t == J_BOOL) refresh = refresh_v->boolean;
 
+    struct stat pre_read_st;
+    if (stat(absolute, &pre_read_st) != 0) {
+        return strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
+    }
     char hex_key[65];
     if (read_cache_key_file(absolute, hex_key) != 0) {
         return strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
@@ -2227,7 +2295,7 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
     char cache_root[PATH_MAX];
     read_cache_default_root(cache_root, sizeof(cache_root));
     const char *contract_ver = "reader-v0";
-    const char *pack_fp = "reader-v0-small";
+    const char *pack_fp = reader_fingerprint(g);
 
     char *cached_lines_json = NULL;
     if (!refresh) {
@@ -2245,129 +2313,170 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
     TextBuffer full_lines = {0};
 
     if (is_pdf) {
-        char *argv_ext[] = {g->samosa_extract, "--json-pages", (char *)absolute, "1", "100", NULL};
-        int status_ext = 0;
-        char *ext_raw = run_capture(g, g->samosa_extract, argv_ext, 16 << 20, &status_ext);
-        if (!ext_raw || !WIFEXITED(status_ext) || WEXITSTATUS(status_ext) != 0) {
-            free(ext_raw);
-            return strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
-        }
-        char *arena_ext = NULL;
-        jval *ext_json = json_parse(ext_raw, &arena_ext);
-        if (!ext_json || json_get(ext_json, "ok") == NULL || !json_get(ext_json, "ok")->boolean) {
-            jval *err_v = ext_json ? json_get(ext_json, "error") : NULL;
-            char err_buf[256];
-            snprintf(err_buf, sizeof(err_buf), "{\"ok\":false,\"error\":\"%s\"}",
-                     err_v && err_v->t == J_STR ? err_v->str : "image_invalid");
+        /* Page through the document in the extractor's supported per-call
+           batch (at most 5 pages; samosa_extract.c enforces this and exits 64
+           on anything larger) instead of requesting the whole document in one
+           invalid oversized call. Every batch's page objects accumulate into
+           pages_body; the {"ok","page_count","pages":[...]} envelope is
+           written once, after the total page count is known from the first
+           batch. Bounded to 2000 batches (10,000 pages) -- samosa_extract.c
+           itself rejects a page_count above that. */
+        TextBuffer pages_body = {0};
+        int total_doc_pages = -1;
+        int next_start = 1;
+        int global_index = 0;
+        int batches_left = 2000;
+        int failed = 0;
+        char *fail_response = NULL;
+
+        while (!failed && batches_left-- > 0 &&
+               (total_doc_pages < 0 || next_start <= total_doc_pages)) {
+            char start_text[24], count_text[24];
+            snprintf(start_text, sizeof(start_text), "%d", next_start);
+            snprintf(count_text, sizeof(count_text), "%d", 5);
+            char *argv_ext[] = {g->samosa_extract, "--json-pages", (char *)absolute,
+                                start_text, count_text, NULL};
+            int status_ext = 0;
+            char *ext_raw = run_capture(g, g->samosa_extract, argv_ext, 16 << 20, &status_ext);
+            if (!ext_raw || !WIFEXITED(status_ext) || WEXITSTATUS(status_ext) != 0) {
+                free(ext_raw);
+                failed = 1;
+                fail_response = strdup("{\"ok\":false,\"error\":\"image_invalid\"}");
+                break;
+            }
+            char *arena_ext = NULL;
+            jval *ext_json = json_parse(ext_raw, &arena_ext);
+            if (!ext_json || json_get(ext_json, "ok") == NULL || !json_get(ext_json, "ok")->boolean) {
+                jval *err_v = ext_json ? json_get(ext_json, "error") : NULL;
+                char err_buf[256];
+                snprintf(err_buf, sizeof(err_buf), "{\"ok\":false,\"error\":\"%s\"}",
+                         err_v && err_v->t == J_STR ? err_v->str : "image_invalid");
+                json_free(ext_json); free(arena_ext); free(ext_raw);
+                failed = 1;
+                fail_response = strdup(err_buf);
+                break;
+            }
+
+            jval *pages_arr = json_get(ext_json, "pages");
+            int num_pages = pages_arr && pages_arr->t == J_ARR ? pages_arr->len : 0;
+            jval *pc_v = json_get(ext_json, "page_count");
+            if (total_doc_pages < 0) total_doc_pages = pc_v ? (int)pc_v->num : num_pages;
+
+            for (int p = 0; p < num_pages; p++) {
+                jval *p_obj = pages_arr->kids[p];
+                jval *p_chars = json_get(p_obj, "text_chars");
+                jval *p_toks = json_get(p_obj, "tokens");
+                jval *p_rf = json_get(p_obj, "has_raster_figure");
+                jval *p_txt = json_get(p_obj, "text");
+
+                int chars = p_chars ? (int)p_chars->num : 0;
+                int toks = p_toks ? (int)p_toks->num : 0;
+                int has_rf = p_rf ? p_rf->boolean : 0;
+                int abs_page = next_start + p;
+
+                int needs_image = (toks > 0 ? (toks < 20) : (chars < 50)) || has_rf;
+
+                char numbuf[32];
+                if (global_index > 0) text_add(&pages_body, ",");
+                text_add(&pages_body, "{\"index\":");
+                snprintf(numbuf, sizeof(numbuf), "%d", abs_page);
+                text_add(&pages_body, numbuf);
+
+                if (!needs_image && p_txt && p_txt->t == J_STR) {
+                    text_add(&pages_body, ",\"source\":\"text_layer\"");
+                    int line_cnt = 0;
+                    const char *s = p_txt->str;
+                    while (*s) {
+                        const char *next = strchr(s, '\n');
+                        line_cnt++;
+                        if (!next) break;
+                        s = next + 1;
+                    }
+                    snprintf(numbuf, sizeof(numbuf), "%d", line_cnt);
+                    text_add(&pages_body, ",\"lines_total\":"); text_add(&pages_body, numbuf);
+                    text_add(&pages_body, ",\"lines_uncertain\":0,\"min_conf\":1.0000,\"needs_review\":false,\"lines\":[");
+                    s = p_txt->str;
+                    int l_idx = 0;
+                    while (*s) {
+                        const char *next = strchr(s, '\n');
+                        size_t len = next ? (size_t)(next - s) : strlen(s);
+                        char *line_buf = malloc(len + 1);
+                        memcpy(line_buf, s, len); line_buf[len] = 0;
+                        if (l_idx > 0) text_add(&pages_body, ",");
+                        text_add(&pages_body, "{\"bbox\":[0,0,0,0],\"text\":");
+                        text_json_string(&pages_body, line_buf);
+                        text_add(&pages_body, ",\"conf\":1.0000,\"script\":\"printed\",\"reader\":\"text_layer\"}");
+                        free(line_buf);
+                        l_idx++;
+                        if (!next) break;
+                        s = next + 1;
+                    }
+                    text_add(&pages_body, "]");
+                } else {
+                    char tmp_ppm[PATH_MAX + 64];
+                    snprintf(tmp_ppm, sizeof(tmp_ppm), "%s/doc_read_%d_p%d.ppm", g->home, (int)getpid(), abs_page);
+                    char p_str[24]; snprintf(p_str, sizeof(p_str), "%d", abs_page);
+                    char *argv_rnd[] = {g->samosa_extract, "--render-ppm", (char *)absolute, p_str, tmp_ppm, NULL};
+                    int status_rnd = 0;
+                    char *rnd_raw = run_capture(g, g->samosa_extract, argv_rnd, 1 << 20, &status_rnd);
+                    free(rnd_raw);
+
+                    char *argv_ocr[] = {g->samosa_ocr, "read", tmp_ppm, NULL};
+                    int status_ocr = 0;
+                    char *ocr_raw = run_capture(g, g->samosa_ocr, argv_ocr, 16 << 20, &status_ocr);
+                    unlink(tmp_ppm);
+
+                    if (!ocr_raw || !WIFEXITED(status_ocr) || WEXITSTATUS(status_ocr) != 0) {
+                        free(ocr_raw); json_free(ext_json); free(arena_ext); free(ext_raw);
+                        failed = 1;
+                        fail_response = strdup("{\"ok\":false,\"error\":\"ocr_unavailable\"}");
+                        break;
+                    }
+
+                    char *arena_ocr = NULL;
+                    jval *ocr_json = json_parse(ocr_raw, &arena_ocr);
+                    jval *lines_arr = ocr_json ? json_get(ocr_json, "lines") : NULL;
+
+                    int l_tot = lines_arr && lines_arr->t == J_ARR ? lines_arr->len : 0;
+                    int l_unc = 0;
+                    double min_c = 1.0;
+                    for (int i = 0; i < l_tot; i++) {
+                        jval *cf = json_get(lines_arr->kids[i], "conf");
+                        double c = cf ? cf->num : 0.0;
+                        if (c < 0.84) l_unc++;
+                        if (i == 0 || c < min_c) min_c = c;
+                    }
+                    text_add(&pages_body, ",\"source\":\"ocr\",");
+                    char ocr_summary[160];
+                    snprintf(ocr_summary, sizeof(ocr_summary), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
+                             l_tot, l_unc, min_c, l_unc > 0 ? "true" : "false");
+                    text_add(&pages_body, ocr_summary);
+                    if (lines_arr) text_json_value(&pages_body, lines_arr);
+                    else text_add(&pages_body, "[]");
+
+                    json_free(ocr_json); free(arena_ocr); free(ocr_raw);
+                }
+                text_add(&pages_body, "}");
+                global_index++;
+            }
             json_free(ext_json); free(arena_ext); free(ext_raw);
-            return strdup(err_buf);
+            if (num_pages == 0) break;
+            next_start += num_pages;
         }
 
-        jval *pages_arr = json_get(ext_json, "pages");
-        int num_pages = pages_arr && pages_arr->t == J_ARR ? pages_arr->len : 0;
-        jval *pc_v = json_get(ext_json, "page_count");
-        int total_doc_pages = pc_v ? (int)pc_v->num : num_pages;
+        if (failed) {
+            free(pages_body.data);
+            free(full_lines.data);
+            return fail_response;
+        }
 
         text_add(&full_lines, "{\"ok\":true,\"page_count\":");
-        char numbuf[32]; snprintf(numbuf, sizeof(numbuf), "%d", total_doc_pages);
+        char numbuf[32]; snprintf(numbuf, sizeof(numbuf), "%d", total_doc_pages < 0 ? 0 : total_doc_pages);
         text_add(&full_lines, numbuf);
         text_add(&full_lines, ",\"pages\":[");
-
-        for (int p = 0; p < num_pages; p++) {
-            jval *p_obj = pages_arr->kids[p];
-            jval *p_chars = json_get(p_obj, "text_chars");
-            jval *p_toks = json_get(p_obj, "tokens");
-            jval *p_rf = json_get(p_obj, "has_raster_figure");
-            jval *p_txt = json_get(p_obj, "text");
-
-            int chars = p_chars ? (int)p_chars->num : 0;
-            int toks = p_toks ? (int)p_toks->num : 0;
-            int has_rf = p_rf ? p_rf->boolean : 0;
-
-            int needs_image = (toks > 0 ? (toks < 20) : (chars < 50)) || has_rf;
-
-            if (p > 0) text_add(&full_lines, ",");
-            text_add(&full_lines, "{\"index\":");
-            snprintf(numbuf, sizeof(numbuf), "%d", p + 1);
-            text_add(&full_lines, numbuf);
-
-            if (!needs_image && p_txt && p_txt->t == J_STR) {
-                text_add(&full_lines, ",\"source\":\"text_layer\"");
-                int line_cnt = 0;
-                const char *s = p_txt->str;
-                while (*s) {
-                    const char *next = strchr(s, '\n');
-                    line_cnt++;
-                    if (!next) break;
-                    s = next + 1;
-                }
-                snprintf(numbuf, sizeof(numbuf), "%d", line_cnt);
-                text_add(&full_lines, ",\"lines_total\":"); text_add(&full_lines, numbuf);
-                text_add(&full_lines, ",\"lines_uncertain\":0,\"min_conf\":1.0000,\"needs_review\":false,\"lines\":[");
-                s = p_txt->str;
-                int l_idx = 0;
-                while (*s) {
-                    const char *next = strchr(s, '\n');
-                    size_t len = next ? (size_t)(next - s) : strlen(s);
-                    char *line_buf = malloc(len + 1);
-                    memcpy(line_buf, s, len); line_buf[len] = 0;
-                    if (l_idx > 0) text_add(&full_lines, ",");
-                    text_add(&full_lines, "{\"bbox\":[0,0,0,0],\"text\":");
-                    text_json_string(&full_lines, line_buf);
-                    text_add(&full_lines, ",\"conf\":1.0000,\"script\":\"printed\",\"reader\":\"text_layer\"}");
-                    free(line_buf);
-                    l_idx++;
-                    if (!next) break;
-                    s = next + 1;
-                }
-                text_add(&full_lines, "]");
-            } else {
-                char tmp_ppm[PATH_MAX + 64];
-                snprintf(tmp_ppm, sizeof(tmp_ppm), "%s/doc_read_%d_p%d.ppm", g->home, (int)getpid(), p + 1);
-                char p_str[24]; snprintf(p_str, sizeof(p_str), "%d", p + 1);
-                char *argv_rnd[] = {g->samosa_extract, "--render-ppm", (char *)absolute, p_str, tmp_ppm, NULL};
-                int status_rnd = 0;
-                char *rnd_raw = run_capture(g, g->samosa_extract, argv_rnd, 1 << 20, &status_rnd);
-                free(rnd_raw);
-
-                char *argv_ocr[] = {g->samosa_ocr, "read", tmp_ppm, NULL};
-                int status_ocr = 0;
-                char *ocr_raw = run_capture(g, g->samosa_ocr, argv_ocr, 16 << 20, &status_ocr);
-                unlink(tmp_ppm);
-
-                if (!ocr_raw || !WIFEXITED(status_ocr) || WEXITSTATUS(status_ocr) != 0) {
-                    free(ocr_raw); json_free(ext_json); free(arena_ext); free(ext_raw);
-                    free(full_lines.data);
-                    return strdup("{\"ok\":false,\"error\":\"ocr_unavailable\"}");
-                }
-
-                char *arena_ocr = NULL;
-                jval *ocr_json = json_parse(ocr_raw, &arena_ocr);
-                jval *lines_arr = ocr_json ? json_get(ocr_json, "lines") : NULL;
-
-                int l_tot = lines_arr && lines_arr->t == J_ARR ? lines_arr->len : 0;
-                int l_unc = 0;
-                double min_c = 1.0;
-                for (int i = 0; i < l_tot; i++) {
-                    jval *cf = json_get(lines_arr->kids[i], "conf");
-                    double c = cf ? cf->num : 0.0;
-                    if (c < 0.84) l_unc++;
-                    if (i == 0 || c < min_c) min_c = c;
-                }
-                text_add(&full_lines, ",\"source\":\"ocr\",");
-                char ocr_summary[160];
-                snprintf(ocr_summary, sizeof(ocr_summary), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
-                         l_tot, l_unc, min_c, l_unc > 0 ? "true" : "false");
-                text_add(&full_lines, ocr_summary);
-                if (lines_arr) text_json_value(&full_lines, lines_arr);
-                else text_add(&full_lines, "[]");
-
-                json_free(ocr_json); free(arena_ocr); free(ocr_raw);
-            }
-            text_add(&full_lines, "}");
-        }
+        if (pages_body.data) text_add(&full_lines, pages_body.data);
         text_add(&full_lines, "]}");
-        json_free(ext_json); free(arena_ext); free(ext_raw);
+        free(pages_body.data);
     } else {
         char *argv_ocr[] = {g->samosa_ocr, "read", (char *)absolute, NULL};
         int status_ocr = 0;
@@ -2403,6 +2512,21 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
         text_add(&full_lines, "}]}");
 
         json_free(ocr_json); free(arena_ocr); free(ocr_raw);
+    }
+
+    /* T0.3: verify the file's identity hasn't changed between the hash that
+       keys this cache entry and the extraction that fills it. Publishing
+       freshly-extracted text under a hash computed from different bytes
+       would silently mislabel stale/foreign content as this file's content
+       forever (the cache is content-addressed and never re-verified on a
+       hit). A file that changed mid-read is reported, not cached. */
+    struct stat post_read_st;
+    if (stat(absolute, &post_read_st) != 0 ||
+        post_read_st.st_dev != pre_read_st.st_dev || post_read_st.st_ino != pre_read_st.st_ino ||
+        post_read_st.st_size != pre_read_st.st_size ||
+        gw_stat_mtime(&post_read_st) != gw_stat_mtime(&pre_read_st)) {
+        free(full_lines.data);
+        return strdup("{\"ok\":false,\"error\":\"changed_during_read\"}");
     }
 
     read_cache_put(cache_root, hex_key, contract_ver, pack_fp, full_lines.data);

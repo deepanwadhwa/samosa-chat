@@ -24,6 +24,8 @@
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include "json.h"
 
@@ -111,8 +113,19 @@ static void rc_escape(const char *s, char *dst, size_t cap) {
     dst[o] = 0;
 }
 
-/* Write an entry atomically. result_json is the raw detail:"lines" JSON object.
- * Returns 0 on success. */
+/* Write an entry atomically, with one writer at a time per shard and durable
+ * (fsync'd) publication. result_json is the raw detail:"lines" JSON object.
+ * Returns 0 on success.
+ *
+ * Locking is per-shard (the "<sha[0:2]>" directory, at most 256 across the
+ * whole cache), not per-key: it bounds lock-file count while still
+ * serializing the case that matters -- two callers racing to publish the
+ * exact same content-addressed entry. Without this, two threads computing
+ * the same temp-file name (pid-based, no thread component) could truncate
+ * and interleave each other's writes into one file, and whichever renamed
+ * last would publish a corrupted entry. flock() is per open-file-description,
+ * so it correctly serializes distinct threads in the same process, not just
+ * distinct processes. */
 static int read_cache_put(const char *root, const char *key, const char *contract,
                           const char *fingerprint, const char *result_json) {
     char shard[PATH_MAX + 8]; snprintf(shard, sizeof shard, "%s/%c%c", root, key[0], key[1]);
@@ -120,19 +133,35 @@ static int read_cache_put(const char *root, const char *key, const char *contrac
     /* mkdir -p root then shard, 0700 */
     for (char *p = base + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(base, 0700); *p = '/'; }
     mkdir(base, 0700); mkdir(shard, 0700);
-    char path[PATH_MAX + 80], tmp[PATH_MAX + 96];
+    char path[PATH_MAX + 80], tmp[PATH_MAX + 96], lock_path[PATH_MAX + 24];
     rc_entry_path(root, key, path, sizeof path);
     snprintf(tmp, sizeof tmp, "%s.tmp.%d", path, (int)getpid());
+    snprintf(lock_path, sizeof lock_path, "%s/.lock", shard);
+
+    int lock_fd = open(lock_path, O_WRONLY | O_CREAT, 0600);
+    if (lock_fd < 0) return -1;
+    if (flock(lock_fd, LOCK_EX) != 0) { close(lock_fd); return -1; }
+
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return -1;
-    FILE *f = fdopen(fd, "wb"); if (!f) { close(fd); return -1; }
+    if (fd < 0) { flock(lock_fd, LOCK_UN); close(lock_fd); return -1; }
+    FILE *f = fdopen(fd, "wb");
+    if (!f) { close(fd); unlink(tmp); flock(lock_fd, LOCK_UN); close(lock_fd); return -1; }
     char *esc = malloc(strlen(result_json) * 6 + 16);
+    if (!esc) { fclose(f); unlink(tmp); flock(lock_fd, LOCK_UN); close(lock_fd); return -1; }
     rc_escape(result_json, esc, strlen(result_json) * 6 + 16);
     fprintf(f, "{\"contract_version\":\"%s\",\"pack_fingerprint\":\"%s\",\"created\":%ld,\"result\":\"%s\"}",
             contract, fingerprint, (long)time(NULL), esc);
-    free(esc); fclose(f);
-    if (rename(tmp, path) != 0) { unlink(tmp); return -1; }
+    free(esc);
+    int ok = fflush(f) == 0 && fsync(fileno(f)) == 0;
+    fclose(f);
+    ok = ok && rename(tmp, path) == 0;
+    if (!ok) { unlink(tmp); flock(lock_fd, LOCK_UN); close(lock_fd); return -1; }
     chmod(path, 0600);
+    /* Durability: fsync the shard directory so the rename itself survives a
+       crash, not just the file's own contents. */
+    { int dfd = open(shard, O_RDONLY); if (dfd >= 0) { fsync(dfd); close(dfd); } }
+    flock(lock_fd, LOCK_UN);
+    close(lock_fd);
     return 0;
 }
 
@@ -155,6 +184,121 @@ static char *read_cache_get(const char *root, const char *key, const char *contr
         result = strdup(rs->str);
     json_free(o); free(arena);
     return result;
+}
+
+/* ---- Cache size accounting and bounded pruning (T0.3) ---------------------
+ * The cache is unbounded by construction (one entry per distinct file
+ * content ever read). These two functions let a caller measure it and, when
+ * over budget, remove the oldest entries first -- except any entry with a
+ * companion "<key>.pin" file in its shard, which is never removed regardless
+ * of age. Nothing creates a .pin file yet (that arrives with the Chutni
+ * scope/job owner-reference tracking in T4.5); the mechanism is built now so
+ * pruning is safe to turn on before that lands. */
+
+/* Sum of all entry file sizes under root. Lock files and in-flight ".tmp."
+ * files are excluded. Cost is proportional to entry count (stat() calls
+ * only, no content reads), not to any in-memory structure. */
+static long long read_cache_total_bytes(const char *root) {
+    long long total = 0;
+    DIR *root_dir = opendir(root);
+    if (!root_dir) return 0;
+    struct dirent *shard_entry;
+    while ((shard_entry = readdir(root_dir)) != NULL) {
+        if (shard_entry->d_name[0] == '.') continue;
+        char shard_path[PATH_MAX + 8];
+        snprintf(shard_path, sizeof shard_path, "%s/%s", root, shard_entry->d_name);
+        DIR *shard_dir = opendir(shard_path);
+        if (!shard_dir) continue;
+        struct dirent *file_entry;
+        while ((file_entry = readdir(shard_dir)) != NULL) {
+            if (file_entry->d_name[0] == '.') continue;
+            if (strstr(file_entry->d_name, ".tmp.")) continue;
+            size_t nlen = strlen(file_entry->d_name);
+            if (nlen < 5 || strcmp(file_entry->d_name + nlen - 5, ".json")) continue;
+            char file_path[PATH_MAX + 90];
+            snprintf(file_path, sizeof file_path, "%s/%s", shard_path, file_entry->d_name);
+            struct stat st;
+            if (stat(file_path, &st) == 0 && S_ISREG(st.st_mode)) total += (long long)st.st_size;
+        }
+        closedir(shard_dir);
+    }
+    closedir(root_dir);
+    return total;
+}
+
+typedef struct {
+    char path[PATH_MAX + 90];
+    char pin_path[PATH_MAX + 90];
+    time_t mtime;
+    off_t size;
+} RcPruneCandidate;
+
+static int rc_prune_cmp(const void *a, const void *b) {
+    const RcPruneCandidate *ca = a, *cb = b;
+    if (ca->mtime < cb->mtime) return -1;
+    if (ca->mtime > cb->mtime) return 1;
+    return 0;
+}
+
+/* Removes the oldest (by mtime) unpinned entries until the cache is at or
+ * under max_bytes. Returns the number of entries removed, or -1 on a
+ * directory-listing failure. A failure partway through leaves every
+ * remaining entry (pinned or not) exactly as it was -- pruning only ever
+ * unlinks a whole, already-published entry, never a temp/in-progress file. */
+static int read_cache_prune(const char *root, long long max_bytes) {
+    long long total = read_cache_total_bytes(root);
+    if (total <= max_bytes) return 0;
+
+    RcPruneCandidate *items = NULL;
+    size_t len = 0, cap = 0;
+    DIR *root_dir = opendir(root);
+    if (!root_dir) return -1;
+    struct dirent *shard_entry;
+    while ((shard_entry = readdir(root_dir)) != NULL) {
+        if (shard_entry->d_name[0] == '.') continue;
+        char shard_path[PATH_MAX + 8];
+        snprintf(shard_path, sizeof shard_path, "%s/%s", root, shard_entry->d_name);
+        DIR *shard_dir = opendir(shard_path);
+        if (!shard_dir) continue;
+        struct dirent *file_entry;
+        while ((file_entry = readdir(shard_dir)) != NULL) {
+            if (file_entry->d_name[0] == '.') continue;
+            if (strstr(file_entry->d_name, ".tmp.")) continue;
+            size_t nlen = strlen(file_entry->d_name);
+            if (nlen < 5 || strcmp(file_entry->d_name + nlen - 5, ".json")) continue;
+            char file_path[PATH_MAX + 90];
+            snprintf(file_path, sizeof file_path, "%s/%s", shard_path, file_entry->d_name);
+            struct stat st;
+            if (stat(file_path, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+            char pin_path[PATH_MAX + 90];
+            snprintf(pin_path, sizeof pin_path, "%s/%.*s.pin", shard_path, (int)(nlen - 5), file_entry->d_name);
+            struct stat pin_st;
+            if (stat(pin_path, &pin_st) == 0) continue; /* pinned: never a candidate */
+            if (len == cap) {
+                size_t next_cap = cap ? cap * 2 : 64;
+                RcPruneCandidate *next = realloc(items, next_cap * sizeof(*next));
+                if (!next) { free(items); closedir(shard_dir); closedir(root_dir); return -1; }
+                items = next; cap = next_cap;
+            }
+            snprintf(items[len].path, sizeof items[len].path, "%s", file_path);
+            items[len].mtime = st.st_mtime;
+            items[len].size = st.st_size;
+            len++;
+        }
+        closedir(shard_dir);
+    }
+    closedir(root_dir);
+
+    qsort(items, len, sizeof(*items), rc_prune_cmp);
+    int removed = 0;
+    for (size_t i = 0; i < len && total > max_bytes; i++) {
+        if (unlink(items[i].path) == 0) {
+            total -= (long long)items[i].size;
+            removed++;
+        }
+    }
+    free(items);
+    return removed;
 }
 
 #endif /* READ_CACHE_H */
