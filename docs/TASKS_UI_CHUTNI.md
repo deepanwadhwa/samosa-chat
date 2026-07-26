@@ -2058,6 +2058,9 @@ task's; see the evidence doc for the exact scope line.
 
 #### T1.2 — Implement profile and setup state
 
+**Status: DONE (2026-07-26), with one interim bridge pending T2.1.** Evidence:
+[docs/regressions/ui-chutni/t1.2-evidence.md](../regressions/ui-chutni/t1.2-evidence.md).
+
 **Work**
 
 - Implement `GET/PUT /v1/profile` and `GET /v1/setup/status`.

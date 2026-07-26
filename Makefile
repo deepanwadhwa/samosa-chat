@@ -145,10 +145,11 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # generators (T0.1), and the zero-model control-plane startup contract
 # (T1.1: the gateway binds and serves setup/health/diagnostics -- and Chat
 # fails closed with 409 model_required -- with no model installed anywhere).
-test-ui-setup: test-fake-download-server samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh
+test-ui-setup: test-fake-download-server samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
+	sh tests/test_profile_setup.sh
 
 compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \

@@ -26,6 +26,8 @@ typedef struct {
     size_t body_len;
     int is_background;
     char range[128]; /* raw `Range:` header value, empty if absent */
+    char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
+    char origin[256]; /* raw `Origin:` header value, empty if absent */
 } SamosaHttpRequest;
 
 struct SamosaHttpServer;
@@ -162,6 +164,16 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             size_t n=strlen(value);
             if (n>=sizeof(request->range)) n=sizeof(request->range)-1;
             memcpy(request->range,value,n); request->range[n]=0;
+        } else if (!strncasecmp(cursor,"X-Samosa-Token:",15)) {
+            char *value=cursor+15; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->ui_token)) n=sizeof(request->ui_token)-1;
+            memcpy(request->ui_token,value,n); request->ui_token[n]=0;
+        } else if (!strncasecmp(cursor,"Origin:",7)) {
+            char *value=cursor+7; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->origin)) n=sizeof(request->origin)-1;
+            memcpy(request->origin,value,n); request->origin[n]=0;
         } else if (!strncasecmp(cursor,"Transfer-Encoding:",18) &&
                    strcasestr(cursor+18,"chunked")) {
             free(buffer); return 0;

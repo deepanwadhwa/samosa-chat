@@ -61,6 +61,8 @@ typedef struct {
     char backend_log[PATH_MAX];
     char selection_file[PATH_MAX];
     char reader_fingerprint[192]; /* lazily computed; see reader_fingerprint() */
+    char ui_token[65]; /* per-launch random session token; see init_ui_token() */
+    char profile_path[PATH_MAX];
 } Gateway;
 
 #define MAX_PUBLIC_JOB_URLS 20
@@ -4261,16 +4263,354 @@ static const char *backend_model(const char *name) {
     return "qwen3.6-35b-a3b";
 }
 
+/* T1.2 (docs/TASKS_UI_CHUTNI.md §5.0): the root document substitutes the
+   per-launch UI token into one fixed placeholder so the browser's own
+   script can read it and send it back as X-Samosa-Token. The current
+   assets/app.html (pre-T3.x redesign) contains no such placeholder, so this
+   is a byte-identical no-op against it today -- strstr() finds nothing, the
+   whole file is copied through unchanged -- and only becomes active once a
+   future frontend adds the <meta> tag. Cache-Control: no-store is added
+   either way: a stale cached copy of this HTML would embed a token from a
+   since-rotated (restarted) session. */
+/* T1.2 (docs/TASKS_UI_CHUTNI.md §5.0): per-launch UI session token. 32 random
+   bytes, lowercase hex, written to <home>/run/ui-token (dir 0700, file
+   0600). A gateway restart always generates a fresh token (rotation is
+   implicit: nothing here reuses a prior file). /dev/urandom is used rather
+   than arc4random_buf() for portability across the project's macOS/Linux
+   targets -- both expose it identically. */
+static int init_ui_token(Gateway *g) {
+    unsigned char raw[32];
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd < 0) return 0;
+    size_t got = 0;
+    while (got < sizeof(raw)) {
+        ssize_t n = read(fd, raw + got, sizeof(raw) - got);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { close(fd); return 0; }
+        got += (size_t)n;
+    }
+    close(fd);
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < sizeof(raw); ++i) {
+        g->ui_token[i * 2] = hex[raw[i] >> 4];
+        g->ui_token[i * 2 + 1] = hex[raw[i] & 0xf];
+    }
+    g->ui_token[sizeof(raw) * 2] = 0;
+    char run_dir[PATH_MAX], token_path[PATH_MAX];
+    if (!path_join(run_dir, sizeof(run_dir), g->home, "run") || !mkdirs(run_dir) ||
+        !path_join(token_path, sizeof(token_path), run_dir, "ui-token"))
+        return 0;
+    char line[80];
+    snprintf(line, sizeof(line), "%s\n", g->ui_token);
+    return write_small_file(token_path, line);
+}
+
+/* Constant-time-ish compare: a local loopback tool comparing a 256-bit
+   random secret is a low-risk timing-attack surface, but costs nothing to
+   do properly. */
+static int tokens_equal(const char *a, const char *b) {
+    size_t la = strlen(a), lb = strlen(b);
+    if (la != lb) return 0;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < la; ++i) diff |= (unsigned char)(a[i] ^ b[i]);
+    return diff == 0;
+}
+
+/* Every new v1 route this task and future ones add (profile, setup, and
+   later filesystem/model/Chutni routes) must pass this: a valid
+   X-Samosa-Token, and if an Origin header is present at all, it must be
+   the exact loopback origin this gateway is bound to (a browser always
+   sends Origin for a fetch(); a missing Origin is accepted only because a
+   valid token is still required, covering headless/CLI use per section
+   5.0). Pre-existing routes (Chat, Jobs, backend selection) are NOT gated
+   by this -- retrofitting them is a separate, larger change coordinated
+   with their own test suites, not part of this task; see the T1.2
+   evidence doc. */
+static int require_ui_session(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (!request->ui_token[0] || !tokens_equal(request->ui_token, g->ui_token)) {
+        samosa_http_json_error(fd, 401, "invalid_ui_token", "Missing or invalid session token.");
+        return 0;
+    }
+    if (request->origin[0]) {
+        char expected[64];
+        snprintf(expected, sizeof(expected), "http://127.0.0.1:%d", g->public_port);
+        if (strcmp(request->origin, expected) != 0) {
+            samosa_http_json_error(fd, 403, "origin_denied", "Request origin is not allowed.");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int serve_root_html(Gateway *g, int fd) {
+    size_t len = 0;
+    unsigned char *raw = read_file_bytes_limit(g->app_html, 4 << 20, &len);
+    if (!raw) return 0;
+    const char *placeholder = "__SAMOSA_UI_TOKEN__";
+    char *found = strstr((char *)raw, placeholder);
+    TextBuffer out = {0};
+    int ok;
+    if (found) {
+        size_t prefix_len = (size_t)(found - (char *)raw);
+        ok = text_add_n(&out, (char *)raw, prefix_len) &&
+             text_add(&out, g->ui_token) &&
+             text_add(&out, found + strlen(placeholder));
+    } else {
+        ok = text_add_n(&out, (char *)raw, len);
+    }
+    free(raw);
+    if (!ok) { free(out.data); return 0; }
+    const char *headers =
+        "Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; "
+        "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n"
+        "Cache-Control: no-store\r\n";
+    int sent = samosa_http_headers(fd, 200, "text/html; charset=utf-8", out.len, headers) &&
+               (!out.len || samosa_send_all(fd, out.data, out.len));
+    free(out.data);
+    return sent;
+}
+
+/* ============================================================================
+   T1.2: profile and setup state (docs/TASKS_UI_CHUTNI.md §5.1).
+   ============================================================================ */
+
+typedef struct {
+    int exists;
+    char name[257];
+    char welcome_completed_at[32];
+    char selected_model_id[64];
+    char selected_model_version[128];
+    char created_at[32];
+    char updated_at[32];
+} Profile;
+
+/* Valid UTF-8 and a Unicode-scalar-value count (not byte count), matching
+   src/samosa_fs.c's is_valid_utf8_text() control-character rules (tab/CR/LF
+   allowed, no other C0 controls). Returns -1 for invalid UTF-8. */
+static long utf8_scalar_count(const unsigned char *data, size_t len) {
+    size_t i = 0; long count = 0;
+    while (i < len) {
+        unsigned char c = data[i++];
+        int cont; uint32_t cp;
+        if (c < 0x80) {
+            if (c < 0x20 && c != 9 && c != 10 && c != 13) return -1;
+            count++; continue;
+        }
+        if (c >= 0xc2 && c <= 0xdf) { cont = 1; cp = c & 0x1f; }
+        else if (c >= 0xe0 && c <= 0xef) { cont = 2; cp = c & 0x0f; }
+        else if (c >= 0xf0 && c <= 0xf4) { cont = 3; cp = c & 0x07; }
+        else return -1;
+        if ((size_t)cont > len - i) return -1;
+        if (c == 0xe0 && data[i] < 0xa0) return -1;
+        if (c == 0xed && data[i] >= 0xa0) return -1;
+        if (c == 0xf0 && data[i] < 0x90) return -1;
+        if (c == 0xf4 && data[i] >= 0x90) return -1;
+        while (cont--) {
+            if ((data[i] & 0xc0) != 0x80) return -1;
+            cp = (cp << 6) | (data[i++] & 0x3f);
+        }
+        (void)cp;
+        count++;
+    }
+    return count;
+}
+
+/* Trims ASCII whitespace in place and returns the trimmed length. */
+static size_t trim_ascii_ws(char *s) {
+    size_t len = strlen(s);
+    size_t start = 0;
+    while (start < len && (s[start] == ' ' || s[start] == '\t' ||
+                           s[start] == '\n' || s[start] == '\r')) start++;
+    size_t end = len;
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' ||
+                           s[end - 1] == '\n' || s[end - 1] == '\r')) end--;
+    size_t out_len = end - start;
+    if (start) memmove(s, s + start, out_len);
+    s[out_len] = 0;
+    return out_len;
+}
+
+/* 0 on failure to read/parse -- caller treats that as "no profile yet",
+   not an error, since a missing file is the normal pre-setup state. */
+static int profile_load(Gateway *g, Profile *out) {
+    memset(out, 0, sizeof(*out));
+    char *raw = read_file_limit(g->profile_path, 65536);
+    if (!raw) return 0;
+    char *arena = NULL;
+    jval *root = json_parse(raw, &arena);
+    if (!root || root->t != J_OBJ) { json_free(root); free(arena); free(raw); return 0; }
+    jval *name = json_get(root, "name");
+    if (name && name->t == J_STR) path_copy(out->name, sizeof(out->name), name->str);
+    jval *created = json_get(root, "created_at");
+    if (created && created->t == J_STR) path_copy(out->created_at, sizeof(out->created_at), created->str);
+    jval *updated = json_get(root, "updated_at");
+    if (updated && updated->t == J_STR) path_copy(out->updated_at, sizeof(out->updated_at), updated->str);
+    jval *onboarding = json_get(root, "onboarding");
+    if (onboarding && onboarding->t == J_OBJ) {
+        jval *w = json_get(onboarding, "welcome_completed_at");
+        if (w && w->t == J_STR) path_copy(out->welcome_completed_at, sizeof(out->welcome_completed_at), w->str);
+        jval *smid = json_get(onboarding, "selected_model_id");
+        if (smid && smid->t == J_STR) path_copy(out->selected_model_id, sizeof(out->selected_model_id), smid->str);
+        jval *smv = json_get(onboarding, "selected_model_version");
+        if (smv && smv->t == J_STR) path_copy(out->selected_model_version, sizeof(out->selected_model_version), smv->str);
+    }
+    out->exists = 1;
+    json_free(root); free(arena); free(raw);
+    return 1;
+}
+
+static int profile_save(Gateway *g, const Profile *p) {
+    TextBuffer json = {0};
+    int ok = text_add(&json, "{\"schema_version\":1,\"name\":") && text_json_string(&json, p->name) &&
+        text_add(&json, ",\"onboarding\":{\"welcome_completed_at\":") &&
+        (p->welcome_completed_at[0] ? text_json_string(&json, p->welcome_completed_at) : text_add(&json, "null")) &&
+        text_add(&json, ",\"selected_model_id\":") &&
+        (p->selected_model_id[0] ? text_json_string(&json, p->selected_model_id) : text_add(&json, "null")) &&
+        text_add(&json, ",\"selected_model_version\":") &&
+        (p->selected_model_version[0] ? text_json_string(&json, p->selected_model_version) : text_add(&json, "null")) &&
+        text_add(&json, ",\"active_install_job_id\":null,\"active_selection_operation_id\":null}") &&
+        text_add(&json, ",\"created_at\":") && text_json_string(&json, p->created_at) &&
+        text_add(&json, ",\"updated_at\":") && text_json_string(&json, p->updated_at) &&
+        text_add(&json, "}\n");
+    int result = ok && write_small_file(g->profile_path, json.data);
+    free(json.data);
+    return result;
+}
+
+static int emit_profile_json(int fd, const Profile *p) {
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"schema_version\":1,\"name\":") && text_json_string(&body, p->name) &&
+        text_add(&body, ",\"onboarding\":{\"welcome_completed_at\":") &&
+        (p->welcome_completed_at[0] ? text_json_string(&body, p->welcome_completed_at) : text_add(&body, "null")) &&
+        text_add(&body, ",\"selected_model_id\":") &&
+        (p->selected_model_id[0] ? text_json_string(&body, p->selected_model_id) : text_add(&body, "null")) &&
+        text_add(&body, ",\"selected_model_version\":") &&
+        (p->selected_model_version[0] ? text_json_string(&body, p->selected_model_version) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_install_job_id\":null,\"active_selection_operation_id\":null}") &&
+        text_add(&body, ",\"created_at\":") && text_json_string(&body, p->created_at) &&
+        text_add(&body, ",\"updated_at\":") && text_json_string(&body, p->updated_at) &&
+        text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int profile_get_handler(Gateway *g, int fd) {
+    Profile p;
+    if (!profile_load(g, &p))
+        return samosa_http_json_error(fd, 404, "profile_not_found", "No profile has been created yet.");
+    return emit_profile_json(fd, &p);
+}
+
+static int profile_put_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL;
+    jval *root = json_parse(request->body, &arena);
+    jval *name_v = root && root->t == J_OBJ ? json_get(root, "name") : NULL;
+    if (!name_v || name_v->t != J_STR) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_name", "A name field is required.");
+    }
+    char name[512];
+    if (!path_copy(name, sizeof(name), name_v->str)) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_name", "The name is too long.");
+    }
+    json_free(root); free(arena);
+    size_t trimmed_len = trim_ascii_ws(name);
+    long scalars = utf8_scalar_count((const unsigned char *)name, trimmed_len);
+    if (trimmed_len == 0 || scalars < 0 || scalars > 80 || trimmed_len > 256)
+        return samosa_http_json_error(fd, 400, "invalid_name",
+            "Your name must be 1-80 characters and valid text.");
+
+    Profile p;
+    int had_profile = profile_load(g, &p);
+    path_copy(p.name, sizeof(p.name), name);
+    char now[32]; rfc3339_now_to(now, sizeof(now));
+    if (!had_profile) path_copy(p.created_at, sizeof(p.created_at), now);
+    path_copy(p.updated_at, sizeof(p.updated_at), now);
+    /* Editing the name preserves onboarding progress (welcome_completed_at,
+       selection state) exactly -- profile_load() already carried those
+       forward from the existing file. */
+    if (!profile_save(g, &p))
+        return samosa_http_json_error(fd, 500, "profile_write_failed", "The profile could not be saved.");
+    return emit_profile_json(fd, &p);
+}
+
+static int welcome_complete_handler(Gateway *g, int fd) {
+    Profile p;
+    if (!profile_load(g, &p) || !p.name[0])
+        return samosa_http_json_error(fd, 409, "name_required", "Set a name before completing welcome.");
+    char now[32]; rfc3339_now_to(now, sizeof(now));
+    /* Idempotent: a prior welcome_completed_at is never overwritten. */
+    if (!p.welcome_completed_at[0]) path_copy(p.welcome_completed_at, sizeof(p.welcome_completed_at), now);
+    path_copy(p.updated_at, sizeof(p.updated_at), now);
+    if (!profile_save(g, &p))
+        return samosa_http_json_error(fd, 500, "profile_write_failed", "The profile could not be saved.");
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"ok\":true,\"welcome_completed_at\":") &&
+             text_json_string(&body, p.welcome_completed_at) && text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+/* Interim bridge (T1.2, ahead of T2.1's real model catalog/selection
+   registry): "a selected, verified model" does not exist as a concept yet.
+   Until then, a legacy-detected, currently-ready backend is treated as
+   satisfying that step, so an existing dogfood install is not sent back
+   through a "choose a model" screen it has no real answer for. T2.1/T2.2
+   replace this with real selected_model_id/active_install_job_id state. */
+static int setup_status_handler(Gateway *g, int fd) {
+    Profile p;
+    int had_profile = profile_load(g, &p);
+    const char *next_step;
+    int profile_complete;
+    int legacy_ready = backend_available(g, g->backend) && backend_probe(g);
+    if (!had_profile || !p.name[0]) { next_step = "name"; profile_complete = 0; }
+    else if (!p.welcome_completed_at[0]) { next_step = "welcome"; profile_complete = 0; }
+    else if (!legacy_ready) { next_step = "model"; profile_complete = 0; }
+    else { next_step = "chat"; profile_complete = 1; }
+
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"profile_complete\":") && text_add(&body, profile_complete ? "true" : "false") &&
+        text_add(&body, ",\"installed_model_count\":") &&
+        text_add(&body, backend_available(g, g->backend) ? "1" : "0") &&
+        text_add(&body, ",\"active_model_id\":") &&
+        (legacy_ready ? text_json_string(&body, g->backend) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_model_version\":null") &&
+        text_add(&body, ",\"active_model_ready\":") && text_add(&body, legacy_ready ? "true" : "false") &&
+        text_add(&body, ",\"selected_model_id\":") &&
+        (p.selected_model_id[0] ? text_json_string(&body, p.selected_model_id) : text_add(&body, "null")) &&
+        text_add(&body, ",\"selected_model_version\":") &&
+        (p.selected_model_version[0] ? text_json_string(&body, p.selected_model_version) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_install_job_id\":null,\"active_selection_operation_id\":null") &&
+        text_add(&body, ",\"next_step\":") && text_json_string(&body, next_step) &&
+        text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
     if (!strcmp(request->method, "GET") &&
         (!strcmp(request->path, "/") || !strcmp(request->path, "/index.html"))) {
-        const char *policy = "Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; "
-            "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
-            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n";
-        if (static_file(fd, g->app_html, "text/html; charset=utf-8", policy)) return 1;
+        if (serve_root_html(g, fd)) return 1;
         return samosa_http_json_error(fd, 404, "app_missing", "The app asset is missing.");
+    }
+    if (!strcmp(request->path, "/v1/profile") && (!strcmp(request->method, "GET") || !strcmp(request->method, "PUT"))) {
+        if (!require_ui_session(g, fd, request)) return 1;
+        return !strcmp(request->method, "GET") ? profile_get_handler(g, fd) : profile_put_handler(g, fd, request);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/setup/status")) {
+        if (!require_ui_session(g, fd, request)) return 1;
+        return setup_status_handler(g, fd);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/setup/welcome/complete")) {
+        if (!require_ui_session(g, fd, request)) return 1;
+        return welcome_complete_handler(g, fd);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
         if (static_file(fd, g->app_logo, "image/png", NULL)) return 1;
@@ -4462,6 +4802,7 @@ static int load_config(Gateway *g) {
                     !path_join(g->jobs_root, sizeof(g->jobs_root), g->home, "jobs")) return 0;
     if (!path_join(g->backend_log, sizeof(g->backend_log), g->home, "backend.log") ||
         !path_join(g->selection_file, sizeof(g->selection_file), g->home, "model-backend") ||
+        !path_join(g->profile_path, sizeof(g->profile_path), g->home, "profile.json") ||
         !mkdirs(g->home)) return 0;
     char selected[32] = {0};
     if (read_small_file(g->selection_file, selected, sizeof(selected)) &&
@@ -4499,6 +4840,10 @@ int main(int argc, char **argv) {
     if (!backend_start(&gateway))
         fprintf(stderr, "samosa-gateway: backend %s is not installed or failed to start; "
                         "serving the control plane without an active model\n", gateway.backend);
+    if (!init_ui_token(&gateway)) {
+        fprintf(stderr, "samosa-gateway: could not create the UI session token\n");
+        backend_stop(&gateway); return 2;
+    }
     SamosaHttpServer server;
     if (!samosa_http_server_init(&server, gateway.public_port, gateway_handler, &gateway)) {
         fprintf(stderr, "samosa-gateway: cannot bind 127.0.0.1:%d: %s\n",
