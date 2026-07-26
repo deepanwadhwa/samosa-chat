@@ -1844,6 +1844,9 @@ the rest of the browser control plane is built.
 
 #### T0.1 — Freeze contracts and add test fixtures
 
+**Status: DONE (2026-07-25).** Evidence:
+[docs/regressions/ui-chutni/t0.1-evidence.md](../regressions/ui-chutni/t0.1-evidence.md).
+
 **Work**
 
 - Add shared test fixtures for an empty profile, existing legacy model,
@@ -1867,6 +1870,9 @@ the rest of the browser control plane is built.
 - Existing Chat and Jobs tests remain green.
 
 #### T0.2 — Make scanning safe and streaming
+
+**Status: DONE (2026-07-26).** Evidence:
+[docs/regressions/ui-chutni/t0.2-evidence.md](../regressions/ui-chutni/t0.2-evidence.md).
 
 **Work**
 

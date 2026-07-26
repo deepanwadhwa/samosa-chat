@@ -56,6 +56,11 @@ samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
+# test-chutni: T0.2+ gate for docs/TASKS_UI_CHUTNI.md Chutni core work
+# (streaming inventory scan, full-hash-on-request, symlink/permission safety).
+test-chutni: samosa-fs tests/test_chutni_inventory.sh
+	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" sh tests/test_chutni_inventory.sh
+
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled
 # with -Wno-unused-function like the engine.

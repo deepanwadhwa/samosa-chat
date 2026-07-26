@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -731,6 +732,299 @@ static int scan_root(const char *root, int recursive, size_t max_bytes,
     return 1;
 }
 
+/* ---- Chutni inventory: streaming, safe, metadata-only scan (T0.2) ----
+ *
+ * Unlike scan_root() above (which materializes the whole tree into a
+ * PathList and sorts it -- unbounded memory on a large folder/drive, and one
+ * bad opendir() aborts the entire scan), this walks depth-first and emits one
+ * NDJSON record per entry directly to stdout as it is discovered. Memory is
+ * bounded by directory depth, not total file count. An unreadable descendant
+ * is recorded with a stable skip reason and the scan continues past it.
+ * Content is never read here -- no hashing, no magic-byte typing. A hash
+ * request is a separate, explicit, full-file SHA-256 (chutni-hash below);
+ * this scan never returns a misleading truncated/prefix hash. Symlinks are
+ * never followed (skipped outright), so they cannot be used to escape the
+ * canonical root. */
+
+typedef struct {
+    int include_hidden;
+    int cross_filesystems;
+    char **exclude_names;
+    size_t exclude_count;
+} ChutniPolicy;
+
+typedef struct {
+    unsigned long long files;
+    unsigned long long skipped;
+    unsigned long long directories_entered;
+} ChutniCounters;
+
+static volatile sig_atomic_t g_chutni_canceled = 0;
+
+static void chutni_on_signal(int signum) {
+    (void)signum;
+    g_chutni_canceled = 1;
+}
+
+/* Test-only determinism seam: SAMOSA_CHUTNI_TEST_DELAY_US inserts a per-file
+ * delay so cancellation tests can exercise the two-second stop bound against
+ * a small fixture instead of needing hundreds of thousands of real files.
+ * Looked up once; zero cost in production where the variable is unset. */
+static long chutni_test_delay_us(void) {
+    static long delay = -1;
+    if (delay < 0) {
+        const char *v = getenv("SAMOSA_CHUTNI_TEST_DELAY_US");
+        delay = v ? atol(v) : 0;
+        if (delay < 0) delay = 0;
+    }
+    return delay;
+}
+
+static int chutni_name_excluded(const ChutniPolicy *policy, const char *name) {
+    size_t i;
+    for (i = 0; i < policy->exclude_count; ++i)
+        if (strcmp(policy->exclude_names[i], name) == 0)
+            return 1;
+    return 0;
+}
+
+static int chutni_emit_file(const char *rel_path, const struct stat *st) {
+    Buffer out = {0};
+    int ok = buf_put(&out, "{\"type\":\"file\",\"rel_path\":") &&
+             buf_json_string(&out, rel_path) &&
+             buf_printf(&out, ",\"size\":%lld,\"mtime\":%.9f,\"dev\":%lld,\"ino\":%llu}\n",
+                        (long long)st->st_size, stat_mtime(st),
+                        (long long)st->st_dev, (unsigned long long)st->st_ino);
+    if (!ok) { free(out.data); return 0; }
+    fputs(out.data, stdout);
+    free(out.data);
+    return 1;
+}
+
+static int chutni_emit_skip(const char *rel_path, const char *reason) {
+    Buffer out = {0};
+    int ok = buf_put(&out, "{\"type\":\"skip\",\"rel_path\":") &&
+             buf_json_string(&out, rel_path) &&
+             buf_put(&out, ",\"reason\":") &&
+             buf_json_string(&out, reason) &&
+             buf_put(&out, "}\n");
+    if (!ok) { free(out.data); return 0; }
+    fputs(out.data, stdout);
+    free(out.data);
+    return 1;
+}
+
+/* Returns 0 only on an unrecoverable output failure (caller reports
+ * output_too_large); an unreadable directory is a recorded skip, not a
+ * failure, so the scan can continue past it. */
+static int chutni_walk(dev_t root_dev, const char *dir_abs, const char *rel_prefix,
+                       const ChutniPolicy *policy, ChutniCounters *counters) {
+    DIR *dir;
+    struct dirent *de;
+    if (g_chutni_canceled) return 1;
+    dir = opendir(dir_abs);
+    if (!dir) {
+        if (!chutni_emit_skip(rel_prefix[0] ? rel_prefix : ".",
+                              errno == EACCES ? "permission_denied" : "unreadable"))
+            return 0;
+        counters->skipped++;
+        return 1;
+    }
+    counters->directories_entered++;
+    while (!g_chutni_canceled && (de = readdir(dir)) != NULL) {
+        char child_abs[PATH_MAX];
+        char child_rel[PATH_MAX];
+        struct stat st;
+        int n;
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+            continue;
+        {
+            long delay_us = chutni_test_delay_us();
+            if (delay_us > 0) usleep((useconds_t)delay_us);
+        }
+        if (!join_path(child_abs, sizeof(child_abs), dir_abs, de->d_name)) {
+            if (!chutni_emit_skip(rel_prefix[0] ? rel_prefix : ".", "unreadable")) {
+                closedir(dir); return 0;
+            }
+            counters->skipped++;
+            continue;
+        }
+        n = rel_prefix[0]
+            ? snprintf(child_rel, sizeof(child_rel), "%s/%s", rel_prefix, de->d_name)
+            : snprintf(child_rel, sizeof(child_rel), "%s", de->d_name);
+        if (n < 0 || (size_t)n >= sizeof(child_rel)) {
+            if (!chutni_emit_skip(rel_prefix[0] ? rel_prefix : ".", "unreadable")) {
+                closedir(dir); return 0;
+            }
+            counters->skipped++;
+            continue;
+        }
+        if (lstat(child_abs, &st) != 0) {
+            if (!chutni_emit_skip(child_rel, "unreadable")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (S_ISLNK(st.st_mode)) {
+            if (!chutni_emit_skip(child_rel, "symlink")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (de->d_name[0] == '.' && !policy->include_hidden) {
+            if (!chutni_emit_skip(child_rel, "hidden_excluded")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (chutni_name_excluded(policy, de->d_name)) {
+            if (!chutni_emit_skip(child_rel, "user_exclusion")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            if (!policy->cross_filesystems && st.st_dev != root_dev) {
+                if (!chutni_emit_skip(child_rel, "cross_filesystem")) { closedir(dir); return 0; }
+                counters->skipped++;
+                continue;
+            }
+            if (!chutni_walk(root_dev, child_abs, child_rel, policy, counters)) {
+                closedir(dir);
+                return 0;
+            }
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) {
+            if (!chutni_emit_skip(child_rel, "not_regular_file")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (!chutni_emit_file(child_rel, &st)) { closedir(dir); return 0; }
+        counters->files++;
+    }
+    closedir(dir);
+    return 1;
+}
+
+static int command_chutni_inventory(const char *root, const ChutniPolicy *policy) {
+    char root_abs[PATH_MAX];
+    struct stat root_st;
+    ChutniCounters counters = {0};
+    if (!root || !realpath(root, root_abs)) {
+        put_error("folder_unavailable");
+        return 65;
+    }
+    if (lstat(root_abs, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) {
+        put_error("folder_unavailable");
+        return 65;
+    }
+    if (!chutni_walk(root_st.st_dev, root_abs, "", policy, &counters)) {
+        put_error("output_too_large");
+        return 65;
+    }
+    {
+        Buffer out = {0};
+        int ok = buf_printf(&out,
+            "{\"type\":\"done\",\"canceled\":%s,\"files\":%llu,\"skipped\":%llu,"
+            "\"directories_entered\":%llu}\n",
+            g_chutni_canceled ? "true" : "false",
+            counters.files, counters.skipped, counters.directories_entered);
+        if (!ok) { free(out.data); put_error("output_too_large"); return 65; }
+        fputs(out.data, stdout);
+        free(out.data);
+    }
+    return g_chutni_canceled ? 2 : 0;
+}
+
+/* chutni-hash: the only place a Chutni scan reads content, and only on
+ * explicit request for one already-inventoried path. Always a complete
+ * SHA-256 over the whole file -- never a capped/prefix hash -- with the same
+ * no-follow-open + fstat-identity-before-and-after discipline as
+ * validate_move_source() above, so a file rewritten mid-hash is caught
+ * rather than silently hashed under a stale identity. */
+static int command_chutni_hash(const char *root, const char *target) {
+    char root_abs[PATH_MAX], target_abs[PATH_MAX], resolved[PATH_MAX];
+    struct stat path_st, st, st2;
+    int fd, flags = O_RDONLY;
+    Sha256 sha;
+    unsigned char digest[32];
+    char hex[65];
+    unsigned char block[1 << 16];
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    if (!root || !target || has_dotdot_component(target)) {
+        put_error("bad_args");
+        return 64;
+    }
+    if (!realpath(root, root_abs)) {
+        put_error("folder_unavailable");
+        return 65;
+    }
+    if (target[0] == '/') {
+        if (snprintf(target_abs, sizeof(target_abs), "%s", target) >= (int)sizeof(target_abs)) {
+            put_error("bad_args");
+            return 64;
+        }
+    } else if (!join_path(target_abs, sizeof(target_abs), root_abs, target)) {
+        put_error("bad_args");
+        return 64;
+    }
+    if (!realpath(target_abs, resolved)) {
+        put_error("cannot_open");
+        return 65;
+    }
+    if (!inside_root_abs(root_abs, resolved)) {
+        put_error("path_outside_scope");
+        return 65;
+    }
+    snprintf(target_abs, sizeof(target_abs), "%s", resolved);
+    if (lstat(target_abs, &path_st) != 0) {
+        put_error("cannot_open");
+        return 65;
+    }
+    if (S_ISLNK(path_st.st_mode)) {
+        put_error("symlink");
+        return 65;
+    }
+    fd = open(target_abs, flags);
+    if (fd < 0) {
+        put_error(errno == EACCES ? "permission_denied" : "cannot_open");
+        return 65;
+    }
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        st.st_dev != path_st.st_dev || st.st_ino != path_st.st_ino) {
+        close(fd);
+        put_error("not_regular_file");
+        return 65;
+    }
+    sha256_init(&sha);
+    for (;;) {
+        ssize_t n = read(fd, block, sizeof(block));
+        if (n < 0) { close(fd); put_error("cannot_read"); return 65; }
+        if (n == 0) break;
+        sha256_update(&sha, block, (size_t)n);
+        if (g_chutni_canceled) { close(fd); put_error("canceled"); return 2; }
+    }
+    if (fstat(fd, &st2) != 0 || st2.st_size != st.st_size || stat_mtime(&st2) != stat_mtime(&st)) {
+        close(fd);
+        put_error("changed_during_read");
+        return 65;
+    }
+    close(fd);
+    sha256_final(&sha, digest);
+    sha256_hex(digest, hex);
+    {
+        Buffer out = {0};
+        int ok = buf_put(&out, "{\"ok\":true,\"sha256\":") && buf_json_string(&out, hex) &&
+                 buf_printf(&out, ",\"size\":%lld}\n", (long long)st.st_size);
+        if (!ok) { free(out.data); put_error("output_too_large"); return 65; }
+        fputs(out.data, stdout);
+        free(out.data);
+    }
+    return 0;
+}
+
 static int type_count_add(TypeCounts *counts, const char *media_type, off_t size) {
     TypeCount *next;
     size_t i;
@@ -1068,6 +1362,9 @@ static void usage(void) {
           "       samosa-fs metadata [--max-file-bytes N] PATH\n"
           "       samosa-fs move --root ROOT [--size N] [--mtime T] [--sha256 H] SRC DST\n"
           "       samosa-fs undo --root ROOT SRC DST\n"
+          "       samosa-fs chutni-inventory --root ROOT [--include-hidden]\n"
+          "                          [--cross-filesystems] [--exclude NAME]...\n"
+          "       samosa-fs chutni-hash --root ROOT PATH\n"
           "       samosa-fs --version\n", stderr);
 }
 
@@ -1095,6 +1392,10 @@ int main(int argc, char **argv) {
     int have_size = 0;
     int have_mtime = 0;
     int recursive = 0;
+    int include_hidden = 0;
+    int cross_filesystems = 0;
+    char **exclude_names = NULL;
+    size_t exclude_count = 0, exclude_cap = 0;
     int i;
     ItemList items = {0};
     SkipList skips = {0};
@@ -1142,6 +1443,23 @@ int main(int argc, char **argv) {
             have_mtime = 1;
         } else if (strcmp(argv[i], "--sha256") == 0 && i + 1 < argc) {
             expected_hash = argv[++i];
+        } else if (strcmp(argv[i], "--include-hidden") == 0) {
+            include_hidden = 1;
+        } else if (strcmp(argv[i], "--cross-filesystems") == 0) {
+            cross_filesystems = 1;
+        } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
+            char **next;
+            if (exclude_count == exclude_cap) {
+                size_t cap = exclude_cap ? exclude_cap * 2 : 8;
+                next = realloc(exclude_names, cap * sizeof(*next));
+                if (!next) {
+                    put_error("out_of_memory");
+                    return 70;
+                }
+                exclude_names = next;
+                exclude_cap = cap;
+            }
+            exclude_names[exclude_count++] = argv[++i];
         } else if (strcmp(cmd, "move") == 0 || strcmp(cmd, "undo") == 0) {
             if (!src) src = argv[i];
             else if (!dst) dst = argv[i];
@@ -1156,6 +1474,22 @@ int main(int argc, char **argv) {
             return 64;
         }
     }
+    if (strcmp(cmd, "chutni-inventory") == 0) {
+        ChutniPolicy policy = {0};
+        policy.include_hidden = include_hidden;
+        policy.cross_filesystems = cross_filesystems;
+        policy.exclude_names = exclude_names;
+        policy.exclude_count = exclude_count;
+        signal(SIGINT, chutni_on_signal);
+        signal(SIGTERM, chutni_on_signal);
+        return command_chutni_inventory(root, &policy);
+    }
+    if (strcmp(cmd, "chutni-hash") == 0) {
+        signal(SIGINT, chutni_on_signal);
+        signal(SIGTERM, chutni_on_signal);
+        return command_chutni_hash(root, path);
+    }
+
     if (!path) {
         if (strcmp(cmd, "move") == 0)
             return command_move(root, src, dst, expected_size, have_size,
