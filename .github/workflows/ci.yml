@@ -50,6 +50,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace debian:bookworm-slim sh -c "
-            apt-get update && apt-get install -y make gcc libomp-dev curl python3 &&
+            apt-get update && apt-get install -y make gcc libomp-dev curl python3 file &&
             make test
           "

@@ -1324,7 +1324,7 @@ static char *update_job_public_inputs(Gateway *g, const char *job_id, jval *urls
         }
         const char *status = !prev_hash ? "new" : (strcmp(prev_hash, digest) ? "changed" : "unchanged");
 
-        char text_path[PATH_MAX] = {0}, meta_path[PATH_MAX] = {0};
+        char text_path[PATH_MAX + 128] = {0}, meta_path[PATH_MAX + 128] = {0};
         if (strcmp(status, "unchanged")) {
             char slug[64]; slugify_to(slug, sizeof(slug), page.title[0] ? page.title : page.url);
             char stem[96]; snprintf(stem, sizeof(stem), "%s-%.12s", slug, digest);
@@ -1340,7 +1340,7 @@ static char *update_job_public_inputs(Gateway *g, const char *job_id, jval *urls
         text_add(&rec, ",\"hash\":"); text_json_string(&rec, digest);
         text_add(&rec, ",\"status\":"); text_json_string(&rec, status);
         text_add(&rec, ",\"truncated\":"); text_add(&rec, page.truncated ? "true" : "false");
-        char chars[32]; snprintf(chars, sizeof(chars), ",\"text_chars\":%zu", strlen(page.text));
+        char chars[48]; snprintf(chars, sizeof(chars), ",\"text_chars\":%zu", strlen(page.text));
         text_add(&rec, chars);
         if (text_path[0]) { text_add(&rec, ",\"text_path\":"); text_json_string(&rec, text_path);
             text_add(&rec, ",\"meta_path\":"); text_json_string(&rec, meta_path); }
@@ -2135,7 +2135,7 @@ static void escalate_low_conf_crops(Gateway *g, const char *absolute, jval *line
         jval *cf = json_get(line, "conf");
         double c = cf ? cf->num : 0.0;
         if (c < 0.84) {
-            char crop_path[PATH_MAX];
+            char crop_path[PATH_MAX + 32];
             snprintf(crop_path, sizeof(crop_path), "%s/crop_%03d.ppm", crop_dir, i);
             struct stat st;
             if (stat(crop_path, &st) == 0 && st.st_size > 0) {
@@ -2192,7 +2192,7 @@ static void escalate_low_conf_crops(Gateway *g, const char *absolute, jval *line
         struct dirent *ent;
         while ((ent = readdir(d)) != NULL) {
             if (strcmp(ent->d_name, ".") && strcmp(ent->d_name, "..")) {
-                char fpath[PATH_MAX];
+                char fpath[PATH_MAX + 260];
                 snprintf(fpath, sizeof(fpath), "%s/%s", crop_dir, ent->d_name);
                 unlink(fpath);
             }
@@ -2322,7 +2322,7 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
                 }
                 text_add(&full_lines, "]");
             } else {
-                char tmp_ppm[PATH_MAX];
+                char tmp_ppm[PATH_MAX + 64];
                 snprintf(tmp_ppm, sizeof(tmp_ppm), "%s/doc_read_%d_p%d.ppm", g->home, (int)getpid(), p + 1);
                 char p_str[24]; snprintf(p_str, sizeof(p_str), "%d", p + 1);
                 char *argv_rnd[] = {g->samosa_extract, "--render-ppm", (char *)absolute, p_str, tmp_ppm, NULL};
@@ -2355,9 +2355,10 @@ static char *doc_read_handler(Gateway *g, const char *absolute, jval *args) {
                     if (i == 0 || c < min_c) min_c = c;
                 }
                 text_add(&full_lines, ",\"source\":\"ocr\",");
-                snprintf(numbuf, sizeof(numbuf), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
+                char ocr_summary[160];
+                snprintf(ocr_summary, sizeof(ocr_summary), "\"lines_total\":%d,\"lines_uncertain\":%d,\"min_conf\":%.4f,\"needs_review\":%s,\"lines\":",
                          l_tot, l_unc, min_c, l_unc > 0 ? "true" : "false");
-                text_add(&full_lines, numbuf);
+                text_add(&full_lines, ocr_summary);
                 if (lines_arr) text_json_value(&full_lines, lines_arr);
                 else text_add(&full_lines, "[]");
 

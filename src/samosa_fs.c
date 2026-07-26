@@ -10,6 +10,7 @@
  * v2 adds the mutation core: move and undo. The gateway still owns the
  * approval boundary; this sidecar performs one constrained filesystem verb.
  */
+#define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 

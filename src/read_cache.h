@@ -16,6 +16,7 @@
 #ifndef READ_CACHE_H
 #define READ_CACHE_H
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "json.h"
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 /* ------------------------------- SHA-256 ---------------------------------- */
 typedef struct { uint32_t h[8]; uint64_t bits; unsigned char block[64]; size_t used; } RcSha;
@@ -110,12 +115,12 @@ static void rc_escape(const char *s, char *dst, size_t cap) {
  * Returns 0 on success. */
 static int read_cache_put(const char *root, const char *key, const char *contract,
                           const char *fingerprint, const char *result_json) {
-    char shard[1200]; snprintf(shard, sizeof shard, "%s/%c%c", root, key[0], key[1]);
-    char base[1024]; snprintf(base, sizeof base, "%s", root);
+    char shard[PATH_MAX + 8]; snprintf(shard, sizeof shard, "%s/%c%c", root, key[0], key[1]);
+    char base[PATH_MAX]; snprintf(base, sizeof base, "%s", root);
     /* mkdir -p root then shard, 0700 */
     for (char *p = base + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(base, 0700); *p = '/'; }
     mkdir(base, 0700); mkdir(shard, 0700);
-    char path[1400], tmp[1500];
+    char path[PATH_MAX + 80], tmp[PATH_MAX + 96];
     rc_entry_path(root, key, path, sizeof path);
     snprintf(tmp, sizeof tmp, "%s.tmp.%d", path, (int)getpid());
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
@@ -135,7 +140,7 @@ static int read_cache_put(const char *root, const char *key, const char *contrac
  * else NULL (miss). Caller frees. */
 static char *read_cache_get(const char *root, const char *key, const char *contract,
                             const char *fingerprint) {
-    char path[1400]; rc_entry_path(root, key, path, sizeof path);
+    char path[PATH_MAX + 80]; rc_entry_path(root, key, path, sizeof path);
     FILE *f = fopen(path, "rb"); if (!f) return NULL;
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
     char *txt = malloc(n + 1); if (!txt) { fclose(f); return NULL; }

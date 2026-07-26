@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     }
     const size_t map_bytes = ((size_t)file_bytes + page_size - 1) / page_size * page_size;
     const size_t page_count = map_bytes / page_size;
-    char *residency = calloc(page_count, sizeof(*residency));
+    unsigned char *residency = calloc(page_count, sizeof(*residency));
     if (residency == NULL) {
         perror("calloc");
         close(fd);
@@ -96,7 +96,10 @@ int main(int argc, char **argv) {
         close(fd);
         return 1;
     }
-    if (mincore(mapping, map_bytes, residency) != 0) {
+    /* mincore(2)'s third parameter is 'char *' on Darwin's BSD-derived headers
+     * but 'unsigned char *' on Linux glibc; a void* cast satisfies both
+     * without triggering -Wpointer-sign on either. */
+    if (mincore(mapping, map_bytes, (void *)residency) != 0) {
         perror("mincore");
         munmap(mapping, map_bytes);
         free(residency);
@@ -106,7 +109,7 @@ int main(int argc, char **argv) {
 
     size_t resident_pages = 0;
     for (size_t page = 0; page < page_count; ++page) {
-        if (((unsigned char)residency[page] & 1u) != 0) ++resident_pages;
+        if ((residency[page] & 1u) != 0) ++resident_pages;
     }
     const uintmax_t resident_bytes = (uintmax_t)resident_pages * page_size;
     const double resident_percent = 100.0 * (double)resident_pages / (double)page_count;
