@@ -1,0 +1,140 @@
+data: {"seq":1,"type":"decode_intent","job_id":"job-1784858891-40037-175506673","goal":"Find all files related to the Poličar 2019 research.","folder":"/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-eji1-5i3lonrl/fixtures"}
+
+data: {"seq":2,"type":"intent","kind":"find","rule":null,"explain":"Search the complete filename index, then inspect likely matches with bounded reads."}
+
+data: {"seq":3,"type":"counting","total":50,"skipped":0,"by_type":{"image/png":41,"text/plain":9}}
+
+data: {"seq":4,"type":"indexing","total":50}
+
+data: {"seq":5,"type":"triage_progress","done":16,"total":50}
+
+data: {"seq":6,"type":"triage_progress","done":32,"total":50}
+
+data: {"seq":7,"type":"triage_progress","done":48,"total":50}
+
+data: {"seq":8,"type":"triage_progress","done":50,"total":50}
+
+data: {"seq":9,"type":"index_complete","total":50,"checked":50,"batches":4}
+
+data: {"seq":10,"type":"skim_progress","done":1,"total":50,"current":"policar_research_2019.txt","confidence":"high","deferred":false,"source":"text"}
+
+data: {"seq":11,"type":"skim_progress","done":2,"total":50,"current":"notes_006.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":12,"type":"skim_progress","done":3,"total":50,"current":"notes_005.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":13,"type":"skim_progress","done":4,"total":50,"current":"notes_004.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":14,"type":"skim_progress","done":5,"total":50,"current":"notes_003.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":15,"type":"skim_progress","done":6,"total":50,"current":"notes_002.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":16,"type":"skim_progress","done":7,"total":50,"current":"notes_001.txt","confidence":"medium","deferred":false,"source":"text"}
+
+data: {"seq":17,"type":"skim_progress","done":8,"total":50,"current":"CamScanner_junk_014.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":18,"type":"skim_progress","done":9,"total":50,"current":"CamScanner_junk_013.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":19,"type":"skim_progress","done":10,"total":50,"current":"CamScanner_junk_012.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":20,"type":"skim_progress","done":11,"total":50,"current":"CamScanner_junk_011.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":21,"type":"skim_progress","done":12,"total":50,"current":"CamScanner_junk_010.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":22,"type":"skim_progress","done":13,"total":50,"current":"CamScanner_junk_009.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":23,"type":"skim_progress","done":14,"total":50,"current":"CamScanner_junk_008.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":24,"type":"skim_progress","done":15,"total":50,"current":"CamScanner_junk_007.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":25,"type":"skim_progress","done":16,"total":50,"current":"CamScanner_junk_006.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":26,"type":"skim_progress","done":17,"total":50,"current":"CamScanner_junk_005.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":27,"type":"skim_progress","done":18,"total":50,"current":"CamScanner_junk_004.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":28,"type":"skim_progress","done":19,"total":50,"current":"CamScanner_junk_003.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":29,"type":"skim_progress","done":20,"total":50,"current":"CamScanner_junk_002.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":30,"type":"skim_progress","done":21,"total":50,"current":"CamScanner_junk_001.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":31,"type":"skim_progress","done":22,"total":50,"current":"CamScanner_junk_000.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":32,"type":"skim_progress","done":23,"total":50,"current":"CamScanner_03-15-2024.png","confidence":"medium","deferred":false,"source":"ocr"}
+
+data: {"seq":33,"type":"skim_progress","done":24,"total":50,"current":"notes_000.txt","confidence":"low","deferred":false,"source":"text"}
+
+data: {"seq":34,"type":"skim_progress","done":25,"total":50,"current":"IMG_junk_014.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":35,"type":"skim_progress","done":26,"total":50,"current":"IMG_junk_013.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":36,"type":"skim_progress","done":27,"total":50,"current":"IMG_junk_012.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":37,"type":"skim_progress","done":28,"total":50,"current":"IMG_junk_011.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":38,"type":"skim_progress","done":29,"total":50,"current":"IMG_junk_010.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":39,"type":"skim_progress","done":30,"total":50,"current":"IMG_junk_009.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":40,"type":"skim_progress","done":31,"total":50,"current":"IMG_junk_008.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":41,"type":"skim_progress","done":32,"total":50,"current":"IMG_junk_007.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":42,"type":"skim_progress","done":33,"total":50,"current":"IMG_junk_006.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":43,"type":"skim_progress","done":34,"total":50,"current":"IMG_junk_005.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":44,"type":"skim_progress","done":35,"total":50,"current":"IMG_junk_004.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":45,"type":"skim_progress","done":36,"total":50,"current":"IMG_junk_003.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":46,"type":"skim_progress","done":37,"total":50,"current":"IMG_junk_002.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":47,"type":"skim_progress","done":38,"total":50,"current":"IMG_junk_001.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":48,"type":"skim_progress","done":39,"total":50,"current":"IMG_junk_000.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":49,"type":"skim_progress","done":40,"total":50,"current":"CamScanner_junk_024.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":50,"type":"skim_progress","done":41,"total":50,"current":"CamScanner_junk_023.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":51,"type":"skim_progress","done":42,"total":50,"current":"CamScanner_junk_022.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":52,"type":"skim_progress","done":43,"total":50,"current":"CamScanner_junk_021.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":53,"type":"skim_progress","done":44,"total":50,"current":"CamScanner_junk_020.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":54,"type":"skim_progress","done":45,"total":50,"current":"CamScanner_junk_019.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":55,"type":"skim_progress","done":46,"total":50,"current":"CamScanner_junk_018.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":56,"type":"skim_progress","done":47,"total":50,"current":"CamScanner_junk_017.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":57,"type":"skim_progress","done":48,"total":50,"current":"CamScanner_junk_016.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":58,"type":"skim_progress","done":49,"total":50,"current":"CamScanner_junk_015.png","confidence":"low","deferred":false,"source":"ocr"}
+
+data: {"seq":59,"type":"skim_progress","done":50,"total":50,"current":"titli_rabies_certificate.txt","confidence":"low","deferred":false,"source":"text"}
+
+data: {"seq":60,"type":"classify_progress","done":16,"total":50,"shortlist":1}
+
+data: {"seq":61,"type":"classify_progress","done":32,"total":50,"shortlist":2}
+
+data: {"seq":62,"type":"classify_progress","done":48,"total":50,"shortlist":2}
+
+data: {"seq":63,"type":"classify_progress","done":50,"total":50,"shortlist":2}
+
+data: {"seq":64,"type":"tool_call","tool":"fs_read_text","path":"policar_research_2019.txt"}
+
+data: {"seq":65,"type":"tool_result","tool":"fs_read_text","path":"policar_research_2019.txt"}
+
+data: {"seq":66,"type":"tool_call","tool":"doc.read","path":"CamScanner_03-15-2024.png"}
+
+data: {"seq":67,"type":"tool_result","tool":"doc.read","path":"CamScanner_03-15-2024.png","source":"ocr"}
+
+data: {"seq":68,"type":"result","job_id":"job-1784858891-40037-175506673","matches":[{"path":"policar_research_2019.txt","evidence":"Research summary. Author: Policar. Year 2019. Local research notes.","confidence":"high"},{"path":"CamScanner_03-15-2024.png","evidence":"OCR text: 'Poličar 2019'","confidence":"high"}],"rejected_count":0,"unreadable":[],"deferred":[],"notes":""}
+
+data: {"seq":69,"type":"done","job_id":"job-1784858891-40037-175506673","summary":"Search complete."}
+
+data: [DONE]
+

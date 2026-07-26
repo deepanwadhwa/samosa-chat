@@ -1,0 +1,1 @@
+{"merchant":"PAPER TRAIL STATIONERY","date":"2025-12-03","subtotal":9.8,"tax":0.78,"total":10.58,"currency":"USD"}

@@ -1,0 +1,1 @@
+{"merchant":"JOE'S COFFEE HOUSE","date":"2026-07-10","subtotal":7.75,"tax":0.62,"total":8.37,"currency":"USD"}

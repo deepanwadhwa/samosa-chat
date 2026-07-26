@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "job_id": "e-j1-jss-pdf-ornith-20260722",
+  "name": "Journal article metadata extraction",
+  "input": {
+    "folder": "/private/tmp/samosa-ej1-jss-inputs-20260722",
+    "recursive": false,
+    "types": [
+      "application/pdf"
+    ],
+    "max_file_bytes": 26214400
+  },
+  "unit": "page",
+  "instruction": "Extract bibliographic and contact metadata from this Journal of Statistical Software article. Return ONLY the requested JSON object. Use the article title page and final Affiliation block. Preserve author order. Output scalar values only, never arrays or nested objects. For authors, author_emails, affiliations, and universities, emit a semicolon-separated string in document order; include only email addresses and affiliations explicitly present in the article. Put author_emails in author order; when several emails are printed on one affiliation line, map them to the named authors on that line before ordering. For affiliations, output only unique institution or organization names, not departments, schools, addresses, cities, or countries. For universities, output only unique affiliation names containing a university name, not research institutes. Preserve first appearance order. Use the journal value exactly as Journal of Statistical Software. Emit volume and issue as JSON numbers. Normalize the publication month as YYYY-MM. Extract submitted_date and accepted_date as YYYY-MM-DD when printed; otherwise use null. Do not infer missing data.",
+  "reduce": {
+    "mode": "deterministic",
+    "model_fields": []
+  },
+  "inference": {
+    "thinking": "off",
+    "seed": 11,
+    "temperature": 0,
+    "max_tokens": 1024,
+    "timeout_s": null
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "title",
+      "journal",
+      "publication_month",
+      "volume",
+      "issue",
+      "doi",
+      "authors",
+      "author_emails",
+      "affiliations",
+      "universities",
+      "submitted_date",
+      "accepted_date"
+    ],
+    "properties": {
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "journal": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "publication_month": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 7
+      },
+      "volume": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "issue": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "doi": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "authors": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "author_emails": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "affiliations": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "universities": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "submitted_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 10
+      },
+      "accepted_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 10
+      }
+    }
+  },
+  "output": {
+    "dir": "/Users/deepanwadhwa/Documents/samosa-chat/docs/regressions/jobs/e-j1/jss-pdf-ornith-2026-07-22/output",
+    "format": "jsonl"
+  },
+  "resources": {
+    "max_attempts": 2,
+    "run_on_battery": false,
+    "pause_when_user_active": true,
+    "min_free_gb": 10,
+    "max_input_tokens": 8192
+  }
+}

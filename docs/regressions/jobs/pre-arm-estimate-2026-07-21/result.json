@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-07-21T19:13:28.592422+00:00",
+  "scope": "pre-arm estimate CLI smoke; no model server invoked",
+  "suggest_cmd": [
+    "python3",
+    "tools/samosa_jobs.py",
+    "suggest-job",
+    "receipts by date",
+    "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts",
+    "--out",
+    "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts.job.json"
+  ],
+  "suggest_returncode": 0,
+  "suggest_stdout": {
+    "estimate": {
+      "battery_policy": "run manually; daemon battery policy is not active yet",
+      "decode_tokens_per_second": 6.0,
+      "estimated_wall_human": "4m 19s",
+      "estimated_wall_seconds": 258.6,
+      "folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts",
+      "input_tokens": 53,
+      "model_units": 3,
+      "ok": true,
+      "output_tokens": 1536,
+      "prefill_tokens_per_second": 20.0,
+      "skipped_count": 0,
+      "token_counts_exact": false,
+      "unit_count": 3
+    },
+    "job": {
+      "input": {
+        "folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts"
+      },
+      "instruction": "Extract the receipt date (YYYY-MM-DD), merchant name, and total amount.",
+      "intent": "extract-and-organize",
+      "job_id": "receipts-by-date-receipts-by-date",
+      "organize": {
+        "dest_root": null,
+        "on_collision": "skip",
+        "rule": {
+          "by": "field",
+          "field": "date"
+        },
+        "unmatched": "leave"
+      },
+      "output_schema": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "merchant": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "merchant",
+          "total"
+        ],
+        "type": "object"
+      },
+      "schema_version": 1
+    },
+    "ok": true,
+    "path": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts.job.json",
+    "source": "deterministic",
+    "template": "receipts-by-date"
+  },
+  "suggest_stderr": "",
+  "estimate_cmd": [
+    "python3",
+    "tools/samosa_jobs.py",
+    "estimate",
+    "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts.job.json"
+  ],
+  "estimate_returncode": 0,
+  "estimate_stdout": {
+    "battery_policy": "run manually; daemon battery policy is not active yet",
+    "decode_tokens_per_second": 6.0,
+    "estimated_wall_human": "4m 19s",
+    "estimated_wall_seconds": 258.6,
+    "folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-estimate-ykdgj3fp/receipts",
+    "input_tokens": 53,
+    "model_units": 3,
+    "ok": true,
+    "output_tokens": 1536,
+    "prefill_tokens_per_second": 20.0,
+    "skipped_count": 0,
+    "token_counts_exact": false,
+    "unit_count": 3
+  },
+  "estimate_stderr": ""
+}

@@ -1,0 +1,124 @@
+{
+  "contract_version": "reader-v0",
+  "pack_fingerprint": "bc9137ed6cef7762aac7769eed5a45613f569275c37a449fb88f816676eefaf5",
+  "tier": "small",
+  "created": "2026-07-23T16:54:55.441618+00:00",
+  "num_classes": 18710,
+  "thresholds": {
+    "t_accept": 0.84,
+    "t_decide": 0.99,
+    "max_escalations_per_page": 8,
+    "thresh": 0.2,
+    "box_thresh": 0.45,
+    "unclip_ratio": 1.4,
+    "max_candidates": 3000,
+    "min_size": 3,
+    "score_mode": "fast"
+  },
+  "det_preprocess": {
+    "read_order": "BGR",
+    "scale": 0.00392156862745098,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "limit_type": "max",
+    "limit_side_len": 960,
+    "size_multiple": 32,
+    "max_side_limit": 4000
+  },
+  "det_postprocess": {
+    "thresh": 0.2,
+    "box_thresh": 0.45,
+    "unclip_ratio": 1.4,
+    "max_candidates": 3000,
+    "min_size": 3,
+    "score_mode": "fast"
+  },
+  "rec_preprocess": {
+    "img_h": 48,
+    "img_w": 320,
+    "max_wh_ratio": 6.666666666666667,
+    "max_img_w": 3200,
+    "norm": "pm1"
+  },
+  "files": {
+    "det.bin": "70da97aa2c7e35f8a6dd6f3ec208befe00b8578437d231b70cb2c6d2169fe576",
+    "rec.bin": "b5aacf5d4a01d09578b44c52941a983c2f67de8a5e9cb55b5e68d0782e2ccd92",
+    "charset.txt": "f950725a97cb6b1a6636d16784aa05720517686581fa8b680ed04f1530a6ab90"
+  },
+  "source_pins": [
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_det_safetensors",
+      "revision": "eae2ee920a39fb3087637d3dbb58df1896ec1f24",
+      "file": "model.safetensors",
+      "bytes": 9938124,
+      "sha256": "89a96a8adc4e9cd0c994098edc76022e496d35844392562b4694c8fbc583f2da",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_det_safetensors",
+      "revision": "eae2ee920a39fb3087637d3dbb58df1896ec1f24",
+      "file": "config.json",
+      "bytes": 1096,
+      "sha256": "b42d76ab6325d5234e1afc9987b73dc592b0ec8437c8a29d46ba6209b79252eb",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_det_safetensors",
+      "revision": "eae2ee920a39fb3087637d3dbb58df1896ec1f24",
+      "file": "inference.yml",
+      "bytes": 885,
+      "sha256": "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_det_safetensors",
+      "revision": "eae2ee920a39fb3087637d3dbb58df1896ec1f24",
+      "file": "preprocessor_config.json",
+      "bytes": 838,
+      "sha256": "74421569a28a78d417db320f9bc039ce0997a1defe2b35f259dfc74299c9f1ed",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_rec_safetensors",
+      "revision": "fe049fb103f57443fe8840c54ed06b702f3c1de5",
+      "file": "model.safetensors",
+      "bytes": 21204736,
+      "sha256": "f65a332afe5aa663f0b9d5706f4ae8457b5b4058a842d5c1eb22df505c27d642",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_rec_safetensors",
+      "revision": "fe049fb103f57443fe8840c54ed06b702f3c1de5",
+      "file": "config.json",
+      "bytes": 1083,
+      "sha256": "8693fd8485e8543e13d0f6dde3891a3f4af9a47fc4e3a391fbed71f8015c899e",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_rec_safetensors",
+      "revision": "fe049fb103f57443fe8840c54ed06b702f3c1de5",
+      "file": "inference.yml",
+      "bytes": 150579,
+      "sha256": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1",
+      "license": "apache-2.0"
+    },
+    {
+      "repo": "PaddlePaddle/PP-OCRv6_small_rec_safetensors",
+      "revision": "fe049fb103f57443fe8840c54ed06b702f3c1de5",
+      "file": "preprocessor_config.json",
+      "bytes": 206177,
+      "sha256": "2b24fa36f548893f26a931cf44f1a1a6b2b14ed7e2f8f8e28e6848801a8278db",
+      "license": "apache-2.0"
+    }
+  ],
+  "samosa_ocr_version": "0",
+  "license_policy": "Apache-2.0 or MIT only (TASKS_READER.md decision 8)"
+}

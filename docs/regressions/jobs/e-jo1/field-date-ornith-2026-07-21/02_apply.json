@@ -1,0 +1,76 @@
+{
+  "applied": 10,
+  "skipped": 0,
+  "actions": [
+    {
+      "i": 1,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r01_coffee.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-10/r01_coffee.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 2,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r02_electronics.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-06-28/r02_electronics.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 3,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r03_bakery.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-15/r03_bakery.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 4,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r04_grocery.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-07-02/r04_grocery.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 5,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r05_bookshop.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-05-19/r05_bookshop.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 6,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r06_pharmacy.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-04-12/r06_pharmacy.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 7,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r07_transit.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-03-08/r07_transit.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 8,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r08_hardware.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-02-14/r08_hardware.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 9,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r09_petstore.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2026-01-26/r09_petstore.txt",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "i": 10,
+      "src": "/tmp/samosa-ejo1-field-20260721145922/inbox/r10_stationery.txt",
+      "dst": "/tmp/samosa-ejo1-field-20260721145922/inbox/Organized/2025-12-03/r10_stationery.txt",
+      "ok": true,
+      "reason": null
+    }
+  ]
+}

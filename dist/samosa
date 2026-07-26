@@ -1,5 +1,5 @@
 #!/bin/sh
-# samosa — run Qwen, Bonsai, and Ornith locally. No cloud, account, or telemetry.
+# samosa — chat with Qwen3.6-35B-A3B locally. No cloud, no account, no telemetry.
 #
 #   samosa "explain how DNS works"          answer a question
 #   samosa --continue "and DNSSEC?"         follow up on the last conversation
@@ -13,9 +13,10 @@
 #   samosa serve                            run the local app server in foreground
 #   samosa serve --stop                     stop the local app server cleanly
 #   samosa app                              start the server and open the browser app
-#   samosa models                           show installed models
-#   samosa pull MODEL                       install qwen, bonsai, ornith, or all
+#   samosa jobs <command> <job.json>         run structured local batch work
+#   samosa pull                             pull the 24 GB model to local volume
 #   samosa doctor                           check the installation
+#   samosa version                          print the installed version
 #
 # Conversations resume instantly from a small snapshot — your chat history
 # never has to be re-processed, even after a reboot.
@@ -33,18 +34,27 @@ else
 fi
 ENGINE="$RELEASE_DIR/bin/qwen36b"
 GATEWAY="$RELEASE_DIR/bin/samosa-gateway"
-RELEASE_MODEL="$RELEASE_DIR/model"
-DOWNLOADED_QWEN="$HOME_DIR/models/qwen36-group32"
-if [ -f "$DOWNLOADED_QWEN/experts.bin" ]; then
-  MODEL="$DOWNLOADED_QWEN"
-  TOKENIZER="$DOWNLOADED_QWEN/tokenizer_qwen36.json"
-else
-  MODEL="$RELEASE_MODEL"
-  TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
-fi
+MODEL="$RELEASE_DIR/model"
+TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
 APP_HTML="$RELEASE_DIR/app.html"
 APP_LOGO="$RELEASE_DIR/samosa-chat.png"
 SESSION="$HOME_DIR/last_session.qws"
+
+# Version. Packaging replaces the empty assignment below with the real number
+# (tools/package_hf.py). In a source checkout it stays empty, so fall back to
+# the VERSION file at the release/repo root. The marker string appears here
+# once, only in the assignment, so a whole-string substitution cannot corrupt
+# the fallback logic.
+SAMOSA_VERSION=""
+if [ -z "$SAMOSA_VERSION" ]; then
+  for _vf in "$RELEASE_DIR/VERSION" "$SELF_DIR/../VERSION"; do
+    if [ -f "$_vf" ]; then
+      SAMOSA_VERSION=$(sed -n '1p' "$_vf" | tr -d '[:space:]')
+      break
+    fi
+  done
+fi
+[ -n "$SAMOSA_VERSION" ] || SAMOSA_VERSION="unknown"
 PORT="${SAMOSA_PORT:-8642}"
 PID_FILE="$HOME_DIR/server.pid"
 SERVER_LOG="$HOME_DIR/server.log"
@@ -65,13 +75,76 @@ CONTEXT_TOKENS="${SAMOSA_CONTEXT_TOKENS:-auto}"
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    fail "neither sha256sum nor shasum is available"
+  fi
+}
 
-gateway_cli() {
-  [ -f "$GATEWAY" ] || fail "model manager is missing; run make install again"
-  SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
-    SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
-    SAMOSA_APP_LOGO="$APP_LOGO" python3 "$GATEWAY" "$@"
+pull_model() {
+  BASE_URL="${SAMOSA_BASE_URL:-https://huggingface.co/REPO_ID_PLACEHOLDER/resolve/main}"
+  MODEL_DIR="/model"
+  mkdir -p "$MODEL_DIR"
+  MANIFEST="$MODEL_DIR/release-manifest.tsv"
+  
+  say "Fetching release manifest..."
+  "$CURL" -fL --retry 5 --retry-delay 3 --progress-bar \
+    "$BASE_URL/release-manifest.tsv" -o "$MANIFEST.next" \
+    || fail "release manifest download failed"
+    
+  awk -F '\t' '
+    NF != 3 || length($1) != 64 || $1 !~ /^[0-9a-f]+$/ || $2 !~ /^[0-9]+$/ ||
+    $3 == "" || $3 ~ /^\// || $3 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
+  ' "$MANIFEST.next" || fail "release manifest is malformed or unsafe"
+  
+  mv -f "$MANIFEST.next" "$MANIFEST"
+  
+  # We only pull the model files and the tokenizer to the volume
+  PULL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json"
+  
+  manifest_field() {
+    awk -F '\t' -v p="$1" -v c="$2" '$3==p {print $c; found=1} END {if(!found) exit 1}' "$MANIFEST"
+  }
+  
+  verified() {
+    want=$(manifest_field "$1" 1) || return 1
+    size=$(manifest_field "$1" 2) || return 1
+    [ -f "$2" ] || return 1
+    [ "$(wc -c <"$2" | tr -d ' ')" = "$size" ] || return 1
+    have=$(sha256_file "$2")
+    [ "$want" = "$have" ]
+  }
+  
+  fetch() {
+    relative=$1; target=$2
+    say "downloading $relative ..."
+    "$CURL" -fL --retry 5 --retry-delay 3 -C - --progress-bar \
+      "$BASE_URL/$relative" -o "$target" \
+      || fail "download failed for $relative - re-run to resume"
+  }
+  
+  for relative in $PULL_FILES; do
+    target="$MODEL_DIR/$relative"
+    if verified "$relative" "$target"; then
+      say "$relative already verified - skipping"
+    else
+      fetch "$relative" "$target"
+      verified "$relative" "$target" ||
+        fail "checksum mismatch for $relative"
+    fi
+  done
+  
+  say "Model pull complete."
+}
+
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+print_version() {
+  echo "samosa $SAMOSA_VERSION"
+  [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release: $(basename "$RELEASE_DIR")"
 }
 
 positive_integer() {
@@ -86,13 +159,54 @@ server_running() {
   "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1
 }
 
+port_owner_pid() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1
+  else
+    :
+  fi
+}
+
+process_command() {
+  pid=$1
+  ps -p "$pid" -o command= 2>/dev/null || true
+}
+
+is_samosa_server_pid() {
+  pid=$1
+  command=$(process_command "$pid")
+  case "$command" in
+    *samosa-gateway*|*qwen36b*" --serve "*|*qwen36b*" --serve") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_port_free_or_samosa_running() {
+  if server_running; then
+    say "server already running at http://127.0.0.1:$PORT"
+    return 0
+  fi
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ]; then
+    command=$(process_command "$pid")
+    if is_samosa_server_pid "$pid"; then
+      fail "Samosa process $pid is already listening on port $PORT but is not healthy. Run: samosa serve --stop"
+    fi
+    fail "port $PORT is already in use by process $pid: $command"
+  fi
+  return 1
+}
+
 serve_foreground() {
+  if require_port_free_or_samosa_running; then
+    return 0
+  fi
   mkdir -p "$HOME_DIR/chats"
   if [ -f "$GATEWAY" ]; then
     SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
       SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-      exec python3 "$GATEWAY"
+      exec "$GATEWAY"
   fi
   SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
     SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
@@ -102,6 +216,16 @@ serve_foreground() {
 
 start_server() {
   server_running && return 0
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ]; then
+    command=$(process_command "$pid")
+    if is_samosa_server_pid "$pid"; then
+      echo "Samosa server process $pid exists but is not healthy; run: samosa serve --stop" >&2
+    else
+      echo "port $PORT is already in use by process $pid: $command" >&2
+    fi
+    return 1
+  fi
   mkdir -p "$HOME_DIR/chats"
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
@@ -112,7 +236,7 @@ start_server() {
       SAMOSA_QWEN_MODEL="$MODEL" SAMOSA_TOKENIZER="$TOKENIZER" \
       SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
       SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-      python3 "$GATEWAY" >"$SERVER_LOG" 2>&1 &
+      "$GATEWAY" >"$SERVER_LOG" 2>&1 &
   else
     nohup env SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
       SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
@@ -158,15 +282,33 @@ stop_server() {
     fi
     rm -f "$PID_FILE"
   fi
+  pid=$(port_owner_pid)
+  if [ -n "$pid" ] && is_samosa_server_pid "$pid"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
   echo "Samosa server stopped."
 }
 
 doctor() {
   ok=1
+  echo "version:   $SAMOSA_VERSION"
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release:   $(basename "$RELEASE_DIR")"
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
-  [ -f "$GATEWAY" ] && echo "gateway:   ok" || { echo "gateway:   MISSING - re-run the installer"; ok=0; }
-  gateway_cli --models || ok=0
+  if [ -x "$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server" ] &&
+     [ -f "$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf" ]; then
+    echo "bonsai:    ok (27B 1-bit)"
+  else
+    echo "bonsai:    not installed (optional)"
+  fi
+  [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
   if [ -f "$MODEL/manifest.json" ]; then
     if grep -q 'groupwise-q4-gate-up-row-q8-down-v1' "$MODEL/manifest.json"; then
       echo "format:    mixed group-q4 gate/up + row-q8 down (experimental)"
@@ -177,8 +319,10 @@ doctor() {
       echo "format:    LEGACY whole-row q4 - upgrade required"
     fi
   else
-    echo "qwen fmt:  unavailable until Qwen is installed"
+    echo "format:    UNKNOWN (manifest missing)"
+    ok=0
   fi
+  [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
   if [ -d "$HOME_DIR/releases" ]; then
     releases=$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' 2>/dev/null | wc -l | tr -d ' ')
     [ "$releases" -le 1 ] || echo "rollback:  $((releases - 1)) previous verified release(s) retained"
@@ -229,20 +373,11 @@ doctor() {
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
 
-if [ "${1:-}" = "models" ]; then
-  shift
-  [ "$#" = 0 ] || usage
-  gateway_cli --models
-  exit $?
-fi
-
 if [ "${1:-}" = "pull" ]; then
   shift
-  [ "$#" -gt 0 ] || set -- qwen
-  [ "$#" = 1 ] || fail "usage: samosa pull qwen|bonsai|ornith|all"
-  case "$1" in qwen|bonsai|ornith|all) : ;; *) fail "unknown model '$1'; choose qwen, bonsai, ornith, or all" ;; esac
-  gateway_cli --pull "$1"
-  exit $?
+  [ "$#" = 0 ] || usage
+  pull_model
+  exit 0
 fi
 
 if [ "${1:-}" = "serve" ]; then
@@ -260,6 +395,7 @@ if [ "${1:-}" = "serve" ]; then
   fi
   [ "$#" = 0 ] || usage
   serve_foreground
+  exit 0
 fi
 
 if [ "${1:-}" = "app" ]; then
@@ -275,6 +411,21 @@ if [ "${1:-}" = "app" ]; then
   url="http://127.0.0.1:$PORT"
   echo "$url"
   "$OPEN" "$url"
+  exit 0
+fi
+
+if [ "${1:-}" = "jobs" ]; then
+  shift
+  [ "$#" = 0 ] || fail "Jobs arguments are no longer accepted; run Jobs from the local app."
+  start_server
+  echo "Jobs is available at http://127.0.0.1:$PORT"
+  exit 0
+fi
+
+if [ "${1:-}" = "version" ]; then
+  shift
+  [ "$#" = 0 ] || usage
+  print_version
   exit 0
 fi
 
@@ -308,6 +459,7 @@ while [ $# -gt 0 ]; do
       THINKING_BUDGET="$1"
       ;;
     doctor)     doctor; exit 0 ;;
+    -v|--version) print_version; exit 0 ;;
     -h|--help)  usage ;;
     --*)        echo "unknown flag: $1 (try: samosa --help)"; exit 1 ;;
     *)          break ;;
@@ -317,10 +469,6 @@ done
 
 [ $# -gt 0 ] || usage
 PROMPT="$*"
-
-[ -x "$ENGINE" ] || fail "Qwen engine is missing; run make install again"
-[ -f "$MODEL/experts.bin" ] || fail "terminal chat currently uses Qwen; install it with: samosa pull qwen"
-[ -f "$TOKENIZER" ] || fail "Qwen tokenizer is missing; reinstall Qwen with: samosa pull qwen"
 
 [ -n "$TOKENS" ] || TOKENS=8192
 case "$PROFILE" in

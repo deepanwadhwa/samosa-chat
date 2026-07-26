@@ -8,6 +8,18 @@ exactly one JSON object to standard output.
 samosa-extract --json file.pdf
 ```
 
+Callers that feed document text to a model must use bounded PDF ranges:
+
+```sh
+samosa-extract --json-pages file.pdf 1 5
+```
+
+The start page is one-based and the count is hard-limited to `1..5`. The
+response includes `page_count`, `page_start`, and `page_end`; only the selected
+pages appear in `pages` and `text`. This lets an agent choose one candidate,
+inspect a small range, and explicitly request the next range when necessary.
+It must not use whole-document `--json` extraction for interactive Find jobs.
+
 UTF-8 plain-text input is also handled natively. Its line endings are normalized
 to LF and it receives the same one-page JSON shape. The extractor sniffs bytes,
 not extensions: invalid UTF-8/binary input is rejected rather than silently
@@ -33,6 +45,9 @@ A successful response has this shape:
 {
   "ok": true,
   "text_layer": true,
+  "page_count": 1,
+  "page_start": 1,
+  "page_end": 1,
   "pages": [{"index": 1, "text_chars": 42, "has_raster_figure": false, "text": "..."}],
   "text": "...",
   "tokens_estimate": 8

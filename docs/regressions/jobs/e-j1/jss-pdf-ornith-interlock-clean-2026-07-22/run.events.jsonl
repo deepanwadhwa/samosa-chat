@@ -1,0 +1,7 @@
+{"active_inference_seconds": 15.411, "i": 1, "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v109i02.pdf", "model_call_seconds": 15.411, "n": 4, "seq": 1, "type": "item_complete"}
+{"cooldown_seconds": 2.0, "job_id": "e-j1-jss-pdf-ornith-interlock-clean-20260722", "reason": "interactive_chat", "seq": 2, "type": "job_paused"}
+{"job_id": "e-j1-jss-pdf-ornith-interlock-clean-20260722", "paused_seconds": 2.523, "reason": "interactive_chat", "seq": 3, "type": "job_resumed"}
+{"active_inference_seconds": 40.532, "i": 2, "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v109i03.pdf", "model_call_seconds": 25.121, "n": 4, "seq": 4, "type": "item_complete"}
+{"active_inference_seconds": 62.933, "i": 3, "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v110i01.pdf", "model_call_seconds": 22.401, "n": 4, "seq": 5, "type": "item_complete"}
+{"active_inference_seconds": 124.93, "i": 4, "input_path": "/private/tmp/samosa-ej1-live-interlock-clean-20260722.WZkT0p/inputs/v110i02.pdf", "model_call_seconds": 61.997, "n": 4, "seq": 6, "type": "item_complete"}
+{"active_inference_seconds": 124.93, "completed": 4, "job_id": "e-j1-jss-pdf-ornith-interlock-clean-20260722", "seq": 7, "summary": "Processed 4 items.", "type": "done"}

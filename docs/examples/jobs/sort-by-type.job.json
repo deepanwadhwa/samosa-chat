@@ -1,0 +1,15 @@
+{
+  "job_id": "sort-by-type",
+  "schema_version": 1,
+  "input": {
+    "folder": "/tmp/inputs"
+  },
+  "organize": {
+    "rule": {
+      "by": "extension"
+    },
+    "dest_root": null,
+    "on_collision": "skip",
+    "unmatched": "leave"
+  }
+}

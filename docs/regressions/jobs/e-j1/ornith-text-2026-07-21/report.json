@@ -1,0 +1,362 @@
+{
+  "scope": "Ornith live text extraction checkpoint over bundled 10 receipt corpus; image/PDF and interlock not included",
+  "serve_url": "http://127.0.0.1:8897",
+  "model": "ornith-1.0-9b",
+  "inputs": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text",
+  "labels": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_labels.json",
+  "wall_seconds": 145.517,
+  "field_correct": 60,
+  "field_total": 60,
+  "field_accuracy": 1.0,
+  "records": 10,
+  "cases": [
+    {
+      "input": "r01_coffee.txt",
+      "seconds": 15.006,
+      "raw": "{\"merchant\":\"JOE'S COFFEE HOUSE\",\"date\":\"2026-07-10\",\"subtotal\":7.75,\"tax\":0.62,\"total\":8.37,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r01_coffee.txt",
+        "merchant": "JOE'S COFFEE HOUSE",
+        "date": "2026-07-10",
+        "subtotal": 7.75,
+        "tax": 0.62,
+        "total": 8.37,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "JOE'S COFFEE HOUSE",
+        "date": "2026-07-10",
+        "subtotal": 7.75,
+        "tax": 0.62,
+        "total": 8.37,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r02_electronics.txt",
+      "seconds": 12.565,
+      "raw": "{\"merchant\":\"TECH MART\",\"date\":\"2026-06-28\",\"subtotal\":37.49,\"tax\":3.0,\"total\":40.49,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r02_electronics.txt",
+        "merchant": "TECH MART",
+        "date": "2026-06-28",
+        "subtotal": 37.49,
+        "tax": 3.0,
+        "total": 40.49,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "TECH MART",
+        "date": "2026-06-28",
+        "subtotal": 37.49,
+        "tax": 3.0,
+        "total": 40.49,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r03_bakery.txt",
+      "seconds": 11.49,
+      "raw": "{\"merchant\":\"CAFE BLEU\",\"date\":\"2026-07-15\",\"subtotal\":5.5,\"tax\":null,\"total\":5.5,\"currency\":\"EUR\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r03_bakery.txt",
+        "merchant": "CAFE BLEU",
+        "date": "2026-07-15",
+        "subtotal": 5.5,
+        "tax": null,
+        "total": 5.5,
+        "currency": "EUR"
+      },
+      "expected": {
+        "merchant": "CAFE BLEU",
+        "date": "2026-07-15",
+        "subtotal": 5.5,
+        "tax": null,
+        "total": 5.5,
+        "currency": "EUR"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r04_grocery.txt",
+      "seconds": 14.356,
+      "raw": "{\"merchant\":\"FRESH MARKET\",\"date\":\"2026-07-02\",\"subtotal\":24.18,\"tax\":1.93,\"total\":26.11,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r04_grocery.txt",
+        "merchant": "FRESH MARKET",
+        "date": "2026-07-02",
+        "subtotal": 24.18,
+        "tax": 1.93,
+        "total": 26.11,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "FRESH MARKET",
+        "date": "2026-07-02",
+        "subtotal": 24.18,
+        "tax": 1.93,
+        "total": 26.11,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r05_bookshop.txt",
+      "seconds": 12.773,
+      "raw": "{\"merchant\":\"NORTHSIDE BOOKS\",\"date\":\"2026-05-19\",\"subtotal\":18.0,\"tax\":1.44,\"total\":19.44,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r05_bookshop.txt",
+        "merchant": "NORTHSIDE BOOKS",
+        "date": "2026-05-19",
+        "subtotal": 18.0,
+        "tax": 1.44,
+        "total": 19.44,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "NORTHSIDE BOOKS",
+        "date": "2026-05-19",
+        "subtotal": 18.0,
+        "tax": 1.44,
+        "total": 19.44,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r06_pharmacy.txt",
+      "seconds": 13.104,
+      "raw": "{\"merchant\":\"GREEN LEAF PHARMACY\",\"date\":\"2026-04-12\",\"subtotal\":12.6,\"tax\":1.01,\"total\":13.61,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r06_pharmacy.txt",
+        "merchant": "GREEN LEAF PHARMACY",
+        "date": "2026-04-12",
+        "subtotal": 12.6,
+        "tax": 1.01,
+        "total": 13.61,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "GREEN LEAF PHARMACY",
+        "date": "2026-04-12",
+        "subtotal": 12.6,
+        "tax": 1.01,
+        "total": 13.61,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r07_transit.txt",
+      "seconds": 12.379,
+      "raw": "{\"merchant\":\"METRO TRANSIT\",\"date\":\"2026-03-08\",\"subtotal\":5.0,\"tax\":0.0,\"total\":5.0,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r07_transit.txt",
+        "merchant": "METRO TRANSIT",
+        "date": "2026-03-08",
+        "subtotal": 5.0,
+        "tax": 0.0,
+        "total": 5.0,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "METRO TRANSIT",
+        "date": "2026-03-08",
+        "subtotal": 5.0,
+        "tax": 0.0,
+        "total": 5.0,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r08_hardware.txt",
+      "seconds": 13.553,
+      "raw": "{\"merchant\":\"HARBOUR HARDWARE\",\"date\":\"2026-02-14\",\"subtotal\":46.25,\"tax\":3.7,\"total\":49.95,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r08_hardware.txt",
+        "merchant": "HARBOUR HARDWARE",
+        "date": "2026-02-14",
+        "subtotal": 46.25,
+        "tax": 3.7,
+        "total": 49.95,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "HARBOUR HARDWARE",
+        "date": "2026-02-14",
+        "subtotal": 46.25,
+        "tax": 3.7,
+        "total": 49.95,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r09_petstore.txt",
+      "seconds": 15.732,
+      "raw": "{\"merchant\":\"PAWS AND CLAWS\",\"date\":\"2026-01-26\",\"subtotal\":21.3,\"tax\":1.7,\"total\":23.0,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r09_petstore.txt",
+        "merchant": "PAWS AND CLAWS",
+        "date": "2026-01-26",
+        "subtotal": 21.3,
+        "tax": 1.7,
+        "total": 23.0,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "PAWS AND CLAWS",
+        "date": "2026-01-26",
+        "subtotal": 21.3,
+        "tax": 1.7,
+        "total": 23.0,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    },
+    {
+      "input": "r10_stationery.txt",
+      "seconds": 24.498,
+      "raw": "{\"merchant\":\"PAPER TRAIL STATIONERY\",\"date\":\"2025-12-03\",\"subtotal\":9.8,\"tax\":0.78,\"total\":10.58,\"currency\":\"USD\"}",
+      "parse_error": null,
+      "actual": {
+        "input_path": "/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r10_stationery.txt",
+        "merchant": "PAPER TRAIL STATIONERY",
+        "date": "2025-12-03",
+        "subtotal": 9.8,
+        "tax": 0.78,
+        "total": 10.58,
+        "currency": "USD"
+      },
+      "expected": {
+        "merchant": "PAPER TRAIL STATIONERY",
+        "date": "2025-12-03",
+        "subtotal": 9.8,
+        "tax": 0.78,
+        "total": 10.58,
+        "currency": "USD"
+      },
+      "fields": {
+        "merchant": true,
+        "date": true,
+        "subtotal": true,
+        "tax": true,
+        "total": true,
+        "currency": true
+      }
+    }
+  ],
+  "safety_before": {
+    "ts": 1784659994.2071621,
+    "disk_free_gb": 106.699,
+    "vm_stat": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     7161.\nPages active:                                 172701.\nPages inactive:                               172814.\nPages speculative:                               473.\nPages throttled:                                   0.\nPages wired down:                             508611.\nPages purgeable:                                3146.\n\"Translation faults\":                       55878435.\nPages copy-on-write:                         1120476.\nPages zero filled:                          82838376.\nPages reactivated:                          16162456.\nPages purged:                                 845196.\nFile-backed pages:                            157482.\nAnonymous pages:                              188506.\nPages stored in compressor:                   334818.\nPages occupied by compressor:                 149682.\nDecompressions:                             21982021.\nCompressions:                               23904711.\nPageins:                                   112840777.\nPageouts:                                      16308.\nSwapins:                                           0.\nSwapouts:                                          0.",
+    "memory_pressure": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 34%",
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t70%; charging; 1:32 remaining present: true",
+    "health": {
+      "gateway": true,
+      "backend": "ornith",
+      "label": "Ornith 9B",
+      "model": "ornith-1.0-9b",
+      "supports_images": false,
+      "ready": true,
+      "loading": false,
+      "generating": false,
+      "pid": 14718
+    }
+  },
+  "safety_after": {
+    "ts": 1784660139.7044978,
+    "disk_free_gb": 106.698,
+    "vm_stat": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    12011.\nPages active:                                 164396.\nPages inactive:                               163020.\nPages speculative:                              1212.\nPages throttled:                                   0.\nPages wired down:                             509468.\nPages purgeable:                                9580.\n\"Translation faults\":                       56095080.\nPages copy-on-write:                         1126394.\nPages zero filled:                          84201918.\nPages reactivated:                          16166731.\nPages purged:                                 845223.\nFile-backed pages:                            150143.\nAnonymous pages:                              178485.\nPages stored in compressor:                   364668.\nPages occupied by compressor:                 161163.\nDecompressions:                             21998951.\nCompressions:                               23952327.\nPageins:                                   112842878.\nPageouts:                                      16534.\nSwapins:                                           0.\nSwapouts:                                          0.",
+    "memory_pressure": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 33%",
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t70%; charging; 1:41 remaining present: true",
+    "health": {
+      "gateway": true,
+      "backend": "ornith",
+      "label": "Ornith 9B",
+      "model": "ornith-1.0-9b",
+      "supports_images": false,
+      "ready": true,
+      "loading": false,
+      "generating": false,
+      "pid": 14718
+    }
+  }
+}

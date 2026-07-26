@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-07-21T19:09:50.974829+00:00",
+  "health": {
+    "gateway": true,
+    "backend": "ornith",
+    "label": "Ornith 9B",
+    "model": "ornith-1.0-9b",
+    "supports_images": false,
+    "ready": true,
+    "loading": false,
+    "generating": false,
+    "pid": 16351
+  },
+  "request": {
+    "goal": "put my store slips into folders by when I bought things",
+    "folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-suggest-evidence-inbox-ltv8rn33"
+  },
+  "http_status": 200,
+  "seconds": 8.529,
+  "response": {
+    "ok": true,
+    "template": "receipts-by-date",
+    "source": "model",
+    "job": {
+      "job_id": "receipts-by-date-put-my-store-slips-into-folders",
+      "schema_version": 1,
+      "intent": "extract-and-organize",
+      "input": {
+        "folder": "/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T/samosa-suggest-evidence-inbox-ltv8rn33"
+      },
+      "instruction": "Extract the receipt date (YYYY-MM-DD), merchant name, and total amount.",
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "merchant": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "merchant",
+          "total"
+        ]
+      },
+      "organize": {
+        "rule": {
+          "by": "field",
+          "field": "date"
+        },
+        "dest_root": null,
+        "on_collision": "skip",
+        "unmatched": "leave"
+      }
+    }
+  },
+  "acceptance": {
+    "backend_is_ornith": true,
+    "model_selected_known_template": true,
+    "complete_job_json_emitted": true
+  }
+}

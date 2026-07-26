@@ -16,6 +16,24 @@ printf '%s' "$out" | grep -F 'Hello PDFium' >/dev/null
 printf '%s' "$out" | grep -F '"text_layer":true' >/dev/null
 printf '%s' "$out" | grep -F '"index":1' >/dev/null
 
+pages_out=$("$EXTRACTOR" --json-pages "$FIXTURE" 1 5)
+printf '%s' "$pages_out" | grep -F '"ok":true' >/dev/null
+printf '%s' "$pages_out" | grep -F '"page_count":1' >/dev/null
+printf '%s' "$pages_out" | grep -F '"page_start":1' >/dev/null
+printf '%s' "$pages_out" | grep -F '"page_end":1' >/dev/null
+printf '%s' "$pages_out" | grep -F 'Hello PDFium' >/dev/null
+
+if "$EXTRACTOR" --json-pages "$FIXTURE" 1 6 >/dev/null 2>&1; then
+  echo "samosa-extract accepted a page range larger than five" >&2
+  exit 1
+fi
+if "$EXTRACTOR" --json-pages "$FIXTURE" 2 1 >"${TMPDIR:-/tmp}/samosa-extract-pages-error.$$" 2>&1; then
+  echo "samosa-extract accepted a page beyond the document" >&2
+  exit 1
+fi
+grep -F 'page_out_of_range' "${TMPDIR:-/tmp}/samosa-extract-pages-error.$$" >/dev/null
+rm -f "${TMPDIR:-/tmp}/samosa-extract-pages-error.$$"
+
 text_out=$("$EXTRACTOR" --json "$TEXT_FIXTURE")
 printf '%s' "$text_out" | grep -F '"input_type":"text/plain"' >/dev/null
 printf '%s' "$text_out" | grep -F 'Ada Lovelace' >/dev/null

@@ -1,0 +1,6 @@
+data: {"seq":1,"type":"item_complete","i":1,"n":1,"input_path":"/var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T//samosa-vision-qwen-20260722.qGqxRW/tiny-image-inputs/tiny.png","model_call_seconds":83.750,"active_inference_seconds":83.750}
+
+data: {"seq":2,"type":"done","job_id":"e-j1-image-qwen-tiny-20260722","summary":"Processed 1 item.","completed":1,"active_inference_seconds":83.750}
+
+data: [DONE]
+

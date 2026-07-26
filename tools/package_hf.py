@@ -56,6 +56,17 @@ PDFIUM_ARCHIVES = [
     "pdfium-linux-arm64.tgz",
 ]
 
+# The compiled gateway and filesystem sidecar. Opt-in via --gateway, same
+# reasoning as --pdfium-dir: a
+# release manifest without these entries stays valid for install.sh (it only
+# stages what the manifest lists), and whether to include this capability in
+# a given release is a packaging-time decision, not an automatic one.
+GATEWAY_SOURCE_FILES = [
+    "samosa_gateway.c",
+    "samosa_fs.c",
+    "read_cache.h",
+]
+
 def sha256_file(path: pathlib.Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -85,9 +96,17 @@ def main() -> int:
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     ap.add_argument("--pdfium-dir", type=pathlib.Path,
                     help="directory containing all SHA-reviewed PDFium archives")
+    ap.add_argument("--gateway", action="store_true",
+                    help="include the multi-backend gateway and the Models->Tools->Jobs layer")
     args = ap.parse_args()
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
+
+    version_file = ROOT / "VERSION"
+    if not version_file.exists():
+        print(f"missing VERSION file: {version_file}", file=sys.stderr)
+        return 1
+    version = version_file.read_text(encoding="utf-8").strip()
 
     staged: list[pathlib.Path] = []
     for name in MODEL_FILES:
@@ -121,10 +140,16 @@ def main() -> int:
             place(src, out / "pdfium" / name, link=False)
             staged.append(out / "pdfium" / name)
 
+    if args.gateway:
+        for name in GATEWAY_SOURCE_FILES:
+            src = ROOT / "src" / name
+            if not src.exists():
+                print(f"missing gateway source file: {src}", file=sys.stderr)
+                return 1
+            place(src, out / "engine" / name, link=False)
+            staged.append(out / "engine" / name)
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
-                     (ROOT / "tools" / "samosa_gateway.py", out / "samosa-gateway"),
-                     (ROOT / "tools" / "samosa_models.py", out / "samosa_models.py"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
                      (ROOT / "assets" / "app.html", out / "app.html"),
                      (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png")):
@@ -132,6 +157,19 @@ def main() -> int:
             print(f"missing dist file: {src}", file=sys.stderr)
             return 1
         place(src, dst, link=False)
+        # Bake the version into the launcher so a packaged release reports it
+        # without shipping the VERSION file into the release dir. The marker
+        # appears once in the launcher (the empty assignment), so this whole-
+        # string replace cannot disturb the runtime fallback logic.
+        if dst.name == "samosa":
+            text = dst.read_text(encoding="utf-8")
+            if 'SAMOSA_VERSION=""' not in text:
+                print("launcher is missing the SAMOSA_VERSION=\"\" marker",
+                      file=sys.stderr)
+                return 1
+            dst.write_text(
+                text.replace('SAMOSA_VERSION=""', f'SAMOSA_VERSION="{version}"'),
+                encoding="utf-8")
         if (args.repo_id != "REPO_ID_PLACEHOLDER" and
                 dst.name in {"install.sh", "samosa", "README.md"}):
             text = dst.read_text(encoding="utf-8")

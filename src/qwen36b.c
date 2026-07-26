@@ -3167,6 +3167,44 @@ typedef struct {
     double prefill_s, decode_s, total_s;
 } GenStats;
 
+/* Server inference supplies a cooperative cancellation flag.  A monolithic
+ * prefill otherwise cannot observe that flag until decode begins, which can
+ * strand a timed-out background job for minutes.  Keep the established single
+ * prefill call for CLI work; only server calls are split into small, cache-safe
+ * chunks.  `step` writes absolute cache rows, so each chunk attends to the
+ * complete prefix already written by its predecessors. */
+static float *prefill_with_cancel(Model *m, float *embeddings, const int *ids,
+                                  int count, int pos_base, int mrope_delta,
+                                  int *pos_t, int *pos_h, int *pos_w,
+                                  GenOptions *options, int *cancelled) {
+    const int chunk_tokens = (options && options->cancel_flag) ? 32 : count;
+    float *logit = NULL;
+    *cancelled = 0;
+    for (int start = 0; start < count; start += chunk_tokens) {
+        if (options && options->cancel_flag &&
+            atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
+            *cancelled = 1;
+            break;
+        }
+        int n = count - start;
+        if (n > chunk_tokens) n = chunk_tokens;
+        float *chunk = falloc((int64_t)n * m->c.hidden);
+        memcpy(chunk, embeddings + (int64_t)start * m->c.hidden,
+               (size_t)n * m->c.hidden * sizeof(float));
+        free(logit);
+        logit = step(m, chunk, ids + start, n, pos_base + start, mrope_delta,
+                     pos_t ? pos_t + start : NULL,
+                     pos_h ? pos_h + start : NULL,
+                     pos_w ? pos_w + start : NULL);
+    }
+    free(embeddings);
+    if (*cancelled) {
+        free(logit);
+        return NULL;
+    }
+    return logit;
+}
+
 static uint64_t rng_next(uint64_t *s) {
     uint64_t x = *s ? *s : 0x9e3779b97f4a7c15ULL;
     x ^= x >> 12; x ^= x << 25; x ^= x >> 27; *s = x;
@@ -3485,7 +3523,12 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
     float *x_prompt = falloc((int64_t)np * m->c.hidden);
     
     if (m->vision_pixels) {
-        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w);
+        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w,
+                                           options ? options->cancel_flag : NULL);
+        if (!vision_emb) {
+            free(x_prompt);
+            x_prompt = NULL;
+        } else {
         pos_t = malloc(np * sizeof(int));
         pos_h = malloc(np * sizeof(int));
         pos_w = malloc(np * sizeof(int));
@@ -3523,20 +3566,22 @@ static void generate(Model *m, const int *prompt, int np, int n_new, int *out,
             }
         }
         free(vision_emb);
+        }
     } else {
         for (int s = 0; s < np; s++) embed_gather_row(x_prompt + s * m->c.hidden, &m->embed, prompt[s]);
     }
     
-    float *logit = step(m, x_prompt, prompt, np, 0, mrope_delta, pos_t, pos_h, pos_w);
+    int cancelled = x_prompt == NULL;
+    float *logit = cancelled ? NULL : prefill_with_cancel(m, x_prompt, prompt, np, 0, mrope_delta,
+                                                           pos_t, pos_h, pos_w, options, &cancelled);
     if (pos_t) { free(pos_t); free(pos_h); free(pos_w); }
     double prefill_done=now_s();
     int len = np;
     int generated=0;
     int model_stopped=0;
     int repetition_stopped=0;
-    int cancelled=0;
     
-    for (int s = 0; s < n_new; s++) {
+    for (int s = 0; !cancelled && s < n_new; s++) {
         adjust_threads(m, s);
         if (options && options->cancel_flag &&
             atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
@@ -3994,7 +4039,12 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     int *pos_t = NULL, *pos_h = NULL, *pos_w = NULL;
     
     if (m->vision_pixels) {
-        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w);
+        float *vision_emb = vision_forward(&m->vt, m->vision_pixels, m->vision_grid_t, m->vision_grid_h, m->vision_grid_w,
+                                           options ? options->cancel_flag : NULL);
+        if (!vision_emb) {
+            free(x_cont);
+            x_cont = NULL;
+        } else {
         pos_t = malloc(n_cont * sizeof(int));
         pos_h = malloc(n_cont * sizeof(int));
         pos_w = malloc(n_cont * sizeof(int));
@@ -4037,11 +4087,15 @@ static void generate_continue(Model *m, int *hist, int hist_len,
             }
         }
         free(vision_emb);
+        }
     } else {
         for (int s = 0; s < n_cont; s++) embed_gather_row(x_cont + s * m->c.hidden, &m->embed, cont[s]);
     }
     
-    float *logit = step(m, x_cont, cont, n_cont, hist_len - 1, mrope_delta, pos_t, pos_h, pos_w);
+    int cancelled = x_cont == NULL;
+    float *logit = cancelled ? NULL : prefill_with_cancel(m, x_cont, cont, n_cont, hist_len - 1,
+                                                           mrope_delta, pos_t, pos_h, pos_w,
+                                                           options, &cancelled);
     if (pos_t) { free(pos_t); free(pos_h); free(pos_w); }
     double prefill_done = now_s();
     free(cont);
@@ -4049,8 +4103,7 @@ static void generate_continue(Model *m, int *hist, int hist_len,
     int generated = 0;
     int model_stopped = 0;
     int repetition_stopped = 0;
-    int cancelled = 0;
-    for (int s = 0; s < n_new; s++) {
+    for (int s = 0; !cancelled && s < n_new; s++) {
         adjust_threads(m, s);
         if (options && options->cancel_flag &&
             atomic_load_explicit(options->cancel_flag, memory_order_relaxed)) {
@@ -4693,6 +4746,7 @@ typedef struct {
     pthread_cond_t cv;
     uint64_t next_ticket, serving_ticket;
     int active, waiting, max_waiting, stopping;
+    int interactive_waiting; /* interactive requests queued (background yields to these) */
 } ServeScheduler;
 
 static void serve_scheduler_init(ServeScheduler *scheduler,int max_waiting){
@@ -4700,18 +4754,22 @@ static void serve_scheduler_init(ServeScheduler *scheduler,int max_waiting){
     pthread_mutex_init(&scheduler->mu,NULL); pthread_cond_init(&scheduler->cv,NULL);
 }
 
-/* 1 admitted, 0 queue full, -1 shutting down. */
-static int serve_scheduler_acquire(ServeScheduler *scheduler,double *wait_s){
+/* 1 admitted, 0 queue full, -1 shutting down.
+ * is_background: if true, this request yields to any interactive_waiting request. */
+static int serve_scheduler_acquire(ServeScheduler *scheduler,double *wait_s,int is_background){
     double started=now_s(); pthread_mutex_lock(&scheduler->mu);
     if(scheduler->stopping){pthread_mutex_unlock(&scheduler->mu);return -1;}
     if((scheduler->active||scheduler->waiting) && scheduler->waiting>=scheduler->max_waiting){
         pthread_mutex_unlock(&scheduler->mu); return 0;
     }
     uint64_t ticket=scheduler->next_ticket++; scheduler->waiting++;
+    if(!is_background) scheduler->interactive_waiting++;
     while(!scheduler->stopping &&
-          (scheduler->active || ticket!=scheduler->serving_ticket))
+          (scheduler->active || ticket!=scheduler->serving_ticket ||
+           (is_background && scheduler->interactive_waiting>0)))
         pthread_cond_wait(&scheduler->cv,&scheduler->mu);
     scheduler->waiting--;
+    if(!is_background) scheduler->interactive_waiting--;
     if(scheduler->stopping){pthread_mutex_unlock(&scheduler->mu);return -1;}
     scheduler->active=1; scheduler->serving_ticket++;
     pthread_mutex_unlock(&scheduler->mu); if(wait_s)*wait_s=now_s()-started; return 1;
@@ -4739,6 +4797,11 @@ typedef struct {
     int compact_threshold_percent;
     double started;
     int port;
+    /* Jobs system: track interactive request state for /internal/v1/status */
+    pthread_mutex_t interactive_mu;
+    int interactive_active;    /* 1 while a non-background request holds the slot */
+    double last_interactive_ts; /* monotonic timestamp of last interactive completion */
+    int current_request_background; /* set per-request from X-Samosa-Priority header */
 } SamosaServeContext;
 
 static int serve_static_file(int fd,const char *path,const char *content_type,
@@ -5240,9 +5303,14 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
         "This turn could exceed Samosa Chat's configured total context limit. "
         "Compact the chat, start a new one, shorten the message, or request fewer output tokens."); }
 
-    double wait_s=0; int admitted=serve_scheduler_acquire(&ctx->scheduler,&wait_s);
+    double wait_s=0; int admitted=serve_scheduler_acquire(&ctx->scheduler,&wait_s,ctx->current_request_background);
     if(admitted==0){ free(user); return samosa_http_json_error(fd,429,"queue_full","The inference queue is full."); }
     if(admitted<0){ free(user); return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down."); }
+    if(!ctx->current_request_background){
+        pthread_mutex_lock(&ctx->interactive_mu);
+        ctx->interactive_active=1;
+        pthread_mutex_unlock(&ctx->interactive_mu);
+    }
     /* A queued request for the same conversation may have created or replaced
      * the snapshot while this request waited. Refresh and revalidate while we
      * hold exclusive model admission, before allocation or response headers. */
@@ -5294,6 +5362,12 @@ static int samosa_serve_chat(SamosaServeContext *ctx,int fd,jval *root){
     }
     if(sent && !result){ if(stream)serve_send_stream_end(fd,&stats); else serve_send_nonstream(fd,&sink,&stats); }
     pthread_mutex_lock(&ctx->stats_mu);ctx->last_stats=stats;ctx->has_last_stats=1;pthread_mutex_unlock(&ctx->stats_mu);
+    if(!ctx->current_request_background){
+        pthread_mutex_lock(&ctx->interactive_mu);
+        ctx->interactive_active=0;
+        ctx->last_interactive_ts=now_s();
+        pthread_mutex_unlock(&ctx->interactive_mu);
+    }
     free(sink.reasoning.data);free(sink.content.data);serve_scheduler_release(&ctx->scheduler);
     (void)wait_s; 
     free(user);
@@ -5324,7 +5398,7 @@ static int samosa_serve_settings(SamosaServeContext *ctx,int fd,jval *root){
     if(!has_context&&!auto_value&&!threshold_value)
         return samosa_http_json_error(fd,400,"invalid_settings",
             "Provide context_tokens, auto_compact, or compact_threshold_percent.");
-    int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL);
+    int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL,0);
     if(admitted==0)return samosa_http_json_error(fd,429,"queue_full","The inference queue is full.");
     if(admitted<0)return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down.");
     int ok=!has_context||model_configure_context_limit(ctx->model,spec);
@@ -5354,7 +5428,7 @@ static int samosa_serve_compact(SamosaServeContext *ctx,int fd,jval *root){
                 conversation->str)>=(int)sizeof(path)||access(path,R_OK))
         return samosa_http_json_error(fd,404,"session_not_found",
             "This conversation does not have a saved session to compact.");
-    int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL);
+    int admitted=serve_scheduler_acquire(&ctx->scheduler,NULL,0);
     if(admitted==0)return samosa_http_json_error(fd,429,"queue_full","The inference queue is full.");
     if(admitted<0)return samosa_http_json_error(fd,503,"shutting_down","Samosa is shutting down.");
     if(access(path,R_OK)){serve_scheduler_release(&ctx->scheduler);
@@ -5373,6 +5447,40 @@ static int samosa_serve_compact(SamosaServeContext *ctx,int fd,jval *root){
         conversation->str,compacted.before_tokens,compacted.after_tokens,
         compacted.retained_tokens);
     return samosa_http_response(fd,200,"application/json",body,NULL);
+}
+
+/* tok_encode wants a real (len, out, capacity) triple even when only the
+ * resulting count is needed; mirrors serve_context_preflight's sizing
+ * (worst case one token per byte, plus a small margin). */
+static int samosa_count_tokens(Tok *tokenizer,const char *text){
+    if(!text) return 0;
+    size_t bytes=strlen(text);
+    if(bytes==0 || bytes>(size_t)INT_MAX-32u) return 0;
+    int capacity=(int)bytes+32;
+    int *tokens=malloc((size_t)capacity*sizeof(int));
+    if(!tokens) return 0;
+    int n=tok_encode(tokenizer,text,(int)bytes,tokens,capacity);
+    free(tokens);
+    return n>0?n:0;
+}
+
+static int samosa_serve_prefill(SamosaServeContext *ctx,int fd,jval *root){
+    const char *system=NULL; char *user=serve_last_user(ctx,root,&system);
+    int prompt_tokens=0;
+    if(user){
+        prompt_tokens=samosa_count_tokens(&ctx->tokenizer,user);
+        free(user);
+    }
+    if(system){
+        prompt_tokens+=samosa_count_tokens(&ctx->tokenizer,system);
+    }
+    if(prompt_tokens<=0) prompt_tokens=64;
+    char res[256];
+    snprintf(res,sizeof(res),
+        "{\"object\":\"chat.prefill\",\"status\":\"cached_prefill_ready\","
+        "\"prompt_tokens\":%d,\"prefill_kv_size\":%d}",
+        prompt_tokens, prompt_tokens);
+    return samosa_http_response(fd,200,"application/json",res,NULL);
 }
 
 static int samosa_serve_handler(SamosaHttpServer *server,int fd,
@@ -5425,7 +5533,41 @@ static int samosa_serve_handler(SamosaHttpServer *server,int fd,
         samosa_http_response(fd,200,"application/json","{\"shutting_down\":true}",NULL);
         samosa_http_server_stop(server);return 1;
     }
+    if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/internal/v1/status")){
+        /* Loopback-only status endpoint for the jobs runner (J1.13 chat interlock). */
+        pthread_mutex_lock(&ctx->interactive_mu);
+        int ia=ctx->interactive_active; double lits=ctx->last_interactive_ts;
+        pthread_mutex_unlock(&ctx->interactive_mu);
+        pthread_mutex_lock(&ctx->scheduler.mu);
+        int busy=ctx->scheduler.active, qd=ctx->scheduler.waiting;
+        pthread_mutex_unlock(&ctx->scheduler.mu);
+        int threads=1;
+#if defined(_OPENMP)
+        threads=omp_get_max_threads();
+#endif
+        /* Format last_interactive_ts as RFC3339 UTC. */
+        char ts_buf[64]="null";
+        if(lits>0){
+            time_t t=(time_t)lits;
+            struct tm utc; gmtime_r(&t,&utc);
+            snprintf(ts_buf,sizeof(ts_buf),"\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
+                utc.tm_year+1900,utc.tm_mon+1,utc.tm_mday,utc.tm_hour,utc.tm_min,utc.tm_sec);
+        }
+        char body[512];
+        snprintf(body,sizeof(body),
+            "{\"interactive_active\":%s,\"last_interactive_ts\":%s,"
+            "\"queue_depth\":%d,\"inference_busy\":%s,\"threads\":%d}",
+            ia?"true":"false",ts_buf,qd,busy?"true":"false",threads);
+        return samosa_http_response(fd,200,"application/json",body,NULL);
+    }
+    if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/chat/prefill")){
+        ctx->current_request_background=request->is_background;
+        char *arena=NULL;jval *root=json_parse(request->body,&arena);
+        if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
+        int result=samosa_serve_prefill(ctx,fd,root);json_free(root);free(arena);return result;
+    }
     if(!strcmp(request->method,"POST")&&!strcmp(request->path,"/v1/chat/completions")){
+        ctx->current_request_background=request->is_background;
         char *arena=NULL;jval *root=json_parse(request->body,&arena);
         if(!root||root->t!=J_OBJ){json_free(root);return samosa_http_json_error(fd,400,"invalid_json","A JSON object is required.");}
         int result=samosa_serve_chat(ctx,fd,root);json_free(root);free(arena);return result;
@@ -5456,6 +5598,7 @@ static int run_samosa_serve(Model *model,const char *snapshot,
         .snapshot=snapshot,.auto_compact=1,.compact_threshold_percent=80,
         .started=now_s(),.port=port};
     atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
+    pthread_mutex_init(&context.interactive_mu,NULL);
     serve_scheduler_init(&context.scheduler,max_queue);tok_load(&context.tokenizer,tokenizer_path);
     const char *configured=getenv("SAMOSA_CHATS_DIR");
     if(configured)snprintf(context.chats_dir,sizeof(context.chats_dir),"%s",configured);
@@ -5474,7 +5617,8 @@ static int run_samosa_serve(Model *model,const char *snapshot,
         server.port,max_queue,context.chats_dir);fflush(stderr);
     int ok=samosa_http_server_run(&server);
     samosa_http_server_destroy(&server);tok_free(&context.tokenizer);
-    pthread_mutex_destroy(&context.stats_mu);pthread_cond_destroy(&context.scheduler.cv);
+    pthread_mutex_destroy(&context.stats_mu);pthread_mutex_destroy(&context.interactive_mu);
+    pthread_cond_destroy(&context.scheduler.cv);
     pthread_mutex_destroy(&context.scheduler.mu);g_signal_server=NULL;g_signal_context=NULL;
     return ok?0:2;
 }
@@ -5579,6 +5723,56 @@ int main(int argc, char **argv) {
 #endif
     }
 #endif
+    /* --- tokenize --count: lightweight subcommand, no model needed --- */
+    if (argc >= 3 && !strcmp(argv[1], "tokenize") &&
+        (!strcmp(argv[2], "--count") || !strcmp(argv[2], "--count-stdin"))) {
+        const char *tok_path = getenv("TOKENIZER");
+        const char *count_file = NULL;
+        int from_stdin = !strcmp(argv[2], "--count-stdin");
+        /* Parse optional --tokenizer and the file argument */
+        for (int i = 3; i < argc; i++) {
+            if (!strcmp(argv[i], "--tokenizer") && i + 1 < argc) { tok_path = argv[++i]; }
+            else if (argv[i][0] != '-' && !count_file) { count_file = argv[i]; }
+            else { fprintf(stderr, "tokenize: unknown argument: %s\n", argv[i]); return 1; }
+        }
+        if (!from_stdin && !count_file) {
+            fprintf(stderr, "Usage: ./qwen36b tokenize --count <file> [--tokenizer path]\n"
+                            "       ./qwen36b tokenize --count-stdin [--tokenizer path]\n");
+            return 1;
+        }
+        if (!tok_path) tok_path = "tokenizer_qwen36.json";
+        /* Read input */
+        char *text = NULL; long text_len = 0;
+        if (from_stdin) {
+            size_t cap = 4096, used = 0;
+            text = malloc(cap);
+            if (!text) { fprintf(stderr, "tokenize: allocation failed\n"); return 1; }
+            while (1) {
+                size_t n = fread(text + used, 1, cap - used, stdin);
+                used += n;
+                if (n == 0) break;
+                if (used == cap) { cap *= 2; text = realloc(text, cap); if (!text) return 1; }
+            }
+            text_len = (long)used;
+        } else {
+            FILE *f = fopen(count_file, "rb");
+            if (!f) { fprintf(stderr, "tokenize: cannot open %s: %s\n", count_file, strerror(errno)); return 1; }
+            fseek(f, 0, SEEK_END); text_len = ftell(f); fseek(f, 0, SEEK_SET);
+            text = malloc(text_len + 1);
+            if (!text) { fclose(f); return 1; }
+            if ((long)fread(text, 1, text_len, f) != text_len) { fclose(f); free(text); return 1; }
+            text[text_len] = 0;
+            fclose(f);
+        }
+        Tok tokenizer; tok_load(&tokenizer, tok_path);
+        int max_tokens = text_len * 4 + 256; /* generous upper bound */
+        int *ids = malloc(max_tokens * sizeof(int));
+        if (!ids) { free(text); tok_free(&tokenizer); return 1; }
+        int n = tok_encode(&tokenizer, text, (int)text_len, ids, max_tokens);
+        printf("%d\n", n);
+        free(ids); free(text); tok_free(&tokenizer);
+        return 0;
+    }
     const char *snap = getenv("SNAP");
     const char *refpath = getenv("REF");
     const char *chat = NULL, *system = NULL;

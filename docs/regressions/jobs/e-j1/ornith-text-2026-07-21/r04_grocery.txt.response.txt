@@ -1,0 +1,1 @@
+{"merchant":"FRESH MARKET","date":"2026-07-02","subtotal":24.18,"tax":1.93,"total":26.11,"currency":"USD"}

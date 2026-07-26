@@ -1,13 +1,9 @@
-qwen36b
-samosa-extract
-test_expert_cache
-test_kv_cache
+build/
 *.qws
 *.dSYM/
 model/
 .env
-test_groupwise_q4
-test_repetition_guard
-test_samosa_serve
-test_thinking_budget
 __pycache__/
+dist/libpdfium.dylib
+dist/samosa-extract
+/results/

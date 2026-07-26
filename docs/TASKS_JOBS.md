@@ -1,10 +1,39 @@
 # Issue #7 — Samosa Jobs (batch, scheduled, local multimodal work)
 
-**Status: design. Nothing here is built or measured. Every performance number is
-marked _unverified_ until an experiment produces it.** Claims about the *current*
-engine, by contrast, are verified below with `file:line` evidence — that is the
-line this card holds: the codebase foundations are proven, the job system on top
-of them is not.
+**Status: J1 implementation is landed on `issue-7-jobs`; its offline suite is
+green. E-J1 is closed for the labeled JSS PDF batch and the live chat interlock.
+Single-image extraction now produces passing records — Qwen vision read a real
+rendered JSS page and returned a valid object (title + journal correct); the two
+structural blockers (Qwen thinking not disabled; ```json-fenced output not
+recovered) are fixed, see
+[`qwen-image-thinking-fix-2026-07-22.md`](regressions/jobs/e-j1/qwen-image-thinking-fix-2026-07-22.md).
+Still open: full-resolution field accuracy (small text needs a full-res image,
+~8 min/inference on the 16-GiB host) and multi-image/page reduction.** The
+compiled definition route now emits active inference timing and has offline
+interlock coverage; see
+[`compiled-interlock-telemetry-2026-07-22.md`](regressions/jobs/e-j1/compiled-interlock-telemetry-2026-07-22.md).
+The 2026-07-16 whole-file long-PDF preview hit unsafe memory pressure on the
+16-GiB reference host; see
+[`pdf-preview-aborted-2026-07-16.md`](regressions/jobs/e-j1/pdf-preview-aborted-2026-07-16.md).
+The later 2026-07-22 run rebuilt/installed with the reviewed PDFium archive and
+completed all four labeled JSS PDFs through the compiled `/v1/jobs/definition/*`
+routes on Ornith: 4/4 `passed`, 46/48 fields correct, 0 review/failed records,
+and zero swap/throttled pages; see
+[`jss-pdf-ornith-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-2026-07-22/)
+and the superseded setup note
+[`ornith-metadata-2026-07-22.md`](regressions/jobs/e-j1/ornith-metadata-2026-07-22.md).
+The clean live interlock rerun completed the same four PDFs with an interactive
+chat opened mid-batch: 4/4 `passed`, 44/48 fields correct,
+`active_inference_seconds=124.93`, and one observed
+`job_paused`/`job_resumed` pair; see
+[`jss-pdf-ornith-interlock-clean-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-interlock-clean-2026-07-22/).
+No broad image or multi-image reduction acceptance claim is implied until the
+vision-backend run passes. A narrow Qwen image smoke reached the
+vision-capable backend through the compiled route but returned
+`review_required`/`invalid_model_output`; see
+[`qwen-image-smoke-2026-07-22/`](regressions/jobs/e-j1/qwen-image-smoke-2026-07-22/).
+Claims about the *current* engine, by contrast, are verified below with
+`file:line` evidence.
 
 This card is written to be executed by an agent with **no prior context on this
 repo**. Every task states its goal, its exact interface (file formats, request
@@ -18,7 +47,10 @@ claim is scoped wider than what was run. Read [ISSUE_TASKS.md](ISSUE_TASKS.md)
 first. This card **absorbs the internet work** — [TASKS_INTERNET.md](TASKS_INTERNET.md)'s
 verified security groundwork is reused, not replaced (§J3) — and sits on top of
 the document extractor from [TASKS_DOCUMENTS.md](TASKS_DOCUMENTS.md) (#5) and the
-vision tower from [TASKS_VISION.md](TASKS_VISION.md) (#3, landed).
+vision tower from [TASKS_VISION.md](TASKS_VISION.md) (#3, landed). The general
+document-reading tool (`doc.read` — OCR cascade, handwriting escalation, read
+cache, `low_confidence_read` wiring) is a **Tools-layer contract specified
+separately in [TASKS_READER.md](TASKS_READER.md)**, not part of this card.
 
 ## Start here — handoff preflight
 
@@ -112,6 +144,20 @@ real model (respecting machine-safety, HR-6/J1.13).
   (§J1.13), not deferred to J2.
 - **Results surface = a dedicated Jobs view** — static, fully-escaped HTML in v1
   (§J1.12), interactive (live/create/pause) with the J2 daemon.
+- **Filesystem post-actions exist, and they never delete (owner, 2026-07-19).**
+  Jobs may create directories and move files inside one user-granted root, via
+  the organize stage (§Phase JO). The runner contains **no delete path** for
+  user files: a move is a no-clobber atomic rename, cross-volume moves are
+  refused (a copy-then-delete "move" smuggles a delete), and every applied move
+  is journaled and reversible with `undo`. Plans are shown and approved before
+  anything is touched. Do not reopen; the exact contract is §Phase JO.
+- **Product surface stays browser + headless server (owner, 2026-07-19).** No
+  dmg/Electron/exe shell: the capability lives in the server, a bundled
+  Chromium costs more RAM than a tab, and there is no native Windows port (#2
+  is Docker). Long jobs run with **no UI open**; completion is announced by a
+  local notification. An optional native **menu-bar shim** (small `.m`, polls
+  serve over loopback — the [metal_expert.m](../src/metal_expert.m) pattern) is
+  future polish, not a prerequisite. UI direction: [UI_DESIGN.md](UI_DESIGN.md).
 
 ## Engine additions J1 requires (small, additive, read-only)
 
@@ -169,8 +215,8 @@ job pays hours of prefill overhead before any useful work, on plans a 35B-A3B q4
 model produces unreliably. The map-shaped job — N inputs × one bounded model call
 each, deterministic reduce — is the only shape where "slow but local and
 unmetered" wins. Generality comes from **more intents on the same shape** (and
-deterministic post-actions over validated fields, e.g. rename-by-extracted-date),
-never from runtime planning. Pitch wording must match (HR-7): not "the model
+deterministic post-actions over validated fields, e.g. rename-by-extracted-date
+— now specified as **§Phase JO**), never from runtime planning. Pitch wording must match (HR-7): not "the model
 breaks the request into steps" — honest phrase: **"Samosa turns your description
 into a reviewable job definition, then executes it deterministically."**
 Reviewable-and-repeatable is the claim hosted agents cannot make; lead with it.
@@ -182,7 +228,7 @@ not at runtime.
 
 | Actor | Does | Never does |
 |---|---|---|
-| **Runner** (`samosa_jobs.py` — deterministic Python, no AI) | Reads files, magic-byte typing, hashing, planning units, building prompts, validation, joins/merges, the event log | Judgment calls; nothing here consults the model |
+| **Runner** (the compiled gateway `src/samosa_gateway.c` + `samosa-fs` sidecar — deterministic C, no AI; the original `samosa_jobs.py` prototype was retired at Gate 11) | Reads files, magic-byte typing, hashing, planning units, building prompts, validation, joins/merges, the event log | Judgment calls; nothing here consults the model |
 | **Intent author** (a human, at development time) | Decomposes a task class into its shape **once** — e.g. Reconcile = extract-each → deterministic join on declared match rule → exception report — tests it, ships it as a template | — |
 | **Qwen, definition time** (`suggest-job`, one supervised call) | Intent *selection* + parameter *filling*: maps the user's English onto a shipped intent, proposes schema/rules; user edits and previews | Inventing a new workflow shape |
 | **Qwen, runtime** | Answers one bounded, pre-built prompt per unit (read this receipt, summarize this page) | Touching raw files, choosing tools, planning, deciding what "done" means |
@@ -345,7 +391,7 @@ only** if a job exceeds ~10^5 items or concurrent jobs need shared querying.
     result.json  provenance.json
 ```
 
-`<jobs_root>` default `~/.samosa/jobs` (override `SAMOSA_JOBS_DIR`), mode `0700`.
+`<jobs_root>` default `~/.samosa/jobs` (override `SAMOSA_JOBS_ROOT`), mode `0700`.
 `<input_sha256>` = the file's SHA-256; `<unit_id>` = `<input_sha256>` (whole
 file), `<input_sha256>#p<N>` (page N), `<input_sha256>#c<N>` (text chunk N).
 Files stay on the filesystem; the log stores paths + hashes + metadata, never
@@ -500,11 +546,12 @@ receipts/medical records → structured fields → JSON; **100 more tomorrow** h
 idempotently; **auto per-file/per-page**; **safe to leave running unattended**.
 One-shot runner (daemon = J2).
 
-**Dependency note:** the PDF/DOCX path needs the #5 pdfium sidecar. Until it
-lands, J1 runs on **images (via #3) and text/markdown**; the PDF path returns
-`review_required reason:"extractor_unavailable:application/pdf"`. E-J1 can run
-**today** on image+text inputs. The planner (J1.2) is testable today with
-synthetic PDF metadata.
+**Dependency note:** the #5 PDFium sidecar is now packaged with a capable
+release. J1 uses it for exact PDF page metadata and bounded one-page rendering;
+a release without it still returns the controlled
+`review_required reason:"extractor_unavailable:application/pdf"` result. DOCX
+remains deferred. Text-prefill cancellation is now measured, but it is not safe
+to infer long-PDF or image-prefill readiness from the offline suite alone.
 
 **Schema decision (resolved):** the explicit `output_schema` is the validation
 contract, always. Schema *suggestion* is a **separate command** (`samosa jobs
@@ -565,6 +612,11 @@ serve unless noted; build in order.
     - `MAX_CONTEXT = 24576` ([qwen36b.c:3564](../src/qwen36b.c#L3564)),
       `SYSTEM_RESERVE = 1024`,
       `CONTEXT_BUDGET = MAX_CONTEXT − job.inference.max_tokens − SYSTEM_RESERVE`.
+    - **Jobs prefill ceiling:** `MAX_JOB_INPUT_TOKENS = 8192`. The effective
+      planning ceiling is the smaller of this and `CONTEXT_BUDGET`; a job may
+      lower it through `resources.max_input_tokens` but may not raise it. The
+      engine context is a correctness boundary, not an unattended-laptop
+      performance target. A forced `unit:"file"` never bypasses this ceiling.
     - `LOW_TEXT_TOKENS = 20`.
   - **Text token counts are exact, not estimated.** Use `samosa tokenize --count`
     (Engine addition 1) on the extracted text and on the instruction+schema. A
@@ -588,6 +640,9 @@ serve unless noted; build in order.
     multi-image doc → 1 unit + `warning:forced_file_multi_image`.
   - Split units set `reduce_group = input_sha256`; whole-file units
     `reduce_group = null`.
+  - A PDF page that itself exceeds the Jobs prefill ceiling is not sent to the
+    model; it receives `review_required reason:"unit_over_safe_prefill_budget"`
+    until a page-text subchunker is available.
 - **Done.** Pure over metadata + the tokenizer count; deterministic; no model.
 - **Test.** `tests/jobs/test_planner.py`: (1) PNG → file/`single_image`;
   (2) **PDF 10 pages each `needs_image` → 10 units/page/`multi_image_pages`**
@@ -807,9 +862,324 @@ serve unless noted; build in order.
 **J1 acceptance (offline):** `make jobs-test` runs every `tests/jobs/*` and exits
 0. This is "tests pass" — **not** "works." "Works" is E-J1.
 
+## Phase JO — Organize: deterministic filesystem post-actions  **(owner ask, 2026-07-19)**
+
+The owner's three anchor tasks, verbatim shape:
+
+1. *"Arrange this folder by document type — PDFs, JPGs, JPEGs, PNGs, DOCX, CSV,
+   each in its own folder titled accordingly."*
+2. *"Separate out all pictures with two humans into one folder."*
+3. *"Check every receipt and separate out the ones for Saturday, June 5th."*
+
+All three are the same pipeline — **enumerate → classify each file → group →
+move** — and differ only in the classifier: (1) pure metadata, zero model
+calls; (2) one bounded vision call per image; (3) one bounded extraction call
+per document. The filesystem verbs are identical: list/stat, mkdir, move.
+**Never delete.** JO adds the missing write stage to J1's read-only runner. It
+is still not an agent: the model never chooses a path, names a folder, or
+initiates an action — it only fills validated fields the runner then maps to
+moves deterministically.
+
+**Dependency shape.** JO.0–JO.5 and the two metadata intents (JO.6) touch no
+model and are gated only on J1.0/J1.1/J1.7 landing. Field-based organize
+(intents 2 and 3) consumes J1 results and is gated on **E-J1's accuracy
+number**: a wrong extraction that merely sits in a JSON file is an error; a
+wrong extraction that *moves someone's receipt* erodes trust. Field rules
+therefore only ever consume **`passed`** documents (never `review_required`),
+and E-JO1 measures move precision before the intent is described as working.
+
+### Decisions locked (owner, 2026-07-19 — do not reopen)
+
+- **JO-D1 — No delete path exists.** The runner never calls `unlink`/`rmdir`/
+  `rmtree` on anything under the user's folder — not "gated", absent. The one
+  audited exception is inside the move fallback (JO.3), which may remove the
+  *source name* of a file only after proving the destination is the same inode.
+- **JO-D2 — Move = no-clobber atomic rename.** An overwriting move is a delete
+  by another name. macOS: `renamex_np(..., RENAME_EXCL)`; Linux:
+  `renameat2(..., RENAME_NOREPLACE)`; both via `ctypes` (stdlib — the
+  Python-stdlib-only decision holds). Destination exists ⇒ the move is **not**
+  performed; it is a logged skip.
+- **JO-D3 — Same-volume only.** `EXDEV` ⇒ skip with reason `cross_device`,
+  never copy+delete.
+- **JO-D4 — Scope jail.** Every source and destination stays under the job's
+  `input.folder`, checked on the **realpath**, descriptors opened `O_NOFOLLOW`.
+  Field values never become path components without passing the JO.1 whitelist.
+- **JO-D5 — Plan → approve → apply.** `organize` only ever writes a plan file.
+  User files change only in `apply`, after the frozen plan is shown and
+  approved. The default invocation touches nothing.
+- **JO-D6 — Journal + undo.** Every applied move is an event before and after
+  execution; `undo` replays exact reversals with the same no-clobber rename.
+  Never-delete **plus fully-reversible** is the promise, and E-JO1 verifies it
+  by hash inventory, not assertion.
+
+### `job.json` additions
+
+**Note (2026-07-19):** J1 implementation is already in flight on
+`issue-7-jobs` (validator/runner/PDF-corpus commits exist there, and that
+branch carries its own card edits that must be reconciled with this section
+on merge). The `organize` block is therefore an **additive** change JO.0
+lands in that validator: optional top-level `organize`; **absent ⇒ behavior
+byte-identical to a J1 job** (same gate pattern as the engine additions):
+
+```json
+"organize": {
+  "rule": {"by": "extension"},
+  "dest_root": null,
+  "on_collision": "skip",
+  "unmatched": "leave"
+}
+```
+
+- `rule` — exactly one of:
+  - `{"by":"extension"}` — destination folder = upper-cased extension (`PDF/`,
+    `JPG/`, `JPEG/` — jpg and jpeg stay distinct, per the owner's task 1);
+    extensionless files use the magic-byte type name (`JPEG/`, `PNG/`, `PDF/`,
+    `TEXT/`), else `OTHER/`. Optional `"map": {"jpg":"Photos", …}` overrides
+    folder names; keys are lowercase extensions, values pass the JO.1 whitelist.
+  - `{"by":"media_type"}` — destination = magic-byte type; extension ignored.
+  - `{"by":"field","field":"date"}` — one folder per distinct validated value
+    of a schema field (task 3 grouped by day: `2027-06-05/`).
+  - `{"by":"where","field":"people","op":"eq","value":2,"dest":"Two people"}` —
+    matching documents move to `dest`, everything else follows `unmatched`.
+    `op ∈ {eq, ne, lt, le, gt, ge}`; comparison is JSON-typed (the J1.5
+    `bool≠int` rule applies).
+- `dest_root` — `null` ⇒ `<input.folder>/Organized`; if set, must be an
+  absolute path inside `input.folder` (validator-enforced, realpath).
+- `on_collision` — `skip` (default) | `suffix_sha8` (append `.<first 8 hex of
+  input_sha256>` before the extension — deterministic, collision-proof; never a
+  mutable ` (2)` counter).
+- `unmatched` — `leave` (default) | a folder name passing the whitelist.
+
+### JO.0 — Validator extension + metadata-only jobs
+- **Goal.** Accept the `organize` block strictly; allow jobs with **no model
+  stage** for metadata rules.
+- **Interface.** Extends J1.0. Reject: unknown keys inside `organize`, unknown
+  `rule.by`/`op`, `dest_root` outside `input.folder` (checked by realpath, and
+  rejected if any path component is a symlink), a `map` value or `dest` or
+  `unmatched` folder name failing the JO.1 whitelist, `rule.by ∈
+  {field,where}` naming a field absent from `output_schema.properties`.
+  **Metadata-only form:** when `rule.by ∈ {extension, media_type}`,
+  `instruction`, `output_schema`, and `inference` may all be `null` — the
+  pipeline is discovery → plan, zero model calls, and `unit`/`reduce` are
+  ignored. For metadata-only jobs discovery relaxes J1.1's typing in one way:
+  a file that is neither magic-typed nor UTF-8 (e.g. DOCX — ZIP `PK`) is
+  **included** with type `application/octet-stream` instead of skipped
+  `unsupported` — it is being *sorted*, not sent to the model. Everything else
+  in J1.1 holds (O_NOFOLLOW, regular-file check, hashing, stability re-fstat;
+  `max_file_bytes` does not apply to metadata-only jobs).
+- **Done.** A J1 job with no `organize` block validates and runs byte-identical
+  to before (existing J1 tests untouched and green).
+- **Test.** `tests/jobs/test_organize_validate.sh`: 1 valid extension job with
+  nulls + 8 malformed (`dest_root` outside the folder, `dest_root` reached
+  through a symlink, `"by":"extenson"` typo, unknown `op`, `where` on a field
+  not in the schema, `map` value `"../up"`, `unmatched` value `".hidden"`,
+  `organize` with an unknown key) → exact exit codes/messages; plus: every
+  pre-existing J1 fixture still validates.
+
+### JO.1 — Plan compiler (pure, deterministic, model-free)
+- **Goal.** Turn results (or discovery records) into an exact, reviewable move
+  list. Never touches user files.
+- **Interface.** `samosa jobs organize <job.json>` reads `events.jsonl` +
+  `results/` (or, metadata-only, runs/reuses discovery), computes one decision
+  per input, writes `results/organize_plan.jsonl`, prints the human summary,
+  and appends `plan_created`. Rules:
+  - Source of truth per input: metadata rules → the `item_discovered` record;
+    field rules → the **passed** document record (reduced record for split
+    files). `review_required`/`failed`/unreduced → skip `not_validated`.
+  - **Destination-name whitelist** (the only gate between extracted text and
+    the filesystem): after trimming, a folder or mapped name must match
+    `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$` — no leading dot/dash, no path
+    separators, no control characters, never `..`. A field value failing it →
+    skip `unsafe_dest` (the hostile-value path: `"../../etc"`, `"a/b"`, a
+    300-char value, an empty string all land here, listed in the plan).
+  - Already in place (source dir == destination dir) → skip `already_sorted`.
+  - Collision handling per `on_collision`; a `skip` collision is computed
+    against both **existing files** and **other planned moves** (two different
+    `IMG_001.jpg` from sibling subfolders in a recursive job must not both be
+    planned into `JPG/IMG_001.jpg` — second one skips or suffixes
+    deterministically by `input_path` order).
+  - Plan lines: `{"input_sha256","src","dst","size","mtime"}` (src/dst
+    absolute, realpath); skips: `{"input_sha256","src","skip":<reason>}`.
+    Final line: `{"plan_sha256": <sha256 of all preceding lines>,
+    "built_at_seq": <last events.jsonl seq consumed>, "moves": n, "skips": n}`.
+  - Deterministic: same inputs ⇒ byte-identical plan (ordering: `input_path`
+    ascending, same as J1.1).
+- **Done.** Pure function of records; re-running `organize` with unchanged
+  inputs rewrites an identical file; zero model calls, zero mkdir/rename.
+- **Test.** `tests/jobs/test_organize_plan.py`: canned results for all four
+  rule forms; assert byte-identical plans across two runs; hostile field
+  values → `unsafe_dest`; review'd unit → `not_validated`; recursive name
+  clash → exactly one planned + one deterministic skip/suffix; `where` with
+  `value:2` does not match `true` (JSON-typed); a file already in its
+  destination → `already_sorted`; filesystem untouched (tree hash before ==
+  after).
+
+### JO.2 — Shipped intents (the owner's three tasks + folder report)
+- **Goal.** Encode the anchor tasks as reviewed templates, not ad-hoc jobs.
+- **Interface.** `docs/examples/jobs/`:
+  - `sort-by-type.job.json` — metadata-only, `{"by":"extension"}` (task 1).
+  - `folder-report.job.json` — metadata-only, **no organize block executed as
+    moves**: `samosa jobs report <job.json>` (tiny JO command) prints counts,
+    total bytes, and largest files per type from discovery records — the
+    "explore a directory" ask (count files, types, sizes) with zero inference
+    and zero writes.
+  - `photos-two-people.job.json` — vision intent: schema `{"people":
+    {"type":"integer","minimum":0,"maximum":20}}`, fixed instruction ("Count
+    the people visible…"), organize `{"by":"where","field":"people","op":"eq",
+    "value":2,"dest":"Two people"}` (task 2).
+  - `receipts-by-date.job.json` — extraction intent: the §job.json receipt
+    schema, organize `{"by":"field","field":"date"}` (task 3; the "Saturday"
+    check is deterministic — the runner, not the model, knows 2027-06-05's
+    weekday, and a mismatch between a claimed weekday and the extracted date is
+    a domain-rule review, not a move).
+- **Suggest-job mapping (J2 §1).** These templates are what `suggest-job`
+  selects among; "arrange this folder by type" must compile to
+  `sort-by-type` + the folder path — **not** to a bespoke plan (§actor split).
+- **Test.** `tests/jobs/test_intents.sh`: all four templates pass `validate`;
+  `sort-by-type` end-to-end offline on a fixture folder (pdf + jpg + jpeg +
+  png + docx-as-zip + csv + extensionless png + a `.txt` renamed `.jpg`) →
+  plan groups match the magic-byte/extension contract exactly, **0 POSTs** to
+  the fake serve; `report` prints the fixture's exact counts/bytes and creates
+  no plan; `photos-two-people` against fake serve returning canned
+  `{"people":N}` → only the `N==2` files planned.
+
+### JO.3 — Move engine (the only code that changes the user's filesystem)
+- **Goal.** One audited function performs every mkdir and rename; everything
+  else is forbidden from touching user files.
+- **Interface.** `apply_move(plan_line)`:
+  1. `open(src, O_NOFOLLOW | O_RDONLY)` — symlink or non-regular ⇒ skip
+     `not_regular_file`. `fstat` and compare `(size, mtime)` to the plan line —
+     drift ⇒ skip `changed_since_scan` (the job may have run overnight;
+     `--verify-hash` upgrades this check to a full re-hash).
+  2. Destination directory: created with `mkdir -p` semantics, each component
+     realpath-verified inside the jail before creation, default umask.
+  3. Rename: `renamex_np`/`renameat2` no-clobber (JO-D2); `EEXIST` ⇒ skip
+     `dest_exists`; `EXDEV` ⇒ skip `cross_device` (JO-D3).
+  4. **Fallback** (non-macOS/Linux only): `os.link(src, dst)` (atomic
+     no-clobber by contract), `fstat` both and **assert same inode**, only then
+     remove the source name. This is the single permitted `unlink` in the
+     runner (JO-D1) and it is wrapped in the inode assertion.
+- **Done.** Grep-auditable: `os.remove`/`os.unlink`/`shutil.rmtree`/`os.rmdir`
+  appear nowhere in the runner except the guarded fallback branch.
+- **Test.** `tests/jobs/test_move_engine.py`: dst exists → skip, **both**
+  files byte-identical after; src replaced by a symlink post-plan → skip; src
+  touched post-plan → `changed_since_scan`; injected `EXDEV` (monkeypatched
+  rename) → `cross_device`, src intact; fallback path unit-tested with the
+  inode assertion firing on a simulated mismatch (no source removal); an audit
+  fixture monkeypatches `os.unlink`/`os.remove`/`shutil.rmtree` to raise —
+  the full JO test suite passes with the traps armed (except the one guarded
+  call site, which the trap whitelists by stack inspection).
+
+### JO.4 — Apply: approval boundary, events, crash safety, gate
+- **Goal.** Execute a frozen plan exactly once, resumable, polite, journaled.
+- **Interface.** `samosa jobs apply <job.json> [--yes] [--verify-hash]`:
+  - Refuses without a plan; prints the summary (moves by destination, skips by
+    reason) and requires typed confirmation or `--yes`; appends `plan_approved
+    {plan_sha256}`. If `events.jsonl` has terminal events newer than
+    `built_at_seq`, warn `plan_stale` and require `organize` to be re-run.
+  - Per move: append `move_applying {src,dst,input_sha256}` → `apply_move` →
+    append `move_applied` or `move_skipped {reason}`; fsync discipline of
+    J1.6. Completion: `organize_complete {applied, skipped}`.
+  - **Recovery** (extends J1.7's replay): `move_applying` without a follow-up →
+    if dst exists with the plan line's size (or hash under `--verify-hash`)
+    and src is gone ⇒ the rename won the crash: append the missing
+    `move_applied`; if src still exists ⇒ retry the move; neither ⇒
+    `move_skipped reason:"unresolved_crash"` for the morning review. Re-`apply`
+    after completion ⇒ 0 actions (idempotent).
+  - **Gate:** run J1.13's `gate_check()` between batches (default 50 moves) —
+    renames are cheap but the interlock and pressure rules still apply; pauses
+    log `job_paused` exactly as in runs.
+- **Test.** `tests/jobs/test_apply.sh`: full offline apply of a 6-move plan →
+  tree matches expected exactly, 6 `move_applied`; `SIGKILL` mid-apply (fault
+  injection after rename, before event) → re-`apply` appends the missing
+  event, completes the rest, no move performed twice; immediate re-`apply` →
+  0 actions; without `--yes` and with stdin closed → exit non-zero, tree
+  untouched; stale plan → refused with `plan_stale`.
+
+### JO.5 — Undo
+- **Goal.** Reverse an applied plan exactly, with the same safety rules.
+- **Interface.** `samosa jobs undo <job.json> [--yes]` replays `move_applied`
+  events in **reverse order** as `dst → src` no-clobber renames via JO.3
+  (same jail, same skip taxonomy). User moved/renamed/replaced a file since ⇒
+  skip `changed_since_apply` and report; each reversal appends `move_reverted`.
+  Undo of an undo is out of scope — state it in the CLI help. Empty
+  destination directories created by apply are **left in place** (removing
+  them would require `rmdir` — JO-D1 wins over tidiness).
+- **Test.** `tests/jobs/test_undo.sh`: apply → undo → recursive tree+hash
+  identical to the pre-apply snapshot (empty created dirs excepted, asserted
+  present-but-empty); touch one moved file → that one skips
+  `changed_since_apply`, the rest revert; events show matching
+  applied/reverted pairs.
+
+### JO.6 — View + notification
+- **Goal.** The plan and its outcome are first-class in the Jobs view; the
+  finish is announced without any UI open.
+- **Interface.** `view.html` (J1.12 contract: static, inline CSS, no external
+  resources, every value escaped) gains a **Moves** section. Its first screen
+  obeys the **bakery test** ([UI_DESIGN.md](UI_DESIGN.md) §3.0, owner rule
+  2026-07-19): plain sentences — what happened, what needs a look (each
+  reason as one plain-language sentence, never a J1.5 taxonomy string),
+  where the files are, and the never-deleted + undo safety card. The full
+  src → dst manifest (grouped by destination, monospace, dimmed common
+  prefixes), skip reasons, per-unit table, exact undo command, and
+  provenance all live in one collapsed "Details for the record" section. On `organize_complete` (and
+  `job_complete`), the runner posts a local notification — macOS:
+  `osascript -e 'display notification …'`, best-effort, never fails the job;
+  content is counts only, **no filenames** (HR-10: notifications persist in
+  Notification Center logs).
+- **Test.** `tests/jobs/test_view_moves.sh`: after an apply with 2 moves +
+  1 skip, `view.html` shows the grouped table and counts; a file named
+  `<img src=x onerror=alert(1)>.jpg` appears escaped (literal `&lt;img`
+  present, raw tag absent); notification command is invoked via a stubbed
+  `osascript` on PATH and its argv contains no input filename.
+
+**JO acceptance (offline):** all `tests/jobs/test_organize_*`, `test_move_*`,
+`test_apply*`, `test_undo*`, `test_intents*`, `test_view_moves*` green under
+`make jobs-test`, with the no-delete audit traps armed. This is "tests pass" —
+"works" is E-JO1.
+
 ## Experiments — run the cheapest, most decisive one first
 
 ### E-J1 — Does the runner work on the real model?  ~1–2 days  **RUN FIRST (after J1 offline tests are green)**
+
+**Current result (updated 2026-07-22): labeled JSS PDF batch and live chat
+interlock completed through the compiled gateway.** The sidecar correctly
+measured/planned all four supplied JSS PDFs, but the 2026-07-16 run used a
+20,817-token whole-file preview on the 24 GB model and caused heavy
+compression/swap on the 16-GiB host. The branch now uses a PDFium-backed
+installed `samosa-extract --json-pages`, and the full four-PDF JSS corpus was
+rerun through the compiled `/v1/jobs/definition/*` routes on the lighter Ornith
+backend:
+[`jss-pdf-ornith-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-2026-07-22/).
+Result: 4/4 records `passed`, 46/48 labeled fields correct, 0
+`review_required`, 0 failed, preview 21.888 s, run 135.149 s, and
+`Pages throttled=0`, `Swapins=0`, `Swapouts=0` before/after. The only labeled
+misses were one grouped email-order field and one affiliation over-inclusion.
+
+The PDF release-path blocker is closed for this branch by installing from the
+reviewed PDFium archive and by installer smoke tests in `dist/install.sh` and
+`tools/install_local_dev.sh`. The E-J1 harness now drives the compiled
+`/v1/jobs/definition/*` routes instead of the deleted Python runner. Follow-up
+on 2026-07-22 closed the compiled-observability gap: definition runs emit
+per-item `model_call_seconds`, total `active_inference_seconds`, and
+`job_paused`/`job_resumed` interlock events when
+`resources.pause_when_user_active:true`; see
+[`compiled-interlock-telemetry-2026-07-22.md`](regressions/jobs/e-j1/compiled-interlock-telemetry-2026-07-22.md).
+A clean live real-model rerun with an interactive chat opened mid-batch is now
+captured in
+[`jss-pdf-ornith-interlock-clean-2026-07-22/`](regressions/jobs/e-j1/jss-pdf-ornith-interlock-clean-2026-07-22/):
+4/4 records `passed`, 44/48 fields correct, 0 `review_required`, 0 failed,
+`active_inference_seconds=124.93`, one `job_paused` and one `job_resumed`, and
+zero swap/throttled pages.
+
+The compiled route now has single-image request plumbing: PNG/JPEG definition
+items are base64 encoded and sent as OpenAI-compatible `image_url` content, with
+fake-backend coverage in `tests/test_compiled_gateway.sh`. The first live Qwen
+smoke on a 1x1 PNG reached the vision-capable backend and completed with active
+inference timing, but the model returned a scalar (`0`) instead of the requested
+schema object, so the record was `review_required`; see
+[`qwen-image-smoke-2026-07-22/`](regressions/jobs/e-j1/qwen-image-smoke-2026-07-22/).
+Remaining acceptance coverage: labeled image inputs and multi-image reduction.
 
 Real `samosa serve` + the real 24 GB model; full runner + `preview` over 10–20
 real inputs (images+text; PDFs if #5 landed) with a hand-labeled reference.
@@ -837,6 +1207,37 @@ never-overstate rule): if per-field correctness is high, "extracts your data"
 is honest; if it is, say, ~80%, the feature must be framed as **"drafts every
 field, you confirm"** — or it will feel like it lies. Record the number and pick
 the sentence.
+
+### E-JO1 — Does organize keep its promises on a real folder?  ~0.5–1 day  (after JO offline tests; sort intent needs no model)
+
+Two halves, cheapest first:
+
+**(a) Metadata half — no model.** A real copy of a messy user folder (≥100
+mixed files including nested dirs, duplicate names, an alias/symlink, at least
+one file with the wrong extension). Run `sort-by-type`: `organize` → review the
+printed plan → `apply` → `undo` → `apply` again.
+
+**Acceptance (a):** the **hash inventory law** — `find … -type f | sha256sum`
+before and after every step: the *multiset of content hashes is identical at
+every point* (moves change paths, never the set of contents). Zero
+`unlink`-audit trips. `undo` restores every path (`changed_since_apply` count
+0 on an untouched folder). Re-`apply` after `undo` = re-plan required or
+identical plan applies cleanly. Plan preview counts matched what `apply` did,
+exactly. Wall-clock for plan/apply/undo recorded (expected: seconds — say so
+only after measuring).
+
+**(b) Field half — real model, gated on E-J1.** The owner's receipt folder +
+`receipts-by-date`, and ~30 personal photos + `photos-two-people`. Hand-label
+ground truth first.
+
+**Acceptance (b):** report **move precision** (files moved that belonged
+there / files moved) and **recall** separately per intent; the review/skip
+queue accounts for every file not moved; the hash inventory law holds; the
+same machine-safety telemetry as E-J1 (footprint, swap delta, pauses).
+Precision on labeled data decides the honest verb (per the E-J1 framing rule):
+high ⇒ "sorts your photos"; mediocre ⇒ "proposes a sort you confirm" — record
+the number and pick the sentence. Commit everything under
+`docs/regressions/jobs/e-jo1/`.
 
 ### E-J2 — Public-fetch politeness & extraction  ~1 day  (gates J3, after J1)
 
@@ -892,8 +1293,8 @@ Per the program's rule (experiments resize tasks — [ISSUE_TASKS.md](ISSUE_TASK
 - **J3 — Public-web job input (folds in #4).** Scheduled input on the reused SSRF
   fetcher + extractor ([TASKS_INTERNET.md](TASKS_INTERNET.md)); user-provided
   public URLs (HR-1/2); polite fetch, extract, change-detect, feed only new items.
-  The resume-vs-public-postings screen lands here. Out of scope: search engines,
-  crawling, discovery, login.
+  Keep Jobs general-purpose: domain-specific workflows and screens do not belong
+  in this surface. Out of scope: search engines, crawling, discovery, login.
 
 ## First release — deliberately narrow
 
@@ -904,8 +1305,11 @@ deterministic page reduction (model reduce only for named narrative fields); the
 resource gate + chat interlock; status/errors/warnings validation; content-hash
 idempotency; crash-durable atomic artifacts + provenance; a fully-escaped static
 Jobs view; `validate`/`arm`/`preview`/`run`/`status`/`view`/`suggest-schema`/
-`delete`/`archive`; **host-derived** thread budget (floor = 2 on the reference
-machine). Two intents: **Extract Document Data**, **Analyze Image Folder**.
+`delete`/`archive` plus the JO surface `organize`/`apply`/`undo`/`report`;
+**host-derived** thread budget (floor = 2 on the reference machine). Four
+intents: **Extract Document Data**, **Analyze Image Folder**, and the JO pair
+**Sort Folder by Type** (no model) and **Folder Report** (no model); the two
+field-based organize templates ship as examples gated on E-J1/E-JO1 accuracy.
 
 Does **not** ship: daemon/scheduler, interactive Jobs view, folder-watching, web
 input, asset snapshots, auto-downscale, measured host-adaptive tiers, multi-image
@@ -917,7 +1321,10 @@ prompts, code-repo jobs, tool/action adapters, agents.
 - Autonomous site discovery / open-web crawling (user supplies inputs in v1).
 - Real-time / interactive browsing — the anti-pattern this concept avoids.
 - Autonomous agents or model-initiated actions (delete/send/publish/modify)
-  without an explicit human-approval boundary.
+  without an explicit human-approval boundary. §Phase JO's organize stage is
+  the sanctioned form of "modify": deterministic, plan-approved, journaled,
+  and **file deletion is absent from the runner entirely** (JO-D1), not merely
+  approval-gated.
 - Model-initiated tool calls (A3.3) — parked behind E-I1 in
   [TASKS_INTERNET.md](TASKS_INTERNET.md).
 - Parallel model inference (violates F-J1); multi-image prompts (F-J4).
@@ -942,3 +1349,384 @@ prompts, code-repo jobs, tool/action adapters, agents.
   Scheduler.
 - **Product packaging** — embed the Python runner in the C binary vs. ship
   alongside (J2).
+
+---
+
+## Phase JF — model-driven "find" jobs (owner-approved direction, 2026-07-21)
+
+> **STATUS UPDATE 2026-07-23:** an implementation of this phase shipped
+> (`7eab55a`, `c9c99a0`) and **failed the Titli dogfood a second time** — it
+> diverged from this spec on exactly the points the spec called out (C-side
+> candidate filtering the spec never asked for, a hardcoded fallback
+> question, restart-instead-of-resume despite JF.3, `fs_read_pages` instead
+> of `doc.read` for scans). Root-cause evidence:
+> [regressions/jobs/titli-find-2026-07-23.md](regressions/jobs/titli-find-2026-07-23.md);
+> CLAUDE.md defect **J11**. The rebuild spec is
+> [TASKS_JOBS_INTELLIGENCE.md](TASKS_JOBS_INTELLIGENCE.md) (**Phase JI**),
+> which supersedes the shipped `jobs_find` code while keeping JF.1–JF.4 as
+> the intent baseline. Do not extend the shipped find path — demolition is
+> JI.0.
+
+> **Status: SPEC — nothing below is built.** Approved by the owner on
+> 2026-07-21 after dogfooding: "find my cat's medical record… his name is
+> Titli" against a real ~/Downloads (508 files) fell through `decode_intent`'s
+> two-kind vocabulary (organize | report) to a useless type count. The owner's
+> stated model: give the model a goal and the *lowest-level* tools (count,
+> metadata, read, read-a-page, notes, ask-the-user), and let it compose them
+> freely — metadata-first to filter candidates, content reads only to confirm.
+>
+> **This supersedes the "no model-initiated tool calls" non-goal above** — for
+> read-only tools only. The human-approval boundary moves from "the model may
+> not call tools" to "the model may not *mutate* without approval," which is
+> the boundary `samosa_tools.ToolContext` already enforces mechanically
+> (mutating tools refuse to run in `preview` mode).
+
+### What already exists (verified in code, 2026-07-21)
+
+The rebuild on `issue-7-jobs` means most of this phase is wiring, not building:
+
+| Owner's tool ask | Status |
+|---|---|
+| count files | `fs_survey` — exists |
+| metadata of all files in a folder | `fs_list` — exists; **extend** rows with size + mtime so the metadata-first filter pass works |
+| metadata of one file | **new** `fs_metadata` (size, dates, magic-byte type) — trivial over `os.stat` + `detect_media_type` |
+| read a file | `fs_read_text`, `fs_read_document` (PDF via samosa-extract) — exist |
+| read a particular page | **new** `fs_read_page` — `extract_document()` already returns per-page text; this is a slice, and it is the main prefill-cost mitigation |
+| write notes in a tmp file | **new** `notes_append`/`notes_read` — jailed to the *job dir* (`<job_dir>/notes.txt`), never the user's folder |
+| ask the user a clarifying question | **new** `ask_user` — the one genuinely new mechanism (below) |
+| the agent loop itself | `run_tool_loop` — exists (registry, ability prompt, `SAMOSA_TOOL_RESULT` protocol, `MAX_TOOL_ROUNDS = 8`, per-round budget notes to the model) |
+| jail + read-only enforcement | `ToolContext` — exists (realpath jail, preview/execute gating, `tool_call` emit) |
+
+### JF.1 — third intent kind: `find`
+
+`decode_intent` gains `_FIND_RE` (find / locate / search / look for / where is
+/ which file) → `{'kind': 'find'}`, and the ambiguous-goal model classifier
+becomes three-way (organize | report | find). Safety invariant preserved and
+extended: the model classifier can *choose* `find`, but `find` always runs a
+`preview`-mode ToolContext, so escalation to file mutation remains impossible
+by construction — same shape as today's "model cannot upgrade report to
+organize" test.
+
+### JF.2 — run_job routes `find` through run_tool_loop
+
+`ToolContext(root=folder, mode='preview', emit=log.append)`; toolset = the
+read-only fs tools + notes + ask_user (never fs_mkdir/fs_move in v1);
+system prompt = the job framing + goal; every `tool_call` event lands in the
+existing events.jsonl → SSE → Jobs-tab feed, so the user watches "reading
+titli_vaccination_2025.pdf …" live. Final model text becomes the `done`
+summary (bakery test applies: plain sentences, paths, why).
+
+The gateway needs a second model entrypoint: `jobs_model_call` is a one-shot
+64-token classifier; the loop variant needs ~512 tokens/turn, same
+lock/busy-fallback discipline.
+
+### JF.3 — ask_user (pause/resume)
+
+`ask_user` emits `await_user {question}`, persists the loop conversation to
+`<job_dir>/convo.json`, and the generator returns — the same
+stop-and-persist shape as `await_apply`. New endpoint `/v1/jobs/answer
+{job_id, answer}` reloads the conversation, appends the answer as the tool
+result, and re-enters the loop. UI: question + one text input in the feed.
+**This is the phase's only real mechanism risk** — everything else is
+registration and routing.
+
+### JF.4 — honest constraints (measure, then claim)
+
+- **Prefill is the binding constraint, again.** Every loop round re-prefills
+  the growing conversation at ~14–24 tok/s on the reference M3. A bounded
+  508-file listing is thousands of tokens; each document read is hundreds to
+  thousands more. A realistic find job is **minutes, not seconds** — the
+  cloud-model transcript that motivated this phase describes the *strategy*,
+  not the local latency. Page-level reads (`fs_read_page`), bounded listings
+  (`fs_list` limit), and notes-instead-of-context are the mitigations; the
+  24,576-token cap is the wall.
+- **Verification gate:** "works" means the real 24 GB Qwen model, through the
+  app's Jobs tab, finds a real planted file in a real cluttered folder and
+  answers with its path — evidence under `docs/regressions/jobs/`. The
+  existing real-model evidence (decode_intent round trip, chat tool loop)
+  makes this plausible, not proven.
+- **v2, not v1:** find→act combos ("find X and move it into Y") — mutating
+  tools in `execute` mode behind an Apply-style confirmation. Keep v1
+  strictly read-only.
+
+---
+
+## Tool runtime decision — compiled sidecars, not Python (owner, 2026-07-21)
+
+> **Owner's architecture statement:** Samosa's execution layer is
+> `LLM → structured tool call → small compiled executable` (Rust, C, Swift, or
+> Go; stable JSON or binary interface; one constrained operation per tool —
+> `pdf.extract`, `files.rename`, `image.convert`, …). Python may remain an
+> *optional compatibility layer* for third-party extensions, but the
+> lowest-level tools must not rely on it and Samosa must not ship a Python
+> runtime as its primary execution environment. Samosa should resemble a
+> compact operating environment for AI agents, not a Python distribution.
+>
+> **Product frame (owner):** most boring laptop work reduces to five
+> operations, and jobs should cover all five —
+> **retrieve → compare/classify → transform → enter/send → escalate to a
+> person.** "Enter/send" is outward action and sits behind the same approval
+> boundary as file mutation; "escalate" is JF.3's `ask_user`.
+
+### What is already true vs. what actually depends on Python (audited 2026-07-21)
+
+Being precise about the starting point, per the evidence bar:
+
+- **The protocol half of the target architecture already exists.** The model
+  never generates or executes Python — it emits one line of structured JSON
+  (`{"samosa_tool": …}`) and the app runs a named, constrained tool
+  (`samosa_tools.classify_reply`/`execute_tool`). Nothing about the
+  model-facing contract changes.
+- **The pattern for the implementation half already exists too:**
+  `samosa-extract` ([src/samosa_extract.c](../src/samosa_extract.c)) is a
+  compiled C sidecar — one operation, `--json` out, its own CPU/memory
+  sandbox, `@rpath`-linked libpdfium. `fs_read_document` already dispatches
+  to it. This is the template, not a research question.
+- **At the decision point, the Python layer was stdlib-only** (gateway + tools +
+  jobs ≈ 2,900 lines, zero pip dependencies) — the "fragile package/version
+  management" critique did not bite that code, and honesty required saying so.
+  What **did** bite then: the release hard-required the host's `python3`;
+  version drift was observable in-tree (both `cpython-310` and `cpython-314`
+  bytecode in `__pycache__/`); in-process Python tools had no OS-enforced
+  resource limits. The 2026-07-21 15 GB memory spike was a logic bug any
+  language could have written — but a sidecar under rlimits would have been
+  *contained* by the OS instead of eating 15 GB + swap. That containment
+  argument, not "Python is slow," was the strongest concrete case for this
+  decision.
+- **Status update (2026-07-22):** Gate 11 removed the shipped Python
+  gateway/jobs runtime. The installed path now uses compiled `samosa-gateway`,
+  `samosa-jobsd`, `samosa-fs`, and `samosa-extract`; the compiled gateway test
+  runs with `python3` unavailable. Python remains repo tooling only (packaging,
+  tests, and regression/evidence harnesses).
+
+### The sidecar contract (freeze before building more tools)
+
+- One binary, one domain; subcommands for operations
+  (`samosa-fs survey|list|metadata|move|undo …`), namespaced registry names
+  (`fs.list`, `pdf.extract`, `image.convert`).
+- Interface: args via argv/flags, JSON envelope on stdout —
+  `{"ok": true, …}` / `{"ok": false, "error": "<stable_code>"}` — exactly the
+  `samosa-extract` convention (`jobs_fs.extract_document` shows the caller
+  side, including the wall-clock watchdog + `killpg`).
+- Every sidecar sets its own rlimits (CPU, address space, output size), as
+  `samosa-extract` does. C is the default implementation language (the
+  toolchain the repo already builds with); Rust/Swift/Go are acceptable where
+  they pay for themselves.
+
+### Migration order (JF does not stall)
+
+1. **JF tools are born against the contract, not added to Python.**
+   `fs_read_page` *is* `samosa-extract` (per-page output already exists).
+   `samosa-fs` starts with the metadata-first trio JF leans on: `survey`,
+   `list` (with size/mtime), `metadata` — the deterministic logic ports from
+   `jobs_fs.py`, whose tests become the port's acceptance tests.
+2. **Port the mutation core** (`move` with atomic no-clobber rename, `undo`,
+   the journal) into `samosa-fs`. During transition the Python `Tool` entries
+   become thin dispatch shims (build subprocess argv, parse envelope) — the
+   registry, jail, and preview/execute gating stay where they are.
+3. **DONE (2026-07-22): Fold orchestration into compiled glue.** The C gateway
+   now owns HTTP/SSE, agent loop, backend supervision, scheduling/jobsd, and the
+   deterministic job routes. `dist/install.sh` builds and installs the compiled
+   executables directly, so the installed runtime no longer depends on Python.
+
+Non-goal, restated from the owner's framing: the model composing *tools* is
+the feature; the model generating *programs* (arbitrary Python/shell) stays
+out — a tool is a constrained verb, not an interpreter.
+
+---
+
+## Execution order — Phase JF + samosa-fs handoff (2026-07-21)
+
+Owner-assigned sequencing for the work specced in §Phase JF and §Tool runtime
+decision. **Read [ISSUE_TASKS.md](ISSUE_TASKS.md)'s Working agreement first**;
+branch is `issue-7-jobs`; agent shells have no push credentials — commit and
+stop. The evidence bar applies to every task: paste commands + output, log
+runs under `docs/regressions/jobs/`, and never claim "works" above what was
+actually run.
+
+Two independent tracks until T6 joins them. A single agent does T0→T10 in
+numeric order.
+
+### T0 — Preflight (blocking, 30 min)
+Confirm the branch already contains the 2026-07-21 session work: the
+`discover_files` memory-cap fix in `tools/jobs_fs.py` (`read_up_to`, capped
+metadata-only reads) + its two tests, and this spec's JF/runtime/order
+sections. Then prove the baseline: `make jobs-test` green **and** `make`
+compiles the C engine. If either fails, stop and report — do not build on a
+red baseline.
+
+### Track A — the compiled tools
+
+**T1 — Freeze the sidecar contract (doc-only).** Write
+`docs/SIDECAR_CONTRACT.md` by *codifying what `samosa-extract` already does*
+(JSON envelope `{"ok": …}` / `{"ok": false, "error": "<stable_code>"}`,
+argv conventions, self-applied rlimits, exit codes, versioning) — do not
+invent a divergent scheme. The caller-side pattern to preserve is
+`jobs_fs.extract_document` (watchdog + `killpg`).
+
+**T2 — `samosa-fs` v1 in C: `survey`, `list`, `metadata`.** Port the
+deterministic logic from `jobs_fs.py` — including O_NOFOLLOW symlink
+rejection, magic-byte typing, dedup hashing, and **the capped-read behavior
+from the 2026-07-21 fix** (max-bytes cap in metadata-only scans; truncated
+files hashed over prefix+size, typed by magic bytes, sized by stat). `list`
+gains size + mtime columns (JF's metadata-first pass needs them). Makefile
+target + a test target. Acceptance: the discovery/typing scenarios of
+`tests/jobs/test_jobs_fs.py` re-run against the binary with matching results
+— the Python tests are the port's spec.
+
+**T3 — Python tools become shims.** `fs_survey`/`fs_list`/new `fs_metadata`
+dispatch to `samosa-fs` via subprocess (copy the `extract_document` caller
+pattern); `run_job`'s internal folder survey switches too. Registry, path
+jail, preview/execute gating: untouched. Acceptance: `make jobs-test` green
+end-to-end through the shims, plus one containment demo: a folder with a
+deliberately huge file shows the sidecar bounded by its rlimits instead of
+the gateway's memory growing.
+
+### Track B — the find-job plumbing (no sidecar dependency)
+
+**T4 — JF.1, the `find` intent.** `_FIND_RE` + three-way model classifier in
+`decode_intent`; `find` can never map to a mutating context (extend the
+existing "model cannot upgrade report to organize" test to cover it).
+
+**T5 — Gateway loop entrypoint.** A ~512-token variant of the 64-token
+`jobs_model_call`, same lock/busy-fallback discipline. Test with the fake
+backend (the `tests/test_gateway_chat_tools.py` pattern).
+
+### Joined
+
+**T6 — JF.2, route `find` through `run_tool_loop`.** Preview-mode
+`ToolContext`; toolset = read-only fs tools + `fs_read_page` (a page slice
+of `extract_document` output — no new binary) + `notes_append`/`notes_read`
+(jailed to the job dir — job state, like `events.jsonl`, so Python is fine
+here); `tool_call` events → events.jsonl → SSE; model's final text = the
+`done` summary (bakery test). UI: render tool events live in the Jobs feed.
+Acceptance: an integration test with a scripted fake model, then a live
+app run on a scratch folder.
+
+**T7 — Real-model checkpoint 1 (gate for calling find "working").** Plant a
+plausible record (e.g. `titli_vaccination_2025.pdf` with a text layer) in a
+cluttered scratch folder; the real 24 GB model, through the app's Jobs tab,
+must find it and answer with the path. Evidence doc under
+`docs/regressions/jobs/`. Machine-safety rules apply (never while the owner
+is chatting; watch memory pressure + swap delta before/after).
+
+**T8 — JF.3, `ask_user`.** Persist the loop conversation to
+`<job_dir>/convo.json`, emit `await_user`, stop the generator; new
+`/v1/jobs/answer {job_id, answer}` resumes; UI question + input box. This is
+the phase's highest-risk mechanism — do it after T7 proves the loop, not
+before. Acceptance: fake-model pause/resume integration test + live resume.
+
+**T9 — Real-model checkpoint 2.** An ambiguous goal → the model asks a
+clarifying question → answer → job completes. Evidence doc.
+
+**T10 — Packaging.** `samosa-fs` ships alongside `samosa-extract` in
+`dist/install.sh` + `tools/package_hf.py --gateway` (the `--pdfium-dir`
+opt-in pattern), and a full local package→install→serve dry run — the step
+that caught the two real release bugs on 2026-07-20.
+
+### Explicitly deferred (do not start without the owner)
+- Porting the mutation core (`move`/`undo`/journal) to `samosa-fs` — wave 2,
+  alongside find→act (`execute` mode behind Apply).
+- `enter/send` tools (email, forms) — outward actions, need their own
+  approval-boundary spec.
+- Rewriting the gateway/orchestration in a compiled language.
+- Anything touching the HF release itself (owner publishes; H1 README defect
+  is a separate owner decision).
+
+---
+
+## Native Jobs completion estimate (2026-07-21)
+
+This section supersedes the older statement above that compiled gateway
+orchestration was deferred. The compiled gateway now ships and runs without a
+Python runtime. The remaining gap is specifically the **native background
+scheduler** and **native public-URL input pipeline**, followed by deletion of
+the obsolete Python orchestration implementation.
+
+### Current compiled baseline
+
+Implemented and tested in the compiled gateway:
+
+- persisted Find clarification and continuation;
+- native Ornith tool calls with metadata-first candidate selection;
+- PDF reads limited to explicit ranges of 1–5 pages;
+- editable review items with corrections persisted atomically to
+  `output.jsonl`, including accept-as-is completion;
+- one-sample preview by default and deterministic expanded preview of up to
+  three samples, with artifacts isolated under `preview/`;
+- definition execution and reviewable output generation;
+- reviewed move plans, Apply, Undo, and process-wide Kill;
+- compiled installation and packaging with no shipped Python runtime;
+- all generated build outputs under `build/`, not the repository root.
+
+Relevant commits: `57d96d9`, `be6057b`, `cf61342`, `2cf5bd8`, `e544ac8`,
+and `7e97a4c`. The locally installed acceptance release at the time this
+section was written is `dev-6d62f84ec2a4`.
+
+### Remaining work and effort
+
+This is an engineering estimate, not a deadline. It assumes one engineer who
+already understands this repository and includes implementation, focused
+tests, real acceptance checks, packaging, and cleanup.
+
+| Work item | Scope | Estimate |
+| --- | --- | ---: |
+| Native scheduler state and commands | Freeze/arm a definition, manual overnight command, persisted schedule state, idempotent one-shot polling | 1.5–2.5 days |
+| macOS `launchd` integration | Compiled `samosa-jobsd`, plist install/uninstall/status, logs, `caffeinate`, no hidden duplicate daemon | 1–1.5 days |
+| Scheduling policy | Cross-midnight windows, missed-window behavior, AC/battery policy, host checks, queued review instead of blocking prompts | 1–1.5 days |
+| Native public fetch boundary | HTTP(S), DNS and redirect SSRF checks, robots.txt, response limits, per-host rate limiting, readable extraction, stable errors | 2–3 days |
+| Public input change state | User-supplied URL list, content hashes, first-seen/changed/unchanged records, atomic state, feed only new or changed pages | 1–1.5 days |
+| General comparison workflow | Pair a local document with changed public pages without adding search, crawling, login, credentials, or job-board-specific UI | 0.5–1 day |
+| End-to-end hardening | Real public-site check, sleep/wake and missed-window checks, Kill behavior, package/install test, documentation | 1–1.5 days |
+
+Expected total for the missing native functionality: **7–11 focused
+engineering days**. Removing the superseded Python gateway/Jobs modules and
+consolidating duplicate tests after native parity is proven adds approximately
+**1–2 days**. A realistic completion range is therefore **8–13 focused days**.
+
+The public fetch boundary is the largest uncertainty. It must preserve the
+existing security behavior across DNS resolution and every redirect; invoking
+`curl` and trusting the initial URL is not an acceptable implementation.
+
+### Required acceptance gates
+
+The work is complete only when all of the following are true:
+
+1. `samosa-jobsd` is a compiled executable and runs with `python3` unavailable.
+2. Arming the same definition is idempotent; arming a changed definition under
+   the same job ID is rejected instead of silently replacing it.
+3. Overnight windows work across midnight, and missed windows follow the
+   configured `skip` or `run_next_start` policy.
+4. Battery/AC policy is enforced before work starts. On macOS, keep-awake uses
+   `caffeinate` only for the lifetime of an active run.
+5. Review-required records are persisted and queued. The daemon never waits on
+   an interactive question.
+6. The Kill control terminates the daemon's active job, model request,
+   sidecars, and keep-awake process without leaving listeners or child PIDs.
+7. Public URLs are explicitly supplied by the user. There is no discovery,
+   crawling, search-engine integration, login, credential use, or paywall
+   handling.
+8. SSRF checks cover resolved addresses and every redirect; robots.txt,
+   per-host rate limits, byte/time limits, and readable extraction are tested.
+9. A repeated unchanged fetch produces no job unit. A changed page produces
+   exactly one new unit and updates state atomically.
+10. The installed release passes scheduler and public-input integration tests
+    with Python unavailable, followed by one real public-page change check.
+11. **DONE (2026-07-22).** Gates 1–10 passed, so `tools/samosa_gateway.py`,
+    `tools/samosa_jobs.py` and their runtime-only helpers (`tools/samosa_tools.py`,
+    `tools/jobs_fs.py`) were **removed** (owner-approved "retire duplicates" path),
+    along with the duplicate Python tests they backed (`tests/test_gateway_jobs*`,
+    `test_gateway_chat_tools`, `test_gateway_web`, `tests/jobs/test_run_job`,
+    `test_tools`). The shipped `samosa-fs` sidecar keeps direct CLI coverage in the
+    new `tests/jobs/test_samosa_fs.py`; every C job route stays covered by
+    `tests/test_compiled_gateway.sh`. `make jobs-test` and `make test` are green.
+    Retired coverage and evidence: [`gate11-python-removal-2026-07-22.md`](regressions/jobs/gate11-python-removal-2026-07-22.md).
+
+### Deliberate non-goals
+
+- search engines or URL discovery;
+- crawling a site beyond an explicitly supplied page and its robots policy;
+- authenticated, credentialed, private, or paywalled pages;
+- email, form submission, or other outward actions;
+- job-board-specific fields or UI. Public URLs remain general-purpose job
+  inputs.

@@ -94,7 +94,7 @@ int main(void){
     assert(!strcmp(escaped.data,"a\\n\\\"b"));free(escaped.data);
 
     ServeScheduler scheduler;serve_scheduler_init(&scheduler,0);
-    scheduler.active=1;assert(serve_scheduler_acquire(&scheduler,NULL)==0);
+    scheduler.active=1;assert(serve_scheduler_acquire(&scheduler,NULL,0)==0);
     scheduler.active=0;pthread_cond_destroy(&scheduler.cv);pthread_mutex_destroy(&scheduler.mu);
 
     atomic_int sink_cancel;atomic_init(&sink_cancel,0);
@@ -111,6 +111,7 @@ int main(void){
     snprintf(context.app_html_path,sizeof(context.app_html_path),"assets/app.html");
     snprintf(context.app_logo_path,sizeof(context.app_logo_path),"assets/samosa-chat.png");
     atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
+    pthread_mutex_init(&context.interactive_mu,NULL);
     serve_scheduler_init(&context.scheduler,2);
     SamosaHttpServer server;assert(samosa_http_server_init(&server,0,samosa_serve_handler,&context));
     pthread_t thread;assert(!pthread_create(&thread,NULL,run_server_thread,&server));

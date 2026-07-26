@@ -16,7 +16,7 @@ EOF
 chmod +x "$TMP/bin/qwen36b"
 
 run() {
-  SAMOSA_HOME="$TMP" sh "$ROOT/dist/samosa" "$@"
+  SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 sh "$ROOT/dist/samosa" "$@"
 }
 
 direct=$(run "hello world")
@@ -50,7 +50,7 @@ printf '%s\n' "$custom_context" | grep -qx -- '65536'
 
 serve=$(run serve)
 printf '%s\n' "$serve" | grep -qx -- '--serve'
-printf '%s\n' "$serve" | grep -qx -- '8642'
+printf '%s\n' "$serve" | grep -qx -- '18642'
 printf '%s\n' "$serve" | grep -qx -- 'context=auto'
 
 serve_custom=$(run serve --context-tokens 65536)
@@ -66,30 +66,16 @@ printf 'OPEN %s\n' "$1"
 EOF
 chmod +x "$TMP/fake-curl" "$TMP/fake-open"
 app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" run app)
-printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:8642'
-printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:8642'
-stopped=$(SAMOSA_CURL="$TMP/fake-curl" run serve --stop)
-printf '%s\n' "$stopped" | grep -qx -- 'Samosa server stopped.'
-
-cat >"$TMP/bin/samosa-gateway" <<'EOF'
-#!/usr/bin/env python3
-import os
-import sys
-print(" ".join(sys.argv[1:]))
-print("home=" + os.environ["SAMOSA_HOME"])
-EOF
-chmod +x "$TMP/bin/samosa-gateway"
-listed=$(run models)
-printf '%s\n' "$listed" | grep -qx -- '--models'
-printf '%s\n' "$listed" | grep -qx -- "home=$TMP"
-pulled=$(run pull ornith)
-printf '%s\n' "$pulled" | grep -qx -- '--pull ornith'
-pulled_default=$(run pull)
-printf '%s\n' "$pulled_default" | grep -qx -- '--pull qwen'
-if run pull unknown >/dev/null 2>&1; then
-  echo "unknown model download was accepted" >&2
+printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:18642'
+printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
+already=$(SAMOSA_CURL="$TMP/fake-curl" run serve)
+printf '%s\n' "$already" | grep -q -- 'server already running at http://127.0.0.1:18642'
+if printf '%s\n' "$already" | grep -q -- 'answer a question'; then
+  echo "serve fell through to usage after reporting an existing server" >&2
   exit 1
 fi
+stopped=$(SAMOSA_CURL="$TMP/fake-curl" run serve --stop)
+printf '%s\n' "$stopped" | grep -qx -- 'Samosa server stopped.'
 
 if run --seed nope test >/dev/null 2>&1; then
   echo "invalid seed was accepted" >&2
@@ -99,5 +85,17 @@ if run --context-tokens nope test >/dev/null 2>&1; then
   echo "invalid context capacity was accepted" >&2
   exit 1
 fi
+
+# Version reporting: an unpackaged checkout reads the VERSION file; the
+# `version` subcommand and the -v/--version flags must all agree with it.
+expected_version=$(sed -n '1p' "$ROOT/VERSION" | tr -d '[:space:]')
+[ -n "$expected_version" ] || { echo "VERSION file is empty" >&2; exit 1; }
+for form in "version" "--version" "-v"; do
+  got=$(run "$form" | sed -n '1p')
+  if [ "$got" != "samosa $expected_version" ]; then
+    echo "samosa $form reported [$got], expected [samosa $expected_version]" >&2
+    exit 1
+  fi
+done
 
 echo "samosa wrapper: PASS"

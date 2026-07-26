@@ -1,0 +1,36 @@
+{
+  "job_id": "receipts-by-date",
+  "schema_version": 1,
+  "input": {
+    "folder": "/tmp/inputs"
+  },
+  "instruction": "Extract the receipt date (YYYY-MM-DD), merchant name, and total amount.",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "date": {
+        "type": "string"
+      },
+      "merchant": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "date",
+      "merchant",
+      "total"
+    ]
+  },
+  "organize": {
+    "rule": {
+      "by": "field",
+      "field": "date"
+    },
+    "dest_root": null,
+    "on_collision": "skip",
+    "unmatched": "leave"
+  }
+}

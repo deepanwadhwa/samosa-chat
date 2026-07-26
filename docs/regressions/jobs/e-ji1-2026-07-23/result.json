@@ -1,0 +1,67 @@
+{
+  "fixture_files": 50,
+  "cold": {
+    "wall_seconds": 182.144,
+    "observed_phase_boundary_seconds": {
+      "triage_through": 43.398,
+      "skim_increment": 56.826,
+      "classify_increment": 38.033,
+      "verify_increment": 43.888
+    },
+    "event_counts": {
+      "triage_progress": 4,
+      "skim_progress": 50,
+      "classify_progress": 4,
+      "tool_call": 2
+    },
+    "matches": [
+      {
+        "path": "policar_research_2019.txt",
+        "evidence": "Research summary. Author: Policar. Year 2019. Local research notes.",
+        "confidence": "high"
+      },
+      {
+        "path": "CamScanner_03-15-2024.png",
+        "evidence": "OCR text: 'Poli\u010dar 2019'",
+        "confidence": "high"
+      }
+    ],
+    "unreadable": [],
+    "errors": [],
+    "checkpoint": null
+  },
+  "warm": {
+    "wall_seconds": 174.125,
+    "observed_phase_boundary_seconds": {
+      "triage_through": 69.994,
+      "skim_increment": 0.037,
+      "classify_increment": 57.303,
+      "verify_increment": 46.792
+    },
+    "event_counts": {
+      "triage_progress": 4,
+      "skim_progress": 50,
+      "classify_progress": 4,
+      "tool_call": 1
+    },
+    "matches": [
+      {
+        "path": "titli_rabies_certificate.txt",
+        "evidence": "VETERINARY RABIES VACCINATION CERTIFICATE \u2014 Patient: Titli, Vaccine: Rabies, killed virus, confirms rabies vaccination",
+        "confidence": "high"
+      }
+    ],
+    "unreadable": [],
+    "errors": [],
+    "checkpoint": null
+  },
+  "cold_ocr_invocations": 41,
+  "warm_ocr_invocations": 0,
+  "cold_job": "job-1784858891-40037-175506673",
+  "warm_job": "job-1784859073-40037-175688807",
+  "resources": {
+    "peak_gateway_plus_backend_rss_kib": 6211984,
+    "max_observed_swap_used": "total = 2048.00M  used = 365.31M  free = 1682.69M  (encrypted)",
+    "thermal": "not sampled: macOS thermal telemetry requires privileged powermetrics"
+  }
+}

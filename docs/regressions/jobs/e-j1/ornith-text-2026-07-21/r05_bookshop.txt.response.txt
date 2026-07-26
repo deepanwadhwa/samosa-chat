@@ -1,0 +1,1 @@
+{"merchant":"NORTHSIDE BOOKS","date":"2026-05-19","subtotal":18.0,"tax":1.44,"total":19.44,"currency":"USD"}

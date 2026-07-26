@@ -124,6 +124,8 @@
     .status-dot.online { background: #42a66b; }
     .status-dot.offline { background: #cf544d; }
     .icon-button { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 8px 11px; cursor: pointer; box-shadow: 0 4px 14px rgba(77, 42, 20, .04); }
+    .kill-button { border-color: color-mix(in srgb, var(--danger) 36%, var(--line)); color: var(--danger); }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
 
     .messages { flex: 1 1 0; min-height: 0; height: 0; overflow-x: hidden; overflow-y: scroll; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 34px max(22px, calc((100% - 820px) / 2)) 24px; scroll-behavior: smooth; }
     .jump-latest { position: absolute; right: 24px; bottom: 143px; z-index: 5; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px rgba(40, 24, 15, .14); backdrop-filter: blur(14px); cursor: pointer; }
@@ -211,16 +213,6 @@
     .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 680; }
     .field small { display: block; color: var(--muted); margin-top: 7px; font-size: 11px; line-height: 1.45; }
     .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink); padding: 10px 11px; outline: none; }
-    .model-downloads { display: grid; gap: 8px; margin-top: 10px; }
-    .model-card { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-    .model-card-title { font-size: 12px; font-weight: 700; }
-    .model-card-meta { color: var(--muted); font-size: 10px; line-height: 1.4; }
-    .model-action { min-width: 76px; border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; background: var(--paper-2); color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 650; }
-    .model-action.download { color: white; border-color: transparent; background: var(--brand); }
-    .model-action:disabled { cursor: default; opacity: .6; }
-    .download-progress { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 99px; background: var(--paper-2); }
-    .download-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
-    .download-error { grid-column: 1 / -1; color: var(--danger); font-size: 10px; }
     .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); color: var(--muted); font-size: 12px; }
     .local-card strong { color: var(--ink); }
     .web-card { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 20px; }
@@ -249,6 +241,82 @@
       .bubble { max-width: 91%; }
       .avatar { display: none; }
     }
+    /* Jobs view */
+    .view-tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-2); }
+    .view-tab { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 13px; }
+    .view-tab.active { background: var(--panel); color: var(--ink); box-shadow: 0 3px 10px rgba(77, 42, 20, .07); }
+    .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)) 48px; }
+    .jobs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .jobs-head h1 { margin: 0; font-size: 24px; line-height: 1.2; }
+    .jobs-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .job-form { display: grid; gap: 11px; margin-bottom: 18px; }
+    .job-form label { font-size: 12px; font-weight: 650; color: var(--muted); }
+    .job-field { display: grid; gap: 6px; }
+    .job-form input:not([type="checkbox"]), .job-form textarea { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
+    .job-form #jobGoal { min-height: 86px; max-height: 180px; padding: 13px; font-size: 16px; line-height: 1.45; }
+    .job-form input:not([type="checkbox"]):focus, .job-form textarea:focus { border-color: var(--brand); }
+    .job-form .row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+    .job-advanced { margin: 0 0 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .job-advanced > summary { padding: 11px 2px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 650; }
+    .job-tools { display: grid; gap: 12px; margin: 0; padding: 4px 0 16px; }
+    .job-tools textarea { min-height: 92px; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); font-size: 12px; }
+    .job-run { min-height: 40px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; font-weight: 700; padding: 9px 17px; cursor: pointer; }
+    .job-run:disabled { opacity: .55; cursor: default; }
+    .job-mode { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+    .job-mode input[type="checkbox"] { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
+    .job-progress { margin-top: 22px; }
+    .job-progress[hidden], .job-result[hidden] { display: none; }
+    .job-section-label { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .job-activity { display: grid; border-top: 1px solid var(--line); }
+    .job-line { display: flex; align-items: flex-start; gap: 9px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.4; animation: jobin .18s ease; }
+    @keyframes jobin { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .job-line .dot { flex: none; width: 15px; text-align: center; color: var(--muted); }
+    .job-line.step-done .dot { color: var(--brand); }
+    .job-line.step-error { color: var(--danger); }
+    .job-line .body { min-width: 0; flex: 1; }
+    .job-line .sub { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-word; }
+    .job-line .running { color: var(--brand); font-weight: 600; }
+    .job-plan { margin-top: 6px; display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
+    .job-plan .more { color: var(--muted); font-style: italic; }
+    .job-result { margin-top: 22px; padding: 15px 16px; border-left: 3px solid var(--brand); background: color-mix(in srgb, var(--brand-soft) 36%, var(--panel)); }
+    .job-result.error { border-left-color: var(--danger); }
+    .job-result-text { font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .job-result-text > :first-child { margin-top: 0; }
+    .job-result-text > :last-child { margin-bottom: 0; }
+    .job-review { margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+    .job-review[hidden] { display: none; }
+    .job-review-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .job-review-head strong { font-size: 14px; }
+    .job-review-head span { color: var(--muted); font-size: 12px; }
+    .job-review-list { display: grid; }
+    .job-review-row { display: grid; grid-template-columns: minmax(0,1fr) 18px minmax(0,1fr); gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 12.5px; }
+    .job-review-row:first-child { border-top: 0; }
+    .job-review-cell { min-width: 0; }
+    .job-review-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; margin-bottom: 3px; }
+    .job-review-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
+    .job-review-arrow { color: var(--muted); align-self: end; text-align: center; }
+    .job-review-fields { display: grid; gap: 6px; }
+    .job-review-field { display: grid; grid-template-columns: minmax(92px, .36fr) minmax(0, 1fr); gap: 7px; align-items: center; }
+    .job-review-field label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .job-review-field input { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); padding: 7px 8px; font: 12.5px/1.35 var(--mono, ui-monospace, "SF Mono", Menlo, monospace); }
+    .job-review-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+    .job-review-actions button { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); padding: 7px 10px; cursor: pointer; font-weight: 650; font-size: 12px; }
+    .job-review-actions .primary { background: var(--brand); color: #fff; border-color: transparent; }
+    @media (max-width: 640px) {
+      .job-review-row { grid-template-columns: 1fr; gap: 6px; }
+      .job-review-arrow { display: none; }
+    }
+    .job-bar { position: sticky; bottom: 0; margin-top: 16px; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 13px 15px; border-radius: 14px; background: var(--brand-soft); border: 1px solid var(--line); }
+    .job-bar .txt { font-size: 13.5px; color: var(--ink); }
+    .job-bar button { border: 0; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
+    .job-bar .apply { background: var(--brand); color: #fff; }
+    .job-bar .undo { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+    @media (max-width: 640px) {
+      .jobs-view { padding: 20px 14px 36px; }
+      .jobs-head p { display: none; }
+      .job-form .row { justify-content: stretch; }
+      .job-run { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -270,7 +338,14 @@
           <button class="menu-button" id="menuButton" aria-label="Open conversations">☰</button>
           <div><div class="conversation-name" id="conversationName">New conversation</div><div class="model-line"><span class="status-dot" id="statusDot"></span><span id="modelStatus">Connecting to local model…</span></div></div>
         </div>
-        <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
+        <div class="view-tabs" role="tablist">
+          <button class="view-tab active" id="tabChat" role="tab" aria-selected="true">Chat</button>
+          <button class="view-tab" id="tabJobs" role="tab" aria-selected="false">Jobs</button>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button kill-button" id="killButton" aria-label="Kill local server and models">Kill</button>
+          <button class="icon-button" id="settingsButton" aria-label="Open settings">Settings</button>
+        </div>
       </header>
 
       <section class="messages" id="messages" aria-live="polite"></section>
@@ -293,6 +368,59 @@
         <div class="composer-hint">Enter to send · Shift+Enter for a new line · responses stay on this Mac</div>
       </div>
 
+      <section class="jobs-view" id="jobsView" hidden>
+        <div class="jobs-head">
+          <h1>Jobs</h1>
+          <p>Runs locally on this Mac</p>
+        </div>
+        <form class="job-form" id="jobForm">
+          <div class="job-field">
+            <label for="jobFolder">Folder</label>
+            <input id="jobFolder" placeholder="/Users/you/Downloads" spellcheck="false" autocapitalize="off">
+          </div>
+          <div class="job-field">
+            <label for="jobGoal">Task</label>
+            <textarea id="jobGoal" rows="3" placeholder="Find my cat's medical records"></textarea>
+          </div>
+          <div class="row">
+            <button class="job-run" id="jobRun" type="submit">Run job</button>
+          </div>
+        </form>
+        <details class="job-advanced">
+          <summary>Advanced</summary>
+          <section class="job-form job-tools">
+            <span class="job-mode"><input type="checkbox" id="jobAuto"> Apply file moves without review</span>
+            <div class="job-field">
+              <label for="jobDefinition">Job definition</label>
+              <textarea id="jobDefinition" rows="5" spellcheck="false" placeholder="Paste a job definition as JSON"></textarea>
+            </div>
+            <div class="row">
+              <span class="job-mode"><input type="checkbox" id="jobPreviewExpanded"> Preview 3 samples</span>
+              <span>
+                <button class="job-run" id="jobPreviewDef" type="button">Preview</button>
+                <button class="job-run" id="jobRunDef" type="button">Run definition</button>
+              </span>
+            </div>
+          </section>
+        </details>
+        <section class="job-progress" id="jobProgress" hidden>
+          <div class="job-section-label">Progress</div>
+          <div class="job-activity" id="jobActivity"></div>
+        </section>
+        <section class="job-result" id="jobResult" hidden>
+          <div class="job-section-label" id="jobResultLabel">Result</div>
+          <div class="job-result-text" id="jobResultText"></div>
+        </section>
+        <section class="job-review" id="jobReview" hidden>
+          <div class="job-review-head"><strong id="jobReviewTitle">Review</strong><span id="jobReviewMeta"></span></div>
+          <div class="job-review-list" id="jobReviewList"></div>
+        </section>
+        <div class="job-bar" id="jobBar" hidden>
+          <span class="txt" id="jobBarText"></span>
+          <span id="jobBarActions"></span>
+        </div>
+      </section>
+
       <footer class="telemetry">
         <span>Mode <strong id="modeValue">Direct</strong></span>
         <span>Speed <strong id="speedValue">—</strong></span>
@@ -310,7 +438,6 @@
       <label for="modelBackend">Model</label>
       <select id="modelBackend"><option value="bonsai">Bonsai 27B 1-bit</option><option value="ornith">Ornith 9B</option><option value="qwen">Qwen3.6 35B A3B</option></select>
       <small id="modelHelp">Switching unloads the current model, loads the other one, and starts a new conversation.</small>
-      <div class="model-downloads" id="modelDownloads" aria-live="polite"></div>
     </div>
     <div class="field">
       <label for="thinking">Thinking profile</label>
@@ -364,7 +491,8 @@
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
         imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
-        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"), modelDownloads: $("modelDownloads"),
+        kill: $("killButton"),
+        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
         webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults")
       };
       const STORAGE_KEY = "samosa-chat-v1";
@@ -376,8 +504,6 @@
       let currentImageBase64 = null;
       let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:false};
       let healthInitialized = false;
-      let modelPollFast = false;
-      let onboardingOpened = false;
 
       function makeId() {
         const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -555,6 +681,17 @@
         error.hidden=!msg.error; error.textContent=msg.error||"";
       }
       async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
+      async function killLocal() {
+        if (!confirm("Kill the Samosa server, active model backend, and any Samosa job/model helper processes?")) return;
+        els.kill.disabled = true;
+        els.status.textContent = "Killing local Samosa processes…";
+        els.dot.className = "status-dot offline";
+        try { await fetch("/v1/kill", { method: "POST" }); }
+        catch (_) {}
+        generating = false; jobRunning = false;
+        if (activeAssistant) { activeAssistant.streaming = false; activeAssistant.error = "Server killed."; updateAssistantNode(activeAssistant); }
+        els.closure.textContent = "killed";
+      }
       async function health() {
         try {
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
@@ -566,12 +703,7 @@
             els.attachBtn.title=h.supports_images?"Attach an image":"This model was installed without a vision projector";
             if(!h.supports_images)removeAttachedImage();
             els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:h.installed?`Loading ${h.label}…`:"No model installed — choose one in Settings";
-            if(!h.installed&&!onboardingOpened) {
-              onboardingOpened=true;
-              openSettings();
-              els.modelHelp.textContent="Choose a model to download. Samosa verifies it before loading.";
-            }
+            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
           } else {
             backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:true};
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
@@ -590,49 +722,15 @@
           refreshModels();
         } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
       }
-      function downloadPercent(download) {
-        if (!download?.total_bytes) return 0;
-        return Math.max(0,Math.min(100,Math.round(100*Number(download.downloaded_bytes||0)/Number(download.total_bytes))));
-      }
       async function refreshModels() {
         try {
           const r=await fetch("/v1/backends",{cache:"no-store"}); if(!r.ok)return;
-          const data=await r.json(), download=data.download||{}, activeDownload=!!download.active;
-          modelPollFast=activeDownload;
-          els.modelDownloads.innerHTML="";
-          for(const model of data.backends||[]) {
-            const card=document.createElement("div"); card.className="model-card";
-            const action=model.active&&model.available?"Active":model.available?"Use":activeDownload&&download.model===model.id?`${downloadPercent(download)}%`:"Download";
-            const actionClass=!model.available&&!activeDownload?"model-action download":"model-action";
-            const disabled=(model.active&&model.available)||activeDownload;
-            card.innerHTML=`<div><div class="model-card-title">${escapeHTML(model.label)}</div><div class="model-card-meta">${escapeHTML(model.size)} · ${escapeHTML(model.license)} · ${model.available?"installed locally":"not installed"}</div></div><button class="${actionClass}" data-model="${escapeHTML(model.id)}" data-action="${model.available?"select":"install"}"${disabled?" disabled":""}>${escapeHTML(action)}</button>`;
-            if(activeDownload&&download.model===model.id) {
-              card.insertAdjacentHTML("beforeend",`<div class="download-progress" title="${downloadPercent(download)}%"><span style="width:${downloadPercent(download)}%"></span></div>`);
-            }
-            if(!activeDownload&&download.phase==="error"&&download.model===model.id&&download.error) {
-              const error=document.createElement("div");error.className="download-error";error.textContent=download.error;card.appendChild(error);
-            }
-            els.modelDownloads.appendChild(card);
-          }
-          els.modelDownloads.querySelectorAll("button[data-model]").forEach(button=>button.onclick=()=>modelAction(button.dataset.action,button.dataset.model));
+          const data=await r.json();
           for(const option of els.modelBackend.options) {
             const item=(data.backends||[]).find(model=>model.id===option.value);
             option.disabled=!!item&&!item.available;
           }
         } catch (_) {}
-      }
-      async function modelAction(action,name) {
-        if(action==="select") {
-          els.modelBackend.value=name;
-          await switchBackend();
-          return;
-        }
-        els.modelHelp.textContent="Preparing a verified download. You can keep this window open.";
-        try {
-          const r=await fetch("/v1/backends/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:name})});
-          const result=await r.json();if(!r.ok)throw new Error(result.error?.message||"Could not start download.");
-          await refreshModels();
-        } catch(error){els.modelHelp.textContent=error.message||String(error);}
       }
       function contextValue() { return els.contextTokens.value === "custom" ? els.contextCustom.value.trim() : els.contextTokens.value; }
       function syncContextCustom() { els.contextCustom.hidden=els.contextTokens.value!=="custom"; }
@@ -726,6 +824,493 @@
           else els.webNote.textContent=`Web tools are on (${config.search_backend}). The model decides when to search or read pages; you can also add a specific URL here.`;
         } catch(_){}
       }
+      // --- Jobs (Models -> Tools -> Jobs) --------------------------------
+      const jobEls = {
+        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
+        run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
+        progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
+        definition: $("jobDefinition"), previewExpanded: $("jobPreviewExpanded"),
+        previewDef: $("jobPreviewDef"), runDef: $("jobRunDef"),
+        barText: $("jobBarText"), barActions: $("jobBarActions"),
+        review: $("jobReview"), reviewTitle: $("jobReviewTitle"), reviewMeta: $("jobReviewMeta"), reviewList: $("jobReviewList"),
+        tabChat: $("tabChat"), tabJobs: $("tabJobs"),
+        composer: document.querySelector(".composer-wrap"), telemetry: document.querySelector(".telemetry"),
+      };
+      let jobRunning = false, lastJobId = null;
+
+      function showView(name) {
+        const jobs = name === "jobs";
+        jobEls.view.hidden = !jobs;
+        for (const el of [els.messages, els.jump, jobEls.composer, jobEls.telemetry])
+          if (el) el.style.display = jobs ? "none" : "";
+        jobEls.tabJobs.classList.toggle("active", jobs); jobEls.tabChat.classList.toggle("active", !jobs);
+        jobEls.tabJobs.setAttribute("aria-selected", String(jobs)); jobEls.tabChat.setAttribute("aria-selected", String(!jobs));
+        if (jobs && !jobEls.folder.value) jobEls.folder.focus();
+      }
+
+      const baseName = p => (p || "").split("/").filter(Boolean).pop() || p;
+      const relTo = (p, root) => (root && p.startsWith(root)) ? p.slice(root.length).replace(/^\/+/, "") : p;
+      const shortType = mt => ({ "image/jpeg": "images", "image/png": "images", "application/pdf": "PDFs", "text/plain": "text files", "application/octet-stream": "other" }[mt] || mt);
+      function addSub(line, text) { const s = document.createElement("div"); s.className = "sub"; s.textContent = text; line.querySelector(".body").appendChild(s); return s; }
+      function jobLine(dot, title, cls) {
+        jobEls.progress.hidden = false;
+        const line = document.createElement("div");
+        line.className = "job-line" + (cls ? " " + cls : "");
+        line.innerHTML = '<span class="dot"></span><div class="body"><div class="title"></div></div>';
+        line.querySelector(".dot").textContent = dot;
+        line.querySelector(".title").textContent = title;
+        jobEls.activity.appendChild(line); jobEls.activity.scrollTop = jobEls.activity.scrollHeight;
+        return line;
+      }
+      function clearJobOutput() {
+        clearReview();
+        jobEls.activity.innerHTML = "";
+        jobEls.progress.hidden = true;
+        jobEls.result.hidden = true;
+        jobEls.result.classList.remove("error");
+        jobEls.resultText.textContent = "";
+        jobEls.bar.hidden = true;
+      }
+      function showJobResult(text, error = false) {
+        jobEls.resultLabel.textContent = error ? "Could not finish" : "Result";
+        if (error) jobEls.resultText.textContent = text;
+        else jobEls.resultText.innerHTML = markdown(text);
+        jobEls.result.classList.toggle("error", error);
+        jobEls.result.hidden = false;
+        jobEls.result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      function showBar(text, actions) {
+        jobEls.barText.textContent = text; jobEls.barActions.innerHTML = "";
+        for (const [label, cls, fn] of actions) { const b = document.createElement("button"); b.className = cls; b.textContent = label; b.onclick = fn; jobEls.barActions.appendChild(b); }
+        jobEls.bar.hidden = false;
+      }
+      function friendlyToolEvent(evt, ctx) {
+        const args = evt.args || {};
+        const path = args.path || args.src || args.dst || "";
+        const rel = path ? relTo(path, ctx.folder) : "";
+        const file = rel ? baseName(rel) : "";
+        switch (evt.tool) {
+          case "fs_survey": return { dot: "▦", title: "Checking what is in the folder" };
+          case "fs_list": return { dot: "·", title: rel && rel !== "." ? `Scanning ${rel}` : "Scanning this folder" };
+          case "fs_metadata": return { dot: "·", title: file ? `Checking details for ${file}` : "Checking file details" };
+          case "fs_detect_type": return { dot: "·", title: file ? `Identifying ${file}` : "Identifying a file" };
+          case "fs_read_text": return { dot: "·", title: file ? `Reading ${file}` : "Reading a text file" };
+          case "fs_read_document": return { dot: "·", title: file ? `Reading document ${file}` : "Reading a document" };
+          case "fs_read_page": return { dot: "·", title: file ? `Reading page ${args.page || ""} of ${file}`.trim() : "Reading a document page" };
+          case "fs_read_pages": return { dot: "·", title: file ? `Reading pages ${args.start || 1}-${Number(args.start || 1) + Number(args.count || 5) - 1} of ${file}` : "Reading document pages" };
+          case "doc.read": return { dot: "·", title: file ? `Reading ${file}` : "Reading a document" };
+          case "notes_append": return { dot: "·", title: "Saving a note for this job" };
+          case "notes_read": return { dot: "·", title: "Checking job notes" };
+          case "ask_user": return { dot: "?", title: args.question || "Asking for one detail" };
+          case "fs_move": return { dot: "◇", title: args.src ? `Preparing to move ${baseName(args.src)}` : "Preparing a file move" };
+          case "fs_mkdir": return { dot: "·", title: args.path ? `Preparing folder ${args.path}` : "Preparing a folder" };
+          default: return { dot: "·", title: "Working on the job" };
+        }
+      }
+      function friendlyToolResult(evt) {
+        switch (evt.tool) {
+          case "fs_survey": return "Folder check finished";
+          case "fs_list": return "Folder scan finished";
+          case "fs_metadata": return "File details checked";
+          case "fs_detect_type": return "File identified";
+          case "fs_read_text": return "Text file read";
+          case "fs_read_document": return "Document read";
+          case "fs_read_page": return "Document page read";
+          case "fs_read_pages": return "Document pages read";
+          case "doc.read": {
+            const file = baseName(evt.path || "");
+            const source = evt.source ? ` (${evt.source})` : "";
+            return file ? `Read page 1${source} — ${file}` : `Document page read${source}`;
+          }
+          case "notes_append": return "Job note saved";
+          case "notes_read": return "Job notes checked";
+          case "ask_user": return "Question prepared";
+          case "fs_move": return "Move prepared";
+          case "fs_mkdir": return "Folder prepared";
+          default: return "Step finished";
+        }
+      }
+      function clearReview() {
+        jobEls.review.hidden = true; jobEls.reviewList.innerHTML = ""; jobEls.reviewMeta.textContent = "";
+      }
+      function addReviewRow(leftLabel, leftValue, rightLabel, rightValue) {
+        const row = document.createElement("div"); row.className = "job-review-row";
+        row.innerHTML = '<div class="job-review-cell"><div class="job-review-label"></div><div class="job-review-value"></div></div><div class="job-review-arrow">→</div><div class="job-review-cell"><div class="job-review-label"></div><div class="job-review-value"></div></div>';
+        const cells = row.querySelectorAll(".job-review-cell");
+        cells[0].querySelector(".job-review-label").textContent = leftLabel;
+        cells[0].querySelector(".job-review-value").textContent = leftValue;
+        cells[1].querySelector(".job-review-label").textContent = rightLabel;
+        cells[1].querySelector(".job-review-value").textContent = rightValue;
+        jobEls.reviewList.appendChild(row);
+      }
+      function renderMoveReview(evt, ctx) {
+        clearReview();
+        if (!evt.moves || !evt.moves.length) return;
+        jobEls.reviewTitle.textContent = "Review moves";
+        jobEls.reviewMeta.textContent = `${evt.moves.length} proposed`;
+        evt.moves.slice(0, 25).forEach(m => addReviewRow("From", relTo(m.src, ctx.folder), "To", relTo(m.dst, ctx.folder)));
+        if (evt.moves.length > 25) addReviewRow("More", `${evt.moves.length - 25} additional moves`, "See", "job log");
+        jobEls.review.hidden = false;
+      }
+      function renderExtractionReview(evt, ctx) {
+        clearReview();
+        jobEls.reviewTitle.textContent = "Needs review";
+        jobEls.reviewMeta.textContent = "Source and extracted fields";
+        renderEditableReviewItem({
+          index: evt.index,
+          unit_id: evt.unit_id,
+          input_path: evt.input_path || evt.path,
+          input_sha256: evt.input_sha256,
+          reasons: evt.reasons || evt.reason || [],
+          fields: evt.fields || evt.result || {},
+          source: evt.source || ""
+        }, ctx);
+        jobEls.review.hidden = false;
+      }
+      function fieldValueToText(value) {
+        if (value === null || value === undefined) return "";
+        return typeof value === "object" ? JSON.stringify(value) : String(value);
+      }
+      function textToFieldValue(text) {
+        const trimmed = text.trim();
+        if (trimmed === "") return null;
+        if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+        if (trimmed === "true" || trimmed === "false") return trimmed === "true";
+        return text;
+      }
+      function renderEditableReviewItem(item, ctx) {
+        const row = document.createElement("div"); row.className = "job-review-row";
+        row.innerHTML = '<div class="job-review-cell"><div class="job-review-label">Source</div><div class="job-review-value"></div><div class="sub"></div></div><div class="job-review-arrow">→</div><div class="job-review-cell"><div class="job-review-label">Fields</div><div class="job-review-fields"></div><div class="job-review-actions"></div></div>';
+        row.querySelector(".job-review-value").textContent = relTo(item.input_path || "", ctx.folder);
+        const sub = row.querySelector(".sub");
+        sub.textContent = item.source || (Array.isArray(item.reasons) ? item.reasons.join(", ") : String(item.reasons || ""));
+        const fields = item.fields && typeof item.fields === "object" ? item.fields : {};
+        const fieldsBox = row.querySelector(".job-review-fields");
+        const entries = Object.entries(fields);
+        if (!entries.length) entries.push(["value", ""]);
+        for (const [key, value] of entries) {
+          const wrap = document.createElement("div"); wrap.className = "job-review-field";
+          const label = document.createElement("label"); label.textContent = key;
+          const input = document.createElement("input"); input.value = fieldValueToText(value); input.dataset.field = key;
+          wrap.append(label, input); fieldsBox.appendChild(wrap);
+        }
+        const actions = row.querySelector(".job-review-actions");
+        const save = document.createElement("button"); save.className = "primary"; save.textContent = "Save";
+        save.onclick = () => saveReviewItem(item, row, ctx, true);
+        const accept = document.createElement("button"); accept.textContent = "Accept";
+        accept.onclick = () => saveReviewItem(item, row, ctx, false);
+        actions.append(save, accept);
+        jobEls.reviewList.appendChild(row);
+      }
+      async function saveReviewItem(item, row, ctx, includeFields) {
+        const fields = {};
+        if (includeFields) row.querySelectorAll("input[data-field]").forEach(input => { fields[input.dataset.field] = textToFieldValue(input.value); });
+        try {
+          const payload = { job_id: ctx.jobId || lastJobId, item, mark_done: true };
+          if (includeFields) payload.fields = fields;
+          const r = await fetch("/v1/jobs/review/correct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+          const data = await r.json();
+          if (!r.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Review update failed");
+          row.remove();
+          jobEls.reviewMeta.textContent = `${data.pending} pending`;
+          if (!data.pending) clearReview();
+          jobLine("✓", includeFields ? "Saved review correction" : "Accepted review item", "step-done");
+        } catch (error) {
+          jobLine("✗", error.message || String(error), "step-error");
+        }
+      }
+      async function loadReviewQueue(jobId, ctx) {
+        if (!jobId) return;
+        try {
+          const r = await fetch("/v1/jobs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
+          const data = await r.json();
+          if (!r.ok || !data.ok || !data.items.length) return;
+          clearReview();
+          jobEls.reviewTitle.textContent = "Needs review";
+          jobEls.reviewMeta.textContent = `${data.pending} pending`;
+          data.items.forEach(item => renderEditableReviewItem(item, ctx));
+          jobEls.review.hidden = false;
+        } catch (_) {}
+      }
+
+      function renderJobEvent(evt, ctx) {
+        switch (evt.type) {
+          case "decode_intent":
+            ctx.jobId = evt.job_id;
+            jobLine("●", "Understanding your request", "step-done"); break;
+          case "intent":
+            jobLine("›", evt.kind === "organize" ? "Preparing file organization" : (evt.kind === "find" ? "Searching for matching files" : "Reviewing the folder")); break;
+          case "counting": {
+            const grouped = {};
+            for (const [kind, count] of Object.entries(evt.by_type || {})) grouped[shortType(kind)] = (grouped[shortType(kind)] || 0) + count;
+            const parts = Object.entries(grouped).map(([kind, count]) => `${count} ${kind}`).join(", ");
+            const l = jobLine("▦", `${evt.total} files found`, "step-done"); if (parts) addSub(l, parts); break;
+          }
+          case "indexing":
+            ctx.indexLine = jobLine("·", `Checking ${evt.total} filenames`); break;
+          case "index_complete": {
+            const l = ctx.indexLine || jobLine("✓", `Checked ${evt.total} filenames`, "step-done");
+            l.querySelector(".dot").textContent = "✓";
+            l.querySelector(".title").textContent = `Checked ${evt.total} filenames`;
+            l.classList.add("step-done");
+            ctx.indexLine = null;
+            break;
+          }
+          case "plan": {
+            const n = evt.moves.length;
+            const l = jobLine("◇", `Planned ${n} move${n === 1 ? "" : "s"}` + (evt.skips.length ? `, ${evt.skips.length} left in place` : ""));
+            if (n) {
+              const box = document.createElement("div"); box.className = "job-plan";
+              evt.moves.slice(0, 8).forEach(m => { const d = document.createElement("div"); d.textContent = `${baseName(m.src)}  →  ${relTo(m.dst, ctx.folder)}`; box.appendChild(d); });
+              if (n > 8) { const d = document.createElement("div"); d.className = "more"; d.textContent = `…and ${n - 8} more`; box.appendChild(d); }
+              l.querySelector(".body").appendChild(box);
+              renderMoveReview(evt, ctx);
+            }
+            break;
+          }
+          case "await_apply":
+            ctx.jobId = evt.job_id; lastJobId = evt.job_id;
+            showBar(`${evt.moves} file${evt.moves === 1 ? "" : "s"} ready to move.`, [["Apply moves", "apply", () => applyJob(evt.job_id, ctx)]]);
+            break;
+          case "await_user": {
+            ctx.jobId = evt.job_id; lastJobId = evt.job_id;
+            const l = jobLine("?", evt.question || "I need one detail to continue");
+            const box = document.createElement("div"); box.className = "job-plan";
+            const input = document.createElement("input");
+            input.type = "text"; input.placeholder = "Answer"; input.autocomplete = "off";
+            const button = document.createElement("button");
+            button.type = "button"; button.textContent = "Continue";
+            button.onclick = () => answerJob(evt.job_id, input.value, ctx);
+            input.onkeydown = e => { if (e.key === "Enter") button.click(); };
+            box.appendChild(input); box.appendChild(button); l.querySelector(".body").appendChild(box);
+            input.focus();
+            break;
+          }
+          case "await_continue": {
+            ctx.jobId = evt.job_id; lastJobId = evt.job_id;
+            const skimmed = Number.isFinite(evt.skimmed) ? evt.skimmed : null;
+            const remaining = Number.isFinite(evt.remaining) ? evt.remaining : null;
+            const rounds = Number.isFinite(evt.rounds_spent) ? evt.rounds_spent : null;
+            const detail = skimmed !== null && remaining !== null
+              ? `Skimmed ${skimmed} files; ${remaining} remain.`
+              : rounds !== null ? `Verification paused after ${rounds} rounds.` : "This job is ready to continue.";
+            showBar(detail, [["Continue", "apply", () => continueJob(evt.job_id, ctx)]]);
+            break;
+          }
+          case "action": {
+            if (!ctx.progress) ctx.progress = jobLine("⟳", "");
+            const verb = evt.op === "revert" ? "Restoring" : "Moving";
+            ctx.progress.querySelector(".title").textContent = `${verb} ${evt.i}/${evt.n}: ${baseName(evt.src)}` + (evt.ok ? "" : ` — skipped (${evt.reason})`);
+            break;
+          }
+          case "tool_call": {
+            const item = friendlyToolEvent(evt, ctx);
+            ctx.lastTool = evt.tool;
+            ctx.lastToolLine = jobLine(item.dot, item.title);
+            break;
+          }
+          case "tool_result": {
+            const item = friendlyToolResult(evt);
+            const l = ctx.lastTool === evt.tool && ctx.lastToolLine ? ctx.lastToolLine : jobLine("✓", item, "step-done");
+            l.querySelector(".dot").textContent = "✓";
+            l.querySelector(".title").textContent = item;
+            l.classList.add("step-done");
+            if (evt.truncated) addSub(l, "Large result summarized for the next step.");
+            ctx.lastTool = null; ctx.lastToolLine = null;
+            break;
+          }
+          case "notes":
+            jobLine("·", evt.op === "append" ? "Saved a job note" : "Read job notes"); break;
+          case "item_review_required":
+            renderExtractionReview(evt, ctx); jobLine("!", `Needs review: ${baseName(evt.input_path || evt.path || "")}`); break;
+          case "applied":
+            if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
+            ctx.moved = evt.applied > 0;
+            jobLine("●", `Moved ${evt.applied} file${evt.applied === 1 ? "" : "s"}` + (evt.skipped ? `, skipped ${evt.skipped}` : ""), "step-done");
+            break;
+          case "reverted":
+            if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
+            ctx.undone = true;
+            jobLine("●", `Restored ${evt.reverted} file${evt.reverted === 1 ? "" : "s"}`, "step-done");
+            break;
+          case "triage_progress": {
+            if (!ctx.triageLine) ctx.triageLine = jobLine("·", `Triaging filenames (${evt.done}/${evt.total})`);
+            else ctx.triageLine.querySelector(".title").textContent = `Triaging filenames (${evt.done}/${evt.total})`;
+            if (evt.done >= evt.total) {
+              ctx.triageLine.querySelector(".dot").textContent = "✓";
+              ctx.triageLine.classList.add("step-done");
+              ctx.triageLine = null;
+            }
+            break;
+          }
+          case "skim_progress": {
+            if (!ctx.skimLine) ctx.skimLine = jobLine("·", `Skimming content (${evt.done}/${evt.total})`);
+            const fn = baseName(evt.current || "");
+            const badge = evt.confidence ? ` [${evt.confidence}]` : "";
+            const src = evt.source ? ` (${evt.source})` : "";
+            const eta = Number.isFinite(evt.expected_remaining_seconds) && evt.done < evt.total
+              ? ` — first skim ~${Math.max(1, Math.ceil(evt.expected_remaining_seconds / 60))} min remaining` : "";
+            ctx.skimLine.querySelector(".title").textContent = `Skimming ${evt.done}/${evt.total}: ${fn}${badge}${src}${eta}`;
+            if (evt.done >= evt.total) {
+              ctx.skimLine.querySelector(".dot").textContent = "✓";
+              ctx.skimLine.querySelector(".title").textContent = `Skimmed ${evt.total} files`;
+              ctx.skimLine.classList.add("step-done");
+              ctx.skimLine = null;
+            }
+            break;
+          }
+          case "classify_progress": {
+            if (!ctx.classifyLine) ctx.classifyLine = jobLine("·", `Classifying skimmed files (${evt.done}/${evt.total})`);
+            else ctx.classifyLine.querySelector(".title").textContent = `Classifying (${evt.done}/${evt.total}), shortlisted: ${evt.shortlist}`;
+            if (evt.done >= evt.total) {
+              ctx.classifyLine.querySelector(".dot").textContent = "✓";
+              ctx.classifyLine.querySelector(".title").textContent = `Classified ${evt.total} files (shortlisted ${evt.shortlist})`;
+              ctx.classifyLine.classList.add("step-done");
+              ctx.classifyLine = null;
+            }
+            break;
+          }
+          case "result": {
+            let md = "";
+            if (evt.matches && evt.matches.length) {
+              md += "### Matches Found\n\n";
+              evt.matches.forEach(m => {
+                const confBadge = m.confidence ? ` \`${m.confidence}\`` : "";
+                const pg = m.page ? ` (p. ${m.page})` : "";
+                md += `- **\`${baseName(m.path)}\`**${confBadge}${pg}\n  *“${m.evidence}”*\n\n`;
+              });
+            } else {
+              md += "### No Matches Found\n\n";
+            }
+            if (evt.rejected_count) {
+              md += `*${evt.rejected_count} file${evt.rejected_count === 1 ? "" : "s"} checked and rejected.*\n\n`;
+            }
+            if (evt.unreadable && evt.unreadable.length) {
+              md += "#### Unreadable Files\n";
+              evt.unreadable.forEach(u => {
+                md += `- \`${baseName(u.path)}\` (${u.reason || "could not read"})\n`;
+              });
+              md += "\n";
+            }
+            if (evt.deferred && evt.deferred.length) {
+              md += "#### Not Yet Skimmed\n";
+              evt.deferred.forEach(d => {
+                const confidence = d.confidence ? `, ${d.confidence} confidence` : "";
+                md += `- \`${baseName(d.path)}\` (continue to read${confidence})\n`;
+              });
+              md += "\n";
+            }
+            if (evt.notes) md += evt.notes;
+            showJobResult(md);
+            break;
+          }
+          case "done": {
+            const summary = (evt.summary || "").trim();
+            if (!summary || summary === "Find job completed without a summary.") {
+              if (jobEls.result.hidden) showJobResult("This job did not produce an answer. Run it again.", true);
+              jobEls.bar.hidden = true;
+              break;
+            }
+            if (jobEls.result.hidden) showJobResult(summary);
+            loadReviewQueue(ctx.jobId || lastJobId, ctx);
+            if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
+            else jobEls.bar.hidden = true;
+            break;
+          }
+          case "error": showJobResult(evt.message, true); break;
+        }
+      }
+
+      async function streamJob(path, body, ctx) {
+        const resp = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!resp.ok || !resp.body) {
+          let msg = "request failed"; try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
+          renderJobEvent({ type: "error", message: msg }, ctx); return;
+        }
+        const reader = resp.body.getReader(), decoder = new TextDecoder(); let pending = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          const events = pending.split("\n\n"); pending = events.pop() || "";
+          for (const ev of events) for (const line of ev.split("\n")) if (line.startsWith("data: ")) {
+            const data = line.slice(6); if (data === "[DONE]") continue;
+            try { renderJobEvent(JSON.parse(data), ctx); } catch (_) {}
+          }
+        }
+      }
+
+      function parseJobDefinition() {
+        try {
+          const job = JSON.parse(jobEls.definition.value.trim());
+          if (!job || typeof job !== "object" || Array.isArray(job)) throw new Error("Job definition must be a JSON object.");
+          return job;
+        } catch (error) {
+          jobLine("✗", error.message || String(error), "step-error");
+          return null;
+        }
+      }
+      async function previewDefinitionJob() {
+        if (jobRunning) return;
+        const job = parseJobDefinition(); if (!job) return;
+        jobRunning = true; clearJobOutput();
+        try {
+          const resp = await fetch("/v1/jobs/definition/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, expanded: jobEls.previewExpanded.checked }) });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Preview failed");
+          jobLine("●", `Previewed ${data.sample_count} sample${data.sample_count === 1 ? "" : "s"}`, "step-done");
+          for (const rec of data.records || []) {
+            const title = rec.status === "passed" ? `Passed: ${baseName(rec.input_path)}` : `Needs review: ${baseName(rec.input_path)}`;
+            const line = jobLine(rec.status === "passed" ? "✓" : "!", title, rec.status === "passed" ? "step-done" : "");
+            addSub(line, JSON.stringify(rec.extracted || rec.reasons || {}, null, 0));
+          }
+        } catch (error) { jobLine("✗", error.message || String(error), "step-error"); }
+        finally { jobRunning = false; }
+      }
+      async function runDefinitionJob() {
+        if (jobRunning) return;
+        const job = parseJobDefinition(); if (!job) return;
+        jobRunning = true; clearJobOutput();
+        const folder = job.input?.folder || jobEls.folder.value.trim();
+        try { await streamJob("/v1/jobs/definition/run", { job }, { folder, jobId: job.job_id }); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, { folder }); }
+        finally { jobRunning = false; }
+      }
+      async function runJob() {
+        if (jobRunning) return;
+        const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
+        if (!folder || !goal) { jobEls.folder.focus(); return; }
+        jobRunning = true; jobEls.run.disabled = true; jobEls.run.textContent = "Running"; clearJobOutput();
+        const ctx = { folder };
+        try { await streamJob("/v1/jobs/run", { goal, folder, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Run job"; }
+      }
+      async function applyJob(jobId, ctx) {
+        if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
+        try { await streamJob("/v1/jobs/apply", { job_id: jobId }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; }
+      }
+      async function undoJob(jobId, ctx) {
+        if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
+        const uctx = { folder: ctx.folder, jobId };
+        try { await streamJob("/v1/jobs/undo", { job_id: jobId }, uctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, uctx); }
+        finally { jobRunning = false; }
+      }
+      async function answerJob(jobId, answer, ctx) {
+        if (jobRunning || !answer.trim()) return; jobRunning = true; jobEls.bar.hidden = true;
+        try { await streamJob("/v1/jobs/answer", { job_id: jobId, answer }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; }
+      }
+      async function continueJob(jobId, ctx) {
+        if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
+        try { await streamJob("/v1/jobs/continue", { job_id: jobId }, ctx); }
+        catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
+        finally { jobRunning = false; }
+      }
+
       function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
       function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
       
@@ -751,8 +1336,13 @@
       };
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
-      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel;
+      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
       els.modelBackend.onchange=switchBackend;
+      jobEls.tabChat.onclick=()=>showView("chat"); jobEls.tabJobs.onclick=()=>showView("jobs");
+      jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
+      jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
+      jobEls.previewDef.onclick=previewDefinitionJob;
+      jobEls.runDef.onclick=runDefinitionJob;
       els.webAction.onclick=internetAction; els.webInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();internetAction();}};
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
@@ -763,7 +1353,7 @@
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
       els.contextTokens.value=state.settings?.contextTokens||"auto"; els.contextCustom.value=state.settings?.contextCustom||""; syncContextCustom();
       els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
-      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); refreshModels(); webStatus(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(()=>{health();if(modelPollFast)refreshModels()},2000); els.prompt.focus();
+      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); webStatus(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(health,5000); els.prompt.focus();
     })();
   </script>
 </body>

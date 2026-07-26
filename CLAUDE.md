@@ -26,6 +26,33 @@ superseded in part — see ISSUE_TASKS.md). Serve API: [docs/SERVE_API.md](docs/
 
 ## Open defects
 
+**J11 (FIX LANDED on `issue-7-jobs`, real-Downloads re-dogfood pending, #7)**
+— the shipped find-job path (`jobs_find`, `src/samosa_gateway.c`) failed the
+owner's Titli dogfood a second time (2026-07-23) from five compounding defects
+rooted in one inversion — C hardcoded the intelligence the JF spec assigned to
+the model: a tokenizer that treated the **letter "t" as a delimiter** (so
+"Titli"/"cat" could never become search terms; a wallpaper zip outscored a
+file named after the cat), a hardcoded "What is your pet's name?" fallback,
+answer-restarts that discarded the whole run (violating JF.3), state that
+persisted only goal+folder, and PDFs read text-layer-only while the prompt
+steered away from `doc.read`'s OCR cascade. Zero find-path test coverage let
+all five ship. **Phase JI rebuilt the find path** (model triages → skim index
+→ classify → verify → structured `finish()`); the condemned code
+(`candidate_score`, `build_candidates`, the canned question, the goal-restart
+path) is demolished — verified absent. JI.0–JI.8 pass offline
+(`make compiled-gateway-test` + `make jobs-test`, both `-Werror`), and
+E-JI1/E-JI2 ran on real Ornith against a **50-file synthetic fixture** with
+committed SSE evidence. **Remaining to fully close:** the real-Downloads
+re-dogfood that originally exposed J11 — the true "works" gate per the
+non-negotiables (synthetic fixtures are not the owner's real folder). Evidence:
+[docs/regressions/jobs/titli-find-2026-07-23.md](docs/regressions/jobs/titli-find-2026-07-23.md)
+(root cause) and
+[docs/regressions/jobs/e-ji1-2026-07-23/report.md](docs/regressions/jobs/e-ji1-2026-07-23/report.md)
+(real-model gate);
+rebuild spec: [docs/TASKS_JOBS_INTELLIGENCE.md](docs/TASKS_JOBS_INTELLIGENCE.md)
+**Phase JI** (supersedes the shipped implementation, enforces the JF spec's
+model-decides design).
+
 **G9 (OPEN, #1)** — the cgroup pressure signal counts page cache and
 over-triggers. `linux_memory_pressure_level()` uses `memory.current/memory.max`,
 but cgroup v2's `memory.current` includes the page cache the engine fills by

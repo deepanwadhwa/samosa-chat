@@ -1,0 +1,16 @@
+data: {"seq":1,"type":"item_complete","i":1,"n":4,"input_path":"/private/tmp/samosa-ej1-live-interlock-20260722.mVPzAT/inputs/v109i02.pdf","model_call_seconds":15.379,"active_inference_seconds":15.379}
+
+data: {"seq":2,"type":"job_paused","job_id":"e-j1-jss-pdf-ornith-interlock-20260722","reason":"interactive_chat","cooldown_seconds":2.000}
+
+data: {"seq":3,"type":"job_resumed","job_id":"e-j1-jss-pdf-ornith-interlock-20260722","reason":"interactive_chat","paused_seconds":110.968}
+
+data: {"seq":4,"type":"item_complete","i":2,"n":4,"input_path":"/private/tmp/samosa-ej1-live-interlock-20260722.mVPzAT/inputs/v109i03.pdf","model_call_seconds":15.834,"active_inference_seconds":31.213}
+
+data: {"seq":5,"type":"item_complete","i":3,"n":4,"input_path":"/private/tmp/samosa-ej1-live-interlock-20260722.mVPzAT/inputs/v110i01.pdf","model_call_seconds":8.330,"active_inference_seconds":39.543}
+
+data: {"seq":6,"type":"item_complete","i":4,"n":4,"input_path":"/private/tmp/samosa-ej1-live-interlock-20260722.mVPzAT/inputs/v110i02.pdf","model_call_seconds":0.000,"active_inference_seconds":39.543}
+
+data: {"seq":7,"type":"done","job_id":"e-j1-jss-pdf-ornith-interlock-20260722","summary":"Processed 4 items.","completed":4,"active_inference_seconds":39.543}
+
+data: [DONE]
+

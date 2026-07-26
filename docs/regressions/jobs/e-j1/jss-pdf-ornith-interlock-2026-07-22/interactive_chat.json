@@ -1,0 +1,8 @@
+{
+  "endpoint": "/v1/chat/completions",
+  "delay_seconds": 5.0,
+  "status": null,
+  "wall_seconds": 119.399,
+  "error": "Remote end closed connection without response",
+  "raw_response": ""
+}

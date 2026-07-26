@@ -1,0 +1,6 @@
+TECH MART receipt
+Purchased: USB-C hub
+Date: 2026-06-28
+Subtotal 37.49 USD
+Sales tax 3.00 USD
+Amount paid 40.49 USD

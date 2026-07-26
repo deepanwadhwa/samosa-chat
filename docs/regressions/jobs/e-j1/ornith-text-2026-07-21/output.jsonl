@@ -1,0 +1,10 @@
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r01_coffee.txt","merchant":"JOE'S COFFEE HOUSE","date":"2026-07-10","subtotal":7.75,"tax":0.62,"total":8.37,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r02_electronics.txt","merchant":"TECH MART","date":"2026-06-28","subtotal":37.49,"tax":3.0,"total":40.49,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r03_bakery.txt","merchant":"CAFE BLEU","date":"2026-07-15","subtotal":5.5,"tax":null,"total":5.5,"currency":"EUR"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r04_grocery.txt","merchant":"FRESH MARKET","date":"2026-07-02","subtotal":24.18,"tax":1.93,"total":26.11,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r05_bookshop.txt","merchant":"NORTHSIDE BOOKS","date":"2026-05-19","subtotal":18.0,"tax":1.44,"total":19.44,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r06_pharmacy.txt","merchant":"GREEN LEAF PHARMACY","date":"2026-04-12","subtotal":12.6,"tax":1.01,"total":13.61,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r07_transit.txt","merchant":"METRO TRANSIT","date":"2026-03-08","subtotal":5.0,"tax":0.0,"total":5.0,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r08_hardware.txt","merchant":"HARBOUR HARDWARE","date":"2026-02-14","subtotal":46.25,"tax":3.7,"total":49.95,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r09_petstore.txt","merchant":"PAWS AND CLAWS","date":"2026-01-26","subtotal":21.3,"tax":1.7,"total":23.0,"currency":"USD"}
+{"input_path":"/Users/deepanwadhwa/Documents/samosa-chat/tests/fixtures/jobs/e_j1_text/r10_stationery.txt","merchant":"PAPER TRAIL STATIONERY","date":"2025-12-03","subtotal":9.8,"tax":0.78,"total":10.58,"currency":"USD"}

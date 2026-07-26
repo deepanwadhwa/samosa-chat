@@ -1,0 +1,46 @@
+{
+  "run_root": "/tmp/samosa-ejo1-meta-20260721145708",
+  "inbox": "/tmp/samosa-ejo1-meta-20260721145708/inbox",
+  "job_id": "organize-this-folder-by-type-1784660262",
+  "job_id_reapply": "organize-this-folder-by-type-1784660263",
+  "counts": {
+    "before": 117,
+    "after_plan": 117,
+    "after_apply": 117,
+    "after_undo": 117,
+    "after_reapply": 117
+  },
+  "hash_inventory_ok": {
+    "after_plan": true,
+    "after_apply": true,
+    "after_undo": true,
+    "after_reapply": true
+  },
+  "path_restore_ok": true,
+  "plan": {
+    "moves": 115,
+    "skips": 0,
+    "seconds": 0.049
+  },
+  "apply": {
+    "applied": 115,
+    "skipped": 0,
+    "seconds": 0.307
+  },
+  "undo": {
+    "reverted": 115,
+    "skipped": 0,
+    "seconds": 0.275
+  },
+  "replan": {
+    "moves": 115,
+    "skips": 0,
+    "seconds": 0.047
+  },
+  "reapply": {
+    "applied": 115,
+    "skipped": 0,
+    "seconds": 0.266
+  },
+  "scope_note": "Current gateway Jobs organize runs non-recursive; nested file was retained and included in hash/path inventories but not planned for movement."
+}

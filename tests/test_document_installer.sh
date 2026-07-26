@@ -46,6 +46,8 @@ RELEASE_DIR="$HOME_DIR/$RELEASE"
 [ -f "$RELEASE_DIR/lib/libpdfium.dylib" ]
 "$RELEASE_DIR/bin/samosa-extract" --json "$ROOT/tests/fixtures/documents/hello.pdf" |
   grep -F '"ok":true' >/dev/null
+"$RELEASE_DIR/bin/samosa-extract" --json-pages "$ROOT/tests/fixtures/documents/hello.pdf" 1 5 |
+  grep -F '"page_start":1' >/dev/null
 otool -L "$RELEASE_DIR/bin/qwen36b" | grep -F 'libpdfium' >/dev/null && {
   echo "document installer: engine gained a PDFium dependency" >&2
   exit 1

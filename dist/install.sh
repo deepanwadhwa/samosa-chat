@@ -110,12 +110,12 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
-    samosa|samosa-gateway|samosa_models.py) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
+    samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
     *) return 1 ;;
   esac
 }
 
-INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa samosa-gateway samosa_models.py"
+INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
 
 # Document extraction is an optional release capability, not a host-package
 # dependency. A PDFium archive is fetched only when the verified release
@@ -134,6 +134,20 @@ if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&
    manifest_field "engine/samosa_extract.c" 1 >/dev/null 2>&1; then
   INSTALL_FILES="$INSTALL_FILES engine/samosa_extract.c $PDFIUM_ARCHIVE"
   DOCUMENTS_ENABLED=1
+fi
+
+# The compiled multi-backend gateway (Bonsai/Ornith/Qwen behind one app) and
+# native Jobs controller are likewise optional: only staged when
+# tools/package_hf.py was run with --gateway and the manifest reflects it.
+# Absent, `samosa serve`/`samosa app` fall back to the raw Qwen engine
+# unchanged — this installer behaves exactly as it did before either existed.
+GATEWAY_ENABLED=0
+if manifest_field "engine/samosa_gateway.c" 1 >/dev/null 2>&1; then
+  # The gateway includes the content-addressed document read cache directly;
+  # stage its header with the two compilation units or a clean gateway release
+  # cannot build atomically.
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h"
+  GATEWAY_ENABLED=1
 fi
 
 required_remaining=0
@@ -179,7 +193,8 @@ for relative in $INSTALL_FILES; do
   fi
 done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
-chmod +x "$STAGE/bin/samosa" "$STAGE/bin/samosa-gateway"
+# Downloads do not retain source file modes.
+chmod 755 "$STAGE/bin/samosa"
 
 say "Compiling the staged engine..."
 COMPILER=""
@@ -234,6 +249,34 @@ if [ "$DOCUMENTS_ENABLED" = 1 ]; then
       fail "could not set the staged PDFium runtime path"
   fi
   chmod +x "$STAGE/bin/samosa-extract"
+  EXTRACT_SMOKE_INPUT="$STAGE/.samosa-extract-interface-smoke.txt"
+  EXTRACT_SMOKE_LOG="$STAGE/.samosa-extract-interface-smoke.log"
+  printf 'not a pdf\n' >"$EXTRACT_SMOKE_INPUT"
+  if "$STAGE/bin/samosa-extract" --json-pages "$EXTRACT_SMOKE_INPUT" 1 1 >"$EXTRACT_SMOKE_LOG" 2>&1; then
+    fail "staged document extractor accepted a non-PDF interface smoke input"
+  fi
+  grep -F 'not_pdf' "$EXTRACT_SMOKE_LOG" >/dev/null || {
+    sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
+    fail "staged document extractor does not support the required --json-pages interface"
+  }
+  rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
+fi
+
+if [ "$GATEWAY_ENABLED" = 1 ]; then
+  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
+    fail "staged gateway compilation failed; live release was not changed"
+  # samosa-jobsd is the same source under a launchd-friendly name (invoked as
+  # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
+  # plist the gateway installs points at current/bin/samosa-jobsd, so the
+  # scheduler is broken on a clean install unless this binary exists.
+  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" ||
+    fail "staged jobs daemon compilation failed; live release was not changed"
+  $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
+    "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
+    fail "staged filesystem sidecar compilation failed; live release was not changed"
+  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
 fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
