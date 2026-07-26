@@ -2111,6 +2111,14 @@ task); the dialog is reachable today via a labeled "Folder access
 
 #### T1.4 — Migrate and bind conversations
 
+**Status: DONE (2026-07-26), model identity keyed to an interim placeholder
+pending T2.1/T2.3 (owner-confirmed sequencing, same pattern as T1.2's
+`setup_status_handler` bridge).** Evidence:
+[docs/regressions/ui-chutni/t1.4-evidence.md](../regressions/ui-chutni/t1.4-evidence.md).
+No real selection lock yet (T2.3); the reopen-under-another-model dialog
+offers fork/cancel only -- install/switch-to-that-version need T2.1/T2.3 and
+say so rather than faking a working button.
+
 **Depends on:** T2.1 and T2.3 for immutable model identity and readiness.
 
 **Work**

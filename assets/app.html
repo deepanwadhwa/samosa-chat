@@ -263,6 +263,9 @@
     .chooser-selected-path { margin-top: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); font: 12px/1.4 var(--mono, ui-monospace, "SF Mono", Menlo, monospace); word-break: break-all; }
     .chooser-selected-path[hidden] { display: none; }
     .chooser-trigger-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .mismatch-note { margin: 0 18px 14px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+    .migration-banner { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 14px; max-width: min(560px, 92vw); padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); backdrop-filter: blur(20px); box-shadow: var(--shadow); font-size: 13px; }
+    .migration-banner-actions { display: flex; gap: 8px; flex: none; }
 
     @media (max-width: 760px) {
       .shell { grid-template-columns: 1fr; }
@@ -545,6 +548,33 @@
     </div>
   </div>
 
+  <!-- T1.4 (docs/TASKS_UI_CHUTNI.md sec5.2): reopening a conversation bound
+       to a model other than the one currently active must not silently
+       continue it under the wrong model. Installing/switching to that exact
+       version is T2.1/T2.3 work; today's only real options are forking into
+       a new conversation under the current model, or cancelling. -->
+  <div class="chooser-scrim" id="mismatchScrim" hidden></div>
+  <div class="chooser-dialog" id="mismatchDialog" role="dialog" aria-modal="true" aria-labelledby="mismatchTitle" hidden>
+    <div class="chooser-head">
+      <h2 id="mismatchTitle">This conversation used a different model</h2>
+      <button class="chooser-close" id="mismatchCancel" type="button" aria-label="Cancel">Cancel</button>
+    </div>
+    <div class="chooser-path" id="mismatchDetail" aria-live="polite"></div>
+    <p class="mismatch-note">Installing or switching to that exact model isn't available in this build yet. You can continue with your current model in a new conversation; the original stays untouched.</p>
+    <div class="chooser-foot">
+      <span></span>
+      <button class="chooser-select" id="mismatchFork" type="button">Fork into a new conversation</button>
+    </div>
+  </div>
+
+  <div class="migration-banner" id="migrationBanner" role="alert" hidden>
+    <span>Your previous conversations couldn't be loaded automatically. They haven't been deleted.</span>
+    <div class="migration-banner-actions">
+      <button class="chooser-close" id="migrationExport" type="button">Export as a file</button>
+      <button class="chooser-close" id="migrationReset" type="button">Reset local chat storage</button>
+    </div>
+  </div>
+
   <script>
     (() => {
       "use strict";
@@ -568,28 +598,86 @@
         imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
         kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
-        webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults")
+        webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults"),
+        mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
+        mismatchFork: $("mismatchFork"), mismatchCancel: $("mismatchCancel"),
+        migrationBanner: $("migrationBanner"), migrationExport: $("migrationExport"), migrationReset: $("migrationReset")
       };
-      const STORAGE_KEY = "samosa-chat-v1";
+      // T1.4 (docs/TASKS_UI_CHUTNI.md sec5.2): schema v2 adds gateway-enforced
+      // model binding per conversation. The v1 key is never written to or
+      // deleted by migration -- only ever read -- so a failed migration
+      // always leaves the user's original data recoverable.
+      const STORAGE_KEY_V1 = "samosa-chat-v1";
+      const STORAGE_KEY = "samosa-chat-v2";
+      let migrationRecoveryRaw = null;
       let state = loadState();
       let currentId = state.currentId;
       let generating = false;
       let activeAssistant = null;
       let followOutput = true;
       let currentImageBase64 = null;
-      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:false};
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,version:"",ready:false};
       let healthInitialized = false;
 
       function makeId() {
         const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
         return `chat-${raw.replace(/[^a-zA-Z0-9_-]/g, "-")}`.slice(0, 64);
       }
+      function defaultSettings() {
+        return { thinking: "off", maxTokens: "2048", seed: "", contextTokens: "auto", contextCustom: "", contextConfigured: false, autoCompact: true, compactThreshold: "80" };
+      }
+      function freshState() { return { currentId: null, chats: [], settings: defaultSettings() }; }
+      // Every pre-T1.4 conversation predates the model-binding concept
+      // entirely, so which exact model/version produced it can never be
+      // established (docs/TASKS_UI_CHUTNI.md sec5.2: "use model_id:null ...
+      // Do not create a false binding."). It binds explicitly the next time
+      // a message is sent in it, under whatever model is active then.
+      function migrateLegacyChat(raw) {
+        return {
+          id: raw.id, title: raw.title, created: raw.created, updated: raw.updated, messages: raw.messages,
+          schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
+          created_at: new Date(raw.created || Date.now()).toISOString(),
+          updated_at: new Date(raw.updated || Date.now()).toISOString(),
+          directory_context: null,
+        };
+      }
+      // Pure: parses and migrates without touching localStorage, so a caller
+      // can decide what to persist (or not) based on the result. Returns
+      // {ok:false} for missing/malformed input; a malformed *individual*
+      // chat record is skipped rather than failing the whole migration, so
+      // one bad record cannot erase every healthy conversation.
+      function migrateStateV1ToV2(rawV1) {
+        if (!rawV1) return { ok: true, state: freshState() };
+        let parsed;
+        try { parsed = JSON.parse(rawV1); } catch (_) { return { ok: false }; }
+        if (!parsed || !Array.isArray(parsed.chats)) return { ok: false };
+        const chats = [];
+        for (const c of parsed.chats) {
+          if (!c || typeof c.id !== "string" || !Array.isArray(c.messages)) continue;
+          chats.push(migrateLegacyChat(c));
+        }
+        return { ok: true, state: { currentId: parsed.currentId ?? null, chats, settings: parsed.settings || defaultSettings() } };
+      }
       function loadState() {
         try {
-          const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-          if (parsed && Array.isArray(parsed.chats)) return parsed;
+          const existing = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (existing && Array.isArray(existing.chats)) return existing;
         } catch (_) {}
-        return { currentId: null, chats: [], settings: { thinking: "off", maxTokens: "2048", seed: "", contextTokens: "auto", contextCustom: "", contextConfigured: false, autoCompact: true, compactThreshold: "80" } };
+        let v1Raw = null;
+        try { v1Raw = localStorage.getItem(STORAGE_KEY_V1); } catch (_) {}
+        const migrated = migrateStateV1ToV2(v1Raw);
+        if (migrated.ok) {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated.state));
+            JSON.parse(localStorage.getItem(STORAGE_KEY)); // readback: throws on quota/storage failure
+            return migrated.state;
+          } catch (_) { /* falls through to the safe empty state below */ }
+        }
+        // Malformed v1 JSON, or the migrated state couldn't be written and
+        // read back: the v1 key above was never touched. Operate on a safe
+        // empty state and let the caller offer export/reset.
+        if (v1Raw) migrationRecoveryRaw = v1Raw;
+        return freshState();
       }
       function saveState() {
         state.currentId = currentId;
@@ -600,10 +688,70 @@
       function ensureChat() {
         let chat = activeChat();
         if (!chat) {
-          chat = { id: makeId(), title: "New conversation", created: Date.now(), updated: Date.now(), messages: [] };
+          const now = new Date().toISOString();
+          chat = { id: makeId(), title: "New conversation", created: Date.now(), updated: Date.now(), messages: [],
+            schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
+            created_at: now, updated_at: now, directory_context: null };
           state.chats.unshift(chat); currentId = chat.id; saveState();
         }
         return chat;
+      }
+      // A conversation whose recorded model differs from the one currently
+      // active needs an explicit decision before it continues (sec5.2:
+      // "Reopening a conversation created by another model prompts for an
+      // explicit action"). A chat that never bound to a model (null) is not
+      // a mismatch -- it simply binds to whatever is active on next send.
+      function chatNeedsExplicitAction(chat, activeBackend) {
+        return !!(chat && chat.model_id && activeBackend && activeBackend.id && activeBackend.version &&
+          (chat.model_id !== activeBackend.id || chat.model_version !== activeBackend.version));
+      }
+      function forkChatFrom(chat) {
+        const now = new Date().toISOString();
+        const fork = {
+          id: makeId(), title: chat.title, created: Date.now(), updated: Date.now(),
+          messages: chat.messages.map(m => ({ ...m })),
+          schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
+          created_at: now, updated_at: now, directory_context: null,
+        };
+        state.chats.unshift(fork);
+        return fork;
+      }
+      let mismatchTarget = null, mismatchOpener = null;
+      function openMismatchDialog(chat, opener) {
+        mismatchTarget = chat;
+        els.mismatchDetail.textContent = `This conversation was bound to ${chat.model_id} (${chat.model_version}). The active model is ${backend.id} (${backend.version || "unknown"}).`;
+        els.mismatchScrim.hidden = false; els.mismatchDialog.hidden = false;
+        els.mismatchScrim.classList.add("show"); els.mismatchDialog.classList.add("open");
+        mismatchOpener = opener || document.activeElement;
+        els.mismatchFork.focus();
+      }
+      function closeMismatchDialog() {
+        els.mismatchScrim.classList.remove("show"); els.mismatchDialog.classList.remove("open");
+        els.mismatchScrim.hidden = true; els.mismatchDialog.hidden = true;
+        mismatchTarget = null;
+        if (mismatchOpener && mismatchOpener.focus) mismatchOpener.focus();
+      }
+      function confirmForkMismatch() {
+        if (!mismatchTarget) return;
+        const fork = forkChatFrom(mismatchTarget);
+        currentId = fork.id; saveState(); render(); closePanels();
+        closeMismatchDialog();
+      }
+      function showMigrationBanner() { els.migrationBanner.hidden = false; }
+      function hideMigrationBanner() { els.migrationBanner.hidden = true; }
+      function exportMigrationRecovery() {
+        if (!migrationRecoveryRaw) return;
+        const blob = new Blob([migrationRecoveryRaw], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "samosa-chat-backup.json"; a.click();
+        URL.revokeObjectURL(url);
+      }
+      function resetMigrationRecovery() {
+        if (!confirm("This clears local chat storage on this device, including the conversations that couldn't be loaded. Continue?")) return;
+        try { localStorage.removeItem(STORAGE_KEY_V1); } catch (_) {}
+        try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+        location.reload();
       }
       function newChat() {
         if (generating) return;
@@ -617,7 +765,12 @@
         if (currentId === id) currentId = state.chats[0]?.id || null;
         saveState(); render();
       }
-      function selectChat(id) { if (!generating) { currentId = id; saveState(); render(); closePanels(); } }
+      function selectChat(id) {
+        if (generating) return;
+        const chat = state.chats.find(c => c.id === id);
+        if (chat && chatNeedsExplicitAction(chat, backend)) { openMismatchDialog(chat); return; }
+        currentId = id; saveState(); render(); closePanels();
+      }
       function titleFor(text) { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > 42 ? clean.slice(0, 42) + "…" : clean || "New conversation"; }
       function escapeHTML(text) { return String(text).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
       function markdown(text) {
@@ -694,23 +847,33 @@
           openSettings();
           return;
         }
-        const chat=ensureChat(), user={id:makeId(),role:"user",content:text.trim(),image:currentImageBase64}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
-        chat.messages.push(user,assistant); chat.updated=Date.now(); if (chat.messages.length===2) chat.title=titleFor(user.content);
-        
+        const chat=ensureChat();
+        if (chatNeedsExplicitAction(chat, backend)) { openMismatchDialog(chat); return; }
+        // Create-once binding (sec5.2): the first send under a real backend
+        // stamps this conversation's model identity; the gateway records the
+        // matching canonical binding the same moment it admits the turn.
+        if (!chat.model_id && backend.id && backend.version) {
+          chat.model_id = backend.id; chat.model_version = backend.version; chat.model_binding_source = "explicit";
+        }
+        const user={id:makeId(),role:"user",content:text.trim(),image:currentImageBase64}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
+        chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
+
         let payloadContent = [{ type: "text", text: user.content }];
         if (user.image) payloadContent.push({ type: "image_url", image_url: { url: user.image } });
-        
+
         els.prompt.value=""; removeAttachedImage(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
         if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
         activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
-        
+
         let payload;
         if (backend.id !== "qwen") {
           const history=chat.messages.filter(m=>m!==assistant&&!m.error).map(m=>({role:m.role,content:m.content||""}));
           payload={model:backend.model,messages:history,stream:true,max_tokens:Number(els.maxTokens.value),
-            conversation_id:chat.id,chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
+            conversation_id:chat.id,model_id:chat.model_id,model_version:chat.model_version,
+            chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
         } else {
           payload={model:backend.model,messages:[{role:"user",content:payloadContent}],conversation_id:chat.id,
+            model_id:chat.model_id,model_version:chat.model_version,
             stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
         }
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
@@ -772,7 +935,7 @@
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
           const previousBackend=backend.id;
           if(h.gateway) {
-            backend={id:h.backend,label:h.label,model:h.model,supports_images:h.supports_images,ready:h.ready};
+            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,ready:h.ready};
             els.modelBackend.value=h.backend;
             els.attachBtn.disabled=!h.supports_images;
             els.attachBtn.title=h.supports_images?"Attach an image":"This model was installed without a vision projector";
@@ -780,7 +943,7 @@
             els.dot.className=h.ready?"status-dot online":"status-dot";
             els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
           } else {
-            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,ready:true};
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,ready:true};
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
           }
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
@@ -1534,6 +1697,10 @@
       chooserEls.openBtn.onclick=openChooser; chooserEls.close.onclick=closeChooser; chooserEls.scrim.onclick=closeChooser;
       chooserEls.up.onclick=()=>{ if (chooser.parent) chooserOpenPath(chooser.parent); };
       chooserEls.select.onclick=chooserConfirmSelection; chooserEls.clearBtn.onclick=chooserClearSelection;
+      els.mismatchFork.onclick=confirmForkMismatch; els.mismatchCancel.onclick=closeMismatchDialog; els.mismatchScrim.onclick=closeMismatchDialog;
+      document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!els.mismatchDialog.hidden){e.preventDefault();closeMismatchDialog();}});
+      els.migrationExport.onclick=exportMigrationRecovery; els.migrationReset.onclick=resetMigrationRecovery;
+      if (migrationRecoveryRaw) showMigrationBanner();
       els.modelBackend.onchange=switchBackend;
       jobEls.tabChat.onclick=()=>showView("chat"); jobEls.tabJobs.onclick=()=>showView("jobs");
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};

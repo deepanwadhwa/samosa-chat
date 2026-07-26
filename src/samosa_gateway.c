@@ -4559,6 +4559,27 @@ static int welcome_complete_handler(Gateway *g, int fd) {
     return sent;
 }
 
+/* T1.4 interim bridge (docs/TASKS_UI_CHUTNI.md sec5.2/T1.4, ahead of T2.1's
+   real catalog): there is no immutable per-install model version yet.
+   model_id is the backend name ("qwen"/"bonsai"/"ornith"), matching the
+   existing setup_status_handler convention below; model_version is the
+   basename of that backend's configured model file -- a real fact about
+   the current install, not a fabricated value, but not a content hash
+   either. T2.1 replaces both with catalog-issued immutable identity, and
+   every conversation bound under this placeholder will need the same
+   schema-version migration path this task already builds for v1 -> v2. */
+static const char *active_model_id(Gateway *g) {
+    return (backend_available(g, g->backend) && backend_probe(g)) ? g->backend : NULL;
+}
+
+static void active_model_version(Gateway *g, char *out, size_t cap) {
+    const char *path = !strcmp(g->backend, "bonsai") ? g->bonsai_model :
+                        !strcmp(g->backend, "ornith") ? g->ornith_model : g->qwen_model;
+    const char *base = strrchr(path, '/');
+    base = (base && base[1]) ? base + 1 : path;
+    path_copy(out, cap, base[0] ? base : "unknown");
+}
+
 /* Interim bridge (T1.2, ahead of T2.1's real model catalog/selection
    registry): "a selected, verified model" does not exist as a concept yet.
    Until then, a legacy-detected, currently-ready backend is treated as
@@ -4570,10 +4591,12 @@ static int setup_status_handler(Gateway *g, int fd) {
     int had_profile = profile_load(g, &p);
     const char *next_step;
     int profile_complete;
-    int legacy_ready = backend_available(g, g->backend) && backend_probe(g);
+    const char *ready_id = active_model_id(g);
+    char ready_version[128] = {0};
+    if (ready_id) active_model_version(g, ready_version, sizeof(ready_version));
     if (!had_profile || !p.name[0]) { next_step = "name"; profile_complete = 0; }
     else if (!p.welcome_completed_at[0]) { next_step = "welcome"; profile_complete = 0; }
-    else if (!legacy_ready) { next_step = "model"; profile_complete = 0; }
+    else if (!ready_id) { next_step = "model"; profile_complete = 0; }
     else { next_step = "chat"; profile_complete = 1; }
 
     TextBuffer body = {0};
@@ -4581,9 +4604,10 @@ static int setup_status_handler(Gateway *g, int fd) {
         text_add(&body, ",\"installed_model_count\":") &&
         text_add(&body, backend_available(g, g->backend) ? "1" : "0") &&
         text_add(&body, ",\"active_model_id\":") &&
-        (legacy_ready ? text_json_string(&body, g->backend) : text_add(&body, "null")) &&
-        text_add(&body, ",\"active_model_version\":null") &&
-        text_add(&body, ",\"active_model_ready\":") && text_add(&body, legacy_ready ? "true" : "false") &&
+        (ready_id ? text_json_string(&body, ready_id) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_model_version\":") &&
+        (ready_id ? text_json_string(&body, ready_version) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_model_ready\":") && text_add(&body, ready_id ? "true" : "false") &&
         text_add(&body, ",\"selected_model_id\":") &&
         (p.selected_model_id[0] ? text_json_string(&body, p.selected_model_id) : text_add(&body, "null")) &&
         text_add(&body, ",\"selected_model_version\":") &&
@@ -4594,6 +4618,248 @@ static int setup_status_handler(Gateway *g, int fd) {
     int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
     free(body.data);
     return sent;
+}
+
+/* ============================================================================
+   T1.4: conversation schema v2 and gateway-enforced model binding
+   (docs/TASKS_UI_CHUTNI.md sec5.2). Canonical binding metadata lives at
+   <home>/chats/<conversation-id>/metadata.json -- the exact directory
+   backend_start() already creates and hands to the qwen backend via
+   SAMOSA_CHATS_DIR for its own session.qws KV-cache file, so both files end
+   up side by side under the one conversation-id directory the spec names.
+   ============================================================================ */
+
+typedef struct {
+    int exists;
+    char model_id[64];
+    char model_version[128];
+    char model_binding_source[16];
+    char created_at[32];
+    char updated_at[32];
+} ConversationBinding;
+
+/* Mirrors valid_job_id(): letters, digits, dash, underscore only. Browser
+   conversation IDs are client-generated (see makeId() in assets/app.html),
+   so this is the only defense against path traversal or collision via
+   conversation_id before it becomes a directory name on disk. */
+static int valid_conversation_id(const char *id) {
+    if (!id || !*id) return 0;
+    size_t len = 0;
+    for (const char *p = id; *p; ++p, ++len)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '-' || *p == '_')) return 0;
+    return len > 0 && len < 100;
+}
+
+static int conversation_binding_path(Gateway *g, const char *id, char *out, size_t cap) {
+    char chats[PATH_MAX], dir[PATH_MAX];
+    return path_join(chats, sizeof(chats), g->home, "chats") &&
+           path_join(dir, sizeof(dir), chats, id) &&
+           path_join(out, cap, dir, "metadata.json");
+}
+
+/* 0 on missing, unreadable, or malformed metadata -- caller treats that as
+   "no recorded binding yet" (or, for an id that already has messages,
+   "corrupt record"), never as a reason to crash or 500. */
+static int conversation_binding_load(Gateway *g, const char *id, ConversationBinding *out) {
+    memset(out, 0, sizeof(*out));
+    char path[PATH_MAX];
+    if (!conversation_binding_path(g, id, path, sizeof(path))) return 0;
+    char *raw = read_file_limit(path, 65536);
+    if (!raw) return 0;
+    char *arena = NULL;
+    jval *root = json_parse(raw, &arena);
+    if (!root || root->t != J_OBJ) { json_free(root); free(arena); free(raw); return 0; }
+    jval *mid = json_get(root, "model_id");
+    if (mid && mid->t == J_STR) path_copy(out->model_id, sizeof(out->model_id), mid->str);
+    jval *mver = json_get(root, "model_version");
+    if (mver && mver->t == J_STR) path_copy(out->model_version, sizeof(out->model_version), mver->str);
+    jval *src = json_get(root, "model_binding_source");
+    if (src && src->t == J_STR) path_copy(out->model_binding_source, sizeof(out->model_binding_source), src->str);
+    jval *created = json_get(root, "created_at");
+    if (created && created->t == J_STR) path_copy(out->created_at, sizeof(out->created_at), created->str);
+    jval *updated = json_get(root, "updated_at");
+    if (updated && updated->t == J_STR) path_copy(out->updated_at, sizeof(out->updated_at), updated->str);
+    out->exists = out->model_id[0] && out->model_version[0];
+    json_free(root); free(arena); free(raw);
+    return out->exists;
+}
+
+static int conversation_binding_save(Gateway *g, const char *id, const ConversationBinding *b) {
+    char chats[PATH_MAX], dir[PATH_MAX], path[PATH_MAX];
+    if (!path_join(chats, sizeof(chats), g->home, "chats") ||
+        !path_join(dir, sizeof(dir), chats, id) || !mkdirs(dir) ||
+        !path_join(path, sizeof(path), dir, "metadata.json")) return 0;
+    TextBuffer json = {0};
+    int ok = text_add(&json, "{\"id\":") && text_json_string(&json, id) &&
+        text_add(&json, ",\"schema_version\":2,\"model_id\":") && text_json_string(&json, b->model_id) &&
+        text_add(&json, ",\"model_version\":") && text_json_string(&json, b->model_version) &&
+        text_add(&json, ",\"model_binding_source\":") && text_json_string(&json, b->model_binding_source) &&
+        text_add(&json, ",\"created_at\":") && text_json_string(&json, b->created_at) &&
+        text_add(&json, ",\"updated_at\":") && text_json_string(&json, b->updated_at) &&
+        text_add(&json, "}");
+    ok = ok && write_small_file(path, json.data);
+    free(json.data);
+    return ok;
+}
+
+static int conversation_binding_response(int fd, int status, const char *id, const ConversationBinding *b) {
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"id\":") && text_json_string(&body, id) &&
+        text_add(&body, ",\"schema_version\":2,\"model_id\":") && text_json_string(&body, b->model_id) &&
+        text_add(&body, ",\"model_version\":") && text_json_string(&body, b->model_version) &&
+        text_add(&body, ",\"model_binding_source\":") && text_json_string(&body, b->model_binding_source) &&
+        text_add(&body, ",\"created_at\":") && text_json_string(&body, b->created_at) &&
+        text_add(&body, ",\"updated_at\":") && text_json_string(&body, b->updated_at) &&
+        text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, status, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+/* Handles GET/PUT /v1/conversations/<id>/binding. request->path has already
+   been matched to this prefix/suffix pair by the caller. */
+static int conversation_binding_handler(Gateway *g, int fd, const SamosaHttpRequest *request, const char *id) {
+    if (!require_ui_session(g, fd, request)) return 1;
+    if (!strcmp(request->method, "GET")) {
+        ConversationBinding b;
+        if (!conversation_binding_load(g, id, &b))
+            return samosa_http_json_error(fd, 404, "conversation_unbound", "This conversation has no recorded model binding.");
+        return conversation_binding_response(fd, 200, id, &b);
+    }
+    if (!strcmp(request->method, "PUT")) {
+        char *arena = NULL;
+        jval *root = json_parse(request->body, &arena);
+        if (!root || root->t != J_OBJ) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 400, "invalid_json", "Malformed request body.");
+        }
+        jval *mid = json_get(root, "model_id");
+        jval *mver = json_get(root, "model_version");
+        jval *src = json_get(root, "model_binding_source");
+        if (!mid || mid->t != J_STR || !mid->str[0] || !mver || mver->t != J_STR || !mver->str[0]) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 400, "model_identity_required", "model_id and model_version are required.");
+        }
+        const char *requested_source = (src && src->t == J_STR && src->str[0]) ? src->str : "explicit";
+        if (strcmp(requested_source, "explicit") && strcmp(requested_source, "inferred") && strcmp(requested_source, "unknown")) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 400, "invalid_binding_source", "model_binding_source must be explicit, inferred, or unknown.");
+        }
+        char req_model_id[64], req_model_version[128], req_source[16];
+        path_copy(req_model_id, sizeof(req_model_id), mid->str);
+        path_copy(req_model_version, sizeof(req_model_version), mver->str);
+        path_copy(req_source, sizeof(req_source), requested_source);
+        json_free(root); free(arena);
+
+        ConversationBinding existing;
+        if (conversation_binding_load(g, id, &existing)) {
+            if (strcmp(existing.model_id, req_model_id) || strcmp(existing.model_version, req_model_version))
+                return samosa_http_json_error(fd, 409, "conversation_model_mismatch",
+                    "This conversation is already bound to a different model.");
+            return conversation_binding_response(fd, 200, id, &existing);
+        }
+        ConversationBinding fresh = {0};
+        path_copy(fresh.model_id, sizeof(fresh.model_id), req_model_id);
+        path_copy(fresh.model_version, sizeof(fresh.model_version), req_model_version);
+        path_copy(fresh.model_binding_source, sizeof(fresh.model_binding_source), req_source);
+        char now[32]; rfc3339_now_to(now, sizeof(now));
+        path_copy(fresh.created_at, sizeof(fresh.created_at), now);
+        path_copy(fresh.updated_at, sizeof(fresh.updated_at), now);
+        if (!conversation_binding_save(g, id, &fresh))
+            return samosa_http_json_error(fd, 500, "binding_write_failed", "The conversation binding could not be saved.");
+        return conversation_binding_response(fd, 200, id, &fresh);
+    }
+    return samosa_http_json_error(fd, 400, "method_not_allowed", "Only GET and PUT are supported.");
+}
+
+/* Dispatch entry for the /v1/conversations/ prefix: extracts and validates
+   <id> from "/v1/conversations/<id>/binding" before handing off. Any other
+   shape under the prefix is 404, not a crash or a silent bypass. */
+static int conversations_dispatch(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    static const char prefix[] = "/v1/conversations/";
+    static const char suffix[] = "/binding";
+    size_t plen = sizeof(prefix) - 1, slen = sizeof(suffix) - 1;
+    size_t pathlen = strlen(request->path);
+    if (pathlen <= plen + slen || strcmp(request->path + pathlen - slen, suffix) != 0)
+        return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
+    size_t idlen = pathlen - plen - slen;
+    char id[100];
+    if (idlen == 0 || idlen >= sizeof(id))
+        return samosa_http_json_error(fd, 400, "invalid_conversation_id",
+            "conversation_id may contain only letters, numbers, dash, and underscore.");
+    memcpy(id, request->path + plen, idlen); id[idlen] = 0;
+    if (!valid_conversation_id(id))
+        return samosa_http_json_error(fd, 400, "invalid_conversation_id",
+            "conversation_id may contain only letters, numbers, dash, and underscore.");
+    return conversation_binding_handler(g, fd, request, id);
+}
+
+/* Wraps proxy_request() for /v1/chat/completions only: when the body names
+   a conversation_id, the caller must also name the model_id/model_version
+   it expects to run under (docs/TASKS_UI_CHUTNI.md sec5.2). This is checked
+   -- and, on a conversation's first turn, recorded -- before a single byte
+   reaches the backend, so a stale tab or a direct API client can never
+   silently continue a conversation under whatever model happens to be
+   active. Unlike a future T2.3 selection lock, this does not hold g->mu
+   across the read of g->backend and the eventual proxy_request() connect;
+   a backend switch racing a chat request already has a narrower, pre-
+   existing TOCTOU in /v1/backends/select (see T1.4 evidence). Closing that
+   gap for good is T2.3's job, not this task's. */
+static int chat_completions_request(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL;
+    jval *body = json_parse(request->body, &arena);
+    jval *conv_id_v = (body && body->t == J_OBJ) ? json_get(body, "conversation_id") : NULL;
+    if (!conv_id_v || conv_id_v->t != J_STR || !conv_id_v->str[0]) {
+        json_free(body); free(arena);
+        return proxy_request(g, fd, request);
+    }
+    char conv_id[100];
+    int id_ok = valid_conversation_id(conv_id_v->str) && path_copy(conv_id, sizeof(conv_id), conv_id_v->str);
+    jval *mid = json_get(body, "model_id");
+    jval *mver = json_get(body, "model_version");
+    if (!id_ok) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_conversation_id",
+            "conversation_id may contain only letters, numbers, dash, and underscore.");
+    }
+    if (!mid || mid->t != J_STR || !mid->str[0] || !mver || mver->t != J_STR || !mver->str[0]) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "model_identity_required",
+            "conversation_id requires model_id and model_version.");
+    }
+    char req_model_id[64], req_model_version[128];
+    path_copy(req_model_id, sizeof(req_model_id), mid->str);
+    path_copy(req_model_version, sizeof(req_model_version), mver->str);
+    json_free(body); free(arena);
+
+    const char *active_id = active_model_id(g);
+    if (active_id) {
+        char active_version[128];
+        active_model_version(g, active_version, sizeof(active_version));
+        if (strcmp(active_id, req_model_id) || strcmp(active_version, req_model_version))
+            return samosa_http_json_error(fd, 409, "conversation_model_mismatch",
+                "This conversation's model is not the currently active model.");
+        ConversationBinding existing;
+        if (conversation_binding_load(g, conv_id, &existing)) {
+            if (strcmp(existing.model_id, req_model_id) || strcmp(existing.model_version, req_model_version))
+                return samosa_http_json_error(fd, 409, "conversation_model_mismatch",
+                    "This conversation is bound to a different model.");
+        } else {
+            ConversationBinding fresh = {0};
+            path_copy(fresh.model_id, sizeof(fresh.model_id), req_model_id);
+            path_copy(fresh.model_version, sizeof(fresh.model_version), req_model_version);
+            path_copy(fresh.model_binding_source, sizeof(fresh.model_binding_source), "explicit");
+            char now[32]; rfc3339_now_to(now, sizeof(now));
+            path_copy(fresh.created_at, sizeof(fresh.created_at), now);
+            path_copy(fresh.updated_at, sizeof(fresh.updated_at), now);
+            if (!conversation_binding_save(g, conv_id, &fresh))
+                return samosa_http_json_error(fd, 500, "binding_write_failed", "The conversation binding could not be saved.");
+        }
+    }
+    /* No active/ready model: fall through so proxy_request() gives the
+       clearer, pre-existing 409 model_required / 503 backend_loading. */
+    return proxy_request(g, fd, request);
 }
 
 /* ============================================================================
@@ -4904,15 +5170,17 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return samosa_http_json_error(fd, 404, "logo_missing", "The app logo is missing.");
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/healthz")) {
-        char body[768];
+        char body[768], version[128];
         pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
         int ready = backend_probe(g);
+        active_model_version(g, version, sizeof(version));
         snprintf(body, sizeof(body),
             "{\"gateway\":true,\"compiled\":true,\"backend\":\"%s\","
-            "\"label\":\"%s\",\"model\":\"%s\",\"supports_images\":%s,"
+            "\"label\":\"%s\",\"model\":\"%s\",\"model_version\":\"%s\","
+            "\"supports_images\":%s,"
             "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld,"
             "\"installed\":%s,\"backend_state\":\"%s\"}",
-            g->backend, backend_label(g->backend), backend_model(g->backend),
+            g->backend, backend_label(g->backend), backend_model(g->backend), version,
             backend_supports_images(g, g->backend) ? "true" : "false",
             ready ? "true" : "false", (!ready && pid > 0) ? "true" : "false",
             atomic_load(&g->generating) ? "true" : "false", (long)pid,
@@ -5024,9 +5292,12 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return jobs_launchd_status(g, fd);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/jobs/public-inputs/update"))
         return jobs_public_inputs_update(g, fd, request);
-    if (!strcmp(request->path, "/v1/chat/completions") ||
-        !strcmp(request->path, "/v1/models"))
+    if (!strcmp(request->path, "/v1/chat/completions"))
+        return chat_completions_request(g, fd, request);
+    if (!strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);
+    if (!strncmp(request->path, "/v1/conversations/", 18))
+        return conversations_dispatch(g, fd, request);
     if (!strncmp(request->path, "/v1/jobs/", 9))
         return samosa_http_json_error(fd, 503, "jobs_port_in_progress",
                                       "The compiled Jobs controller is not available yet.");

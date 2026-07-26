@@ -145,14 +145,17 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # generators (T0.1), the zero-model control-plane startup contract
 # (T1.1: the gateway binds and serves setup/health/diagnostics -- and Chat
 # fails closed with 409 model_required -- with no model installed anywhere),
-# profile/setup state (T1.2), and the safe browser directory chooser (T1.3).
-test-ui-setup: test-fake-download-server samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs
+# profile/setup state (T1.2), the safe browser directory chooser (T1.3), and
+# conversation schema v2 migration + gateway-enforced model binding (T1.4).
+test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
 	sh tests/test_profile_setup.sh
 	sh tests/test_fs_chooser.sh
 	node tests/test_chooser_ui.mjs
+	sh tests/test_conversation_binding.sh
+	node tests/test_conversation_migration_ui.mjs
 
 compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
