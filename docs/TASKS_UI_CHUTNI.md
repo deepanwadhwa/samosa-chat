@@ -14,6 +14,12 @@ work:
 3. Build **Chutni**, Samosa's durable, local memory for explicitly selected
    folders, drives, or readable user-document locations.
 
+Gigatoken is the pinned bulk-tokenization engine for Chutni. The audited
+upstream baseline is `marcelroed/gigatoken` v0.10.0 at commit
+`34a1599f0c0ae7d7cd0d1c530e6522320158b360`. That pin is a source and behavior
+reference, not permission to ship its Python package or enable its network
+loader. T0.5 defines the native, local-only integration and its adoption gates.
+
 An implementation agent should be able to work from this document without
 needing the conversation that produced it. Existing task documents may provide
 useful implementation history, but they do not define or override this
@@ -62,6 +68,26 @@ Chutni is an explicitly authorized, read-only memory scope. It can cover:
 - **This computer**, meaning a visible collection of readable user-document
   locations with safe exclusions—not an indiscriminate scan of `/`, system
   files, credentials, caches, or Samosa's own data.
+
+The ingestion path is:
+
+```text
+Authorized inventory
+        ↓
+Safe extraction/OCR with provenance
+        ↓
+Gigatoken: exact token IDs and counts in bounded batches
+        ↓
+Deterministic model-sized chunks
+        ├──→ publish raw chunks to SQLite FTS5 → searchable Chutni is Ready
+        └──→ bounded local-model prefill → cards and directory summaries
+```
+
+Gigatoken makes the `text → tokens` stage fast. It does not walk directories,
+extract PDFs, create a searchable index, run the model forward pass, or enlarge
+the model's context window. A large folder or drive is therefore never loaded
+into one prompt. Chutni preserves the complete searchable evidence outside the
+model and sends only bounded chunks through model prefill or retrieval.
 
 When a question has an explicit directory context:
 
@@ -124,6 +150,21 @@ Do not reopen these decisions during implementation without owner approval.
     and can reconnect after the browser is reopened.
 14. **Interactive work wins.** Chutni's model-summary work yields while the
     user is chatting or while the machine is under resource pressure.
+15. **Gigatoken is the bulk tokenizer, not the memory.** Chutni pins the
+    audited Gigatoken source, removes its Python and network runtime paths,
+    and uses a bundled native adapter for exact tokenization, chunk budgeting,
+    and eligible pretokenized Qwen ingestion. Inventory, extraction, SQLite,
+    freshness, retrieval, and citations remain Chutni responsibilities.
+16. **Finite, bounded model ingestion.** Gigatoken output is consumed under
+    explicit byte, token, context, memory, and cancellation bounds. Tokenizer
+    throughput and model-prefill throughput are reported separately. No UI or
+    documentation may imply that tokenization speed lets an entire drive fit
+    into the model context.
+17. **Pretokenized input is capability-gated.** A backend may accept
+    Gigatoken token IDs only after exact parity is proven for the immutable
+    tokenizer artifact and prompt template. A fingerprint mismatch, unsupported
+    backend, or failed gate uses the bounded text path; it never guesses that
+    token IDs are compatible.
 
 ---
 
@@ -142,6 +183,11 @@ replace them wholesale:
   metadata, hashing, type detection, and no-follow checks.
 - `src/read_cache.h`, `src/samosa_extract.c`, and `src/samosa_ocr.c` already
   provide content-addressed reading, document extraction, OCR, and provenance.
+- `src/tok.h` and `qwen36b tokenize --count` already provide the exact current
+  Qwen tokenizer and form the compatibility oracle for Gigatoken parity.
+- `src/qwen36b.c` already prefills from token arrays internally and has bounded
+  prefill cancellation. That path can be factored into a trusted
+  pretokenized-ingestion surface after the T0.5 parity and fingerprint gates.
 - `src/qwen36b.c` already has background-yield behavior that Chutni can reuse.
 
 The following are blockers, not optional cleanup:
@@ -166,6 +212,16 @@ The following are blockers, not optional cleanup:
 - Browser file inputs cannot reliably give the local gateway a stable absolute
   directory path. Browser mode therefore needs a safe, server-powered directory
   chooser plus a typed-path headless API.
+- Gigatoken upstream is a Python-first PyO3 package built with nightly Rust,
+  a process-global Rayon pool, a broad dependency graph, and optional
+  Hugging Face network loading. It has no stable C ABI, offset-map API,
+  cooperative cancellation callback, Chutni job protocol, or production
+  ingestion CLI. Samosa therefore needs a pinned, minimized, precompiled
+  adapter; the user must not need Python, Rust, Cargo, or Homebrew.
+- The existing `POST /v1/chat/prefill` route only counts tokens and returns a
+  placeholder status. It does not construct or retain model KV state. Chutni
+  cannot claim fast model ingestion until a real internal bounded
+  pretokenized-prefill path exists and passes the T4.4 acceptance gates.
 
 ---
 
@@ -260,6 +316,12 @@ Visible states are plain language:
 - Drive disconnected
 - Needs attention
 - Rebuilding
+
+Learning and Updating show the real subphase—Reading files, Extracting text,
+Tokenizing, Publishing memory, or Improving summaries—without turning those
+subphases into contradictory top-level states. Tokenizing means Gigatoken is
+forming exact model-ready tokens; it does not claim that model prefill or
+evidence publication is complete.
 
 Forgetting requires confirmation with this exact promise:
 
@@ -566,6 +628,14 @@ Catalog entries include:
       "source": "bundled"
     }
   ],
+  "tokenization": {
+    "tokenizer_artifact_name": "tokenizer.json",
+    "tokenizer_sha256": "hex",
+    "vocabulary_size": 0,
+    "prompt_template_sha256": "hex",
+    "gigatoken_profile": "qwen3_5",
+    "direct_token_ingestion_candidate": true
+  },
   "license": {
     "name": "license-name",
     "url": "https://license-source"
@@ -577,6 +647,16 @@ Catalog entries include:
       "required": true,
       "url": "https://approved-host/path",
       "install_path": "weights/file-name",
+      "file_mode": "0600",
+      "bytes": 0,
+      "sha256": "hex"
+    },
+    {
+      "name": "tokenizer.json",
+      "role": "tokenizer",
+      "required": true,
+      "url": "https://approved-host/path",
+      "install_path": "tokenizer/tokenizer.json",
       "file_mode": "0600",
       "bytes": 0,
       "sha256": "hex"
@@ -603,6 +683,14 @@ as a vision projector, must not be mistaken for the minimum text install.
 downloaded catalog data must not inject arbitrary executable paths or command
 arguments. `backend_kind` is a closed enum initially containing `qwen_native`
 and `llama_cpp`; unknown values are rejected.
+
+`tokenization` is required for a model that participates in exact Chutni
+budgeting. It names the locally verified tokenizer artifact and immutable
+template/vocabulary facts; it never contains a repository ID. The catalog may
+declare a direct-ingestion *candidate*, but installed status reports
+`direct_token_ingestion_state` as `unsupported`, `unverified`, `verified`, or
+`failed`. Only T0.5/T4.4 runtime proof can produce `verified`; catalog text
+alone cannot.
 
 Every v1 runtime dependency has `source:"bundled"` and is installed/upgraded by
 T1.0 on each supported target. The model manager downloads data artifacts only;
@@ -730,14 +818,18 @@ returns `202` with:
 
 Selection states are `queued`, `loading`, `ready`, and `failed`. Status also
 returns `model_id`, `model_version`, `package_manifest_sha256`, timestamps, and
-the shared error envelope when failed. `GET /v1/models/selections` returns the
-active nonterminal operation plus recent terminal operations. Duplicate select
-requests for the same exact model/version return the existing operation.
-Startup repairs `active_selection_operation_id` from this durable registry.
+the verified tokenizer SHA-256, prompt-template fingerprint,
+`direct_token_ingestion_state`, and the shared error envelope when failed.
+Those fingerprint fields are server evidence, not client assertions.
+`GET /v1/models/selections` returns the active nonterminal operation plus
+recent terminal operations. Duplicate select requests for the same exact
+model/version return the existing operation. Startup repairs
+`active_selection_operation_id` from this durable registry.
 
 The gateway persists the new active selection only after readiness succeeds.
 `/healthz` and selection status expose `backend_state`, `model_id`,
-`model_version`, `package_manifest_sha256`, and the trusted launch-profile ID.
+`model_version`, `package_manifest_sha256`, tokenizer/template fingerprints,
+direct-token-ingestion state, and the trusted launch-profile ID.
 For `llama_cpp`, readiness means the expected process is responsive and its
 verified package path/model alias match the requested package. Fingerprint or
 readiness failure restores the prior working backend.
@@ -940,8 +1032,20 @@ A scope summary includes:
   "regular_files_seen": 100,
   "files_indexed": 80,
   "files_skipped": 20,
+  "chunks_indexed": 420,
   "source_bytes_indexed": 1234,
   "extracted_text_bytes": 1000,
+  "tokenizer": {
+    "engine": "gigatoken",
+    "engine_version": "0.10.0",
+    "engine_commit": "34a1599f0c0ae7d7cd0d1c530e6522320158b360",
+    "tokenizer_sha256": "hex",
+    "chunker_fingerprint": "hex"
+  },
+  "enhancement_state": "improving",
+  "chunks_total": 420,
+  "chunks_summarized": 180,
+  "summary_tokens_pending": 96000,
   "index_bytes": 5678,
   "warnings": []
 }
@@ -952,6 +1056,10 @@ mandatory-excluded descendant names are not counted as seen files.
 `index_bytes` includes the active database, WAL/SHM, cards, and summaries but
 not the shared extraction cache. Warnings are objects with `code`, `message`,
 `root_id`, and an optional aggregate `count`; they are not free-form strings.
+`enhancement_state` is `not_started`, `pending_model`, `improving`, `complete`,
+`paused_chat`, or `failed`. Evidence can be Ready while enhancements remain
+incomplete. Tokenization progress and model-summary progress are never blended
+into one percentage or ETA.
 
 Scope states are:
 
@@ -996,6 +1104,18 @@ actions are idempotent. Forget requires:
 Event replay requires `job_id` and accepts `after=<seq>` or SSE
 `Last-Event-ID` under §5.7. Refresh targets the current evidence generation + 1;
 rebuild stages a complete replacement with the same target rule.
+
+Chutni job phases are:
+
+```text
+preflight | inventory | hashing | extracting | tokenizing |
+indexing | validating | publishing | summarizing | finalizing
+```
+
+`tokenizing` means normalized extracted text is being converted into exact
+model-token counts/IDs. It does not mean evidence is published or that the
+model has prefetched it. The scope becomes Ready only after `publishing`;
+`summarizing` may continue as a separate enhancement revision.
 
 Forget requires:
 
@@ -1077,6 +1197,12 @@ volume_disconnected
 index_busy
 index_corrupt
 model_required
+tokenization_failed
+tokenizer_asset_missing
+tokenizer_mismatch
+tokenizer_unsupported
+token_frame_invalid
+model_ingestion_unsupported
 unsupported_file
 insufficient_space
 job_not_found
@@ -1087,7 +1213,123 @@ scope_limit_exceeded
 changed_during_read
 ```
 
-### 5.6 Chutni storage
+### 5.6 Chutni ingestion and storage
+
+#### 5.6.1 Gigatoken adapter boundary
+
+Pin Gigatoken v0.10.0 at
+`34a1599f0c0ae7d7cd0d1c530e6522320158b360`. Record the upstream source URL,
+commit, unmodified MIT license, Samosa patch set, build toolchain, target, and
+complete transitive SBOM in release evidence. The pin changes only through a
+reviewed dependency update.
+
+Production Samosa ships a precompiled `samosa-gigatoken` child process built
+from a minimized, local-only Rust adapter. It must:
+
+- require no Python, NumPy, Awkward, Typer, Rust, Cargo, or nightly toolchain on
+  the user's machine;
+- remove or compile out Hugging Face Hub lookup, `ureq`/network access,
+  training, benchmarks, Parquet/Arrow, compression, and Python bindings unless
+  a measured required path proves otherwise;
+- load only a model-manager-verified local `tokenizer.json` whose real path,
+  length, and SHA-256 match the immutable model/catalog manifest;
+- receive already extracted and validated UTF-8 over private inherited pipes;
+  it never receives a Chutni root, recursively walks source paths, opens
+  arbitrary user files, or writes a shared Hugging Face cache;
+- run as a supervised, low-priority child with a fixed thread budget, bounded
+  input/output frames, bounded pretoken cache, and no inherited network
+  capability;
+- return machine-readable errors and deterministic results for identical
+  bytes, tokenizer fingerprint, special-token policy, and adapter build; and
+- check cancellation between bounded frames. The gateway may terminate and
+  restart a stuck child without losing the last published evidence generation.
+
+Use a versioned length-prefixed binary protocol rather than JSON arrays of
+millions of token IDs. Every request binds:
+
+```text
+protocol version
+request ID
+operation
+Gigatoken build commit
+model ID and immutable version
+tokenizer SHA-256 and vocabulary size
+prompt-template/special-token policy fingerprint
+source-content SHA-256
+document count, byte lengths, and total byte/token ceilings
+```
+
+The required operations are `health`, `encode_batch`, `encode_prompt`,
+`cancel`, and `shutdown`. `encode_batch` returns one flat little-endian `u32`
+token buffer plus per-document token lengths and always treats source text as
+untrusted evidence. `encode_prompt` accepts the gateway's typed trusted-template
+and untrusted-evidence segments and returns one complete bounded prompt token
+sequence. No production operation accepts a repository ID or URL. Start with a
+maximum 8 MiB input frame and lower it if the measured two-second cancellation,
+RSS, or Chat-admission gates require it. Never place a complete drive-sized
+token array in memory.
+
+There are two distinct consumers:
+
+1. **Evidence chunking.** The provenance-aware reader first produces bounded
+   page/section/paragraph spans with exact UTF-8 byte offsets. Gigatoken
+   tokenizes those spans in batches; the chunker combines complete spans up to
+   its target. Gigatoken v0.10.0 does not expose source offset maps, so it does
+   not own provenance boundaries. An oversized span is split at UTF-8-safe
+   candidate boundaries and re-counted until it fits. Arbitrary independently
+   encoded byte slabs must not be concatenated because BPE merges can cross a
+   slab boundary.
+2. **Bounded model ingestion.** The gateway constructs the complete logical
+   prompt as typed trusted-template and untrusted-evidence segments and calls
+   `encode_prompt` once. For the native Qwen backend, a private engine call may
+   pass those IDs directly into the existing bounded prefill/generation
+   machinery, eliminating a second `tok_encode` pass. The public browser API
+   never accepts raw token IDs. Other backends use the same exact Gigatoken
+   budgeting where compatible and otherwise receive bounded text through their
+   native tokenizer.
+
+Untrusted document text and trusted chat-template/control text are different
+protocol segment types. Document text cannot create role, image, end-of-turn,
+or other control tokens merely by containing their printed spelling. Only the
+gateway creates trusted control segments. Segment concatenation is allowed
+only across tokenizer-proven safe/special-token boundaries and is covered by
+full-prompt parity fixtures.
+
+Direct token-ID ingestion is enabled for one immutable backend package only
+when all of the following match the activated proof:
+
+```text
+model package manifest SHA-256
+tokenizer artifact SHA-256
+vocabulary size and special-token map
+prompt-template fingerprint
+Gigatoken commit and Samosa adapter patch fingerprint
+token-parity corpus version
+```
+
+The engine validates frame length, every token ID against the embedding
+vocabulary, cumulative context arithmetic, reserved output space, and the
+active memory-fit check before allocating or prefilling. Mismatch returns
+`tokenizer_mismatch` and uses the bounded text path; it never partially
+prefills or treats incompatible IDs as text.
+
+The canonical Chutni v1 chunk profile uses the verified Qwen3.6 tokenizer
+artifact and a versioned 600–800-token policy. Persist text, byte provenance,
+exact token counts, and fingerprints—not corpus-wide token-ID blobs. A
+different active model receives fresh exact prompt budgeting; if one stored
+chunk is too large under that tokenizer, it is deterministically subdivided
+for that request without changing its citation. Switching models does not
+silently reinterpret a count produced by another tokenizer.
+
+Gigatoken activation requires exact differential parity against `src/tok.h`
+for the shipped Qwen tokenizer over templates, control tokens, multilingual
+Unicode and normalization, code, whitespace, long documents, random data, and
+adversarial boundary cases. Family-name support or an upstream benchmark is
+not proof. If parity is incomplete, Samosa still uses Gigatoken only where the
+proven special-token-disabled evidence-counting profile is exact and retains
+`tok_encode` for model input.
+
+#### 5.6.2 Durable Chutni storage
 
 Use a vendored SQLite build with FTS5 compiled into a dependency-free C
 sidecar. The user must not need Homebrew, Python, or a system SQLite package at
@@ -1138,12 +1380,16 @@ the publication transaction; it never exposes a partial logical diff.
 
 Minimum logical tables:
 
-- `metadata`: schema, chunker, reader, OCR, summarizer, and prompt fingerprints;
+- `metadata`: schema, reader, OCR, canonical chunker, Gigatoken
+  commit/adapter, tokenizer artifact, summarizer, and prompt fingerprints;
+- `tokenizer_profiles`: immutable model/version, tokenizer SHA-256, vocabulary
+  size, special-token policy, prompt-template fingerprint, parity-corpus
+  version, and direct-ingestion capability;
 - `files`: relative path, stable file identity when available, size,
   nanosecond mtime, content hash, type, status, skip reason, generation;
 - `contents`: content hash and content-addressed extraction reference;
 - `chunks`: file ID, deterministic ordinal, page/section/offset provenance,
-  text, approximate token count, generation;
+  text, exact canonical token count, tokenizer/chunker fingerprint, generation;
 - `memory_cards`: short query-independent statements with source chunk IDs,
   generator model ID, and prompt version;
 - `directory_summaries`: relative directory, bounded summary, source IDs,
@@ -1154,6 +1400,12 @@ Minimum logical tables:
 Duplicate bytes at different paths remain separate `files` rows while sharing a
 `contents` record. Chutni must never discard a path merely because another file
 has the same hash.
+
+Token IDs are transient between the adapter and a bounded model call in v1.
+Persisting corpus-wide token blobs is forbidden until a later measured design
+defines their storage cost, invalidation, encryption/permissions, and garbage
+collection. Fast re-tokenization plus immutable counts is preferred to making
+the evidence database model-format-dependent.
 
 `evidence_generation` changes only when paths, file state, extracted chunks, or
 their freshness changes. Paths/chunks publish first. Later cards and summaries
@@ -1364,20 +1616,31 @@ The build pipeline is:
 4. Hash supported content that is not already reusable.
 5. Reuse extraction/OCR by full content hash and reader fingerprint.
 6. Extract text with source provenance.
-7. Split text deterministically into roughly 600–800-token chunks, respecting
-   page and paragraph boundaries where possible. Record the chunker
-   fingerprint.
-8. Insert paths and chunks into FTS5.
-9. Validate and atomically publish the evidence generation.
-10. Generate short, query-independent memory cards and bounded directory
-    summaries in low-priority local-model batches, publishing only
-    generation-matched enhancement revisions.
+7. Produce provenance-bearing page/section/paragraph spans and send only
+   bounded, valid UTF-8 batches to the pinned local Gigatoken adapter.
+8. Use exact Gigatoken counts to assemble deterministic canonical
+   600–800-token chunks, splitting oversized spans safely. Record the
+   Gigatoken, tokenizer, special-token policy, and chunker fingerprints.
+9. Insert paths, chunks, and exact canonical token counts into FTS5.
+10. Validate and atomically publish the evidence generation.
+11. Queue bounded, token-budgeted map jobs for short query-independent memory
+    cards, then bounded reduce jobs for directory summaries. Use the verified
+    direct Qwen token-ID path when eligible and the bounded text path
+    otherwise.
+12. Publish only generation-matched enhancement revisions.
 
 The lexical index becomes usable once paths and chunks are committed. Summary
 generation may continue as **Ready · improving summaries**. Folder evidence can
 therefore become Ready without a model; summaries remain pending until a model
 is available. Summary work must not make raw evidence unavailable or change
 the freshness generation.
+
+Gigatoken may finish tokenization far faster than Qwen can prefill or generate.
+The durable enhancement queue is therefore capped by source bytes and estimated
+input tokens, not just item count. It stores content/chunk references and
+fingerprints rather than unbounded token arrays. Map/reduce prompts never exceed
+the active context minus system, output, and memory-fit reserves; a context
+overflow deterministically subdivides the work instead of failing the scope.
 
 ### 6.3 Provenance
 
@@ -1471,7 +1734,9 @@ When Chat has an explicit directory context:
    **Answer from the previous memory**; the answer must then disclose the
    generation and stale state. That choice applies to one answer only.
 5. Search relative paths, filenames, chunks, cards, and directory summaries
-   with a bounded result and prompt-token budget.
+   with a bounded result and exact active-tokenizer prompt budget. Gigatoken
+   may perform this budgeting only under that model's verified tokenizer
+   profile; otherwise use the backend's authoritative tokenizer.
 6. Apply deterministic minimum-score/coverage rules, then ask the local model
    to judge whether the evidence addresses the question.
 7. If useful, answer with citations and a small **Used Chutni · checked now**
@@ -1517,15 +1782,18 @@ changes. A prompt-injection document is a required security fixture.
 ### 6.6 Resource behavior
 
 - V1 defaults to at most 512 queued inventory records, two concurrent hash/read
-  workers, one extractor/OCR child, one SQLite writer, and one summary request.
-  A measured release may lower these values; raising them requires new machine
-  evidence.
-- Inventory, hashing, extraction, OCR, indexing, and summarization all yield to
-  interactive Chat. Admission tests start a chat during every phase, not only
-  during model summaries.
+  workers, one extractor/OCR child, one supervised Gigatoken child, one SQLite
+  writer, and one summary request. The Gigatoken child defaults to at most two
+  background worker threads and bounded frames; a measured release may lower
+  these values. Raising them requires new machine evidence.
+- Inventory, hashing, extraction, OCR, tokenization, indexing, model prefill,
+  and summarization all yield to interactive Chat. Admission tests start a chat
+  during every phase, not only during model summaries.
 - Cooperative scan/hash/SQLite cancellation is observed within two seconds.
-  An extractor/OCR child receives a stop request, then is forcibly terminated
-  if it has not exited within ten seconds. Source files remain untouched.
+  Gigatoken observes cancellation between frames within two seconds. An
+  extractor/OCR/Gigatoken child receives a stop request, then is forcibly
+  terminated if it has not exited within ten seconds. Source files remain
+  untouched.
 - Only one writer operates on a scope. Queries may continue against the last
   complete generation.
 - Summary inference uses background admission and pauses while interactive
@@ -1533,8 +1801,9 @@ changes. A prompt-injection document is a required security fixture.
 - Memory-pressure and thermal signals can pause background work with an honest
   reason; they do not silently mark the job complete.
 - Network access is forbidden during inventory, extraction, indexing,
-  summarization, refresh, and query. Only an explicit model download or
-  explicit web action may access the network.
+  tokenization, model ingestion, summarization, refresh, and query. The
+  Gigatoken build must have no reachable Hub/network loader. Only an explicit
+  model download or explicit web action may access the network.
 - Before publication, available space must cover the active index retained for
   rollback, estimated staging DB/WAL, estimated new extraction data, and a
   2 GiB reserve. Crossing the reserve during work pauses with
@@ -1557,7 +1826,9 @@ T0.1 + T0.4
     → T2.2/T2.3 → T1.4
     → T3.1 → T2.4 → T3.2
 
-T0.2 + T0.3 + T0.4
+T0.1 → T0.5
+
+T0.2 + T0.3 + T0.4 + T0.5
     → T4.1/T4.2 → T4.3 → T4.4/T4.5
     → T5.* → T6.*
 
@@ -1566,7 +1837,8 @@ T4.5.
 ```
 
 The Chutni-specific T0.2/T0.3 work does not block profile, design-system, or
-model-manager work.
+model-manager work. T0.5 can proceed against frozen tokenizer fixtures while
+the rest of the browser control plane is built.
 
 ### Phase 0 — correctness and test foundations
 
@@ -1655,6 +1927,56 @@ model-manager work.
 - Killing the gateway mid-operation leaves the prior active model/index valid.
 - Restart resumes from a safe checkpoint or reports a recoverable failure.
 - Repeated pause/resume/cancel calls are idempotent.
+
+#### T0.5 — Pin, minimize, and prove the Gigatoken adapter
+
+**Work**
+
+- Vendor or reproducibly fetch Gigatoken v0.10.0 at commit
+  `34a1599f0c0ae7d7cd0d1c530e6522320158b360`; preserve its MIT license and
+  record every Samosa patch.
+- Create a small `samosa-gigatoken` Rust binary around only local
+  `tokenizer.json` loading plus bounded `encode_batch`/`encode_prompt`. Compile
+  out the Python, Hub/network, training, benchmark, Parquet/Arrow, and
+  compressed-file paths.
+- Pin the build toolchain and lockfile, produce a transitive license/SBOM
+  report, and bundle reproducibly checksummed target binaries so users need no
+  language runtime or build tools.
+- Implement the private versioned framed protocol in §5.6.1 with input/output
+  ceilings, child supervision, low-priority fixed threads, timeouts,
+  cancellation, restart, and structured errors.
+- Add exact differential tests against `src/tok.h` and the shipped
+  `tokenizer_qwen36.json`. Cover ordinary prose, all trusted control tokens,
+  special-token-disabled document text, Qwen chat templates, NFC and
+  decomposed Unicode, multilingual/CJK/emoji, code, whitespace, empty and long
+  documents, random UTF-8, and adversarial split boundaries.
+- Fuzz tokenizer loading and framed input. Reject malformed length fields,
+  invalid UTF-8 where text is required, output-size overflow, unknown
+  operations, wrong hashes, and token IDs outside the declared vocabulary.
+- Benchmark separately: current `tok_encode`, raw Gigatoken, adapter including
+  IPC, direct token-ID handoff, Qwen prefill, and complete extraction-to-index
+  and extraction-to-summary paths. Label upstream figures as upstream
+  tokenization results, never Samosa ingestion measurements.
+
+**Acceptance**
+
+- The adapter produces exactly the same token ID sequence as `tok_encode` for
+  every frozen Qwen fixture and repeated serial/parallel runs.
+- A one-byte tokenizer artifact or prompt-template change prevents direct-ID
+  activation with `tokenizer_mismatch`.
+- A clean supported machine runs the bundled adapter without Python, Rust,
+  Cargo, Homebrew, or a network connection.
+- A network-deny test plus binary/dependency inspection proves that the
+  production adapter cannot invoke the upstream Hub loader.
+- Peak child RSS, cache growth, IPC throughput, cancellation latency, and
+  interactive-chat admission pass §6.6 and are recorded on the reference
+  machine.
+- Adapter-plus-IPC tokenization materially beats current `tok_encode` on the
+  frozen large Qwen corpus. If it does not, Gigatoken remains available for
+  measured batch workloads but the authoritative text path stays the release
+  default; no unmeasured speed claim appears in the UI.
+- Tokenizer and model-prefill throughput are reported as separate metrics, and
+  end-to-end evidence makes clear which stage dominates.
 
 ### Phase 1 — model-free browser shell and durable setup
 
@@ -1934,6 +2256,10 @@ control plane; it does not define zero-model gateway behavior.
 - Connect all state to server truth and replayed events only after T4.5.
 - Show counts, coverage, timestamps, exclusions, skips, memory size, and
   current phase without fake precision.
+- Label extraction, tokenization, evidence publication, and model-summary
+  improvement separately. Show exact completed/total units only when known;
+  never blend fast Gigatoken progress with slower model-prefill progress or
+  publish a speculative ETA.
 
 **Acceptance**
 
@@ -1941,6 +2267,9 @@ control plane; it does not define zero-model gateway behavior.
 - Every error state has a safe next action.
 - Forget confirmation states that user files are unchanged.
 - Unknown totals render indeterminate progress.
+- The scope can display **Ready · improving summaries** while independently
+  showing `chunks_summarized / chunks_total`; it never calls tokenized but
+  unpublished evidence Ready.
 
 #### T3.4 — Responsive and accessibility gate
 
@@ -2007,8 +2336,16 @@ control plane; it does not define zero-model gateway behavior.
 **Work**
 
 - Reuse content-addressed extraction and OCR.
-- Add deterministic, versioned chunking and provenance.
+- Produce bounded provenance-aware structural spans before tokenization.
+- Send validated extracted UTF-8 through the T0.5 Gigatoken adapter in bounded
+  batches with content hashes, special tokens disabled, cancellation, and
+  token/byte backpressure.
+- Add deterministic, versioned exact-token chunking and provenance. Combine
+  structural spans to the canonical 600–800-token target and safely subdivide
+  an oversized span without inventing source offsets.
 - Store supported content and explicit failure/skip state.
+- Store exact canonical token counts and the complete Gigatoken/tokenizer/
+  chunker fingerprint; keep token IDs transient.
 - Deduplicate extraction by hash without deduplicating paths.
 
 **Acceptance**
@@ -2017,6 +2354,14 @@ control plane; it does not define zero-model gateway behavior.
 - Rebuilding unchanged content does not repeat OCR/extraction.
 - PDF citations use real page numbers.
 - Unsupported or failed files cannot silently appear indexed.
+- Frozen chunks have exact `tok_encode`-matching counts, deterministic byte
+  boundaries, and identical IDs across adapter restarts and thread counts.
+- A literal Qwen control-token spelling inside an indexed document remains
+  untrusted document text; it cannot become a trusted prompt control segment.
+- Gigatoken never opens the source file, follows a symlink, accesses the
+  network, or receives bytes that failed the reader's UTF-8 contract.
+- Canceling during a maximum-size tokenization frame stops within the §6.6
+  bound and publishes no partial chunk set.
 - Mutation during inventory, hash, and extraction either stabilizes within the
   retry contract or yields `changed_during_read` and partial freshness.
 - Every citation resolves after restart to the exact stored excerpt, content
@@ -2027,16 +2372,40 @@ control plane; it does not define zero-model gateway behavior.
 **Work**
 
 - Index paths and chunks with FTS5/BM25.
-- Add bounded, query-independent memory cards and directory summaries.
+- Replace or rename the placeholder `/v1/chat/prefill` behavior so no route
+  claims cached model state after merely counting tokens.
+- Add a private, gateway-only native-Qwen request path that accepts one fully
+  fingerprinted bounded token sequence, validates every ID/context/memory
+  bound, and runs real cancellable prefill plus generation. Browser requests
+  cannot select this path or provide IDs.
+- Add token-budgeted map jobs for query-independent memory cards and
+  hierarchical reduce jobs for directory summaries. Durable queues hold source
+  references and budgets rather than unbounded token arrays.
 - Attach every generated statement to source chunk IDs and generator
   fingerprints.
-- Pause summarization while interactive chat runs.
+- Pause tokenization, background prefill, and summarization while interactive
+  Chat runs.
 
 **Acceptance**
 
 - Frozen relevant queries retrieve expected source chunks in the top bounded
   result set.
 - Frozen irrelevant queries pass the no-usefulness gate.
+- For the verified Qwen package, text-tokenized and Gigatoken-pretokenized
+  versions of each frozen prompt have identical IDs, prefill state, greedy
+  output, usage counts, citations, and cancellation behavior.
+- A mismatched model, tokenizer, template, adapter, or vocabulary fingerprint
+  is rejected before prefill and safely uses the bounded authoritative text
+  path. It never partially ingests the supplied IDs.
+- Token IDs outside the active embedding vocabulary, malformed frames, context
+  overflow, memory-fit failure, and document-created control tokens are
+  rejected deterministically.
+- Gigatoken can run ahead only to the configured token/byte queue ceiling;
+  model prefill backpressure cannot exhaust memory or create a false progress
+  percentage.
+- One oversized directory is summarized through deterministic bounded
+  map/reduce levels; no model request exceeds its fitted context and every
+  final statement expands to current raw source chunks.
 - Deleting summaries still leaves raw chunk retrieval functional.
 - No card or summary exists without resolvable source evidence.
 - A source change/delete invalidates its cards/summaries in the same evidence
@@ -2055,7 +2424,8 @@ control plane; it does not define zero-model gateway behavior.
 **Acceptance**
 
 - Inject SIGKILL, ENOSPC, EIO, permission loss, and volume detach at inventory
-  checkpoint, source hash, cache temp write/rename, staging DB write, SQLite
+  checkpoint, source hash, cache temp write/rename, Gigatoken request/response,
+  tokenization checkpoint, model-prefill boundary, staging DB write, SQLite
   commit, DB fsync, active publication, event append, state snapshot, registry
   update, and forget tombstone boundaries.
 - Every injected failure proves: source bytes unchanged; no partial generation
@@ -2080,7 +2450,11 @@ control plane; it does not define zero-model gateway behavior.
 - Add manual deep verification and exceptional rebuild paths.
 - Apply the fingerprint matrix: schema may migrate/rebuild; extractor/OCR
   reprocesses affected contents; chunker rechunks/reindexes; policy purges newly
-  excluded evidence; summarizer model/prompt regenerates derived rows only.
+  excluded evidence; canonical tokenizer artifact or Gigatoken/chunker behavior
+  rechunks/reindexes; adapter implementation changes with proven identical
+  output update metadata without changing chunks; active-model-only tokenizer
+  changes invalidate that model's prompt-budget/direct-ingestion proof but not
+  canonical evidence; summarizer model/prompt regenerates derived rows only.
 
 **Acceptance**
 
@@ -2099,7 +2473,9 @@ control plane; it does not define zero-model gateway behavior.
 
 - Resolve the most-specific containing scope.
 - Filter search to the explicit contextual subtree.
-- Enforce result-count and prompt-token budgets.
+- Enforce result-count and exact active-tokenizer prompt budgets, using the
+  authoritative backend tokenizer whenever no verified Gigatoken profile
+  exists.
 - Combine deterministic score/coverage checks with local-model relevance
   judgment.
 - Return citations and a structured reason when Chutni is not used.
@@ -2194,8 +2570,12 @@ control plane; it does not define zero-model gateway behavior.
 
 - Add synthetic manifest/index tests and real filesystem tests at increasing
   scale.
-- Measure inventory memory, refresh I/O, database growth, query latency,
-  cancellation latency, model pause behavior, thermal state, and restart time.
+- Measure inventory memory, refresh I/O, extraction throughput, current
+  tokenizer throughput, raw Gigatoken throughput, adapter+IPC throughput,
+  model-prefill throughput, summary-generation throughput, database growth,
+  query latency, cancellation latency, model pause behavior, thermal state,
+  and restart time. Never combine tokenization and prefill into one throughput
+  number.
 - Add quotas and actionable capacity errors from measured results.
 
 **Acceptance gates**
@@ -2205,15 +2585,23 @@ control plane; it does not define zero-model gateway behavior.
   `scope_limit_exceeded`.
 - A synthetic 1,000,000-file/5,000,000-chunk database indexes and queries with
   peak additional gateway+Chutni RSS at or below 384 MiB, excluding the model
-  backend and bounded extractor child.
+  backend and bounded extractor child but including the supervised Gigatoken
+  child and its caches.
 - A real 100,000-file tree inventories within the same queue/RSS bound.
 - An unchanged 1,000,000-record refresh performs zero content bytes hashed,
   zero extraction/OCR, and zero model calls.
 - On the 16 GB Apple-silicon reference machine, warm top-20 query latency is
   p95 ≤ 500 ms and p99 ≤ 2 s; record cold latency separately.
 - Cooperative background work yields/admission-pauses within two seconds of an
-  interactive Chat request during inventory, hashing, extraction, OCR, SQLite
-  work, and summarization.
+  interactive Chat request during inventory, hashing, extraction, OCR,
+  Gigatoken tokenization, SQLite work, Qwen prefill, and summarization.
+- A frozen large extracted-text corpus records raw and end-to-end tokenizer
+  MB/s, tokens/s, peak RSS, and exact parity on the 16 GB Apple-silicon
+  reference machine. Release notes quote only those Samosa measurements and
+  identify the hardware, corpus, tokenizer, thread count, and warm/cold state.
+- A frozen card/summary workload records model prefill and generation
+  separately and demonstrates bounded queue backpressure. Gigatoken speed
+  alone is never used to claim end-to-end Chutni speed.
 - Progress is persisted at no more than ten events/second; a compacted job
   replays in ≤5 seconds and no single progress log exceeds 50 MiB.
 - Query does not scan JSONL or every chunk.
@@ -2246,12 +2634,18 @@ control plane; it does not define zero-model gateway behavior.
 
 - Test path containment, symlink races, special files, UI token/Origin checks,
   JSON/HTML injection, oversized inputs, malicious archive/document fixtures,
-  indexed prompt injection, log redaction, and network isolation.
+  indexed prompt injection, untrusted text that spells model control tokens,
+  malformed Gigatoken frames/token IDs, tokenizer fingerprint substitution,
+  child-process limits, log redaction, and network isolation.
+- Audit the minimized Gigatoken dependency graph and ship its MIT license,
+  attribution, pinned source/patch record, lockfile, and transitive SBOM.
 - Document effective Chutni exclusions and limitations in user-facing help.
 
 **Acceptance**
 
 - Chutni generates no network traffic.
+- The production Gigatoken adapter contains no reachable Hub/repository loader
+  and cannot read Hugging Face credentials or write a shared Hub cache.
 - Source files are byte-identical before and after every test.
 - UI names, paths, errors, summaries, and citations cannot inject markup.
 - Indexed instructions cannot authorize a tool, network call, wider scan, or
@@ -2271,6 +2665,12 @@ The program is complete only when:
   tests;
 - one folder Chutni completes, reconnects, refreshes a change, retrieves useful
   evidence, and cites it;
+- the packaged pinned Gigatoken adapter passes exact tokenizer parity,
+  offline/local-only, cancellation, resource, license/SBOM, and target-platform
+  gates;
+- one supported native Qwen package proves real direct token-ID prefill, while
+  one unsupported or deliberately mismatched package proves the safe bounded
+  text fallback;
 - irrelevant Chutni evidence is demonstrably withheld;
 - browser reload and gateway restart preserve all durable operations;
 - current Chat and Jobs regression suites remain green;
@@ -2289,6 +2689,7 @@ These tracks can run in parallel after Phase 0 contracts are frozen:
 |---|---|---|
 | Control plane | T0.4, T1.1–T1.2 | Model manager, frontend |
 | Runtime packaging | T1.0 | Control plane, model manager |
+| Bulk tokenization | T0.5, T4.3–T4.4 | Runtime packaging, Qwen engine, Chutni core |
 | Frontend | T1.2–T1.4, T2.4, T3.* | Every API owner |
 | Model manager | T2.1–T2.3 | Installer/packaging, frontend |
 | Chutni core | T0.2–T0.3, T4.*, T5.* | Reader/OCR, frontend |
@@ -2343,15 +2744,25 @@ explicit release gates, not hidden dependencies of every unit-test run.
 - Secret-content classification guarantees. V1 uses conservative path/type
   exclusions and must state their limits honestly.
 - Silently indexing the whole computer.
+- Treating Gigatoken as a filesystem crawler, parser/OCR system, persistent
+  memory, search index, retriever, model runtime, or context-window extension.
+- Loading an entire folder/drive into one model context or retaining an
+  unbounded model KV cache for it. Large ingestion remains bounded map/reduce
+  plus retrieval.
+- Shipping Gigatoken's Python wheel, requiring a runtime Rust/Python toolchain,
+  or allowing its Hugging Face Hub loader during Chutni work.
+- Persisting corpus-wide model token arrays in v1.
 
 ---
 
 ## 11. Planning estimate
 
 For one experienced engineer working mostly serially, the current planning
-range is **7–12 focused engineering weeks**:
+range is **8–14 focused engineering weeks**:
 
 - browser shell, UI, profile, and model manager: 2–3 weeks;
+- pinned/minimized Gigatoken adapter, parity, packaging, and safe native-Qwen
+  token-ID handoff: 1–2 weeks;
 - folder Chutni, retrieval, and freshness integration: 3–5 weeks;
 - drive/This-computer hardening, migration, and measured release gates:
   2–4 weeks.

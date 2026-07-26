@@ -1,0 +1,13 @@
+{
+  "conversation_id": "stable-id",
+  "turn_id": "new-idempotency-id",
+  "model_id": "expected-id",
+  "model_version": "expected-immutable-version",
+  "directory_context": {
+    "scope_id": "optional-id",
+    "root_id": "selected-root-id",
+    "relative_directory": "contracts/2026"
+  },
+  "attachment_ids": ["server-attachment-id"],
+  "messages": []
+}

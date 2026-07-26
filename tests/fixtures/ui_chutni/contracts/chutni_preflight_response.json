@@ -1,0 +1,32 @@
+{
+  "preflight_id": "random-id",
+  "expires_at": "ISO-8601",
+  "kind": "folder",
+  "roots": [
+    {
+      "root_id": "random-id",
+      "path": "/canonical/absolute/path",
+      "volume_identity": "opaque-platform-value",
+      "root_file_identity": "opaque-platform-value",
+      "readable": true,
+      "connected": true
+    }
+  ],
+  "effective_policy": {
+    "policy_fingerprint": "sha256",
+    "cross_filesystems": false,
+    "include_hidden": false,
+    "maximum_file_bytes": 268435456,
+    "mandatory_exclusions": [],
+    "user_exclusions": []
+  },
+  "estimate": {
+    "sampled": true,
+    "files": 100,
+    "source_bytes": 1234,
+    "peak_additional_disk_bytes": 5678,
+    "available_disk_bytes": 9999,
+    "confidence": "low"
+  },
+  "warnings": []
+}

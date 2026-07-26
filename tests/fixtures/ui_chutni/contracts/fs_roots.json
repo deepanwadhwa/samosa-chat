@@ -1,0 +1,13 @@
+{
+  "roots": [
+    {
+      "chooser_root_id": "stable-for-this-gateway-start",
+      "label": "Home",
+      "path": "/Users/example",
+      "kind": "home",
+      "volume_identity": "platform-stable-opaque-value",
+      "readable": true,
+      "connected": true
+    }
+  ]
+}

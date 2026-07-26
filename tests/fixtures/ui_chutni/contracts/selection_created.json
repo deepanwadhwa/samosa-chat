@@ -1,0 +1,5 @@
+{
+  "operation_id": "random-id",
+  "state": "loading",
+  "status_url": "/v1/models/selections/random-id"
+}

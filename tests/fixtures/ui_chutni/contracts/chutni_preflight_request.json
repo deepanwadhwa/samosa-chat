@@ -1,0 +1,13 @@
+{
+  "client_request_id": "caller-random-id",
+  "kind": "folder",
+  "roots": [
+    { "path": "/user-selected/absolute/path" }
+  ],
+  "policy": {
+    "cross_filesystems": false,
+    "include_hidden": false,
+    "maximum_file_bytes": 268435456,
+    "exclusions": []
+  }
+}

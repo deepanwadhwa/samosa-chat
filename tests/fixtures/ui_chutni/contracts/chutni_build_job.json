@@ -1,0 +1,10 @@
+{
+  "job_id": "random-id",
+  "scope_id": "scope-id",
+  "kind": "build",
+  "state": "queued",
+  "phase": "inventory",
+  "evidence_generation_target": 1,
+  "status_url": "/v1/chutni/scopes/scope-id",
+  "events_url": "/v1/chutni/scopes/scope-id/events?job_id=random-id"
+}

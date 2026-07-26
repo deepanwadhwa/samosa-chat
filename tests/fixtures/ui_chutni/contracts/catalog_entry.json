@@ -1,0 +1,63 @@
+{
+  "id": "stable-model-id",
+  "version": "immutable-version",
+  "preferred_for_backend": true,
+  "label": "Human name",
+  "description": "Factual one-sentence description.",
+  "capabilities": ["text", "image"],
+  "backend_kind": "qwen_native",
+  "supported_platforms": [
+    { "os": "macos", "architecture": "arm64" }
+  ],
+  "required_runtime_abi": "samosa-model-runtime-v1",
+  "minimum_ram_bytes": 0,
+  "download_bytes": 0,
+  "installed_bytes": 0,
+  "required_free_bytes": 0,
+  "launch_profile_id": "compiled-trusted-profile",
+  "runtime_dependencies": [
+    {
+      "package_id": "qwen36b-runtime",
+      "version": "immutable-version",
+      "source": "bundled"
+    }
+  ],
+  "tokenization": {
+    "tokenizer_artifact_name": "tokenizer.json",
+    "tokenizer_sha256": "hex",
+    "vocabulary_size": 0,
+    "prompt_template_sha256": "hex",
+    "gigatoken_profile": "qwen3_5",
+    "direct_token_ingestion_candidate": true
+  },
+  "license": {
+    "name": "license-name",
+    "url": "https://license-source"
+  },
+  "artifacts": [
+    {
+      "name": "file-name",
+      "role": "weights",
+      "required": true,
+      "url": "https://approved-host/path",
+      "install_path": "weights/file-name",
+      "file_mode": "0600",
+      "bytes": 0,
+      "sha256": "hex"
+    },
+    {
+      "name": "tokenizer.json",
+      "role": "tokenizer",
+      "required": true,
+      "url": "https://approved-host/path",
+      "install_path": "tokenizer/tokenizer.json",
+      "file_mode": "0600",
+      "bytes": 0,
+      "sha256": "hex"
+    }
+  ],
+  "compatible": true,
+  "compatibility_reason": null,
+  "install_state": "not_installed",
+  "active": false
+}

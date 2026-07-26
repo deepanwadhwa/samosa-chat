@@ -1,0 +1,12 @@
+{
+  "profile_complete": true,
+  "installed_model_count": 1,
+  "active_model_id": "qwen",
+  "active_model_version": "immutable-version",
+  "active_model_ready": true,
+  "selected_model_id": "qwen",
+  "selected_model_version": "immutable-version",
+  "active_install_job_id": null,
+  "active_selection_operation_id": null,
+  "next_step": "chat"
+}

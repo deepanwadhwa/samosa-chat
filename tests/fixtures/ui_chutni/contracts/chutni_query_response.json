@@ -1,0 +1,34 @@
+{
+  "scope_id": "id",
+  "root_id": "id",
+  "relative_directory": "contracts/2026",
+  "evidence_generation": 7,
+  "enhancement_revision": 3,
+  "checked_at": "ISO-8601",
+  "freshness_state": "complete",
+  "used": true,
+  "reason_code": "useful_evidence",
+  "results": [
+    {
+      "chunk_id": "deterministic-id",
+      "rank": 1,
+      "citation": {
+        "citation_id": "deterministic-id",
+        "scope_id": "id",
+        "root_id": "id",
+        "evidence_generation": 7,
+        "file_id": "id",
+        "content_sha256": "hex",
+        "relative_path": "renewal.pdf",
+        "relative_path_bytes_base64": null,
+        "page": 2,
+        "section": null,
+        "offset_unit": "utf8_bytes",
+        "start_offset": 120,
+        "end_offset": 380,
+        "excerpt_sha256": "hex"
+      },
+      "text": "bounded source excerpt"
+    }
+  ]
+}

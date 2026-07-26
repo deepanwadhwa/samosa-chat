@@ -1,0 +1,8 @@
+{
+  "job_id": "random-id",
+  "model_id": "stable-model-id",
+  "version": "immutable-version",
+  "state": "queued",
+  "status_url": "/v1/models/installs/random-id",
+  "events_url": "/v1/models/installs/random-id/events"
+}

@@ -1,0 +1,41 @@
+{
+  "id": "random-stable-id",
+  "schema_version": 1,
+  "kind": "folder",
+  "roots": [
+    {
+      "root_id": "random-id",
+      "path": "/canonical/absolute/path",
+      "volume_identity": "opaque-platform-value",
+      "root_file_identity": "opaque-platform-value",
+      "state": "connected"
+    }
+  ],
+  "display_name": "Research",
+  "state": "ready",
+  "freshness_state": "complete",
+  "evidence_generation": 7,
+  "enhancement_revision": 3,
+  "current_job_id": null,
+  "last_successful_build_at": "ISO-8601",
+  "last_successful_check_at": "ISO-8601",
+  "regular_files_seen": 100,
+  "files_indexed": 80,
+  "files_skipped": 20,
+  "chunks_indexed": 420,
+  "source_bytes_indexed": 1234,
+  "extracted_text_bytes": 1000,
+  "tokenizer": {
+    "engine": "gigatoken",
+    "engine_version": "0.10.0",
+    "engine_commit": "34a1599f0c0ae7d7cd0d1c530e6522320158b360",
+    "tokenizer_sha256": "hex",
+    "chunker_fingerprint": "hex"
+  },
+  "enhancement_state": "improving",
+  "chunks_total": 420,
+  "chunks_summarized": 180,
+  "summary_tokens_pending": 96000,
+  "index_bytes": 5678,
+  "warnings": []
+}

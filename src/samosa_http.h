@@ -25,6 +25,7 @@ typedef struct {
     char *body;
     size_t body_len;
     int is_background;
+    char range[128]; /* raw `Range:` header value, empty if absent */
 } SamosaHttpRequest;
 
 struct SamosaHttpServer;
@@ -156,6 +157,11 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             if (!strncasecmp(value,"background",10)) {
                 request->is_background = 1;
             }
+        } else if (!strncasecmp(cursor,"Range:",6)) {
+            char *value=cursor+6; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->range)) n=sizeof(request->range)-1;
+            memcpy(request->range,value,n); request->range[n]=0;
         } else if (!strncasecmp(cursor,"Transfer-Encoding:",18) &&
                    strcasestr(cursor+18,"chunked")) {
             free(buffer); return 0;

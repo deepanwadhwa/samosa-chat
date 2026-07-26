@@ -113,6 +113,26 @@ test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o $(BUILD_DIR)/test_fake_openai_backend
 
+# fake_model_download_server: deterministic stand-in for the trusted model
+# catalog's artifact host (docs/TASKS_UI_CHUTNI.md T0.1/T2.2). Ordinary tests
+# must never fetch a real multi-gigabyte model artifact.
+fake_model_download_server: tests/fake_model_download_server.c src/samosa_http.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/fake_model_download_server.c -o $(BUILD_DIR)/fake_model_download_server
+
+test-fake-download-server: fake_model_download_server tests/test_fake_model_download_server.sh
+	sh tests/test_fake_model_download_server.sh
+
+# test-ui-setup: T0.1 gate for docs/TASKS_UI_CHUTNI.md (Phase 0 contract
+# freeze). Validates the frozen v1 JSON contract fixtures, the shared Chutni
+# fixture generators, the fake model-download server, and today's zero-model
+# startup baseline that Phase 1 (T1.1) will intentionally replace.
+test-ui-setup: test-fake-download-server samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_baseline_zero_model_startup.sh
+	sh tests/test_chutni_folder_fixture.sh
+	python3 tests/test_ui_chutni_contracts.py
+	sh tests/test_baseline_zero_model_startup.sh
+
 compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \

@@ -1,0 +1,12 @@
+{
+  "scope_id": "id",
+  "root_id": "id",
+  "relative_directory": "contracts/2026",
+  "evidence_generation": 7,
+  "enhancement_revision": 3,
+  "checked_at": "ISO-8601",
+  "freshness_state": "complete",
+  "used": false,
+  "reason_code": "not_relevant",
+  "results": []
+}

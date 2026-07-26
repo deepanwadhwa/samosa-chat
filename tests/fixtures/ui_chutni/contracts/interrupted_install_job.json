@@ -1,0 +1,16 @@
+{
+  "job_id": "f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4",
+  "model_id": "qwen",
+  "version": "immutable-version",
+  "state": "paused",
+  "completed_bytes": 2048,
+  "total_bytes": 8192,
+  "current_artifact": "weights",
+  "current_artifact_completed_bytes": 2048,
+  "current_artifact_total_bytes": 8192,
+  "retained_partial_bytes": 2048,
+  "partial_expires_at": "2026-08-01T12:00:00Z",
+  "error": null,
+  "created_at": "2026-07-25T12:00:00Z",
+  "updated_at": "2026-07-25T12:05:00Z"
+}

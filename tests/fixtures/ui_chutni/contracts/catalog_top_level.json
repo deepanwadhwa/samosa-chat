@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "catalog_revision": "immutable-release-revision",
+  "runtime_abi": "samosa-model-runtime-v1",
+  "models": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "stable-id",
+  "schema_version": 2,
+  "model_id": "qwen",
+  "model_version": "immutable-catalog-version",
+  "model_binding_source": "explicit",
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601",
+  "directory_context": null,
+  "messages": []
+}

@@ -1,0 +1,16 @@
+{
+  "job_id": "random-id",
+  "model_id": "stable-model-id",
+  "version": "immutable-version",
+  "state": "downloading",
+  "completed_bytes": 123,
+  "total_bytes": 456,
+  "current_artifact": "weights",
+  "current_artifact_completed_bytes": 123,
+  "current_artifact_total_bytes": 456,
+  "retained_partial_bytes": 0,
+  "partial_expires_at": null,
+  "error": null,
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601"
+}

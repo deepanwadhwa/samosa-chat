@@ -1,0 +1,12 @@
+{
+  "path": "/Users/example/Documents",
+  "chooser_root_id": "id",
+  "parent": "/Users/example",
+  "directories": [
+    {
+      "name": "Research",
+      "path": "/Users/example/Documents/Research",
+      "readable": true
+    }
+  ]
+}

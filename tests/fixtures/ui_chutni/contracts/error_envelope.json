@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "stable_machine_code",
+    "message": "Safe user-facing sentence.",
+    "retryable": false,
+    "details": {}
+  }
+}

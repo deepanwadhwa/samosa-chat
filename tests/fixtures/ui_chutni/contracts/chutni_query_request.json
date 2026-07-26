@@ -1,0 +1,11 @@
+{
+  "query": "Which report mentions the renewal date?",
+  "directory_context": {
+    "scope_id": "optional-explicit-id",
+    "root_id": "root-id",
+    "relative_directory": "contracts/2026"
+  },
+  "freshness": "require_current",
+  "maximum_results": 20,
+  "maximum_context_tokens": 4096
+}

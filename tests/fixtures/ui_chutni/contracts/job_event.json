@@ -1,0 +1,13 @@
+{
+  "seq": 42,
+  "time": "ISO-8601",
+  "job_id": "stable-id",
+  "kind": "chutni_build",
+  "state": "running",
+  "phase": "extracting",
+  "completed": 120,
+  "total": 300,
+  "unit": "files",
+  "current_item": "relative/path.pdf",
+  "message": "Reading documents"
+}
