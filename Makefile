@@ -85,6 +85,16 @@ read-cache-test: tests/test_read_cache.c src/read_cache.h src/json.h
 	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -pthread tests/test_read_cache.c -o $(BUILD_DIR)/test_read_cache
 	$(BUILD_DIR)/test_read_cache
 
+# durable-job-test: T0.4 (docs/TASKS_UI_CHUTNI.md) offline gate for the
+# generalized durable background-operation primitive (path-jailed job dirs,
+# atomic state, §5.7-shaped sequenced events, and verifiable-identity
+# one-writer locks) that T2.2 model downloads and T4.x Chutni builds will
+# both build on.
+durable-job-test: tests/test_durable_job.c src/durable_job.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 tests/test_durable_job.c -o $(BUILD_DIR)/test_durable_job
+	$(BUILD_DIR)/test_durable_job
+
 # doc-read-test: offline gate for doc.read tool handler and cascade (R4).
 doc-read-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_doc_read.sh
 	sh tests/test_doc_read.sh

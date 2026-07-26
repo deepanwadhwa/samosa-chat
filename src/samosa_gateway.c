@@ -28,6 +28,7 @@
 #include "json.h"
 #include "samosa_http.h"
 #include "read_cache.h"
+#include "durable_job.h"
 
 typedef struct {
     SamosaHttpServer *server;

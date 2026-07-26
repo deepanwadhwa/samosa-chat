@@ -1921,6 +1921,9 @@ the rest of the browser control plane is built.
 
 #### T0.4 — Generalize durable background operations
 
+**Status: DONE (2026-07-26).** Evidence:
+[docs/regressions/ui-chutni/t0.4-evidence.md](../regressions/ui-chutni/t0.4-evidence.md).
+
 **Work**
 
 - Extract or reuse one durable job primitive for model downloads and Chutni

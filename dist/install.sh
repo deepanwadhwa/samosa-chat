@@ -143,10 +143,10 @@ fi
 # unchanged — this installer behaves exactly as it did before either existed.
 GATEWAY_ENABLED=0
 if manifest_field "engine/samosa_gateway.c" 1 >/dev/null 2>&1; then
-  # The gateway includes the content-addressed document read cache directly;
-  # stage its header with the two compilation units or a clean gateway release
-  # cannot build atomically.
-  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h"
+  # The gateway includes the content-addressed document read cache and the
+  # durable background-job primitive directly; stage their headers with the
+  # two compilation units or a clean gateway release cannot build atomically.
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
   GATEWAY_ENABLED=1
 fi
 
