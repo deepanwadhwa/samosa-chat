@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "catalog_revision": "v1.0",
+  "runtime_abi": "samosa-model-runtime-v1",
+  "models": [
+    {
+      "id": "qwen",
+      "version": "1.0",
+      "preferred_for_backend": true,
+      "label": "Qwen3.6 35B A3B",
+      "description": "Fast and capable model for general chat and local coding.",
+      "capabilities": [
+        "text",
+        "image"
+      ],
+      "backend_kind": "qwen_native",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "download_bytes": 0,
+      "installed_bytes": 0,
+      "required_free_bytes": 0,
+      "launch_profile_id": "qwen_native_default",
+      "runtime_dependencies": [],
+      "license": {
+        "name": "Qwen License",
+        "url": "https://github.com/QwenLM/Qwen/blob/main/Tongyi%20Qianwen%20LICENSE%20AGREEMENT"
+      },
+      "artifacts": []
+    },
+    {
+      "id": "bonsai",
+      "version": "1.0",
+      "preferred_for_backend": true,
+      "label": "Bonsai 27B 1-bit",
+      "description": "Ultra-efficient 1-bit quantized model for minimal memory footprint.",
+      "capabilities": [
+        "text"
+      ],
+      "backend_kind": "llama_cpp",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "download_bytes": 0,
+      "installed_bytes": 0,
+      "required_free_bytes": 0,
+      "launch_profile_id": "bonsai_default",
+      "runtime_dependencies": [],
+      "license": {
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT"
+      },
+      "artifacts": []
+    },
+    {
+      "id": "ornith",
+      "version": "1.0",
+      "preferred_for_backend": true,
+      "label": "Ornith 9B",
+      "description": "Small footprint model for quick tasks.",
+      "capabilities": [
+        "text"
+      ],
+      "backend_kind": "llama_cpp",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "download_bytes": 0,
+      "installed_bytes": 0,
+      "required_free_bytes": 0,
+      "launch_profile_id": "ornith_default",
+      "runtime_dependencies": [],
+      "license": {
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0"
+      },
+      "artifacts": []
+    }
+  ]
+}

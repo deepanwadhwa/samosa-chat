@@ -146,7 +146,7 @@ if manifest_field "engine/samosa_gateway.c" 1 >/dev/null 2>&1; then
   # The gateway includes the content-addressed document read cache and the
   # durable background-job primitive directly; stage their headers with the
   # two compilation units or a clean gateway release cannot build atomically.
-  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_models.c engine/samosa_fs.c engine/samosa_chutni.c engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/durable_job.h engine/read_cache.h"
   GATEWAY_ENABLED=1
 fi
 
@@ -276,7 +276,10 @@ if [ "$GATEWAY_ENABLED" = 1 ]; then
   $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
     "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
     fail "staged filesystem sidecar compilation failed; live release was not changed"
-  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
+  $COMPILER -O2 -DSQLITE_ENABLE_FTS5 -DSQLITE_THREADSAFE=1 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_FOREIGN_KEYS=1 -DSQLITE_OMIT_DEPRECATED -pthread \
+    "$STAGE/engine/samosa_chutni.c" "$STAGE/engine/sqlite/sqlite3.c" -o "$STAGE/bin/samosa-chutni" ||
+    fail "staged chutni sidecar compilation failed; live release was not changed"
+  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/samosa-chutni"
 fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
