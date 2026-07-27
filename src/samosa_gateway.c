@@ -4320,16 +4320,11 @@ static int tokens_equal(const char *a, const char *b) {
     return diff == 0;
 }
 
-/* Every new v1 route this task and future ones add (profile, setup, and
-   later filesystem/model/Chutni routes) must pass this: a valid
-   X-Samosa-Token, and if an Origin header is present at all, it must be
-   the exact loopback origin this gateway is bound to (a browser always
-   sends Origin for a fetch(); a missing Origin is accepted only because a
-   valid token is still required, covering headless/CLI use per section
-   5.0). Pre-existing routes (Chat, Jobs, backend selection) are NOT gated
-   by this -- retrofitting them is a separate, larger change coordinated
-   with their own test suites, not part of this task; see the T1.2
-   evidence doc. */
+/* Every v1 route must pass this: a valid X-Samosa-Token, and if an Origin
+   header is present at all, it must be the exact loopback origin this
+   gateway is bound to (a browser always sends Origin for a fetch(); a
+   missing Origin is accepted only because a valid token is still
+   required, covering headless/CLI use per section 5.0). */
 static int require_ui_session(Gateway *g, int fd, const SamosaHttpRequest *request) {
     if (!request->ui_token[0] || !tokens_equal(request->ui_token, g->ui_token)) {
         samosa_http_json_error(fd, 401, "invalid_ui_token", "Missing or invalid session token.");
@@ -4344,6 +4339,54 @@ static int require_ui_session(Gateway *g, int fd, const SamosaHttpRequest *reque
         }
     }
     return 1;
+}
+
+/* Closed, named list of /v1/ paths that predate the per-launch UI token and
+   are deliberately NOT gated by require_ui_session() yet: Chat, Jobs, and
+   backend selection. Retrofitting them is a separate, larger change
+   coordinated with their own test suites (see the T1.2 evidence doc), not
+   something to do as a side effect here.
+
+   Everything else under /v1/ is gated by gateway_handler() before any route
+   matching runs, so a new v1 route added without being listed here fails
+   closed (401) instead of failing open -- the exact defect a Chutni route
+   shipped with (unauthenticated command-injection-reachable endpoints; see
+   the revert of "Complete Phase 7"). Adding a legacy exemption below should
+   be rare and deliberate, never a copy-paste default for new work. */
+static int v1_route_is_legacy_unauthenticated(const char *path) {
+    static const char *const exact[] = {
+        "/v1/backends",
+        "/v1/backends/select",
+        "/v1/cancel",
+        "/v1/shutdown",
+        "/v1/kill",
+        "/v1/chat/completions",
+        "/v1/models",
+        "/v1/jobsd/once",
+        "/v1/jobs/run",
+        "/v1/jobs/answer",
+        "/v1/jobs/continue",
+        "/v1/jobs/review",
+        "/v1/jobs/review/correct",
+        "/v1/jobs/definition/preview",
+        "/v1/jobs/definition/run",
+        "/v1/jobs/apply",
+        "/v1/jobs/undo",
+        "/v1/jobs/schedule/arm",
+        "/v1/jobs/launchd-plist",
+        "/v1/jobs/launchd/install",
+        "/v1/jobs/launchd/uninstall",
+        "/v1/jobs/launchd/status",
+        "/v1/jobs/public-inputs/update",
+        NULL
+    };
+    for (int i = 0; exact[i]; ++i)
+        if (!strcmp(path, exact[i])) return 1;
+    /* Unmatched /v1/jobs/ subpaths fall through to the "not implemented
+       yet" 503 below in gateway_handler(); that fallback is part of the
+       same not-yet-retrofitted Jobs surface. */
+    if (!strncmp(path, "/v1/jobs/", 9)) return 1;
+    return 0;
 }
 
 static int serve_root_html(Gateway *g, int fd) {
@@ -5145,24 +5188,27 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         if (serve_root_html(g, fd)) return 1;
         return samosa_http_json_error(fd, 404, "app_missing", "The app asset is missing.");
     }
-    if (!strcmp(request->path, "/v1/profile") && (!strcmp(request->method, "GET") || !strcmp(request->method, "PUT"))) {
+    /* Fail closed by default: any /v1/ route not on the closed legacy-
+       exemption list requires a valid UI session token before route
+       matching proceeds, so a new route added below without wiring its own
+       require_ui_session() call still cannot be reached unauthenticated. */
+    if (!strncmp(request->path, "/v1/", 4) &&
+        !v1_route_is_legacy_unauthenticated(request->path)) {
         if (!require_ui_session(g, fd, request)) return 1;
+    }
+    if (!strcmp(request->path, "/v1/profile") && (!strcmp(request->method, "GET") || !strcmp(request->method, "PUT"))) {
         return !strcmp(request->method, "GET") ? profile_get_handler(g, fd) : profile_put_handler(g, fd, request);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/setup/status")) {
-        if (!require_ui_session(g, fd, request)) return 1;
         return setup_status_handler(g, fd);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/setup/welcome/complete")) {
-        if (!require_ui_session(g, fd, request)) return 1;
         return welcome_complete_handler(g, fd);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/fs/roots")) {
-        if (!require_ui_session(g, fd, request)) return 1;
         return fs_roots_handler(g, fd);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/fs/directories")) {
-        if (!require_ui_session(g, fd, request)) return 1;
         return fs_directories_handler(g, fd, request);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
