@@ -476,7 +476,7 @@
     <div class="settings-head"><h2>Generation settings</h2><button class="close-settings" id="closeSettings" aria-label="Close settings">Done</button></div>
     <div class="field">
       <label for="modelBackend">Model</label>
-      <select id="modelBackend"><option value="bonsai">Bonsai 27B 1-bit</option><option value="ornith">Ornith 9B</option><option value="qwen">Qwen3.6 35B A3B</option></select>
+      <select id="modelBackend"><option value="" disabled selected>Loading models…</option></select>
       <small id="modelHelp">Switching unloads the current model, loads the other one, and starts a new conversation.</small>
     </div>
     <div class="field">
@@ -617,6 +617,10 @@
       let followOutput = true;
       let currentImageBase64 = null;
       let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,version:"",ready:false};
+      // T2.1 (docs/TASKS_UI_CHUTNI.md sec5.3): the model list itself -- ids,
+      // labels, and availability -- comes from GET /v1/models/catalog, not
+      // a hardcoded <option> list. modelCatalog holds the last fetch.
+      let modelCatalog = [];
       let healthInitialized = false;
 
       function makeId() {
@@ -960,14 +964,37 @@
           refreshModels();
         } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; }
       }
+      function modelIsSelectable(model) { return !!model.compatible && model.install_state === "ready"; }
+      function modelOptionLabel(model) {
+        if (modelIsSelectable(model)) return model.label;
+        if (!model.compatible) return `${model.label} (not compatible with this Mac)`;
+        return `${model.label} (not installed)`;
+      }
+      // Rebuilds <select id="modelBackend"> from the last /v1/models/catalog
+      // fetch. The catalog, not this function, owns which models exist and
+      // their labels/availability (T2.1 acceptance: no authoritative
+      // hardcoded model list in the frontend) -- this only renders it and
+      // disables options that aren't currently selectable.
+      function renderModelOptions() {
+        const current = els.modelBackend.value;
+        els.modelBackend.innerHTML = "";
+        for (const model of modelCatalog) {
+          const option = document.createElement("option");
+          option.value = model.id;
+          option.textContent = modelOptionLabel(model);
+          option.disabled = !modelIsSelectable(model);
+          els.modelBackend.appendChild(option);
+        }
+        const known = value => [...els.modelBackend.options].some(o => o.value === value);
+        if (known(current)) els.modelBackend.value = current;
+        else if (known(backend.id)) els.modelBackend.value = backend.id;
+      }
       async function refreshModels() {
         try {
-          const r=await fetch("/v1/backends",{cache:"no-store"}); if(!r.ok)return;
+          const r=await authFetch("/v1/models/catalog",{cache:"no-store"}); if(!r.ok)return;
           const data=await r.json();
-          for(const option of els.modelBackend.options) {
-            const item=(data.backends||[]).find(model=>model.id===option.value);
-            option.disabled=!!item&&!item.available;
-          }
+          modelCatalog=data.models||[];
+          renderModelOptions();
         } catch (_) {}
       }
       function contextValue() { return els.contextTokens.value === "custom" ? els.contextCustom.value.trim() : els.contextTokens.value; }

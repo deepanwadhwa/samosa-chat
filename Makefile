@@ -66,14 +66,25 @@ test-chutni: samosa-fs tests/test_chutni_inventory.sh
 # real bundled assets/models.json (real, independently-verified Qwen/
 # Bonsai/Ornith artifact bytes and SHA-256 hashes), validates it before
 # trusting any of it, and layers live compatible/install_state/active
-# detection on top using the gateway's existing per-backend fields. T2.2:
-# POST /v1/models/install and friends implement real resumable, verified,
-# atomically-activated downloads against tests/fake_model_download_server.c
-# (T0.1), covering every documented failure mode plus pause/resume/cancel/
-# retry and the single-active-transfer gate.
-test-model-manager: samosa-gateway fake_model_download_server tests/test_model_catalog.sh tests/test_model_install.sh
+# detection on top using the gateway's existing per-backend fields. The
+# frontend half of T2.1 (assets/app.html's model <select>, rebuilt from this
+# endpoint instead of a hardcoded option list) has its own DOM-fixture
+# coverage in tests/test_model_catalog_ui.mjs, same pattern as
+# tests/test_chooser_ui.mjs. T2.2: POST /v1/models/install and friends
+# implement real resumable, verified, atomically-activated downloads against
+# tests/fake_model_download_server.c (T0.1), covering every documented
+# failure mode plus pause/resume/cancel/retry and the single-active-transfer
+# gate. T2.3: POST /v1/backends/select now waits for real readiness and a
+# weights-file fingerprint before a switch reports success, rolling back to
+# the prior working backend on a readiness timeout, an immediate child
+# crash, a fingerprint mismatch, or a durable-registry commit failure --
+# tests/test_model_selection.sh against tests/fake_openai_backend.c (T0.1's
+# /healthz alias and SAMOSA_FAKE_HEALTH_DELAY_MS knob).
+test-model-manager: samosa-gateway test_fake_openai_backend fake_model_download_server tests/test_model_catalog.sh tests/test_model_install.sh tests/test_model_catalog_ui.mjs tests/test_model_selection.sh
 	sh tests/test_model_catalog.sh
 	sh tests/test_model_install.sh
+	node tests/test_model_catalog_ui.mjs
+	sh tests/test_model_selection.sh
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled

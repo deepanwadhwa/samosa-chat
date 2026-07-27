@@ -40,8 +40,19 @@ static void stop_server(int number) {
 static int handler(SamosaHttpServer *server, int fd,
                    const SamosaHttpRequest *request, void *opaque) {
     (void)opaque;
-    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/health"))
+    /* /healthz (not just /health) so this binary can also stand in for
+       SAMOSA_QWEN_ENGINE in tests -- backend_probe() in src/samosa_gateway.c
+       probes /healthz specifically for the "qwen" backend name. */
+    if (!strcmp(request->method, "GET") && (!strcmp(request->path, "/health") || !strcmp(request->path, "/healthz"))) {
+        /* T2.3 (docs/TASKS_UI_CHUTNI.md) readiness-safe model activation:
+           gives a test a deterministic window to act (e.g. swap the model
+           file to force a fingerprint mismatch) before the switch's
+           watchdog ever observes a successful probe. Zero by default --
+           nothing but a test sets this. */
+        const char *delay = getenv("SAMOSA_FAKE_HEALTH_DELAY_MS");
+        if (delay && *delay) sleep_ms(atol(delay));
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
+    }
     /* T0.3 (docs/TASKS_UI_CHUTNI.md): real-extractor regression for the PDF
        page-batch-cap fix. Placed first so its specific goal text always
        shadows the generic "triaging filenames"/"classifying skimmed files"

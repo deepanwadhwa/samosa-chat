@@ -2147,7 +2147,7 @@ say so rather than faking a working button.
 
 #### T2.1 — Replace hardcoded model UI with a trusted catalog
 
-**Status: PARTIALLY DONE (2026-07-27), backend only.** Evidence:
+**Status: DONE (2026-07-27).** Evidence:
 [docs/regressions/ui-chutni/t2.1-evidence.md](../regressions/ui-chutni/t2.1-evidence.md).
 `GET /v1/models/catalog` is real and tested against the actual installed
 Qwen (24 GB, hard-linked) and Ornith models: real per-artifact bytes/SHA-256
@@ -2155,14 +2155,19 @@ Qwen (24 GB, hard-linked) and Ornith models: real per-artifact bytes/SHA-256
 own tree API), validation that rejects malformed/unsafe/untrusted catalog
 data before serving any of it, live compatibility/install-state detection,
 shared-runtime-dependency gating, and live capability degradation when an
-optional artifact (Bonsai's vision projector) is missing. **Not done:**
-`assets/app.html` still has the hardcoded backend `<select>` — the
-acceptance item "the frontend contains no authoritative hardcoded model
-availability" is unmet. Also not done: content-hash ("Deep verify")
-corruption detection (byte-size check only), `minimum_ram_bytes` (no
-measured lower bound exists), and Qwen's `prompt_template_sha256` (left
-empty rather than fabricated; real parity proof is T0.5/T4.4 scope). Do not
-mark this task fully DONE until the frontend is wired to this endpoint.
+optional artifact (Bonsai's vision projector) is missing. **Frontend gap
+closed:** `assets/app.html`'s model `<select>` is now rebuilt at runtime
+from this endpoint (`renderModelOptions()`/`refreshModels()`) instead of a
+hardcoded `<option>` list — the acceptance item "the frontend contains no
+authoritative hardcoded model availability" is met, covered by
+`tests/test_model_catalog_ui.mjs` (`make test-model-manager`), same
+DOM-fixture pattern as `tests/test_chooser_ui.mjs`. Model-switching
+mechanics themselves (`/v1/backends/select`) are unchanged — that safety
+work is T2.3, still open. Deliberately deferred, not forgotten: content-hash
+("Deep verify") corruption detection (byte-size check only),
+`minimum_ram_bytes` (no measured lower bound exists), and Qwen's
+`prompt_template_sha256` (left empty rather than fabricated; real parity
+proof is T0.5/T4.4 scope).
 
 **Work**
 
@@ -2236,6 +2241,40 @@ T2.1's evidence doc.
 - A working installed version survives every failed update path.
 
 #### T2.3 — Make model activation readiness-safe
+
+**Status: DONE (2026-07-27).** Evidence:
+[docs/regressions/ui-chutni/t2.3-evidence.md](../regressions/ui-chutni/t2.3-evidence.md).
+`POST /v1/backends/select` still forks and returns 202 synchronously
+(unchanged timing contract), but a durable selection job + background
+watchdog now wait for real readiness (`backend_probe()`, bounded timeout),
+confirm the target model's weights file wasn't swapped mid-load (size+mtime
+snapshot — disclosed limit: not a content hash), and detect an immediate
+child crash via `waitpid(WNOHANG)` rather than waiting out the timeout. Any
+failure — timeout, crash, fingerprint mismatch, or a durable-commit
+failure — rolls back to the previously-working backend; the
+`model-backend` selection file is only rewritten after readiness and the
+fingerprint both pass. `GET /v1/models/selection/active` lets a reloading
+client reconnect to an in-flight switch without ever having known a
+`job_id`. Two real bugs were found and fixed by testing before this landed:
+`json.h`'s `double`-typed numbers silently lost precision on a
+nanosecond-epoch mtime, permanently breaking every real fingerprint check
+(fixed by splitting mtime into seconds + nanosecond-remainder fields); and
+killing the gateway while a watchdog thread was still mid-flight could
+orphan a freshly-forked backend process (main()'s shutdown-triggered
+`backend_stop()` raced the watchdog's own crash-detection, which then
+forked a rollback right as the process was exiting — fixed by never forking
+during shutdown and having the watchdog check `g->stopping` first). A third
+issue was an *added* `switching` interlock flag (beyond this task's literal
+acceptance list) that caused a real, intermittent regression in the
+pre-existing `tests/test_compiled_gateway.sh` vision-backend scenario — it
+lagged behind `backend_probe()`'s own live readiness signal on an
+uncoordinated clock and could reject an ordinary chat/Jobs request for a
+moment after the backend was already genuinely answering. Removed entirely;
+the pre-existing `backend_probe()` gate already interlocks Chat/Jobs
+inference against an in-progress switch with no such lag, unchanged by this
+task. "Relevance checks"/"Chutni summary inference" (named in this task's
+Work list) don't exist as code paths yet (Chutni is Phase 4) — nothing to
+interlock with until they're built.
 
 **Work**
 

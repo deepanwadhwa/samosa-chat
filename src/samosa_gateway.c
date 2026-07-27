@@ -77,6 +77,23 @@ typedef struct {
        backend-selection locking. */
     pthread_mutex_t install_mu;
     char active_install_job_id[40];
+    /* T2.3: readiness-safe model activation. selection_mu/active_selection_job_id
+       serialize backend switches the same way install_mu/active_install_job_id
+       serialize downloads -- one switch resolves (to success or a completed
+       rollback) before another is accepted. A new chat/Jobs inference
+       request landing during an in-progress switch is already handled by
+       the existing backend_probe()-based checks in proxy_request()/
+       backend_json() (unchanged by this task): backend_stop() closes the
+       port before backend_start() forks the replacement, so a request in
+       that gap correctly gets the same retryable "not ready" response it
+       always did. An earlier attempt at an explicit `switching` flag for
+       this was removed -- it lagged behind backend_probe()'s own live
+       readiness signal (a separate, uncoordinated poll on the watchdog's
+       thread), and could reject an ordinary request for a brief window
+       after the backend was already genuinely answering. Found via
+       tests/test_compiled_gateway.sh's vision-backend scenario. */
+    pthread_mutex_t selection_mu;
+    char active_selection_job_id[40];
 } Gateway;
 
 #define MAX_PUBLIC_JOB_URLS 20
@@ -4665,7 +4682,19 @@ static int setup_status_handler(Gateway *g, int fd) {
         (p.selected_model_id[0] ? text_json_string(&body, p.selected_model_id) : text_add(&body, "null")) &&
         text_add(&body, ",\"selected_model_version\":") &&
         (p.selected_model_version[0] ? text_json_string(&body, p.selected_model_version) : text_add(&body, "null")) &&
-        text_add(&body, ",\"active_install_job_id\":null,\"active_selection_operation_id\":null") &&
+        text_add(&body, ",\"active_install_job_id\":null,\"active_selection_operation_id\":");
+    /* T2.3: this is the one of the three pre-existing "...null" placeholders
+       in this file that reflects LIVE gateway state (the other two, in
+       profile_save()/emit_profile_json(), are the persisted onboarding
+       record and stay a future T2.4 concern -- this task didn't introduce
+       an onboarding-flow install/selection pointer, only the live registry
+       this field can now honestly report). active_install_job_id above
+       stays null; T2.2 shipped without wiring it here and that gap is
+       unrelated to this task. */
+    pthread_mutex_lock(&g->selection_mu);
+    char active_selection[40]; path_copy(active_selection, sizeof(active_selection), g->active_selection_job_id);
+    pthread_mutex_unlock(&g->selection_mu);
+    ok = ok && (active_selection[0] ? text_json_string(&body, active_selection) : text_add(&body, "null")) &&
         text_add(&body, ",\"next_step\":") && text_json_string(&body, next_step) &&
         text_add(&body, "}");
     int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
@@ -5969,7 +5998,7 @@ static void install_spawn_worker(Gateway *g, const char *job_id) {
     pthread_detach(thread);
 }
 
-static int install_generate_job_id(char out[40]) {
+static int durable_job_id_generate(char out[40]) {
     unsigned char raw[16];
     FILE *urandom = fopen("/dev/urandom", "rb");
     if (!urandom) return 0;
@@ -6064,7 +6093,7 @@ static int models_install_handler(Gateway *g, int fd, const SamosaHttpRequest *r
         return samosa_http_json_error(fd, 503, "install_busy", "Another model install is already transferring.");
 
     InstallJob job = {0};
-    if (!install_generate_job_id(job.job_id))
+    if (!durable_job_id_generate(job.job_id))
         return samosa_http_json_error(fd, 500, "internal", "Could not generate a job id.");
     path_copy(job.model_id, sizeof(job.model_id), model_id);
     path_copy(job.version, sizeof(job.version), version);
@@ -6380,7 +6409,7 @@ static int models_install_retry_handler(Gateway *g, int fd, const char *job_id) 
     }
 
     InstallJob new_job = {0};
-    if (!install_generate_job_id(new_job.job_id))
+    if (!durable_job_id_generate(new_job.job_id))
         return samosa_http_json_error(fd, 500, "internal", "Could not generate a job id.");
     path_copy(new_job.model_id, sizeof(new_job.model_id), job.model_id);
     path_copy(new_job.version, sizeof(new_job.version), job.version);
@@ -6460,6 +6489,451 @@ static int models_installs_dispatch(Gateway *g, int fd, const SamosaHttpRequest 
     if (!strcmp(action, "resume")) return models_install_resume_handler(g, fd, job_id);
     if (!strcmp(action, "cancel")) return models_install_cancel_handler(g, fd, job_id);
     if (!strcmp(action, "retry")) return models_install_retry_handler(g, fd, job_id);
+    return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
+}
+
+/* ============================================================================
+   T2.3 (docs/TASKS_UI_CHUTNI.md sec5.3): readiness-safe model activation.
+   POST /v1/backends/select still forks synchronously and returns 202 the
+   moment fork() succeeds -- unchanged from before this task, since
+   assets/app.html and tests/test_compiled_gateway.sh both already poll
+   /healthz separately for actual readiness and that timing contract isn't
+   this task's to break. What's new is everything AFTER the fork: a
+   background watchdog waits for real readiness (a bounded timeout, not "a
+   process exists"), confirms the target model's weights artifact wasn't
+   swapped out from under the load (a size+mtime snapshot -- the cheapest
+   artifact-identity check that doesn't require hashing a multi-GB file on
+   every switch, at the cost of not catching a same-size/same-mtime content
+   change; disclosed, not silent, the same trade-off T2.1's own
+   install-state detection already makes), and detects an immediate child
+   crash via waitpid(WNOHANG) rather than waiting out the full timeout to
+   notice. Any failure at any of these steps -- including the final durable
+   commit itself -- rolls back to whichever backend was working before the
+   switch was requested: stop the broken process, restore the in-memory
+   g->backend, and restart the previous backend. A failed switch therefore
+   never leaves the gateway on a broken backend, and the durable
+   `model-backend` selection file is only ever rewritten once readiness and
+   the fingerprint both already passed, so it never disagrees with a live
+   process a restart would contradict. The whole operation is a durable job
+   (same shape as T2.2's InstallJob) so a client that reloads mid-switch can
+   reconnect via GET /v1/models/selection/active instead of losing all
+   visibility into an in-flight switch.
+   ============================================================================ */
+
+#define SELECTION_RUN_SUBDIR "run/selections"
+
+typedef struct {
+    char job_id[40];
+    char requested_backend[16];
+    char previous_backend[16];
+    char state[16]; /* starting|waiting_ready|selected|failed */
+    char error_code[64];
+    char error_message[192];
+    char active_backend[16]; /* whichever backend is actually live once this job reaches a terminal state */
+    long long expected_bytes;    /* -1 = unknown (catalog/artifact unreadable at request time); fingerprint check then skipped */
+    /* Split into seconds + nanosecond remainder rather than one combined
+       nanosecond epoch value: this project's json.h stores every number as
+       a double, and a nanosecond epoch timestamp (~1.7e18) is far past
+       2^53 -- it would silently lose precision on the save/load round trip
+       and could never compare equal to a freshly-stat()'d value again.
+       Each half individually stays well within a double's exact-integer
+       range. */
+    long long expected_mtime_sec;
+    long long expected_mtime_nsec;
+    char created_at[32];
+    char updated_at[32];
+} SelectionJob;
+
+static int selection_job_dir(Gateway *g, const char *job_id, char out[PATH_MAX], int create) {
+    char root[PATH_MAX];
+    if (!path_join(root, sizeof(root), g->home, SELECTION_RUN_SUBDIR)) return 0;
+    if (create && !durable_mkdirs(root)) return 0;
+    return durable_job_dir(root, job_id, out, create);
+}
+
+static int selection_job_save(Gateway *g, const SelectionJob *job) {
+    char dir[PATH_MAX], path[PATH_MAX];
+    if (!selection_job_dir(g, job->job_id, dir, 1)) return 0;
+    if (!path_join(path, sizeof(path), dir, "job.json")) return 0;
+    TextBuffer body = {0};
+    char numbuf[32];
+    int ok = text_add(&body, "{\"job_id\":") && text_json_string(&body, job->job_id) &&
+        text_add(&body, ",\"requested_backend\":") && text_json_string(&body, job->requested_backend) &&
+        text_add(&body, ",\"previous_backend\":") && text_json_string(&body, job->previous_backend) &&
+        text_add(&body, ",\"state\":") && text_json_string(&body, job->state) &&
+        text_add(&body, ",\"error_code\":") &&
+        (job->error_code[0] ? text_json_string(&body, job->error_code) : text_add(&body, "null")) &&
+        text_add(&body, ",\"error_message\":") &&
+        (job->error_message[0] ? text_json_string(&body, job->error_message) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_backend\":") &&
+        (job->active_backend[0] ? text_json_string(&body, job->active_backend) : text_add(&body, "null"));
+    snprintf(numbuf, sizeof(numbuf), "%lld", job->expected_bytes);
+    ok = ok && text_add(&body, ",\"expected_bytes\":") && text_add(&body, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", job->expected_mtime_sec);
+    ok = ok && text_add(&body, ",\"expected_mtime_sec\":") && text_add(&body, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", job->expected_mtime_nsec);
+    ok = ok && text_add(&body, ",\"expected_mtime_nsec\":") && text_add(&body, numbuf);
+    ok = ok && text_add(&body, ",\"created_at\":") && text_json_string(&body, job->created_at) &&
+        text_add(&body, ",\"updated_at\":") && text_json_string(&body, job->updated_at) &&
+        text_add(&body, "}");
+    int sent = ok && durable_state_put(path, body.data);
+    free(body.data);
+    return sent;
+}
+
+static int selection_job_load(Gateway *g, const char *job_id, SelectionJob *out) {
+    if (!durable_id_valid(job_id)) return 0;
+    char dir[PATH_MAX], path[PATH_MAX];
+    if (!selection_job_dir(g, job_id, dir, 0)) return 0;
+    if (!path_join(path, sizeof(path), dir, "job.json")) return 0;
+    char *text = durable_state_get(path, 1 << 16);
+    if (!text) return 0;
+    char *arena = NULL;
+    jval *root = json_parse(text, &arena);
+    free(text);
+    memset(out, 0, sizeof(*out));
+    out->expected_bytes = -1; out->expected_mtime_sec = -1; out->expected_mtime_nsec = -1;
+#define SELECTION_JOB_GETSTR(field, key) do { jval *v = json_get(root, key); \
+        if (v && v->t == J_STR) path_copy(out->field, sizeof(out->field), v->str); } while (0)
+    SELECTION_JOB_GETSTR(job_id, "job_id"); SELECTION_JOB_GETSTR(requested_backend, "requested_backend");
+    SELECTION_JOB_GETSTR(previous_backend, "previous_backend"); SELECTION_JOB_GETSTR(state, "state");
+    SELECTION_JOB_GETSTR(error_code, "error_code"); SELECTION_JOB_GETSTR(error_message, "error_message");
+    SELECTION_JOB_GETSTR(active_backend, "active_backend");
+    SELECTION_JOB_GETSTR(created_at, "created_at"); SELECTION_JOB_GETSTR(updated_at, "updated_at");
+#undef SELECTION_JOB_GETSTR
+    jval *bytes = json_get(root, "expected_bytes");
+    if (bytes && bytes->t == J_NUM) out->expected_bytes = (long long)bytes->num;
+    jval *mtime_sec = json_get(root, "expected_mtime_sec");
+    if (mtime_sec && mtime_sec->t == J_NUM) out->expected_mtime_sec = (long long)mtime_sec->num;
+    jval *mtime_nsec = json_get(root, "expected_mtime_nsec");
+    if (mtime_nsec && mtime_nsec->t == J_NUM) out->expected_mtime_nsec = (long long)mtime_nsec->num;
+    int ok = out->job_id[0] != 0;
+    json_free(root); free(arena);
+    return ok;
+}
+
+static void selection_job_event(Gateway *g, const char *job_id, const char *state, const char *message) {
+    char dir[PATH_MAX], events_path[PATH_MAX];
+    if (!selection_job_dir(g, job_id, dir, 1)) return;
+    if (!path_join(events_path, sizeof(events_path), dir, "events.jsonl")) return;
+    const char *event_state = !strcmp(state, "selected") ? "completed" :
+                               !strcmp(state, "failed") ? "failed" : "running";
+    long seq = 1;
+    FILE *f = fopen(events_path, "r");
+    if (f) { char line[2048]; while (fgets(line, sizeof(line), f)) seq++; fclose(f); }
+    durable_event_append(events_path, seq, job_id, "model_selection", event_state, state,
+                          NULL, NULL, NULL, "", message ? message : "");
+}
+
+static int selection_backend_weights_path(Gateway *g, const char *backend_name, char out[PATH_MAX]) {
+    if (!strcmp(backend_name, "qwen")) return path_join(out, PATH_MAX, g->qwen_model, "experts.bin");
+    if (!strcmp(backend_name, "bonsai")) return path_copy(out, PATH_MAX, g->bonsai_model);
+    if (!strcmp(backend_name, "ornith")) return path_copy(out, PATH_MAX, g->ornith_model);
+    return 0;
+}
+
+/* See the block comment above for the disclosed limitation (size+mtime,
+   not a content hash). 0 = not resolvable/stat failed; caller then skips
+   the fingerprint check entirely rather than fabricating a value. */
+static int selection_stat_fingerprint(Gateway *g, const char *backend_name, long long *out_bytes,
+                                       long long *out_mtime_sec, long long *out_mtime_nsec) {
+    char path[PATH_MAX];
+    struct stat st;
+    if (!selection_backend_weights_path(g, backend_name, path) || stat(path, &st) != 0 || !S_ISREG(st.st_mode))
+        return 0;
+    *out_bytes = (long long)st.st_size;
+#if defined(__APPLE__)
+    *out_mtime_sec = (long long)st.st_mtimespec.tv_sec; *out_mtime_nsec = (long long)st.st_mtimespec.tv_nsec;
+#else
+    *out_mtime_sec = (long long)st.st_mtim.tv_sec; *out_mtime_nsec = (long long)st.st_mtim.tv_nsec;
+#endif
+    return 1;
+}
+
+/* Test-only override (nothing in production sets this) so the readiness-
+   timeout path can be exercised in milliseconds instead of the real
+   default, matching the SAMOSA_TEST_LIMIT_RATE/SAMOSA_TEST_ALLOW_LOOPBACK_
+   ARTIFACTS convention already used by the T2.2 install path. */
+static long selection_ready_timeout_ms(void) {
+    const char *env = getenv("SAMOSA_TEST_SELECTION_READY_TIMEOUT_MS");
+    if (env && *env) { long v = atol(env); if (v > 0) return v; }
+    return 20000;
+}
+
+/* Test-only override for how long a new switch waits for a prior one to
+   clear before reporting selection_busy -- see the comment at the wait
+   loop's call site for why this grace period exists at all. */
+static long selection_busy_wait_ms(void) {
+    const char *env = getenv("SAMOSA_TEST_SELECTION_BUSY_WAIT_MS");
+    if (env && *env) { long v = atol(env); if (v >= 0) return v; }
+    return 2000;
+}
+
+static void selection_clear_active(Gateway *g) {
+    pthread_mutex_lock(&g->selection_mu);
+    g->active_selection_job_id[0] = 0;
+    pthread_mutex_unlock(&g->selection_mu);
+}
+
+/* Stops whatever is currently running (the failed new backend, or its
+   crashed remnant) and restarts the backend that was working before this
+   switch began. Best-effort: if the previous backend can no longer start
+   either, healthz/backend_state_string() already report a clear "failed"
+   or "none" state from existing machinery -- the acceptance item's "...or
+   a clear no-model state" branch, not a new state this task invents.
+
+   Never forks during shutdown (atomic_load(&g->stopping)). A detached
+   watchdog thread can still be mid-loop when main()'s SIGTERM-triggered
+   backend_stop() runs -- that call zeroes g->backend_pid out from under
+   it, the watchdog's own next check reads pid<=0 and (correctly, from its
+   own local view) treats that as "the child crashed," landing here.
+   Without this guard it would fork a fresh previous-backend process right
+   as the whole gateway is exiting -- main() has already run its one
+   backend_stop() and won't run another, and the watchdog thread doing
+   this fork is itself killed along with the rest of the process moments
+   later, so nothing is ever left to reap that child. Reproduced directly:
+   switch, then kill the gateway before the watchdog settles, reliably
+   orphaned a freshly-forked backend process. Restarting a "previous"
+   backend during shutdown was never useful anyway -- the process is
+   exiting regardless. */
+static void selection_restore_previous(Gateway *g, const char *previous_backend) {
+    backend_stop(g);
+    path_copy(g->backend, sizeof(g->backend), previous_backend);
+    if (!atomic_load(&g->stopping) && backend_available(g, g->backend)) backend_start(g);
+}
+
+static void selection_fail(Gateway *g, SelectionJob *job, const char *code, const char *message) {
+    path_copy(job->error_code, sizeof(job->error_code), code);
+    path_copy(job->error_message, sizeof(job->error_message), message);
+    selection_restore_previous(g, job->previous_backend);
+    path_copy(job->active_backend, sizeof(job->active_backend), g->backend);
+    path_copy(job->state, sizeof(job->state), "failed");
+    iso8601_now(job->updated_at);
+    selection_job_save(g, job);
+    selection_job_event(g, job->job_id, "failed", message);
+}
+
+typedef struct { Gateway *g; char job_id[40]; } SelectionWatchdogArgs;
+
+static void *selection_watchdog(void *arg_) {
+    SelectionWatchdogArgs *args = arg_;
+    Gateway *g = args->g;
+    SelectionJob job;
+    if (!selection_job_load(g, args->job_id, &job)) { free(args); return NULL; }
+
+    path_copy(job.state, sizeof(job.state), "waiting_ready");
+    iso8601_now(job.updated_at);
+    selection_job_save(g, &job);
+    selection_job_event(g, job.job_id, "waiting_ready", "Waiting for the new backend to become ready");
+
+    long long deadline = monotonic_millis() + selection_ready_timeout_ms();
+    int crashed = 0, ready = 0, shutting_down = 0;
+    while (monotonic_millis() < deadline) {
+        /* Checked first, not just left to the pid<=0 fallthrough below: if
+           main()'s SIGTERM-triggered backend_stop() runs concurrently (see
+           selection_restore_previous()'s comment for the full story of how
+           this was found), it zeroes g->backend_pid out from under this
+           loop. Without this check that reads as "crashed" and calls
+           selection_restore_previous(), which -- even with that function's
+           own guard against forking during shutdown -- is still pointless
+           work and a misleading job.json error. Checking g->stopping here
+           short-circuits the whole thing honestly. */
+        if (atomic_load(&g->stopping)) { shutting_down = 1; break; }
+        pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
+        if (pid <= 0) { crashed = 1; break; }
+        int wstatus = 0;
+        if (waitpid(pid, &wstatus, WNOHANG) == pid) {
+            /* Reaped here, not by backend_stop() -- clear backend_pid now so
+               the rollback's own backend_stop() call (via
+               selection_restore_previous()) sees pid<=0 and skips
+               signaling/reaping a pid that's already gone, instead of
+               operating on a stale value some unrelated process could have
+               since reused. */
+            crashed = 1;
+            pthread_mutex_lock(&g->mu); if (g->backend_pid == pid) g->backend_pid = 0; pthread_mutex_unlock(&g->mu);
+            break;
+        }
+        if (backend_probe(g)) { ready = 1; break; }
+        sleep_millis(50);
+    }
+
+    if (shutting_down) {
+        /* Deliberately not selection_fail(): that calls
+           selection_restore_previous(), which forks -- pointless and, per
+           the comment above it, actively harmful while main() is on its
+           way out. Whatever is currently running is main()'s own
+           backend_stop() call's responsibility, not this thread's. */
+        path_copy(job.error_code, sizeof(job.error_code), "gateway_shutdown");
+        path_copy(job.error_message, sizeof(job.error_message),
+                 "The gateway shut down while this switch was in progress.");
+        path_copy(job.active_backend, sizeof(job.active_backend), g->backend);
+        path_copy(job.state, sizeof(job.state), "failed");
+        iso8601_now(job.updated_at);
+        selection_job_save(g, &job);
+        selection_job_event(g, job.job_id, "failed", job.error_message);
+        selection_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    if (!ready) {
+        selection_fail(g, &job, crashed ? "backend_crashed" : "readiness_timeout",
+                       crashed ? "The new backend process exited before becoming ready."
+                               : "The new backend did not become ready in time.");
+        selection_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    if (job.expected_bytes >= 0) {
+        long long actual_bytes = 0, actual_mtime_sec = 0, actual_mtime_nsec = 0;
+        int have = selection_stat_fingerprint(g, job.requested_backend, &actual_bytes,
+                                               &actual_mtime_sec, &actual_mtime_nsec);
+        if (!have || actual_bytes != job.expected_bytes || actual_mtime_sec != job.expected_mtime_sec ||
+            actual_mtime_nsec != job.expected_mtime_nsec) {
+            selection_fail(g, &job, "fingerprint_mismatch",
+                           "The model file changed while the switch was in progress.");
+            selection_clear_active(g);
+            free(args);
+            return NULL;
+        }
+    }
+
+    /* Commit: only now, with readiness and the fingerprint both confirmed,
+       is the switch persisted durably. A write failure here (disk full,
+       permissions) must not leave a live process the next gateway restart
+       won't agree with -- roll back the live process to match the
+       untouched, still-correct persisted file, exactly like any other
+       failure above. */
+    char persisted[32];
+    snprintf(persisted, sizeof(persisted), "%s\n", job.requested_backend);
+    if (!write_small_file(g->selection_file, persisted)) {
+        selection_fail(g, &job, "registry_commit_failed", "The new selection could not be saved durably.");
+        selection_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    path_copy(job.active_backend, sizeof(job.active_backend), job.requested_backend);
+    path_copy(job.state, sizeof(job.state), "selected");
+    iso8601_now(job.updated_at);
+    selection_job_save(g, &job);
+    selection_job_event(g, job.job_id, "selected", "Model ready");
+    selection_clear_active(g);
+    free(args);
+    return NULL;
+}
+
+static void selection_spawn_watchdog(Gateway *g, const char *job_id) {
+    SelectionWatchdogArgs *args = malloc(sizeof(SelectionWatchdogArgs));
+    args->g = g;
+    path_copy(args->job_id, sizeof(args->job_id), job_id);
+    pthread_t thread;
+    pthread_create(&thread, NULL, selection_watchdog, args);
+    pthread_detach(thread);
+}
+
+static int models_selection_status_body(const SelectionJob *job, TextBuffer *body) {
+    int ok = text_add(body, "{\"job_id\":") && text_json_string(body, job->job_id) &&
+        text_add(body, ",\"requested_backend\":") && text_json_string(body, job->requested_backend) &&
+        text_add(body, ",\"previous_backend\":") && text_json_string(body, job->previous_backend) &&
+        text_add(body, ",\"state\":") && text_json_string(body, job->state) &&
+        text_add(body, ",\"active_backend\":") &&
+        (job->active_backend[0] ? text_json_string(body, job->active_backend) : text_add(body, "null")) &&
+        text_add(body, ",\"error\":") &&
+        (job->error_code[0] ?
+            (text_add(body, "{\"code\":") && text_json_string(body, job->error_code) &&
+             text_add(body, ",\"message\":") &&
+             text_json_string(body, job->error_message[0] ? job->error_message : job->error_code) &&
+             text_add(body, "}"))
+            : text_add(body, "null")) &&
+        text_add(body, ",\"created_at\":") && text_json_string(body, job->created_at) &&
+        text_add(body, ",\"updated_at\":") && text_json_string(body, job->updated_at) &&
+        text_add(body, "}");
+    return ok;
+}
+
+static int models_selection_status_handler(Gateway *g, int fd, const char *job_id) {
+    SelectionJob job;
+    if (!selection_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown selection job id.");
+    TextBuffer body = {0};
+    int ok = models_selection_status_body(&job, &body);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+/* Lets a client that reloads or reopens mid-switch reconnect without ever
+   having known a job_id -- it only needs to know a switch might be running
+   at all. Matches T2.3's acceptance item verbatim ("refreshing or reopening
+   during model load reconnects through the durable selection-operation
+   registry"). */
+static int models_selection_active_handler(Gateway *g, int fd) {
+    pthread_mutex_lock(&g->selection_mu);
+    char active[40]; path_copy(active, sizeof(active), g->active_selection_job_id);
+    pthread_mutex_unlock(&g->selection_mu);
+    if (!active[0])
+        return samosa_http_json_error(fd, 404, "no_active_selection", "No model switch is in progress.");
+    return models_selection_status_handler(g, fd, active);
+}
+
+/* GET /v1/models/selection/<job_id>/events?after=<seq>. Plain JSON replay,
+   same convention as GET /v1/models/installs/<job_id>/events (see that
+   handler's comment for why this isn't SSE). */
+static int models_selection_events_handler(Gateway *g, int fd, const char *job_id, const SamosaHttpRequest *request) {
+    char job_dir[PATH_MAX], events_path[PATH_MAX];
+    if (!durable_id_valid(job_id) || !selection_job_dir(g, job_id, job_dir, 0))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown selection job id.");
+    if (!path_join(events_path, sizeof(events_path), job_dir, "events.jsonl"))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown selection job id.");
+    char after_str[32]; long after = 0;
+    if (query_param(request->query, "after", after_str, sizeof(after_str))) after = atol(after_str);
+    FILE *f = fopen(events_path, "r");
+    if (!f) return samosa_http_json_error(fd, 404, "job_not_found", "No events recorded yet.");
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"events\":[");
+    int first = 1;
+    char line[2048];
+    while (ok && fgets(line, sizeof(line), f)) {
+        size_t n = strlen(line);
+        if (n && line[n - 1] == '\n') line[--n] = 0;
+        if (!n) continue;
+        long seq = 0;
+        sscanf(line, "{\"seq\":%ld,", &seq);
+        if (seq <= after) continue;
+        ok = (first || text_add(&body, ",")) && text_add(&body, line);
+        first = 0;
+    }
+    fclose(f);
+    ok = ok && text_add(&body, "]}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_selection_dispatch(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    static const char prefix[] = "/v1/models/selection/";
+    size_t plen = sizeof(prefix) - 1;
+    const char *rest = request->path + plen;
+    const char *slash = strchr(rest, '/');
+    size_t id_len = slash ? (size_t)(slash - rest) : strlen(rest);
+    char job_id[40];
+    if (id_len == 0 || id_len >= sizeof(job_id)) {
+        return samosa_http_json_error(fd, 400, "invalid_job_id",
+            "job_id may contain only letters, numbers, dash, and underscore.");
+    }
+    memcpy(job_id, rest, id_len); job_id[id_len] = 0;
+    if (strcmp(request->method, "GET"))
+        return samosa_http_json_error(fd, 400, "method_not_allowed", "Only GET is supported.");
+    if (!strcmp(job_id, "active")) return models_selection_active_handler(g, fd);
+    if (!durable_id_valid(job_id)) {
+        return samosa_http_json_error(fd, 400, "invalid_job_id",
+            "job_id may contain only letters, numbers, dash, and underscore.");
+    }
+    const char *action = slash ? slash + 1 : "";
+    if (!*action) return models_selection_status_handler(g, fd, job_id);
+    if (!strcmp(action, "events")) return models_selection_events_handler(g, fd, job_id, request);
     return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
 }
 
@@ -6577,14 +7051,88 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         json_free(root); free(arena);
         if (atomic_load(&g->generating))
             return samosa_http_json_error(fd, 409, "generation_active", "Stop the current response before switching models.");
+
         if (strcmp(name, g->backend)) {
+            /* T2.3: everything from here on is the readiness-safe path --
+               see the block comment above models_selection_dispatch() for
+               the full design. Fork-and-return-202 timing is unchanged
+               from before this task; a background watchdog takes over
+               after this handler returns, and rolls back to
+               job.previous_backend on any failure including the one
+               reachable synchronously right here (backend_start() itself
+               failing to even fork).
+
+               A short bounded wait for a prior switch to clear (rather
+               than an instant 409) matters because /healthz's "ready"
+               already reflects a real backend_probe() and a caller that
+               sees ready:true is entitled to assume it's safe to act --
+               but this watchdog still has a brief fingerprint-check +
+               durable-commit tail to run *after* readiness before it
+               clears active_selection_job_id. Without this wait, a caller
+               that switches, polls until ready, and immediately switches
+               again (exactly what tests/test_compiled_gateway.sh's
+               vision-backend scenario does, and a real UI reasonably
+               could too) can lose a race against that tail and see a
+               spurious selection_busy even though nothing is actually
+               still loading. 2s (40*50ms) comfortably covers that tail
+               without masking a genuinely stuck switch. */
+            long long busy_deadline = monotonic_millis() + selection_busy_wait_ms();
+            while (monotonic_millis() < busy_deadline) {
+                pthread_mutex_lock(&g->selection_mu);
+                int still_busy = g->active_selection_job_id[0] != 0;
+                pthread_mutex_unlock(&g->selection_mu);
+                if (!still_busy) break;
+                sleep_millis(50);
+            }
+            pthread_mutex_lock(&g->selection_mu);
+            if (g->active_selection_job_id[0]) {
+                pthread_mutex_unlock(&g->selection_mu);
+                return samosa_http_json_error(fd, 409, "selection_busy", "Another model switch is already in progress.");
+            }
+            SelectionJob job = {0};
+            if (!durable_job_id_generate(job.job_id)) {
+                pthread_mutex_unlock(&g->selection_mu);
+                return samosa_http_json_error(fd, 500, "internal", "Could not generate a job id.");
+            }
+            path_copy(job.requested_backend, sizeof(job.requested_backend), name);
+            path_copy(job.previous_backend, sizeof(job.previous_backend), g->backend);
+            path_copy(job.state, sizeof(job.state), "starting");
+            iso8601_now(job.created_at);
+            path_copy(job.updated_at, sizeof(job.updated_at), job.created_at);
+            job.expected_bytes = -1; job.expected_mtime_sec = -1; job.expected_mtime_nsec = -1;
+            selection_stat_fingerprint(g, name, &job.expected_bytes,
+                                       &job.expected_mtime_sec, &job.expected_mtime_nsec);
+            if (!selection_job_save(g, &job)) {
+                pthread_mutex_unlock(&g->selection_mu);
+                return samosa_http_json_error(fd, 500, "internal", "Could not persist the selection job.");
+            }
+            path_copy(g->active_selection_job_id, sizeof(g->active_selection_job_id), job.job_id);
+            pthread_mutex_unlock(&g->selection_mu);
+            selection_job_event(g, job.job_id, "starting", "Stopping the previous backend");
+
             backend_stop(g);
             path_copy(g->backend, sizeof(g->backend), name);
-            char persisted[32]; snprintf(persisted, sizeof(persisted), "%s\n", name);
-            if (!write_small_file(g->selection_file, persisted) || !backend_start(g))
+            if (!backend_start(g)) {
+                selection_fail(g, &job, "backend_start_failed", "The selected model could not be started.");
+                selection_clear_active(g);
                 return samosa_http_json_error(fd, 500, "backend_start_failed", "The selected model could not be started.");
+            }
+            selection_spawn_watchdog(g, job.job_id);
+
+            TextBuffer body = {0};
+            char status_url[96];
+            snprintf(status_url, sizeof(status_url), "/v1/models/selection/%s", job.job_id);
+            int ok = text_add(&body, "{\"accepted\":true,\"job_id\":") && text_json_string(&body, job.job_id) &&
+                text_add(&body, ",\"status_url\":") && text_json_string(&body, status_url) &&
+                text_add(&body, ",\"state\":") && text_json_string(&body, job.state) && text_add(&body, "}");
+            int sent = ok && samosa_http_response(fd, 202, "application/json", body.data, NULL);
+            free(body.data);
+            return sent;
         }
-        return samosa_http_response(fd, 202, "application/json", "{\"accepted\":true}", NULL);
+        return samosa_http_response(fd, 202, "application/json", "{\"accepted\":true,\"job_id\":null}", NULL);
+    }
+    if (!strncmp(request->path, "/v1/models/selection/", sizeof("/v1/models/selection/") - 1)) {
+        return models_selection_dispatch(g, fd, request);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/cancel")) {
         pthread_mutex_lock(&g->mu); int upstream = g->upstream_fd; pthread_mutex_unlock(&g->mu);
@@ -6668,6 +7216,7 @@ static int load_config(Gateway *g) {
     g->backend_pid = 0; g->upstream_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
     pthread_mutex_init(&g->install_mu, NULL);
+    pthread_mutex_init(&g->selection_mu, NULL);
     atomic_init(&g->generating, 0);
     atomic_init(&g->interactive_active, 0);
     atomic_init(&g->last_interactive_mono_ms, 0);
