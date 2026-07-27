@@ -55,8 +55,6 @@ typedef struct {
     char qwen_engine[PATH_MAX];
     char qwen_model[PATH_MAX];
     char tokenizer[PATH_MAX];
-    char models_json[PATH_MAX];
-    char models_dir[PATH_MAX];
     char llama_server[PATH_MAX];
     char bonsai_model[PATH_MAX];
     char bonsai_mmproj[PATH_MAX];
@@ -4775,172 +4773,6 @@ static int conversation_binding_handler(Gateway *g, int fd, const SamosaHttpRequ
     return samosa_http_json_error(fd, 400, "method_not_allowed", "Only GET and PUT are supported.");
 }
 
-
-#define MAX_CHOOSER_ROOTS 32
-#define MAX_CHOOSER_ENTRIES 5000
-
-typedef struct {
-    char id[80];
-    char label[256];
-    char path[PATH_MAX]; /* always realpath()'d */
-    char kind[16]; /* "home" or "volume" */
-    char volume_identity[32];
-    int readable;
-    int connected;
-} ChooserRoot;
-
-typedef struct {
-    char name[512];
-    char path[PATH_MAX];
-    int readable;
-} ChooserEntry;
-
-/* The only safe starting points for the chooser: the real OS user home
-   (g->user_home -- NOT g->home, which is Samosa's own app-state directory
-   and gets redirected via SAMOSA_HOME in tests) and, on macOS, mounted
-   volumes under /Volumes. Every root is realpath()'d once here so later
-   containment checks are simple prefix comparisons against a symlink-free
-   string. Linux/Windows volume discovery is not implemented yet -- a
-   container target never offers Drive/This-computer scopes anyway (see the
-   T0.1 capability matrix), so Home-only is a correct, honestly scoped
-   starting point there, not a shortcut. */
-static size_t list_chooser_roots(Gateway *g, ChooserRoot *out, size_t max) {
-    (void)g;
-    size_t n = 0;
-    const char *test_dirs[] = {
-        "/Users/deepanwadhwa/Documents/samosa-chat/test_this_computer/Downloads",
-        "/Users/deepanwadhwa/Documents/samosa-chat/test_this_computer/Desktop",
-        "/Users/deepanwadhwa/Documents/samosa-chat/test_this_computer/Documents"
-    };
-    const char *test_labels[] = { "Downloads (Mock)", "Desktop (Mock)", "Documents (Mock)" };
-    
-    for (int i = 0; i < 3 && n < max; i++) {
-        struct stat st;
-        if (!stat(test_dirs[i], &st) && S_ISDIR(st.st_mode)) {
-            ChooserRoot *r = &out[n];
-            snprintf(r->id, sizeof(r->id), "mock-%d", i);
-            path_copy(r->label, sizeof(r->label), test_labels[i]);
-            path_copy(r->path, sizeof(r->path), test_dirs[i]);
-            path_copy(r->kind, sizeof(r->kind), "volume");
-            snprintf(r->volume_identity, sizeof(r->volume_identity), "%llx", (unsigned long long)st.st_dev);
-            r->readable = 1;
-            r->connected = 1;
-            n++;
-        }
-    }
-    return n;
-}
-
-static int handle_chutni_forget(Gateway *g, int fd, const SamosaHttpRequest *req) {
-    (void)g;
-    // Extract root_id from body or path?
-    // Let's assume it's in the body like {"root_id": "..."}
-    char *arena = NULL;
-    jval *body = json_parse(req->body, &arena);
-    jval *rid_v = (body && body->t == J_OBJ) ? json_get(body, "root_id") : NULL;
-    if (!rid_v || rid_v->t != J_STR) {
-        if (arena) free(arena);
-        if (body) json_free(body);
-        const char *err = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-        write(fd, err, strlen(err));
-        return 1;
-    }
-    
-    char cmd[PATH_MAX + 256];
-    snprintf(cmd, sizeof(cmd), "./build/samosa-chutni forget /tmp/chutni.db %s", rid_v->str);
-    
-    if (arena) free(arena);
-    if (body) json_free(body);
-    
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
-        const char *err = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-        write(fd, err, strlen(err));
-        return 1;
-    }
-    
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf)-1, fp);
-    buf[n] = '\0';
-    pclose(fp);
-    
-    char header[256];
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", n);
-    write(fd, header, strlen(header));
-    write(fd, buf, n);
-    return 1;
-}
-
-static int handle_chutni_request(Gateway *g, int fd, const SamosaHttpRequest *req) {
-    (void)g;
-    char cmd[PATH_MAX + 256];
-    
-    if (!strcmp(req->path, "/v1/chutni/scope/forget")) {
-        return handle_chutni_forget(g, fd, req);
-    } else if (!strcmp(req->path, "/v1/chutni/scope/create")) {
-        // Mock extract path from body
-        snprintf(cmd, sizeof(cmd), "./build/samosa-chutni init /tmp/chutni.db && ./build/samosa-chutni scan /tmp/chutni.db default_root /");
-    } else if (!strcmp(req->path, "/v1/chutni/scope/aggregate")) {
-        ChooserRoot roots[MAX_CHOOSER_ROOTS];
-        size_t num_roots = list_chooser_roots(g, roots, MAX_CHOOSER_ROOTS);
-        
-        char buf[65536] = {0};
-        size_t offset = 0;
-        offset += snprintf(buf + offset, sizeof(buf) - offset, "{\"status\":\"ok\", \"roots\": [");
-        
-        for (size_t i = 0; i < num_roots; i++) {
-            char cmd_scan[PATH_MAX + 256];
-            snprintf(cmd_scan, sizeof(cmd_scan), "./build/samosa-chutni scan /tmp/chutni.db %s %s", roots[i].id, roots[i].path);
-            
-            FILE *fp = popen(cmd_scan, "r");
-            if (fp) {
-                if (i > 0) offset += snprintf(buf + offset, sizeof(buf) - offset, ", ");
-                size_t n = fread(buf + offset, 1, sizeof(buf) - offset - 1, fp);
-                offset += n;
-                pclose(fp);
-            }
-        }
-        offset += snprintf(buf + offset, sizeof(buf) - offset, "]}");
-        buf[offset] = '\0';
-        
-        char header[256];
-        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", offset);
-        write(fd, header, strlen(header));
-        write(fd, buf, offset);
-        return 1;
-    } else if (!strcmp(req->path, "/v1/chutni/scope/summary")) {
-        // Return a mock summary combining sidecar telemetry
-        const char* summary = "{\"state\": \"ready\", \"files_indexed\": 65, \"chunks_total\": 65, \"index_bytes\": 12345}";
-        char header[256];
-        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", strlen(summary));
-        write(fd, header, strlen(header));
-        write(fd, summary, strlen(summary));
-        return 1;
-    } else {
-        const char *err = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        write(fd, err, strlen(err));
-        return 1;
-    }
-    
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
-        const char *err = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-        write(fd, err, strlen(err));
-        return 1;
-    }
-    
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf)-1, fp);
-    buf[n] = '\0';
-    pclose(fp);
-    
-    char header[256];
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", n);
-    write(fd, header, strlen(header));
-    write(fd, buf, n);
-    return 1;
-}
-
 /* Dispatch entry for the /v1/conversations/ prefix: extracts and validates
    <id> from "/v1/conversations/<id>/binding" before handing off. Any other
    shape under the prefix is 404, not a crash or a silent bypass. */
@@ -4999,109 +4831,6 @@ static int chat_completions_request(Gateway *g, int fd, const SamosaHttpRequest 
     char req_model_id[64], req_model_version[128];
     path_copy(req_model_id, sizeof(req_model_id), mid->str);
     path_copy(req_model_version, sizeof(req_model_version), mver->str);
-
-    // Chutni Orchestration (Phase 5)
-    jval *chutni_v = json_get(body, "chutni");
-    char context_str[65536] = {0};
-    int has_context = 0;
-    if (chutni_v && chutni_v->t == J_OBJ) {
-        jval *rid_v = json_get(chutni_v, "root_id");
-        jval *pref_v = json_get(chutni_v, "path_prefix");
-        if (rid_v && rid_v->t == J_STR) {
-            // Get last user message for query
-            jval *msgs = json_get(body, "messages");
-            const char* last_msg = "";
-            if (msgs && msgs->t == J_ARR && msgs->len > 0) {
-                // Get the last message, or search for the user message
-                for (int m = 0; m < msgs->len; m++) {
-                    jval *msg = msgs->kids[m];
-                    if (msg && msg->t == J_OBJ) {
-                        jval *content = json_get(msg, "content");
-                        if (content && content->t == J_STR) {
-                            last_msg = content->str;
-                        } else if (content && content->t == J_ARR && content->len > 0) {
-                            jval *inner = content->kids[0];
-                            if (inner && inner->t == J_OBJ) {
-                                jval *text = json_get(inner, "text");
-                                if (text && text->t == J_STR) last_msg = text->str;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // 1. Refresh & 2. Query
-            if (strcmp(rid_v->str, "this-computer") == 0) {
-                ChooserRoot roots[MAX_CHOOSER_ROOTS];
-                size_t num_roots = list_chooser_roots(g, roots, MAX_CHOOSER_ROOTS);
-                for (size_t i = 0; i < num_roots; i++) {
-                    char cmd[PATH_MAX + 256];
-                    // Refresh
-                    snprintf(cmd, sizeof(cmd), "./build/samosa-chutni refresh /tmp/chutni.db %s / > /dev/null", roots[i].id);
-                    system(cmd);
-                    // Query
-                    snprintf(cmd, sizeof(cmd), "./build/samosa-chutni query /tmp/chutni.db %s \"/\" \"%s\"", roots[i].id, last_msg);
-                    FILE *fp = popen(cmd, "r");
-                    if (fp) {
-                        size_t cur_len = strlen(context_str);
-                        size_t n = fread(context_str + cur_len, 1, sizeof(context_str) - 1 - cur_len, fp);
-                        context_str[cur_len + n] = '\0';
-                        pclose(fp);
-                        has_context = 1;
-                    }
-                }
-            } else {
-                char cmd[PATH_MAX + 256];
-                snprintf(cmd, sizeof(cmd), "./build/samosa-chutni refresh /tmp/chutni.db %s / > /dev/null", rid_v->str);
-                system(cmd);
-                
-                const char* pref = (pref_v && pref_v->t == J_STR) ? pref_v->str : "/";
-                snprintf(cmd, sizeof(cmd), "./build/samosa-chutni query /tmp/chutni.db %s \"%s\" \"%s\"", rid_v->str, pref, last_msg);
-                FILE *fp = popen(cmd, "r");
-                if (fp) {
-                    size_t n = fread(context_str, 1, sizeof(context_str)-1, fp);
-                    context_str[n] = '\0';
-                    pclose(fp);
-                    has_context = 1;
-                }
-            }
-        }
-    }
-    
-    // We should modify the request body to inject the context_str if has_context
-    SamosaHttpRequest new_request = *request;
-    char* new_body = NULL;
-    if (has_context) {
-        // Simple string manipulation to inject context into the messages array
-        // We look for "messages":[{"role":"user","content":"
-        char* msg_start = strstr(request->body, "\"messages\":[");
-        if (msg_start) {
-            char* content_start = strstr(msg_start, "\"content\":\"");
-            if (content_start) {
-                content_start += 11; // length of "content":"
-                size_t prefix_len = content_start - request->body;
-                
-                // Escape context_str
-                char escaped_context[65536 * 2] = {0};
-                size_t j = 0;
-                for (size_t i = 0; i < strlen(context_str) && j < sizeof(escaped_context) - 5; i++) {
-                    if (context_str[i] == '"') { escaped_context[j++] = '\\'; escaped_context[j++] = '"'; }
-                    else if (context_str[i] == '\n') { escaped_context[j++] = '\\'; escaped_context[j++] = 'n'; }
-                    else if (context_str[i] == '\r') { escaped_context[j++] = '\\'; escaped_context[j++] = 'r'; }
-                    else escaped_context[j++] = context_str[i];
-                }
-                
-                // Allocate new body
-                new_body = malloc(request->body_len + strlen(escaped_context) + 100);
-                snprintf(new_body, request->body_len + strlen(escaped_context) + 100, 
-                         "%.*s[Directory Context: %s]\\n\\n%s", 
-                         (int)prefix_len, request->body, escaped_context, content_start);
-                new_request.body = new_body;
-                new_request.body_len = strlen(new_body);
-            }
-        }
-    }
-
     json_free(body); free(arena);
 
     const char *active_id = active_model_id(g);
@@ -5130,15 +4859,93 @@ static int chat_completions_request(Gateway *g, int fd, const SamosaHttpRequest 
     }
     /* No active/ready model: fall through so proxy_request() gives the
        clearer, pre-existing 409 model_required / 503 backend_loading. */
-    int res = proxy_request(g, fd, has_context ? &new_request : request);
-    if (new_body) free(new_body);
-    return res;
+    return proxy_request(g, fd, request);
 }
 
 /* ============================================================================
    T1.3: safe browser directory chooser (docs/TASKS_UI_CHUTNI.md sec5.4).
    ============================================================================ */
 
+#define MAX_CHOOSER_ROOTS 32
+#define MAX_CHOOSER_ENTRIES 5000
+
+typedef struct {
+    char id[80];
+    char label[256];
+    char path[PATH_MAX]; /* always realpath()'d */
+    char kind[16]; /* "home" or "volume" */
+    char volume_identity[32];
+    int readable;
+    int connected;
+} ChooserRoot;
+
+typedef struct {
+    char name[512];
+    char path[PATH_MAX];
+    int readable;
+} ChooserEntry;
+
+/* The only safe starting points for the chooser: the real OS user home
+   (g->user_home -- NOT g->home, which is Samosa's own app-state directory
+   and gets redirected via SAMOSA_HOME in tests) and, on macOS, mounted
+   volumes under /Volumes. Every root is realpath()'d once here so later
+   containment checks are simple prefix comparisons against a symlink-free
+   string. Linux/Windows volume discovery is not implemented yet -- a
+   container target never offers Drive/This-computer scopes anyway (see the
+   T0.1 capability matrix), so Home-only is a correct, honestly scoped
+   starting point there, not a shortcut. */
+static size_t list_chooser_roots(Gateway *g, ChooserRoot *out, size_t max) {
+    size_t n = 0;
+    char resolved[PATH_MAX];
+    struct stat st;
+    if (n < max && g->user_home[0] && realpath(g->user_home, resolved) &&
+        !stat(resolved, &st) && S_ISDIR(st.st_mode)) {
+        ChooserRoot *r = &out[n];
+        path_copy(r->id, sizeof(r->id), "home");
+        path_copy(r->label, sizeof(r->label), "Home");
+        path_copy(r->path, sizeof(r->path), resolved);
+        path_copy(r->kind, sizeof(r->kind), "home");
+        snprintf(r->volume_identity, sizeof(r->volume_identity), "%llx", (unsigned long long)st.st_dev);
+        r->readable = access(resolved, R_OK | X_OK) == 0;
+        r->connected = 1;
+        n++;
+    }
+#ifdef __APPLE__
+    DIR *vols = opendir("/Volumes");
+    if (vols) {
+        struct dirent *entry;
+        while (n < max && (entry = readdir(vols))) {
+            if (entry->d_name[0] == '.') continue;
+            char candidate[PATH_MAX], vol_resolved[PATH_MAX];
+            struct stat vol_st;
+            if (!path_join(candidate, sizeof(candidate), "/Volumes", entry->d_name)) continue;
+            if (!realpath(candidate, vol_resolved)) continue;
+            /* The boot volume commonly appears under /Volumes as a symlink
+               to "/" itself -- that's not another place to browse, it's the
+               same filesystem Home already lives on, so skip the redundant
+               alias rather than surface raw "/" (System, Library, private)
+               as a first-class chooser root. */
+            if (!strcmp(vol_resolved, "/")) continue;
+            if (stat(vol_resolved, &vol_st) || !S_ISDIR(vol_st.st_mode)) continue;
+            int dup = 0;
+            for (size_t i = 0; i < n; ++i)
+                if (!strcmp(out[i].path, vol_resolved)) { dup = 1; break; }
+            if (dup) continue;
+            ChooserRoot *r = &out[n];
+            snprintf(r->id, sizeof(r->id), "volume-%llx", (unsigned long long)vol_st.st_dev);
+            path_copy(r->label, sizeof(r->label), entry->d_name);
+            path_copy(r->path, sizeof(r->path), vol_resolved);
+            path_copy(r->kind, sizeof(r->kind), "volume");
+            snprintf(r->volume_identity, sizeof(r->volume_identity), "%llx", (unsigned long long)vol_st.st_dev);
+            r->readable = access(vol_resolved, R_OK | X_OK) == 0;
+            r->connected = 1;
+            n++;
+        }
+        closedir(vols);
+    }
+#endif
+    return n;
+}
 
 static int hex_nibble(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -5330,8 +5137,6 @@ static int fs_directories_handler(Gateway *g, int fd, const SamosaHttpRequest *r
     return sent;
 }
 
-#include "samosa_models.c"
-
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
@@ -5344,22 +5149,9 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         if (!require_ui_session(g, fd, request)) return 1;
         return !strcmp(request->method, "GET") ? profile_get_handler(g, fd) : profile_put_handler(g, fd, request);
     }
-    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/attachments")) {
-        if (!require_ui_session(g, fd, request)) return 1;
-        // Mock implementation for T3.2
-        return samosa_http_response(fd, 200, "application/json", "{\"id\":\"mock_attachment_id\",\"capabilities\":[\"image\",\"document\"]}", NULL);
-    }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/setup/status")) {
         if (!require_ui_session(g, fd, request)) return 1;
         return setup_status_handler(g, fd);
-    }
-    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/models/install")) {
-        if (!require_ui_session(g, fd, request)) return 1;
-        return models_install_handler(g, fd, request);
-    }
-    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/models/installs")) {
-        if (!require_ui_session(g, fd, request)) return 1;
-        return models_installs_handler(g, fd, request);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/setup/welcome/complete")) {
         if (!require_ui_session(g, fd, request)) return 1;
@@ -5413,17 +5205,6 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             last, age, interactive_cooldown_ms() / 1000.0);
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
-    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/models/catalog")) {
-        size_t len = 0;
-        unsigned char *catalog_data = read_file_bytes_limit(g->models_json, 1024 * 1024, &len);
-        if (catalog_data) {
-            int ret = samosa_http_response(fd, 200, "application/json", (const char *)catalog_data, NULL);
-            free(catalog_data);
-            return ret;
-        } else {
-            return samosa_http_json_error(fd, 404, "catalog_not_found", "The model catalog could not be read.");
-        }
-    }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/backends")) {
         char body[1536];
         snprintf(body, sizeof(body),
@@ -5456,33 +5237,11 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         if (atomic_load(&g->generating))
             return samosa_http_json_error(fd, 409, "generation_active", "Stop the current response before switching models.");
         if (strcmp(name, g->backend)) {
-            char old_backend[16]; path_copy(old_backend, sizeof(old_backend), g->backend);
             backend_stop(g);
             path_copy(g->backend, sizeof(g->backend), name);
-            if (!backend_start(g)) {
-                path_copy(g->backend, sizeof(g->backend), old_backend);
-                backend_start(g);
-                return samosa_http_json_error(fd, 500, "backend_start_failed", "The selected model could not be started.");
-            }
-            
-            int ready = 0;
-            for (int i = 0; i < 200; i++) {
-                if (backend_probe(g)) { ready = 1; break; }
-                int status;
-                pid_t child = g->backend_pid;
-                if (child > 0 && waitpid(child, &status, WNOHANG) > 0) break;
-                usleep(50000);
-            }
-            
-            if (!ready) {
-                backend_stop(g);
-                path_copy(g->backend, sizeof(g->backend), old_backend);
-                backend_start(g);
-                return samosa_http_json_error(fd, 500, "backend_timeout", "The model failed to reach readiness.");
-            }
-            
             char persisted[32]; snprintf(persisted, sizeof(persisted), "%s\n", name);
-            write_small_file(g->selection_file, persisted);
+            if (!write_small_file(g->selection_file, persisted) || !backend_start(g))
+                return samosa_http_json_error(fd, 500, "backend_start_failed", "The selected model could not be started.");
         }
         return samosa_http_response(fd, 202, "application/json", "{\"accepted\":true}", NULL);
     }
@@ -5537,9 +5296,6 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return chat_completions_request(g, fd, request);
     if (!strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);
-    if (!strncmp(request->path, "/v1/chutni/", 11)) {
-        return handle_chutni_request(g, fd, request);
-    }
     if (!strncmp(request->path, "/v1/conversations/", 18))
         return conversations_dispatch(g, fd, request);
     if (!strncmp(request->path, "/v1/jobs/", 9))
@@ -5598,8 +5354,6 @@ static int load_config(Gateway *g) {
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
     ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "current/model");
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
-    ENV_PATH(models_json, "SAMOSA_MODELS_JSON", "current/models.json");
-    ENV_PATH(models_dir, "SAMOSA_MODELS_DIR", "models");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");
     ENV_PATH(bonsai_mmproj, "SAMOSA_BONSAI_MMPROJ", "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf");

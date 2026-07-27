@@ -21,7 +21,6 @@ python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
 
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
-grep -q 'engine/samosa_models.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/read_cache.h' "$REMOTE/release-manifest.tsv"
 
 SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \

@@ -56,11 +56,6 @@ samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
-samosa-chutni: src/samosa_chutni.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -DSQLITE_ENABLE_FTS5 -DSQLITE_THREADSAFE=1 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_FOREIGN_KEYS=1 -DSQLITE_OMIT_DEPRECATED \
-	  -pthread src/samosa_chutni.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni
-
 # test-chutni: T0.2+ gate for docs/TASKS_UI_CHUTNI.md Chutni core work
 # (streaming inventory scan, full-hash-on-request, symlink/permission safety).
 test-chutni: samosa-fs tests/test_chutni_inventory.sh
@@ -235,7 +230,7 @@ pagecache-residency: tools/pagecache_residency.c
 pagecache-residency-test: pagecache-residency tests/test_pagecache_residency.sh
 	sh tests/test_pagecache_residency.sh ./$(BUILD_DIR)/pagecache-residency
 
-test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py tests/test_chutni_security.sh tests/test_chutni_scale.sh tests/test_upgrade_safety.sh
+test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
@@ -255,9 +250,6 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	python3 tests/test_package_pdfium.py
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
-	sh tests/test_chutni_security.sh
-	sh tests/test_chutni_scale.sh
-	sh tests/test_upgrade_safety.sh
 
 # Jobs acceptance (offline). Gate 11 removed the Python jobs modules
 # (samosa_jobs/samosa_gateway/samosa_tools/jobs_fs) after native parity, so the

@@ -63,11 +63,7 @@ PDFIUM_ARCHIVES = [
 # a given release is a packaging-time decision, not an automatic one.
 GATEWAY_SOURCE_FILES = [
     "samosa_gateway.c",
-    "samosa_models.c",
     "samosa_fs.c",
-    "samosa_chutni.c",
-    "sqlite/sqlite3.c",
-    "sqlite/sqlite3.h",
     "read_cache.h",
     "durable_job.h",
 ]
