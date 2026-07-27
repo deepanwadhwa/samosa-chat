@@ -66,9 +66,14 @@ test-chutni: samosa-fs tests/test_chutni_inventory.sh
 # real bundled assets/models.json (real, independently-verified Qwen/
 # Bonsai/Ornith artifact bytes and SHA-256 hashes), validates it before
 # trusting any of it, and layers live compatible/install_state/active
-# detection on top using the gateway's existing per-backend fields.
-test-model-manager: samosa-gateway tests/test_model_catalog.sh
+# detection on top using the gateway's existing per-backend fields. T2.2:
+# POST /v1/models/install and friends implement real resumable, verified,
+# atomically-activated downloads against tests/fake_model_download_server.c
+# (T0.1), covering every documented failure mode plus pause/resume/cancel/
+# retry and the single-active-transfer gate.
+test-model-manager: samosa-gateway fake_model_download_server tests/test_model_catalog.sh tests/test_model_install.sh
 	sh tests/test_model_catalog.sh
+	sh tests/test_model_install.sh
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled

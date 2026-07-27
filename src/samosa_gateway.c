@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/statvfs.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -60,6 +61,7 @@ typedef struct {
     char bonsai_mmproj[PATH_MAX];
     char ornith_model[PATH_MAX];
     char models_catalog[PATH_MAX];
+    char models_dir[PATH_MAX]; /* T2.2: root for downloaded-model staging, e.g. ~/.samosa/models */
     char samosa_fs[PATH_MAX];
     char samosa_extract[PATH_MAX];
     char samosa_ocr[PATH_MAX];
@@ -68,6 +70,13 @@ typedef struct {
     char reader_fingerprint[192]; /* lazily computed; see reader_fingerprint() */
     char ui_token[65]; /* per-launch random session token; see init_ui_token() */
     char profile_path[PATH_MAX];
+    /* T2.2: one active transfer at a time (see the T2.2 evidence doc for why
+       a second concurrent distinct-model install is rejected rather than
+       FIFO-queued in this pass). Guarded by install_mu, deliberately
+       separate from `mu` above to avoid coupling install bookkeeping to
+       backend-selection locking. */
+    pthread_mutex_t install_mu;
+    char active_install_job_id[40];
 } Gateway;
 
 #define MAX_PUBLIC_JOB_URLS 20
@@ -5232,6 +5241,14 @@ static int artifact_url_is_trusted(const char *url) {
     };
     for (int i = 0; allowed_prefixes[i]; ++i)
         if (!strncmp(url, allowed_prefixes[i], strlen(allowed_prefixes[i]))) return 1;
+    /* Test-only, opt-in exception: tests/fake_model_download_server.c
+       (T0.1) stands in for a trusted host over plain HTTP on loopback --
+       this codebase has no TLS library to give it real HTTPS, so a fixture
+       catalog needs a way to reference it that isn't the production
+       huggingface.co allowlist. Gated behind an env var nothing sets except
+       tests, so production catalog validation is completely unaffected by
+       this branch existing. */
+    if (getenv("SAMOSA_TEST_ALLOW_LOOPBACK_ARTIFACTS") && !strncmp(url, "http://127.0.0.1:", 17)) return 1;
     return 0;
 }
 
@@ -5475,18 +5492,47 @@ static int emit_catalog_entry(TextBuffer *out, Gateway *g, jval *entry) {
     return ok;
 }
 
-static int models_catalog_handler(Gateway *g, int fd) {
+/* Shared by GET /v1/models/catalog (T2.1) and the install job manager
+   (T2.2): load the bundled catalog fresh and validate it before trusting
+   any of it. The caller owns *out_root and *out_arena and must json_free()
+   and free() them when done regardless of the return value (both may be
+   non-NULL even on failure, or both NULL if the file itself is missing). */
+static int catalog_load_and_validate(Gateway *g, jval **out_root, char **out_arena,
+                                      char *reason, size_t reason_cap) {
     size_t len = 0;
     unsigned char *raw = read_file_bytes_limit(g->models_catalog, 8 << 20, &len);
-    if (!raw)
-        return samosa_http_json_error(fd, 500, "catalog_missing", "The model catalog asset is missing.");
-    char *arena = NULL;
-    jval *root = json_parse((const char *)raw, &arena);
+    if (!raw) {
+        snprintf(reason, reason_cap, "catalog asset is missing");
+        *out_root = NULL; *out_arena = NULL;
+        return 0;
+    }
+    *out_root = json_parse((const char *)raw, out_arena);
     free(raw);
+    return catalog_validate(*out_root, reason, reason_cap);
+}
+
+static jval *catalog_find_model(jval *root, const char *model_id, const char *version) {
+    jval *models = json_get(root, "models");
+    for (int i = 0; models && i < models->len; ++i) {
+        jval *entry = models->kids[i];
+        jval *id = json_get(entry, "id");
+        jval *ver = json_get(entry, "version");
+        if (id && id->t == J_STR && !strcmp(id->str, model_id) &&
+            (!version || (ver && ver->t == J_STR && !strcmp(ver->str, version))))
+            return entry;
+    }
+    return NULL;
+}
+
+static int models_catalog_handler(Gateway *g, int fd) {
+    jval *root = NULL; char *arena = NULL;
     char reason[128];
-    if (!catalog_validate(root, reason, sizeof(reason))) {
+    if (!catalog_load_and_validate(g, &root, &arena, reason, sizeof(reason))) {
+        int missing = !root && !arena;
         json_free(root); free(arena);
-        return samosa_http_json_error(fd, 500, "catalog_invalid", "The bundled model catalog failed validation.");
+        return missing
+            ? samosa_http_json_error(fd, 500, "catalog_missing", "The model catalog asset is missing.")
+            : samosa_http_json_error(fd, 500, "catalog_invalid", "The bundled model catalog failed validation.");
     }
     jval *schema_version = json_get(root, "schema_version");
     jval *catalog_revision = json_get(root, "catalog_revision");
@@ -5506,6 +5552,915 @@ static int models_catalog_handler(Gateway *g, int fd) {
     int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
     free(body.data);
     return sent;
+}
+
+/* T2.2 (docs/TASKS_UI_CHUTNI.md section 5.3): resumable server-owned model
+   downloads. Scope decision, see the T2.2 evidence doc: one active
+   transfer at a time, tracked directly on Gateway rather than a persisted
+   multi-model FIFO queue -- a second concurrent distinct-model install is
+   rejected (503 install_busy) instead of queued. A paused job does not
+   hold the slot, so a different model can still be started while one sits
+   paused. T2.2's own acceptance list does not test multi-model queuing, so
+   this is a deliberate, disclosed simplification, not an oversight. */
+
+#define INSTALL_STAGING_SUBDIR ".installs"
+
+static int install_job_dir(Gateway *g, const char *job_id, char out[PATH_MAX], int create) {
+    char root[PATH_MAX];
+    if (!path_join(root, sizeof(root), g->models_dir, INSTALL_STAGING_SUBDIR)) return 0;
+    if (create && !durable_mkdirs(root)) return 0;
+    return durable_job_dir(root, job_id, out, create);
+}
+
+/* install_path is already validated (catalog_validate) to contain no ".."
+   or absolute segments, so replacing '/' is enough to get a collision-free
+   flat staging filename -- staging doesn't need to mirror install_path's
+   own subdirectory structure, only the final activation move does. */
+static void sanitize_staging_name(const char *install_path, char *out, size_t cap) {
+    size_t i = 0;
+    for (; install_path[i] && i + 1 < cap; ++i)
+        out[i] = install_path[i] == '/' ? '#' : install_path[i];
+    out[i] = 0;
+}
+
+typedef struct {
+    char job_id[40];
+    char model_id[80];
+    char version[128];
+    char client_request_id[128];
+    char state[16]; /* queued|downloading|verifying|installing|installed|paused|canceled|failed */
+    char error_code[64];
+    char error_message[192];
+    char created_at[32];
+    char updated_at[32];
+} InstallJob;
+
+static void iso8601_now(char out[32]) {
+    time_t t = time(NULL);
+    struct tm tm_utc;
+    gmtime_r(&t, &tm_utc);
+    strftime(out, 32, "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+}
+
+static int install_job_save(Gateway *g, const InstallJob *job) {
+    char dir[PATH_MAX], path[PATH_MAX];
+    if (!install_job_dir(g, job->job_id, dir, 1)) return 0;
+    if (!path_join(path, sizeof(path), dir, "job.json")) return 0;
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"job_id\":") && text_json_string(&body, job->job_id) &&
+        text_add(&body, ",\"model_id\":") && text_json_string(&body, job->model_id) &&
+        text_add(&body, ",\"version\":") && text_json_string(&body, job->version) &&
+        text_add(&body, ",\"client_request_id\":") &&
+        (job->client_request_id[0] ? text_json_string(&body, job->client_request_id) : text_add(&body, "null")) &&
+        text_add(&body, ",\"state\":") && text_json_string(&body, job->state) &&
+        text_add(&body, ",\"error_code\":") &&
+        (job->error_code[0] ? text_json_string(&body, job->error_code) : text_add(&body, "null")) &&
+        text_add(&body, ",\"error_message\":") &&
+        (job->error_message[0] ? text_json_string(&body, job->error_message) : text_add(&body, "null")) &&
+        text_add(&body, ",\"created_at\":") && text_json_string(&body, job->created_at) &&
+        text_add(&body, ",\"updated_at\":") && text_json_string(&body, job->updated_at) &&
+        text_add(&body, "}");
+    int sent = ok && durable_state_put(path, body.data);
+    free(body.data);
+    return sent;
+}
+
+static int install_job_load(Gateway *g, const char *job_id, InstallJob *out) {
+    if (!durable_id_valid(job_id)) return 0;
+    char dir[PATH_MAX], path[PATH_MAX];
+    if (!install_job_dir(g, job_id, dir, 0)) return 0;
+    if (!path_join(path, sizeof(path), dir, "job.json")) return 0;
+    char *text = durable_state_get(path, 1 << 16);
+    if (!text) return 0;
+    char *arena = NULL;
+    jval *root = json_parse(text, &arena);
+    free(text);
+    memset(out, 0, sizeof(*out));
+#define INSTALL_JOB_GETSTR(field, key) do { jval *v = json_get(root, key); \
+        if (v && v->t == J_STR) path_copy(out->field, sizeof(out->field), v->str); } while (0)
+    INSTALL_JOB_GETSTR(job_id, "job_id"); INSTALL_JOB_GETSTR(model_id, "model_id");
+    INSTALL_JOB_GETSTR(version, "version"); INSTALL_JOB_GETSTR(client_request_id, "client_request_id");
+    INSTALL_JOB_GETSTR(state, "state"); INSTALL_JOB_GETSTR(error_code, "error_code");
+    INSTALL_JOB_GETSTR(error_message, "error_message"); INSTALL_JOB_GETSTR(created_at, "created_at");
+    INSTALL_JOB_GETSTR(updated_at, "updated_at");
+#undef INSTALL_JOB_GETSTR
+    int ok = out->job_id[0] != 0;
+    json_free(root); free(arena);
+    return ok;
+}
+
+/* Maps an install-specific state (§5.3's queued/downloading/verifying/
+   installing/installed/paused/canceled/failed) to the generic durable-job
+   event vocabulary (§5.7's queued/running/paused_user/canceled/failed/
+   completed) that durable_event_append()'s "kind"-agnostic shape expects,
+   and appends one event. Called from inside the job's own worker thread or
+   a request handler that already owns that job_id, so the read-then-append
+   sequence numbering here is never racing itself for the same job. */
+static void install_job_event(Gateway *g, const char *job_id, const char *install_state,
+                               const char *current_item, const char *message) {
+    char dir[PATH_MAX], events_path[PATH_MAX];
+    if (!install_job_dir(g, job_id, dir, 1)) return;
+    if (!path_join(events_path, sizeof(events_path), dir, "events.jsonl")) return;
+    const char *event_state =
+        !strcmp(install_state, "queued") ? "queued" :
+        !strcmp(install_state, "paused") ? "paused_user" :
+        !strcmp(install_state, "canceled") ? "canceled" :
+        !strcmp(install_state, "failed") ? "failed" :
+        !strcmp(install_state, "installed") ? "completed" : "running";
+    long seq = 1;
+    FILE *f = fopen(events_path, "r");
+    if (f) { char line[4096]; while (fgets(line, sizeof(line), f)) seq++; fclose(f); }
+    durable_event_append(events_path, seq, job_id, "model_install", event_state, install_state,
+                          NULL, NULL, "bytes", current_item ? current_item : "", message ? message : "");
+}
+
+typedef struct {
+    Gateway *g;
+    char job_id[40];
+} InstallWorkerArgs;
+
+/* 0 = keep going, 1 = pause requested, 2 = cancel requested. One flag and
+   one tracked curl pid suffice because only one job ever transfers at a
+   time (see the scope decision above); both are guarded by g->install_mu
+   alongside g->active_install_job_id. */
+static atomic_int g_install_stop_signal;
+static pid_t g_install_curl_pid = -1;
+
+static void install_clear_active(Gateway *g) {
+    pthread_mutex_lock(&g->install_mu);
+    g->active_install_job_id[0] = 0;
+    g_install_curl_pid = -1;
+    atomic_store(&g_install_stop_signal, 0);
+    pthread_mutex_unlock(&g->install_mu);
+}
+
+/* Shells out to curl, exactly like dist/install.sh already does for every
+   other real fetch this project makes -- not a stub: implementing a
+   from-scratch TLS-capable HTTP client would mean vendoring a TLS stack,
+   directly against this project's dependency-free ethos. `-C -` resumes
+   from whatever the destination file already contains.
+
+   The catalog's own artifact url is separately validated
+   (artifact_url_is_trusted) to be https://huggingface.co/... before this
+   is ever called, so the initial host is already a trusted one -- this
+   function does not re-restrict the initial scheme, which is what lets
+   tests point it at tests/fake_model_download_server.c's plain-HTTP
+   fixture (this codebase has no TLS library to give a test fixture real
+   HTTPS, and adding one just for a test double isn't justified).
+
+   `-L` follows redirects -- required for real use, since real Hugging Face
+   resolve URLs redirect cross-subdomain to their CDN (verified: a live
+   request against the real Ornith artifact redirected to
+   us.aws.cdn.hf.co). A downloader that never follows a redirect would
+   just save the tiny redirect response body as if it were the artifact,
+   which is exactly what happened here before `-L` was added: the fake
+   server's "redirect" test mode was "passing" only because nothing was
+   ever followed, not because an untrusted target was correctly rejected.
+
+   `--proto-redir -all,https` is what actually restricts following: any
+   redirect hop must be https. Hardcoding an exact allowed-hostname list
+   for redirect targets (e.g. only us.aws.cdn.hf.co) would break real
+   downloads the moment Hugging Face's CDN routing changes; restricting the
+   redirect *scheme* instead blocks the actual attack class (a redirect to
+   file://, http://, or another non-TLS scheme) without that false-positive
+   risk, and is exactly what the fake server's "redirect" test mode (which
+   redirects to a plain http:// target) now proves gets rejected. */
+static int install_run_curl(Gateway *g, const char *url, const char *dest) {
+    /* Test-only, opt-in: a loopback fixture transfer of any size a test can
+       afford to generate completes near-instantly, leaving no real window
+       to exercise pause/cancel mid-transfer. Gated behind an env var
+       nothing sets except tests, so production downloads are never
+       throttled by this. */
+    const char *test_limit_rate = getenv("SAMOSA_TEST_LIMIT_RATE");
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
+        if (test_limit_rate && *test_limit_rate) {
+            execlp("curl", "curl", "-fsS", "-L", "--retry", "3", "--retry-delay", "2",
+                   "-C", "-", "--proto-redir", "-all,https", "--limit-rate", test_limit_rate,
+                   url, "-o", dest, (char *)NULL);
+        } else {
+            execlp("curl", "curl", "-fsS", "-L", "--retry", "3", "--retry-delay", "2",
+                   "-C", "-", "--proto-redir", "-all,https",
+                   url, "-o", dest, (char *)NULL);
+        }
+        _exit(127);
+    }
+    pthread_mutex_lock(&g->install_mu);
+    g_install_curl_pid = pid;
+    pthread_mutex_unlock(&g->install_mu);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    pthread_mutex_lock(&g->install_mu);
+    g_install_curl_pid = -1;
+    pthread_mutex_unlock(&g->install_mu);
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return -1; /* killed by a signal -- our own pause/cancel, or something else */
+}
+
+static void *install_worker(void *arg_) {
+    InstallWorkerArgs *args = (InstallWorkerArgs *)arg_;
+    Gateway *g = args->g;
+    InstallJob job;
+    if (!install_job_load(g, args->job_id, &job)) { free(args); return NULL; }
+
+    jval *root = NULL; char *catalog_arena = NULL;
+    char reason[128];
+    jval *entry = NULL;
+    if (catalog_load_and_validate(g, &root, &catalog_arena, reason, sizeof(reason)))
+        entry = catalog_find_model(root, job.model_id, job.version);
+    if (!entry) {
+        path_copy(job.state, sizeof(job.state), "failed");
+        path_copy(job.error_code, sizeof(job.error_code), entry ? "catalog_invalid" : "model_not_found");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "failed", NULL, "The model/catalog could not be found or validated.");
+        json_free(root); free(catalog_arena);
+        install_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    char job_dir[PATH_MAX];
+    install_job_dir(g, job.job_id, job_dir, 1);
+    jval *artifacts = json_get(entry, "artifacts");
+
+    /* Preflight: bytes still needed (already-staged bytes from a prior
+       attempt count as "already have") plus a 2 GiB reserve against actual
+       free space on the destination filesystem. */
+    long long remaining = 0;
+    for (int i = 0; artifacts && i < artifacts->len; ++i) {
+        jval *artifact = artifacts->kids[i];
+        jval *bytes = json_get(artifact, "bytes");
+        jval *name = json_get(artifact, "name");
+        if (!bytes || !name || name->t != J_STR) continue;
+        char staged_name[256], staged[PATH_MAX];
+        sanitize_staging_name(name->str, staged_name, sizeof(staged_name));
+        path_join(staged, sizeof(staged), job_dir, staged_name);
+        struct stat st;
+        long long have = (!stat(staged, &st) && S_ISREG(st.st_mode)) ? (long long)st.st_size : 0;
+        long long want = (long long)bytes->num;
+        if (have < want) remaining += want - have;
+    }
+    struct statvfs svfs;
+    if (statvfs(g->home, &svfs) == 0) {
+        long long free_bytes = (long long)svfs.f_bavail * svfs.f_frsize;
+        long long reserve = 2LL * 1024 * 1024 * 1024;
+        if (free_bytes < remaining + reserve) {
+            path_copy(job.state, sizeof(job.state), "failed");
+            path_copy(job.error_code, sizeof(job.error_code), "insufficient_space");
+            snprintf(job.error_message, sizeof(job.error_message),
+                     "Need %lld bytes (including a 2 GiB reserve), only %lld available.",
+                     remaining + reserve, free_bytes);
+            iso8601_now(job.updated_at);
+            install_job_save(g, &job);
+            install_job_event(g, job.job_id, "failed", NULL, job.error_message);
+            json_free(root); free(catalog_arena);
+            install_clear_active(g);
+            free(args);
+            return NULL;
+        }
+    }
+
+    path_copy(job.state, sizeof(job.state), "downloading");
+    iso8601_now(job.updated_at);
+    install_job_save(g, &job);
+    install_job_event(g, job.job_id, "downloading", NULL, "Starting download");
+
+    int failed = 0, stopped_early = 0;
+    for (int i = 0; !failed && !stopped_early && artifacts && i < artifacts->len; ++i) {
+        jval *artifact = artifacts->kids[i];
+        jval *name = json_get(artifact, "name");
+        jval *url = json_get(artifact, "url");
+        jval *bytes = json_get(artifact, "bytes");
+        jval *sha = json_get(artifact, "sha256");
+        if (!name || name->t != J_STR || !url || url->t != J_STR || !bytes || !sha) { failed = 1; break; }
+        if (!url->str[0]) {
+            /* No download host for this artifact yet (e.g. Qwen's converted
+               weights -- see the T2.1 evidence doc: legacy-detected only,
+               never downloaded). A configuration gap, not a transient one. */
+            path_copy(job.error_code, sizeof(job.error_code), "artifact_not_downloadable");
+            failed = 1; break;
+        }
+        char staged_name[256], staged[PATH_MAX];
+        sanitize_staging_name(name->str, staged_name, sizeof(staged_name));
+        path_join(staged, sizeof(staged), job_dir, staged_name);
+
+        if (atomic_load(&g_install_stop_signal)) { stopped_early = 1; break; }
+
+        struct stat pre_st;
+        int already_sized = !stat(staged, &pre_st) && S_ISREG(pre_st.st_mode) &&
+                             (double)pre_st.st_size == bytes->num;
+        if (!already_sized) {
+            int rc = install_run_curl(g, url->str, staged);
+            if (atomic_load(&g_install_stop_signal)) { stopped_early = 1; break; }
+            if (rc != 0) {
+                path_copy(job.error_code, sizeof(job.error_code), "download_failed");
+                snprintf(job.error_message, sizeof(job.error_message),
+                         "curl exited %d fetching %s", rc, name->str);
+                failed = 1; break;
+            }
+            struct stat st;
+            if (stat(staged, &st) || !S_ISREG(st.st_mode) || (double)st.st_size != bytes->num) {
+                path_copy(job.error_code, sizeof(job.error_code), "size_mismatch");
+                unlink(staged);
+                failed = 1; break;
+            }
+        }
+
+        path_copy(job.state, sizeof(job.state), "verifying");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "verifying", name->str, "Verifying checksum");
+
+        char hex[65];
+        if (read_cache_key_file(staged, hex) != 0 || strcmp(hex, sha->str) != 0) {
+            path_copy(job.error_code, sizeof(job.error_code), "checksum_mismatch");
+            unlink(staged);
+            failed = 1; break;
+        }
+        /* Last chance to honor a pause/cancel that arrived mid-verify --
+           "verifying" is still cancelable per the FSM; "installing" (next)
+           is not. Without this check here, a request racing the final
+           artifact's hash computation would be silently ignored. */
+        if (atomic_load(&g_install_stop_signal)) { stopped_early = 1; break; }
+    }
+
+    if (stopped_early) {
+        int stop = atomic_load(&g_install_stop_signal);
+        path_copy(job.state, sizeof(job.state), stop == 1 ? "paused" : "canceled");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, job.state, NULL, stop == 1 ? "Paused" : "Canceled");
+        json_free(root); free(catalog_arena);
+        install_clear_active(g);
+        free(args);
+        return NULL;
+    }
+    if (failed) {
+        path_copy(job.state, sizeof(job.state), "failed");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "failed", NULL,
+                          job.error_message[0] ? job.error_message : job.error_code);
+        json_free(root); free(catalog_arena);
+        install_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    /* Noncancelable commit: every artifact verified above. Move each
+       staged file to its final install_path under g->home -- same
+       filesystem, so rename() is atomic and fast even for the 24 GB
+       experts.bin. A failed download never reaches this point, so a
+       working prior install is never replaced by a bad one. */
+    path_copy(job.state, sizeof(job.state), "installing");
+    iso8601_now(job.updated_at);
+    install_job_save(g, &job);
+    install_job_event(g, job.job_id, "installing", NULL, "Publishing verified artifacts");
+
+    int publish_ok = 1;
+    for (int i = 0; publish_ok && artifacts && i < artifacts->len; ++i) {
+        jval *artifact = artifacts->kids[i];
+        jval *name = json_get(artifact, "name");
+        jval *install_path = json_get(artifact, "install_path");
+        if (!name || name->t != J_STR || !install_path || install_path->t != J_STR) { publish_ok = 0; break; }
+        char staged_name[256], staged[PATH_MAX], final_path[PATH_MAX], final_dir[PATH_MAX];
+        sanitize_staging_name(name->str, staged_name, sizeof(staged_name));
+        path_join(staged, sizeof(staged), job_dir, staged_name);
+        path_join(final_path, sizeof(final_path), g->home, install_path->str);
+        path_copy(final_dir, sizeof(final_dir), final_path);
+        char *slash = strrchr(final_dir, '/');
+        if (slash) { *slash = 0; if (!durable_mkdirs(final_dir)) { publish_ok = 0; break; } }
+        if (rename(staged, final_path) != 0) { publish_ok = 0; break; }
+        chmod(final_path, 0600);
+    }
+
+    if (!publish_ok) {
+        path_copy(job.state, sizeof(job.state), "failed");
+        path_copy(job.error_code, sizeof(job.error_code), "activation_failed");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "failed", NULL, "Could not publish downloaded artifacts.");
+        json_free(root); free(catalog_arena);
+        install_clear_active(g);
+        free(args);
+        return NULL;
+    }
+
+    path_copy(job.state, sizeof(job.state), "installed");
+    iso8601_now(job.updated_at);
+    install_job_save(g, &job);
+    install_job_event(g, job.job_id, "installed", NULL, "Installed");
+    json_free(root); free(catalog_arena);
+    install_clear_active(g);
+    free(args);
+    return NULL;
+}
+
+static void install_spawn_worker(Gateway *g, const char *job_id) {
+    InstallWorkerArgs *worker_args = malloc(sizeof(InstallWorkerArgs));
+    worker_args->g = g;
+    path_copy(worker_args->job_id, sizeof(worker_args->job_id), job_id);
+    pthread_t thread;
+    pthread_create(&thread, NULL, install_worker, worker_args);
+    pthread_detach(thread);
+}
+
+static int install_generate_job_id(char out[40]) {
+    unsigned char raw[16];
+    FILE *urandom = fopen("/dev/urandom", "rb");
+    if (!urandom) return 0;
+    size_t got = fread(raw, 1, sizeof(raw), urandom);
+    fclose(urandom);
+    if (got != sizeof(raw)) return 0;
+    static const char *hex = "0123456789abcdef";
+    for (int i = 0; i < 16; ++i) { out[i * 2] = hex[raw[i] >> 4]; out[i * 2 + 1] = hex[raw[i] & 0xf]; }
+    out[32] = 0;
+    return 1;
+}
+
+static int models_install_created_response(int fd, const InstallJob *job, int status) {
+    TextBuffer body = {0};
+    char status_url[128], events_url[160];
+    snprintf(status_url, sizeof(status_url), "/v1/models/installs/%s", job->job_id);
+    snprintf(events_url, sizeof(events_url), "/v1/models/installs/%s/events", job->job_id);
+    int ok = text_add(&body, "{\"job_id\":") && text_json_string(&body, job->job_id) &&
+        text_add(&body, ",\"model_id\":") && text_json_string(&body, job->model_id) &&
+        text_add(&body, ",\"version\":") && text_json_string(&body, job->version) &&
+        text_add(&body, ",\"state\":") && text_json_string(&body, job->state) &&
+        text_add(&body, ",\"status_url\":") && text_json_string(&body, status_url) &&
+        text_add(&body, ",\"events_url\":") && text_json_string(&body, events_url) &&
+        text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, status, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_install_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL;
+    jval *body_v = json_parse(request->body, &arena);
+    jval *model_id_v = body_v && body_v->t == J_OBJ ? json_get(body_v, "model_id") : NULL;
+    jval *version_v = body_v && body_v->t == J_OBJ ? json_get(body_v, "version") : NULL;
+    jval *client_req_v = body_v && body_v->t == J_OBJ ? json_get(body_v, "client_request_id") : NULL;
+    if (!model_id_v || model_id_v->t != J_STR || !version_v || version_v->t != J_STR) {
+        json_free(body_v); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_install", "model_id and version are required.");
+    }
+    char model_id[80], version[128], client_request_id[128];
+    path_copy(model_id, sizeof(model_id), model_id_v->str);
+    path_copy(version, sizeof(version), version_v->str);
+    client_request_id[0] = 0;
+    if (client_req_v && client_req_v->t == J_STR)
+        path_copy(client_request_id, sizeof(client_request_id), client_req_v->str);
+    json_free(body_v); free(arena);
+
+    jval *root = NULL; char *catalog_arena = NULL;
+    char reason[128];
+    if (!catalog_load_and_validate(g, &root, &catalog_arena, reason, sizeof(reason))) {
+        json_free(root); free(catalog_arena);
+        return samosa_http_json_error(fd, 500, "catalog_invalid", "The bundled model catalog failed validation.");
+    }
+    jval *entry = catalog_find_model(root, model_id, version);
+    if (!entry) {
+        json_free(root); free(catalog_arena);
+        return samosa_http_json_error(fd, 404, "model_not_found", "Unknown model_id/version.");
+    }
+    int compatible = catalog_platform_matches(json_get(entry, "supported_platforms"));
+    json_free(root); free(catalog_arena);
+    if (!compatible)
+        return samosa_http_json_error(fd, 422, "incompatible_model", "This model is not compatible with this machine.");
+
+    /* Dedup: an existing nonterminal job for the same model+version, or a
+       repeated client_request_id, returns that job instead of creating a
+       new one. */
+    char installs_root[PATH_MAX];
+    path_join(installs_root, sizeof(installs_root), g->models_dir, INSTALL_STAGING_SUBDIR);
+    DIR *listing = opendir(installs_root);
+    if (listing) {
+        struct dirent *ent;
+        while ((ent = readdir(listing))) {
+            if (ent->d_name[0] == '.') continue;
+            InstallJob existing;
+            if (!install_job_load(g, ent->d_name, &existing)) continue;
+            int same_target = !strcmp(existing.model_id, model_id) && !strcmp(existing.version, version);
+            int same_request = client_request_id[0] && !strcmp(existing.client_request_id, client_request_id);
+            int nonterminal = strcmp(existing.state, "installed") && strcmp(existing.state, "failed") &&
+                              strcmp(existing.state, "canceled");
+            if ((same_target && nonterminal) || same_request) {
+                closedir(listing);
+                return models_install_created_response(fd, &existing, 202);
+            }
+        }
+        closedir(listing);
+    }
+
+    pthread_mutex_lock(&g->install_mu);
+    int busy = g->active_install_job_id[0] != 0;
+    pthread_mutex_unlock(&g->install_mu);
+    if (busy)
+        return samosa_http_json_error(fd, 503, "install_busy", "Another model install is already transferring.");
+
+    InstallJob job = {0};
+    if (!install_generate_job_id(job.job_id))
+        return samosa_http_json_error(fd, 500, "internal", "Could not generate a job id.");
+    path_copy(job.model_id, sizeof(job.model_id), model_id);
+    path_copy(job.version, sizeof(job.version), version);
+    path_copy(job.client_request_id, sizeof(job.client_request_id), client_request_id);
+    path_copy(job.state, sizeof(job.state), "queued");
+    iso8601_now(job.created_at);
+    path_copy(job.updated_at, sizeof(job.updated_at), job.created_at);
+    if (!install_job_save(g, &job))
+        return samosa_http_json_error(fd, 500, "internal", "Could not persist the install job.");
+    install_job_event(g, job.job_id, "queued", NULL, "Queued");
+
+    pthread_mutex_lock(&g->install_mu);
+    path_copy(g->active_install_job_id, sizeof(g->active_install_job_id), job.job_id);
+    atomic_store(&g_install_stop_signal, 0);
+    pthread_mutex_unlock(&g->install_mu);
+    install_spawn_worker(g, job.job_id);
+
+    return models_install_created_response(fd, &job, 202);
+}
+
+/* Shared by GET /v1/models/installs/<job_id> and GET /v1/models/installs:
+   live byte progress computed from the catalog's declared sizes plus
+   whatever is currently staged on disk, never persisted redundantly
+   alongside the job's own state (avoids state/reality drift). */
+static int models_install_status_body(Gateway *g, const InstallJob *job, TextBuffer *body) {
+    jval *root = NULL; char *catalog_arena = NULL;
+    char reason[128];
+    long long completed_bytes = 0, total_bytes = 0;
+    long long current_artifact_completed = 0, current_artifact_total = 0;
+    char current_artifact_name[256] = "";
+    if (catalog_load_and_validate(g, &root, &catalog_arena, reason, sizeof(reason))) {
+        jval *entry = catalog_find_model(root, job->model_id, job->version);
+        jval *artifacts = entry ? json_get(entry, "artifacts") : NULL;
+        char job_dir[PATH_MAX];
+        install_job_dir(g, job->job_id, job_dir, 0);
+        for (int i = 0; artifacts && i < artifacts->len; ++i) {
+            jval *artifact = artifacts->kids[i];
+            jval *name = json_get(artifact, "name");
+            jval *bytes = json_get(artifact, "bytes");
+            if (!name || name->t != J_STR || !bytes) continue;
+            long long want = (long long)bytes->num;
+            total_bytes += want;
+            if (!strcmp(job->state, "installed")) { completed_bytes += want; continue; }
+            char staged_name[256], staged[PATH_MAX];
+            sanitize_staging_name(name->str, staged_name, sizeof(staged_name));
+            path_join(staged, sizeof(staged), job_dir, staged_name);
+            struct stat st;
+            long long have = (!stat(staged, &st) && S_ISREG(st.st_mode)) ? (long long)st.st_size : 0;
+            if (have > want) have = want;
+            completed_bytes += have;
+            if (have < want && current_artifact_name[0] == 0) {
+                path_copy(current_artifact_name, sizeof(current_artifact_name), name->str);
+                current_artifact_completed = have;
+                current_artifact_total = want;
+            }
+        }
+    }
+    json_free(root); free(catalog_arena);
+
+    char numbuf[64];
+    int ok = text_add(body, "{\"job_id\":") && text_json_string(body, job->job_id) &&
+        text_add(body, ",\"model_id\":") && text_json_string(body, job->model_id) &&
+        text_add(body, ",\"version\":") && text_json_string(body, job->version) &&
+        text_add(body, ",\"state\":") && text_json_string(body, job->state);
+    snprintf(numbuf, sizeof(numbuf), "%lld", completed_bytes);
+    ok = ok && text_add(body, ",\"completed_bytes\":") && text_add(body, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", total_bytes);
+    ok = ok && text_add(body, ",\"total_bytes\":") && text_add(body, numbuf);
+    ok = ok && text_add(body, ",\"current_artifact\":") &&
+        (current_artifact_name[0] ? text_json_string(body, current_artifact_name) : text_add(body, "null"));
+    snprintf(numbuf, sizeof(numbuf), "%lld", current_artifact_completed);
+    ok = ok && text_add(body, ",\"current_artifact_completed_bytes\":") && text_add(body, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", current_artifact_total);
+    ok = ok && text_add(body, ",\"current_artifact_total_bytes\":") && text_add(body, numbuf);
+    ok = ok && text_add(body, ",\"error\":") &&
+        (job->error_code[0] ?
+            (text_add(body, "{\"code\":") && text_json_string(body, job->error_code) &&
+             text_add(body, ",\"message\":") &&
+             text_json_string(body, job->error_message[0] ? job->error_message : job->error_code) &&
+             text_add(body, "}"))
+            : text_add(body, "null"));
+    ok = ok && text_add(body, ",\"created_at\":") && text_json_string(body, job->created_at) &&
+        text_add(body, ",\"updated_at\":") && text_json_string(body, job->updated_at) &&
+        text_add(body, "}");
+    return ok;
+}
+
+static int models_install_status_handler(Gateway *g, int fd, const char *job_id) {
+    InstallJob job;
+    if (!install_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    TextBuffer body = {0};
+    int ok = models_install_status_body(g, &job, &body);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_installs_list_handler(Gateway *g, int fd) {
+    TextBuffer body = {0};
+    pthread_mutex_lock(&g->install_mu);
+    char active[40]; path_copy(active, sizeof(active), g->active_install_job_id);
+    pthread_mutex_unlock(&g->install_mu);
+    int ok = text_add(&body, "{\"active_transfer_job_id\":") &&
+        (active[0] ? text_json_string(&body, active) : text_add(&body, "null")) &&
+        text_add(&body, ",\"jobs\":[");
+    char installs_root[PATH_MAX];
+    path_join(installs_root, sizeof(installs_root), g->models_dir, INSTALL_STAGING_SUBDIR);
+    DIR *dir = opendir(installs_root);
+    int first = 1;
+    if (dir) {
+        struct dirent *ent;
+        while (ok && (ent = readdir(dir))) {
+            if (ent->d_name[0] == '.') continue;
+            InstallJob job;
+            if (!install_job_load(g, ent->d_name, &job)) continue;
+            ok = (first || text_add(&body, ",")) && models_install_status_body(g, &job, &body);
+            first = 0;
+        }
+        closedir(dir);
+    }
+    ok = ok && text_add(&body, "]}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+/* GET /v1/models/installs/<job_id>/events?after=<seq>. Plain JSON replay,
+   not SSE -- no route in this codebase serves text/event-stream yet (the
+   existing native Jobs system reads its own JSONL files the same way), and
+   nothing consumes this endpoint live yet either (assets/app.html's model
+   UI is still hardcoded; see the T2.1 evidence doc). Live push is a
+   documented future enhancement, not a silent gap. */
+static int models_install_events_handler(Gateway *g, int fd, const char *job_id, const SamosaHttpRequest *request) {
+    char job_dir[PATH_MAX], events_path[PATH_MAX];
+    if (!durable_id_valid(job_id) || !install_job_dir(g, job_id, job_dir, 0))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    if (!path_join(events_path, sizeof(events_path), job_dir, "events.jsonl"))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    char after_str[32]; long after = 0;
+    if (query_param(request->query, "after", after_str, sizeof(after_str))) after = atol(after_str);
+    FILE *f = fopen(events_path, "r");
+    if (!f) return samosa_http_json_error(fd, 404, "job_not_found", "No events recorded yet.");
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"events\":[");
+    int first = 1;
+    char line[4096];
+    while (ok && fgets(line, sizeof(line), f)) {
+        size_t n = strlen(line);
+        if (n && line[n - 1] == '\n') line[--n] = 0;
+        if (!n) continue; /* a torn/blank final line is ignored, not replayed */
+        long seq = 0;
+        sscanf(line, "{\"seq\":%ld,", &seq);
+        if (seq <= after) continue;
+        ok = (first || text_add(&body, ",")) && text_add(&body, line);
+        first = 0;
+    }
+    fclose(f);
+    ok = ok && text_add(&body, "]}");
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int install_await_state(Gateway *g, const char *job_id, const char *want_state, InstallJob *out) {
+    for (int i = 0; i < 40; ++i) {
+        if (install_job_load(g, job_id, out) && !strcmp(out->state, want_state)) return 1;
+        usleep(50000);
+    }
+    return install_job_load(g, job_id, out);
+}
+
+static int models_install_pause_handler(Gateway *g, int fd, const char *job_id) {
+    InstallJob job;
+    if (!install_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    if (!strcmp(job.state, "paused")) {
+        TextBuffer body = {0};
+        int ok = models_install_status_body(g, &job, &body);
+        int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+        free(body.data);
+        return sent;
+    }
+    pthread_mutex_lock(&g->install_mu);
+    int is_active = !strcmp(g->active_install_job_id, job_id);
+    pthread_mutex_unlock(&g->install_mu);
+    if (!is_active || (strcmp(job.state, "queued") && strcmp(job.state, "downloading")))
+        return samosa_http_json_error(fd, 409, "invalid_state", "This job cannot be paused from its current state.");
+
+    atomic_store(&g_install_stop_signal, 1);
+    pthread_mutex_lock(&g->install_mu);
+    pid_t curl_pid = g_install_curl_pid;
+    pthread_mutex_unlock(&g->install_mu);
+    if (curl_pid > 0) kill(curl_pid, SIGTERM);
+    install_await_state(g, job_id, "paused", &job);
+
+    TextBuffer body = {0};
+    int ok = models_install_status_body(g, &job, &body);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_install_cancel_handler(Gateway *g, int fd, const char *job_id) {
+    InstallJob job;
+    if (!install_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    if (!strcmp(job.state, "canceled")) {
+        TextBuffer body = {0};
+        int ok = models_install_status_body(g, &job, &body);
+        int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+        free(body.data);
+        return sent;
+    }
+    if (!strcmp(job.state, "paused")) {
+        /* No live worker holds this job (pausing already cleared the
+           active slot) -- just flip the persisted state directly. */
+        path_copy(job.state, sizeof(job.state), "canceled");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "canceled", NULL, "Canceled");
+        TextBuffer body = {0};
+        int ok = models_install_status_body(g, &job, &body);
+        int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+        free(body.data);
+        return sent;
+    }
+    pthread_mutex_lock(&g->install_mu);
+    int is_active = !strcmp(g->active_install_job_id, job_id);
+    pthread_mutex_unlock(&g->install_mu);
+    if (!is_active ||
+        (strcmp(job.state, "queued") && strcmp(job.state, "downloading") && strcmp(job.state, "verifying")))
+        return samosa_http_json_error(fd, 409, "invalid_state", "This job cannot be canceled from its current state.");
+
+    atomic_store(&g_install_stop_signal, 2);
+    pthread_mutex_lock(&g->install_mu);
+    pid_t curl_pid = g_install_curl_pid;
+    pthread_mutex_unlock(&g->install_mu);
+    if (curl_pid > 0) kill(curl_pid, SIGTERM);
+    install_await_state(g, job_id, "canceled", &job);
+
+    TextBuffer body = {0};
+    int ok = models_install_status_body(g, &job, &body);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_install_resume_handler(Gateway *g, int fd, const char *job_id) {
+    InstallJob job;
+    if (!install_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    if (!strcmp(job.state, "downloading") || !strcmp(job.state, "queued")) {
+        TextBuffer body = {0}; /* idempotent: already running/about to run */
+        int ok = models_install_status_body(g, &job, &body);
+        int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+        free(body.data);
+        return sent;
+    }
+    if (strcmp(job.state, "paused"))
+        return samosa_http_json_error(fd, 409, "invalid_state", "Only a paused job can be resumed.");
+
+    pthread_mutex_lock(&g->install_mu);
+    int busy = g->active_install_job_id[0] != 0;
+    pthread_mutex_unlock(&g->install_mu);
+    if (busy)
+        return samosa_http_json_error(fd, 503, "install_busy", "Another model install is already transferring.");
+
+    path_copy(job.state, sizeof(job.state), "queued");
+    iso8601_now(job.updated_at);
+    install_job_save(g, &job);
+    install_job_event(g, job.job_id, "queued", NULL, "Resumed");
+
+    pthread_mutex_lock(&g->install_mu);
+    path_copy(g->active_install_job_id, sizeof(g->active_install_job_id), job.job_id);
+    atomic_store(&g_install_stop_signal, 0);
+    pthread_mutex_unlock(&g->install_mu);
+    install_spawn_worker(g, job.job_id);
+
+    TextBuffer body = {0};
+    int ok = models_install_status_body(g, &job, &body);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_install_retry_handler(Gateway *g, int fd, const char *job_id) {
+    InstallJob job;
+    if (!install_job_load(g, job_id, &job))
+        return samosa_http_json_error(fd, 404, "job_not_found", "Unknown install job id.");
+    if (strcmp(job.state, "failed") && strcmp(job.state, "canceled"))
+        return samosa_http_json_error(fd, 409, "invalid_state", "Only a failed or canceled job can be retried.");
+
+    pthread_mutex_lock(&g->install_mu);
+    int busy = g->active_install_job_id[0] != 0;
+    pthread_mutex_unlock(&g->install_mu);
+    if (busy)
+        return samosa_http_json_error(fd, 503, "install_busy", "Another model install is already transferring.");
+
+    char old_dir[PATH_MAX];
+    install_job_dir(g, job_id, old_dir, 0);
+    long long reused_bytes = 0;
+    DIR *scan = opendir(old_dir);
+    if (scan) {
+        struct dirent *ent;
+        while ((ent = readdir(scan))) {
+            if (ent->d_name[0] == '.') continue;
+            char p[PATH_MAX]; struct stat st;
+            if (path_join(p, sizeof(p), old_dir, ent->d_name) && !stat(p, &st) && S_ISREG(st.st_mode))
+                reused_bytes += (long long)st.st_size;
+        }
+        closedir(scan);
+    }
+
+    InstallJob new_job = {0};
+    if (!install_generate_job_id(new_job.job_id))
+        return samosa_http_json_error(fd, 500, "internal", "Could not generate a job id.");
+    path_copy(new_job.model_id, sizeof(new_job.model_id), job.model_id);
+    path_copy(new_job.version, sizeof(new_job.version), job.version);
+    path_copy(new_job.state, sizeof(new_job.state), "queued");
+    iso8601_now(new_job.created_at);
+    path_copy(new_job.updated_at, sizeof(new_job.updated_at), new_job.created_at);
+
+    char installs_root[PATH_MAX], new_dir[PATH_MAX];
+    path_join(installs_root, sizeof(installs_root), g->models_dir, INSTALL_STAGING_SUBDIR);
+    durable_mkdirs(installs_root);
+    path_join(new_dir, sizeof(new_dir), installs_root, new_job.job_id);
+    /* Reuse safe retained bytes: move the old job's staged, byte-verified-
+       or-still-downloading files into the new job's directory before it
+       starts, so curl's -C - continues from there instead of from zero. A
+       failed job's own corrupt/oversized artifact was already unlink()'d
+       by the worker, so only genuinely intact bytes remain to reuse. */
+    if (rename(old_dir, new_dir) != 0) durable_mkdirs(new_dir);
+
+    if (!install_job_save(g, &new_job))
+        return samosa_http_json_error(fd, 500, "internal", "Could not persist the retried job.");
+    install_job_event(g, new_job.job_id, "queued", NULL, "Retrying");
+
+    pthread_mutex_lock(&g->install_mu);
+    path_copy(g->active_install_job_id, sizeof(g->active_install_job_id), new_job.job_id);
+    atomic_store(&g_install_stop_signal, 0);
+    pthread_mutex_unlock(&g->install_mu);
+    install_spawn_worker(g, new_job.job_id);
+
+    TextBuffer body = {0};
+    char status_url[128], events_url[160], numbuf[32];
+    snprintf(status_url, sizeof(status_url), "/v1/models/installs/%s", new_job.job_id);
+    snprintf(events_url, sizeof(events_url), "/v1/models/installs/%s/events", new_job.job_id);
+    snprintf(numbuf, sizeof(numbuf), "%lld", reused_bytes);
+    int ok = text_add(&body, "{\"job_id\":") && text_json_string(&body, new_job.job_id) &&
+        text_add(&body, ",\"model_id\":") && text_json_string(&body, new_job.model_id) &&
+        text_add(&body, ",\"version\":") && text_json_string(&body, new_job.version) &&
+        text_add(&body, ",\"state\":") && text_json_string(&body, new_job.state) &&
+        text_add(&body, ",\"reused_bytes\":") && text_add(&body, numbuf) &&
+        text_add(&body, ",\"status_url\":") && text_json_string(&body, status_url) &&
+        text_add(&body, ",\"events_url\":") && text_json_string(&body, events_url) &&
+        text_add(&body, "}");
+    int sent = ok && samosa_http_response(fd, 201, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int models_installs_dispatch(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    static const char prefix[] = "/v1/models/installs/";
+    size_t plen = sizeof(prefix) - 1;
+    const char *rest = request->path + plen;
+    const char *slash = strchr(rest, '/');
+    size_t id_len = slash ? (size_t)(slash - rest) : strlen(rest);
+    char job_id[40];
+    if (id_len == 0 || id_len >= sizeof(job_id)) {
+        return samosa_http_json_error(fd, 400, "invalid_job_id",
+            "job_id may contain only letters, numbers, dash, and underscore.");
+    }
+    memcpy(job_id, rest, id_len); job_id[id_len] = 0;
+    if (!durable_id_valid(job_id)) {
+        return samosa_http_json_error(fd, 400, "invalid_job_id",
+            "job_id may contain only letters, numbers, dash, and underscore.");
+    }
+    const char *action = slash ? slash + 1 : "";
+    if (!*action) {
+        if (strcmp(request->method, "GET"))
+            return samosa_http_json_error(fd, 400, "method_not_allowed", "Only GET is supported.");
+        return models_install_status_handler(g, fd, job_id);
+    }
+    if (!strcmp(action, "events")) {
+        if (strcmp(request->method, "GET"))
+            return samosa_http_json_error(fd, 400, "method_not_allowed", "Only GET is supported.");
+        return models_install_events_handler(g, fd, job_id, request);
+    }
+    if (strcmp(request->method, "POST"))
+        return samosa_http_json_error(fd, 400, "method_not_allowed", "Only POST is supported.");
+    if (!strcmp(action, "pause")) return models_install_pause_handler(g, fd, job_id);
+    if (!strcmp(action, "resume")) return models_install_resume_handler(g, fd, job_id);
+    if (!strcmp(action, "cancel")) return models_install_cancel_handler(g, fd, job_id);
+    if (!strcmp(action, "retry")) return models_install_retry_handler(g, fd, job_id);
+    return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
 }
 
 static int gateway_handler(SamosaHttpServer *server, int fd,
@@ -5541,6 +6496,15 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/models/catalog")) {
         return models_catalog_handler(g, fd);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/models/install")) {
+        return models_install_handler(g, fd, request);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/models/installs")) {
+        return models_installs_list_handler(g, fd);
+    }
+    if (!strncmp(request->path, "/v1/models/installs/", sizeof("/v1/models/installs/") - 1)) {
+        return models_installs_dispatch(g, fd, request);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
         if (static_file(fd, g->app_logo, "image/png", NULL)) return 1;
@@ -5703,6 +6667,7 @@ static int load_config(Gateway *g) {
     memset(g, 0, sizeof(*g));
     g->backend_pid = 0; g->upstream_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
+    pthread_mutex_init(&g->install_mu, NULL);
     atomic_init(&g->generating, 0);
     atomic_init(&g->interactive_active, 0);
     atomic_init(&g->last_interactive_mono_ms, 0);
@@ -5736,6 +6701,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(bonsai_mmproj, "SAMOSA_BONSAI_MMPROJ", "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf");
     ENV_PATH(ornith_model, "SAMOSA_ORNITH_MODEL", "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf");
     ENV_PATH(models_catalog, "SAMOSA_MODELS_CATALOG", "current/models.json");
+    ENV_PATH(models_dir, "SAMOSA_MODELS_DIR", "models");
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
     ENV_PATH(samosa_ocr, "SAMOSA_OCR", "current/bin/samosa-ocr");

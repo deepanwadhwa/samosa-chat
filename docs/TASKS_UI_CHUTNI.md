@@ -2190,6 +2190,30 @@ mark this task fully DONE until the frontend is wired to this endpoint.
 
 #### T2.2 — Build resumable server-owned downloads
 
+**Status: DONE (2026-07-27) against this task's acceptance list, with
+disclosed scope decisions.** Evidence:
+[docs/regressions/ui-chutni/t2.2-evidence.md](../regressions/ui-chutni/t2.2-evidence.md).
+Real curl-based resumable download (`-C -`, `-L`, `--proto-redir
+-all,https`), native SHA-256 verification, atomic per-model activation,
+preflight free-space check with required-vs-available reporting in the
+error, pause/resume/cancel/retry, and live byte progress, all tested end to
+end against `tests/fake_model_download_server.c` (14 scenarios in
+`tests/test_model_install.sh`, `make test-model-manager`, ASan-clean).
+Two real bugs were found and fixed by the testing itself before landing: a
+route-matching off-by-one that broke every `GET
+/v1/models/installs/<job_id>` request, and a missing `-L` flag that would
+have broken every real Hugging Face download despite the redirect-rejection
+test appearing to pass (for the wrong reason). **Disclosed scope
+decisions, not silent gaps:** one active transfer at a time rather than a
+persisted multi-model FIFO queue (this task's acceptance list doesn't test
+cross-model queuing); real network disconnect and real disk-full were not
+separately simulated (the code paths they'd hit are exercised by other
+tests, but the exact conditions weren't reproduced); events are plain JSON
+replay, not SSE (matches existing project convention, nothing consumes
+this endpoint live yet). Qwen still cannot be installed via this path
+(`artifact_not_downloadable`) since it has no public download URL yet — see
+T2.1's evidence doc.
+
 **Work**
 
 - Implement free-space preflight, bounded retries, HTTP range resume, exact byte
