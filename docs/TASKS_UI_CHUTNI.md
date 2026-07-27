@@ -2147,6 +2147,23 @@ say so rather than faking a working button.
 
 #### T2.1 — Replace hardcoded model UI with a trusted catalog
 
+**Status: PARTIALLY DONE (2026-07-27), backend only.** Evidence:
+[docs/regressions/ui-chutni/t2.1-evidence.md](../regressions/ui-chutni/t2.1-evidence.md).
+`GET /v1/models/catalog` is real and tested against the actual installed
+Qwen (24 GB, hard-linked) and Ornith models: real per-artifact bytes/SHA-256
+(cross-checked against live files and, for Bonsai/Ornith, Hugging Face's
+own tree API), validation that rejects malformed/unsafe/untrusted catalog
+data before serving any of it, live compatibility/install-state detection,
+shared-runtime-dependency gating, and live capability degradation when an
+optional artifact (Bonsai's vision projector) is missing. **Not done:**
+`assets/app.html` still has the hardcoded backend `<select>` — the
+acceptance item "the frontend contains no authoritative hardcoded model
+availability" is unmet. Also not done: content-hash ("Deep verify")
+corruption detection (byte-size check only), `minimum_ram_bytes` (no
+measured lower bound exists), and Qwen's `prompt_template_sha256` (left
+empty rather than fabricated; real parity proof is T0.5/T4.4 scope). Do not
+mark this task fully DONE until the frontend is wired to this endpoint.
+
 **Work**
 
 - Define the versioned catalog and artifact manifests.

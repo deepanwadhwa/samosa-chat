@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "catalog_revision": "2026-07-27.1",
+  "runtime_abi": "samosa-model-runtime-v1",
+  "models": [
+    {
+      "id": "qwen",
+      "version": "groupwise-symmetric-q4-v1",
+      "preferred_for_backend": true,
+      "label": "Qwen3.6 35B A3B",
+      "description": "Expert-streamed local chat and coding model with image support.",
+      "capabilities": ["text", "image"],
+      "backend_kind": "qwen_native",
+      "supported_platforms": [
+        { "os": "macos", "architecture": "arm64" }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "qwen_native_default",
+      "runtime_dependencies": [],
+      "tokenization": {
+        "tokenizer_artifact_name": "tokenizer_qwen36.json",
+        "tokenizer_sha256": "6d56a5c681da15d38fb9f883016f86fa0638176e3f748a0acf5c7ba02725679b",
+        "vocabulary_size": 248320,
+        "prompt_template_sha256": "",
+        "gigatoken_profile": "qwen3_5",
+        "direct_token_ingestion_candidate": false
+      },
+      "license": {
+        "name": "Tongyi Qianwen License Agreement",
+        "url": "https://github.com/QwenLM/Qwen/blob/main/Tongyi%20Qianwen%20LICENSE%20AGREEMENT"
+      },
+      "artifacts": [
+        {
+          "name": "experts.bin",
+          "role": "weights",
+          "required": true,
+          "url": "",
+          "install_path": "model/experts.bin",
+          "file_mode": "0600",
+          "bytes": 20942159872,
+          "sha256": "00d64d44c39496e5ab5691f4cb27b67e27f3a10efd1f7c54024a9b43b130dbba"
+        },
+        {
+          "name": "resident.safetensors",
+          "role": "weights",
+          "required": true,
+          "url": "",
+          "install_path": "model/resident.safetensors",
+          "file_mode": "0600",
+          "bytes": 3015056192,
+          "sha256": "52ff706830df2defaca591813810a8d19e1ba9b31d9b2d27b6ecf593b3a91627"
+        },
+        {
+          "name": "manifest.json",
+          "role": "configuration",
+          "required": true,
+          "url": "",
+          "install_path": "model/manifest.json",
+          "file_mode": "0600",
+          "bytes": 1908179,
+          "sha256": "12ad73a9457e5d88b7cd4b00cae4a5c7ccb9031aa10d1111b80932d115f224d4"
+        },
+        {
+          "name": "config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "",
+          "install_path": "model/config.json",
+          "file_mode": "0600",
+          "bytes": 3686,
+          "sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99"
+        },
+        {
+          "name": "generation_config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "",
+          "install_path": "model/generation_config.json",
+          "file_mode": "0600",
+          "bytes": 202,
+          "sha256": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e"
+        },
+        {
+          "name": "tokenizer_qwen36.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "",
+          "install_path": "tokenizer_qwen36.json",
+          "file_mode": "0600",
+          "bytes": 28142621,
+          "sha256": "6d56a5c681da15d38fb9f883016f86fa0638176e3f748a0acf5c7ba02725679b"
+        }
+      ]
+    },
+    {
+      "id": "bonsai",
+      "version": "f10afb355f104535e3e3e98cf7ab7795c72bd292",
+      "preferred_for_backend": true,
+      "label": "Bonsai 27B 1-bit",
+      "description": "1-bit GGUF reasoning model with optional vision.",
+      "capabilities": ["text", "image"],
+      "backend_kind": "llama_cpp",
+      "supported_platforms": [
+        { "os": "macos", "architecture": "arm64" }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "llama_cpp_default",
+      "runtime_dependencies": [
+        {
+          "package_id": "llama-server",
+          "version": "prismml-fork",
+          "source": "bundled"
+        }
+      ],
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://huggingface.co/prism-ml/Bonsai-27B-gguf"
+      },
+      "artifacts": [
+        {
+          "name": "Bonsai-27B-Q1_0.gguf",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/prism-ml/Bonsai-27B-gguf/resolve/f10afb355f104535e3e3e98cf7ab7795c72bd292/Bonsai-27B-Q1_0.gguf",
+          "install_path": "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf",
+          "file_mode": "0600",
+          "bytes": 3803452480,
+          "sha256": "17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0"
+        },
+        {
+          "name": "Bonsai-27B-mmproj-Q8_0.gguf",
+          "role": "vision_projector",
+          "required": false,
+          "url": "https://huggingface.co/prism-ml/Bonsai-27B-gguf/resolve/f10afb355f104535e3e3e98cf7ab7795c72bd292/Bonsai-27B-mmproj-Q8_0.gguf",
+          "install_path": "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf",
+          "file_mode": "0600",
+          "bytes": 629246880,
+          "sha256": "eb561d41a7bbeb0fcf04883c8af11078ef6cae0a66862a0b68443cfca495269d"
+        }
+      ]
+    },
+    {
+      "id": "ornith",
+      "version": "3296bc7a404871a72ac3f1903f561459c09b5c17",
+      "preferred_for_backend": true,
+      "label": "Ornith 1.0 9B",
+      "description": "Q4_K_M GGUF coding and reasoning model.",
+      "capabilities": ["text"],
+      "backend_kind": "llama_cpp",
+      "supported_platforms": [
+        { "os": "macos", "architecture": "arm64" }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "llama_cpp_default",
+      "runtime_dependencies": [
+        {
+          "package_id": "llama-server",
+          "version": "prismml-fork",
+          "source": "bundled"
+        }
+      ],
+      "license": {
+        "name": "MIT",
+        "url": "https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF"
+      },
+      "artifacts": [
+        {
+          "name": "ornith-1.0-9b-Q4_K_M.gguf",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF/resolve/3296bc7a404871a72ac3f1903f561459c09b5c17/ornith-1.0-9b-Q4_K_M.gguf",
+          "install_path": "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf",
+          "file_mode": "0600",
+          "bytes": 5629108704,
+          "sha256": "5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106"
+        }
+      ]
+    }
+  ]
+}

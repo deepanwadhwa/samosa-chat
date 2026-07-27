@@ -59,6 +59,7 @@ typedef struct {
     char bonsai_model[PATH_MAX];
     char bonsai_mmproj[PATH_MAX];
     char ornith_model[PATH_MAX];
+    char models_catalog[PATH_MAX];
     char samosa_fs[PATH_MAX];
     char samosa_extract[PATH_MAX];
     char samosa_ocr[PATH_MAX];
@@ -5180,6 +5181,333 @@ static int fs_directories_handler(Gateway *g, int fd, const SamosaHttpRequest *r
     return sent;
 }
 
+/* T2.1 (docs/TASKS_UI_CHUTNI.md section 5.3): GET /v1/models/catalog.
+   assets/models.json is a static, bundled release asset (real Qwen/Bonsai/
+   Ornith facts -- verified byte sizes and SHA-256 hashes cross-checked
+   against the actual installed/hard-linked files and, for Bonsai/Ornith,
+   the upstream Hugging Face repos; see
+   docs/regressions/ui-chutni/t2.1-evidence.md). This handler loads it fresh
+   per request (matching serve_root_html()'s existing no-cache pattern for
+   app.html), validates it, and layers live, per-request facts on top:
+   compatible/compatibility_reason (measured OS+arch against
+   supported_platforms), install_state/active (existing per-backend
+   detection fields, not re-derived path guessing), and
+   download_bytes/installed_bytes/required_free_bytes. */
+
+static int hex64_lower(const char *s) {
+    if (!s) return 0;
+    size_t n = strlen(s);
+    if (n != 64) return 0;
+    for (size_t i = 0; i < n; ++i) {
+        char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return 0;
+    }
+    return 1;
+}
+
+/* Rejects absolute paths, empty paths, and any "." or ".." path segment.
+   The catalog is a bundled asset we author ourselves today, but this
+   validation is what lets a future network-refreshed catalog (out of
+   scope for T2.1) be trusted rather than re-audited by hand. */
+static int install_path_is_safe(const char *path) {
+    if (!path || !path[0] || path[0] == '/') return 0;
+    char copy[PATH_MAX];
+    if (!path_copy(copy, sizeof(copy), path)) return 0;
+    char *save = NULL;
+    char *tok = strtok_r(copy, "/", &save);
+    int any = 0;
+    while (tok) {
+        if (!strcmp(tok, ".") || !strcmp(tok, "..")) return 0;
+        any = 1;
+        tok = strtok_r(NULL, "/", &save);
+    }
+    return any;
+}
+
+static int artifact_url_is_trusted(const char *url) {
+    if (!url || !url[0]) return 1; /* empty = "no download offered yet", not untrusted */
+    static const char *const allowed_prefixes[] = {
+        "https://huggingface.co/",
+        NULL
+    };
+    for (int i = 0; allowed_prefixes[i]; ++i)
+        if (!strncmp(url, allowed_prefixes[i], strlen(allowed_prefixes[i]))) return 1;
+    return 0;
+}
+
+/* Validates the whole parsed catalog before any of it is trusted: duplicate
+   model IDs, duplicate artifact install paths (across every model -- two
+   models must never be able to write the same destination), malformed
+   hashes/sizes, unsafe relative install paths, unknown backend kinds,
+   an artifact required_runtime_abi that doesn't match the catalog's own
+   runtime_abi, and untrusted artifact hosts. Matches the T2.1 acceptance
+   item verbatim; returns 1 and a NULL reason on success. */
+static int catalog_validate(jval *root, char *reason, size_t reason_cap) {
+#define REJECT(msg) do { snprintf(reason, reason_cap, "%s", msg); return 0; } while (0)
+    if (!root || root->t != J_OBJ) REJECT("catalog root is not an object");
+    jval *runtime_abi = json_get(root, "runtime_abi");
+    if (!runtime_abi || runtime_abi->t != J_STR || !runtime_abi->str[0])
+        REJECT("missing runtime_abi");
+    jval *models = json_get(root, "models");
+    if (!models || models->t != J_ARR) REJECT("missing models array");
+
+    /* Bounded to a bundled runtime asset's realistic scale, not PATH_MAX-
+       width entries: at PATH_MAX (4096 on some platforms) a few hundred
+       rows of these on a connection-handler thread's stack is enough to
+       overflow it outright (measured: ASan stack-overflow crash on this
+       exact function before these bounds were cut down). */
+    char seen_ids[64][80]; int seen_id_count = 0;
+    char seen_paths[64][256]; int seen_path_count = 0;
+
+    for (int i = 0; i < models->len; ++i) {
+        jval *entry = models->kids[i];
+        if (!entry || entry->t != J_OBJ) REJECT("model entry is not an object");
+        jval *id = json_get(entry, "id");
+        if (!id || id->t != J_STR || !id->str[0]) REJECT("model entry missing id");
+        if (seen_id_count >= (int)(sizeof(seen_ids) / sizeof(seen_ids[0])))
+            REJECT("too many model entries");
+        for (int j = 0; j < seen_id_count; ++j)
+            if (!strcmp(seen_ids[j], id->str)) REJECT("duplicate model id");
+        path_copy(seen_ids[seen_id_count++], sizeof(seen_ids[0]), id->str);
+
+        jval *backend_kind = json_get(entry, "backend_kind");
+        if (!backend_kind || backend_kind->t != J_STR ||
+            (strcmp(backend_kind->str, "qwen_native") && strcmp(backend_kind->str, "llama_cpp")))
+            REJECT("unknown backend_kind");
+
+        jval *req_abi = json_get(entry, "required_runtime_abi");
+        if (!req_abi || req_abi->t != J_STR || strcmp(req_abi->str, runtime_abi->str))
+            REJECT("unsupported runtime_abi");
+
+        jval *artifacts = json_get(entry, "artifacts");
+        if (!artifacts || artifacts->t != J_ARR || artifacts->len < 1)
+            REJECT("model entry missing artifacts");
+        for (int k = 0; k < artifacts->len; ++k) {
+            jval *artifact = artifacts->kids[k];
+            if (!artifact || artifact->t != J_OBJ) REJECT("artifact is not an object");
+            jval *bytes = json_get(artifact, "bytes");
+            if (!bytes || bytes->t != J_NUM || bytes->num < 0) REJECT("malformed artifact bytes");
+            jval *sha = json_get(artifact, "sha256");
+            if (!sha || sha->t != J_STR || !hex64_lower(sha->str)) REJECT("malformed artifact sha256");
+            jval *ip = json_get(artifact, "install_path");
+            if (!ip || ip->t != J_STR || strlen(ip->str) >= sizeof(seen_paths[0]) ||
+                !install_path_is_safe(ip->str))
+                REJECT("unsafe artifact install_path");
+            if (seen_path_count >= (int)(sizeof(seen_paths) / sizeof(seen_paths[0])))
+                REJECT("too many artifacts");
+            for (int j = 0; j < seen_path_count; ++j)
+                if (!strcmp(seen_paths[j], ip->str)) REJECT("duplicate artifact install_path");
+            path_copy(seen_paths[seen_path_count++], sizeof(seen_paths[0]), ip->str);
+            jval *url = json_get(artifact, "url");
+            if (url && url->t == J_STR && !artifact_url_is_trusted(url->str))
+                REJECT("untrusted artifact host");
+        }
+    }
+    reason[0] = 0;
+    return 1;
+#undef REJECT
+}
+
+static int catalog_platform_matches(jval *supported_platforms) {
+    if (!supported_platforms || supported_platforms->t != J_ARR) return 0;
+#if defined(__APPLE__)
+    const char *os = "macos";
+#elif defined(__linux__)
+    const char *os = "linux";
+#else
+    const char *os = "unknown";
+#endif
+#if defined(__aarch64__) || defined(__arm64__)
+    const char *arch = "arm64";
+#elif defined(__x86_64__) || defined(_M_X64)
+    const char *arch = "x86_64";
+#else
+    const char *arch = "unknown";
+#endif
+    for (int i = 0; i < supported_platforms->len; ++i) {
+        jval *p = supported_platforms->kids[i];
+        jval *pos = json_get(p, "os"), *parch = json_get(p, "architecture");
+        if (pos && pos->t == J_STR && !strcmp(pos->str, os) &&
+            parch && parch->t == J_STR && !strcmp(parch->str, arch))
+            return 1;
+    }
+    return 0;
+}
+
+/* Resolves where a named artifact for a given model actually lives on
+   disk, reusing the exact same per-backend fields backend_available() and
+   backend_start() already trust -- not re-deriving paths from install_path,
+   since qwen's real layout (a release-staged model directory) differs from
+   Bonsai/Ornith's flat models/ convention and only these fields are
+   correct for both today. */
+static int resolve_installed_artifact(Gateway *g, const char *model_id,
+                                       const char *artifact_name,
+                                       char *out, size_t cap) {
+    if (!strcmp(model_id, "qwen")) {
+        if (!strcmp(artifact_name, "tokenizer_qwen36.json"))
+            return path_copy(out, cap, g->tokenizer);
+        return path_join(out, cap, g->qwen_model, artifact_name);
+    }
+    if (!strcmp(model_id, "bonsai")) {
+        if (!strcmp(artifact_name, "Bonsai-27B-mmproj-Q8_0.gguf"))
+            return path_copy(out, cap, g->bonsai_mmproj);
+        return path_copy(out, cap, g->bonsai_model);
+    }
+    if (!strcmp(model_id, "ornith"))
+        return path_copy(out, cap, g->ornith_model);
+    return 0;
+}
+
+/* An artifact counts as present only if its resolved file exists AND its
+   size exactly matches the catalog's declared bytes -- a truncated or
+   corrupt file must not be shown as installed (T2.1 acceptance). Full
+   SHA-256 verification is the startup/"Deep verify" legacy-discovery path
+   from section 5.3, deliberately not run on every catalog fetch; see the
+   T2.1 evidence doc for that scoping. */
+static int artifact_is_present(Gateway *g, const char *model_id, jval *artifact) {
+    jval *name = json_get(artifact, "name");
+    jval *bytes = json_get(artifact, "bytes");
+    if (!name || name->t != J_STR || !bytes) return 0;
+    char resolved[PATH_MAX];
+    if (!resolve_installed_artifact(g, model_id, name->str, resolved, sizeof(resolved))) return 0;
+    struct stat st;
+    if (stat(resolved, &st) || !S_ISREG(st.st_mode)) return 0;
+    return (double)st.st_size == bytes->num;
+}
+
+/* The only runtime dependency in the v1 catalog is the shared Prism
+   llama-server binary (Bonsai and Ornith both launch through it -- see
+   backend_start()'s single g->llama_server execv() for both). Reusing
+   regular_file() here, rather than re-deriving a path, is what makes
+   "shared dependency missing" correctly mark BOTH models not_installed
+   even when each one's own weights file is present (T2.1 acceptance:
+   a shared dependency installed once must not let an incomplete model
+   appear ready). */
+static int runtime_dependency_is_present(Gateway *g, jval *dep) {
+    jval *pkg = json_get(dep, "package_id");
+    if (!pkg || pkg->t != J_STR) return 0;
+    if (!strcmp(pkg->str, "llama-server")) return regular_file(g->llama_server, 1);
+    return 0;
+}
+
+/* Live-checked capabilities: an optional vision_projector artifact that is
+   missing drops only "image" from the declared list (T2.1 acceptance --
+   missing optional vision data disables only that capability). Qwen has no
+   separate vision_projector artifact (its tower is built into the engine),
+   so its declared "image" capability is never degraded here. */
+static int emit_live_capabilities(TextBuffer *out, Gateway *g, const char *model_id, jval *entry) {
+    jval *declared = json_get(entry, "capabilities");
+    jval *artifacts = json_get(entry, "artifacts");
+    int image_capable = 1;
+    for (int i = 0; artifacts && i < artifacts->len; ++i) {
+        jval *artifact = artifacts->kids[i];
+        jval *role = json_get(artifact, "role");
+        if (role && role->t == J_STR && !strcmp(role->str, "vision_projector") &&
+            !artifact_is_present(g, model_id, artifact))
+            image_capable = 0;
+    }
+    if (!text_add(out, "[")) return 0;
+    int wrote = 0;
+    for (int i = 0; declared && i < declared->len; ++i) {
+        jval *cap = declared->kids[i];
+        if (cap->t != J_STR) continue;
+        if (!strcmp(cap->str, "image") && !image_capable) continue;
+        if ((wrote && !text_add(out, ",")) || !text_json_string(out, cap->str)) return 0;
+        wrote = 1;
+    }
+    return text_add(out, "]");
+}
+
+static int emit_catalog_entry(TextBuffer *out, Gateway *g, jval *entry) {
+    static const char *const passthrough[] = {
+        "id", "version", "preferred_for_backend", "label", "description",
+        "backend_kind", "supported_platforms",
+        "required_runtime_abi", "minimum_ram_bytes", "launch_profile_id",
+        "runtime_dependencies", "tokenization", "license", "artifacts", NULL
+    };
+    jval *id = json_get(entry, "id");
+    jval *artifacts = json_get(entry, "artifacts");
+    jval *supported_platforms = json_get(entry, "supported_platforms");
+    jval *runtime_deps = json_get(entry, "runtime_dependencies");
+
+    int compatible = catalog_platform_matches(supported_platforms);
+    long long download_bytes = 0, installed_bytes = 0;
+    int all_required_present = 1;
+    for (int i = 0; artifacts && i < artifacts->len; ++i) {
+        jval *artifact = artifacts->kids[i];
+        jval *bytes = json_get(artifact, "bytes");
+        jval *required = json_get(artifact, "required");
+        long long b = bytes ? (long long)bytes->num : 0;
+        download_bytes += b;
+        int present = artifact_is_present(g, id->str, artifact);
+        if (present) installed_bytes += b;
+        else if (!required || required->t != J_BOOL || required->boolean) all_required_present = 0;
+    }
+    for (int i = 0; runtime_deps && i < runtime_deps->len; ++i)
+        if (!runtime_dependency_is_present(g, runtime_deps->kids[i])) all_required_present = 0;
+    const char *install_state = !compatible ? "unavailable" :
+        all_required_present ? "ready" : "not_installed";
+    int active = !strcmp(g->backend, id->str);
+    long long required_free = download_bytes > installed_bytes ? download_bytes - installed_bytes : 0;
+    required_free += 2LL * 1024 * 1024 * 1024;
+
+    int ok = text_add(out, "{\"capabilities\":") && emit_live_capabilities(out, g, id->str, entry);
+    for (int i = 0; ok && passthrough[i]; ++i) {
+        jval *v = json_get(entry, passthrough[i]);
+        if (!v) continue; /* e.g. "tokenization" is absent for llama_cpp models */
+        ok = text_add(out, ",") &&
+            text_json_string(out, passthrough[i]) && text_add(out, ":") && text_json_value(out, v);
+    }
+    char numbuf[64];
+    ok = ok && text_add(out, ",\"compatible\":") && text_add(out, compatible ? "true" : "false");
+    ok = ok && text_add(out, ",\"compatibility_reason\":") &&
+        (compatible ? text_add(out, "null") :
+            text_json_string(out, "This machine's OS/architecture is not in supported_platforms."));
+    ok = ok && text_add(out, ",\"install_state\":") && text_json_string(out, install_state);
+    ok = ok && text_add(out, ",\"active\":") && text_add(out, active ? "true" : "false");
+    snprintf(numbuf, sizeof(numbuf), "%lld", download_bytes);
+    ok = ok && text_add(out, ",\"download_bytes\":") && text_add(out, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", installed_bytes);
+    ok = ok && text_add(out, ",\"installed_bytes\":") && text_add(out, numbuf);
+    snprintf(numbuf, sizeof(numbuf), "%lld", required_free);
+    ok = ok && text_add(out, ",\"required_free_bytes\":") && text_add(out, numbuf);
+    ok = ok && text_add(out, "}");
+    return ok;
+}
+
+static int models_catalog_handler(Gateway *g, int fd) {
+    size_t len = 0;
+    unsigned char *raw = read_file_bytes_limit(g->models_catalog, 8 << 20, &len);
+    if (!raw)
+        return samosa_http_json_error(fd, 500, "catalog_missing", "The model catalog asset is missing.");
+    char *arena = NULL;
+    jval *root = json_parse((const char *)raw, &arena);
+    free(raw);
+    char reason[128];
+    if (!catalog_validate(root, reason, sizeof(reason))) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 500, "catalog_invalid", "The bundled model catalog failed validation.");
+    }
+    jval *schema_version = json_get(root, "schema_version");
+    jval *catalog_revision = json_get(root, "catalog_revision");
+    jval *runtime_abi = json_get(root, "runtime_abi");
+    jval *models = json_get(root, "models");
+
+    TextBuffer body = {0};
+    int ok = text_add(&body, "{\"schema_version\":") &&
+        text_json_value(&body, schema_version) &&
+        text_add(&body, ",\"catalog_revision\":") && text_json_value(&body, catalog_revision) &&
+        text_add(&body, ",\"runtime_abi\":") && text_json_value(&body, runtime_abi) &&
+        text_add(&body, ",\"models\":[");
+    for (int i = 0; ok && i < models->len; ++i)
+        ok = (i == 0 || text_add(&body, ",")) && emit_catalog_entry(&body, g, models->kids[i]);
+    ok = ok && text_add(&body, "]}");
+    json_free(root); free(arena);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
@@ -5210,6 +5538,9 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/fs/directories")) {
         return fs_directories_handler(g, fd, request);
+    }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/models/catalog")) {
+        return models_catalog_handler(g, fd);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
         if (static_file(fd, g->app_logo, "image/png", NULL)) return 1;
@@ -5404,6 +5735,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");
     ENV_PATH(bonsai_mmproj, "SAMOSA_BONSAI_MMPROJ", "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf");
     ENV_PATH(ornith_model, "SAMOSA_ORNITH_MODEL", "models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf");
+    ENV_PATH(models_catalog, "SAMOSA_MODELS_CATALOG", "current/models.json");
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
     ENV_PATH(samosa_ocr, "SAMOSA_OCR", "current/bin/samosa-ocr");

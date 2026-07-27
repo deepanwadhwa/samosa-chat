@@ -61,6 +61,15 @@ samosa-fs: src/samosa_fs.c
 test-chutni: samosa-fs tests/test_chutni_inventory.sh
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" sh tests/test_chutni_inventory.sh
 
+# test-model-manager: Phase 2 gate for docs/TASKS_UI_CHUTNI.md (section 5.3,
+# the model catalog and lifecycle). T2.1: GET /v1/models/catalog serves the
+# real bundled assets/models.json (real, independently-verified Qwen/
+# Bonsai/Ornith artifact bytes and SHA-256 hashes), validates it before
+# trusting any of it, and layers live compatible/install_state/active
+# detection on top using the gateway's existing per-backend fields.
+test-model-manager: samosa-gateway tests/test_model_catalog.sh
+	sh tests/test_model_catalog.sh
+
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled
 # with -Wno-unused-function like the engine.
