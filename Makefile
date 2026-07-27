@@ -259,7 +259,7 @@ pagecache-residency: tools/pagecache_residency.c
 pagecache-residency-test: pagecache-residency tests/test_pagecache_residency.sh
 	sh tests/test_pagecache_residency.sh ./$(BUILD_DIR)/pagecache-residency
 
-test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
+test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
@@ -271,6 +271,7 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	sh tests/test_atomic_install.sh
 	sh tests/test_install_path.sh
 	sh tests/test_gateway_installer.sh
+	sh tests/test_runtime_only_release.sh
 	python3 tests/test_thinking_output.py
 	python3 tests/test_regression_gate.py
 	python3 tests/test_openrouter_control.py

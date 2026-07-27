@@ -15,6 +15,17 @@ printf 'context=%s\n' "${SAMOSA_CONTEXT_TOKENS:-}"
 EOF
 chmod +x "$TMP/bin/qwen36b"
 
+# serve/app always launch the gateway now (docs/TASKS_UI_CHUTNI.md T1.0: the
+# gateway is the mandatory browser control plane, not an opt-in with a raw
+# qwen36b HTTP-serve fallback) -- it takes no argv, so the fake prints the
+# env vars the wrapper is responsible for passing through.
+cat >"$TMP/bin/samosa-gateway" <<'EOF'
+#!/bin/sh
+printf 'port=%s\n' "${SAMOSA_PORT:-}"
+printf 'context=%s\n' "${SAMOSA_CONTEXT_TOKENS:-}"
+EOF
+chmod +x "$TMP/bin/samosa-gateway"
+
 run() {
   SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 sh "$ROOT/dist/samosa" "$@"
 }
@@ -49,8 +60,7 @@ printf '%s\n' "$custom_context" | grep -qx -- '--context-tokens'
 printf '%s\n' "$custom_context" | grep -qx -- '65536'
 
 serve=$(run serve)
-printf '%s\n' "$serve" | grep -qx -- '--serve'
-printf '%s\n' "$serve" | grep -qx -- '18642'
+printf '%s\n' "$serve" | grep -qx -- 'port=18642'
 printf '%s\n' "$serve" | grep -qx -- 'context=auto'
 
 serve_custom=$(run serve --context-tokens 65536)
@@ -97,5 +107,19 @@ for form in "version" "--version" "-v"; do
     exit 1
   fi
 done
+
+# With no gateway binary at all, serve must fail with a clear message rather
+# than silently falling back to a raw qwen36b HTTP server (the fallback this
+# task removed).
+NO_GATEWAY_TMP=${TMPDIR:-/tmp}/samosa-wrapper-test-no-gateway.$$
+trap 'rm -rf "$TMP" "$NO_GATEWAY_TMP"' EXIT HUP INT TERM
+mkdir -p "$NO_GATEWAY_TMP/bin"
+cp "$TMP/bin/qwen36b" "$NO_GATEWAY_TMP/bin/qwen36b"
+no_gateway_out=$(SAMOSA_HOME="$NO_GATEWAY_TMP" SAMOSA_PORT=18643 sh "$ROOT/dist/samosa" serve 2>&1) && {
+  echo "serve unexpectedly succeeded with no gateway binary present" >&2
+  exit 1
+}
+printf '%s\n' "$no_gateway_out" | grep -q 'samosa-gateway' ||
+  { echo "missing-gateway error did not name samosa-gateway: $no_gateway_out" >&2; exit 1; }
 
 echo "samosa wrapper: PASS"

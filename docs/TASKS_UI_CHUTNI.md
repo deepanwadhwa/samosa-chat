@@ -1994,6 +1994,32 @@ the rest of the browser control plane is built.
 
 #### T1.0 — Produce a model-free browser runtime package
 
+**Status: DONE (2026-07-27), with two disclosed gaps.** Evidence:
+[docs/regressions/ui-chutni/t1.0-evidence.md](../regressions/ui-chutni/t1.0-evidence.md).
+The gateway/fs sidecar moved from `package_hf.py`'s opt-in `--gateway` flag
+into every release unconditionally; a new `--runtime-only` flag stages the
+control plane (engine, gateway, app shell, catalog) with zero model
+artifacts. `install.sh` stages `MODEL_FILES` only when the manifest lists
+them, always compiles the gateway/jobsd/fs, and its smoke test no longer
+requires or forces real generation — it checks health/root UI/profile/
+setup-status/catalog and accepts either a real completion or `409
+model_required` from Chat. `dist/samosa` requires the gateway for
+`serve`/`app` (the separately-named one-shot CLI prompt path is untouched)
+and `doctor` no longer reports failure merely because no model is
+installed. Testing this for real (not `SAMOSA_INSTALL_TEST=1`) surfaced and
+fixed two real bugs it would otherwise have shipped: `dist/samosa`'s
+`RELEASE_DIR` heuristic used model-directory presence as a proxy for "real
+release directory," which broke the moment that directory legitimately
+didn't exist; and `install.sh` eagerly pre-created an empty `current/model`
+even when nothing was ever staged there. It also found and fixed a real
+packaging gap disclosed in T2.1's own evidence doc: no release ever staged
+`assets/models.json`, so `GET /v1/models/catalog` 500'd on every release
+built to date, runtime-only or not. **Disclosed, not fixed:** bundling
+`llama-server` as a v1 runtime dependency (predates this task, still just
+detected by `doctor`, not installed by anything) and container/Docker
+release assembly (issue #2's D-3 territory — the repo's root `Dockerfile`
+is stale and out of scope here).
+
 **Depends on:** T1.1, T1.2, and T2.1. This task packages the already-working
 control plane; it does not define zero-model gateway behavior.
 

@@ -27,7 +27,10 @@ HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
 SELF_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 if [ -n "${SAMOSA_RELEASE_DIR:-}" ]; then
   RELEASE_DIR=$SAMOSA_RELEASE_DIR
-elif [ -x "$SELF_DIR/qwen36b" ] && [ -d "$SELF_DIR/../model" ]; then
+elif [ -x "$SELF_DIR/qwen36b" ] && [ -x "$SELF_DIR/samosa-gateway" ]; then
+  # A model directory is no longer a reliable signal here: a runtime-only
+  # release (docs/TASKS_UI_CHUTNI.md T1.0) has none by design. Detect a real
+  # release/bin directory by its two mandatory runtime binaries instead.
   RELEASE_DIR=$(CDPATH= cd -- "$SELF_DIR/.." && pwd)
 else
   RELEASE_DIR=$HOME_DIR
@@ -201,17 +204,12 @@ serve_foreground() {
   if require_port_free_or_samosa_running; then
     return 0
   fi
+  [ -x "$GATEWAY" ] || fail "the browser control plane (samosa-gateway) is missing - reinstall Samosa"
   mkdir -p "$HOME_DIR/chats"
-  if [ -f "$GATEWAY" ]; then
-    SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
-      SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
-      SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-      exec "$GATEWAY"
-  fi
-  SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
-    SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
-    SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-    exec "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER"
+  SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+    SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+    SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+    exec "$GATEWAY"
 }
 
 start_server() {
@@ -226,24 +224,17 @@ start_server() {
     fi
     return 1
   fi
+  [ -x "$GATEWAY" ] || fail "the browser control plane (samosa-gateway) is missing - reinstall Samosa"
   mkdir -p "$HOME_DIR/chats"
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
     return 1
   fi
-  if [ -f "$GATEWAY" ]; then
-    nohup env SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" \
-      SAMOSA_QWEN_MODEL="$MODEL" SAMOSA_TOKENIZER="$TOKENIZER" \
-      SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
-      SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-      "$GATEWAY" >"$SERVER_LOG" 2>&1 &
-  else
-    nohup env SNAP="$MODEL" TOKENIZER="$TOKENIZER" SAMOSA_CHATS_DIR="$HOME_DIR/chats" \
-      SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
-      SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-      "$ENGINE" --serve --port "$PORT" --tokenizer "$TOKENIZER" \
-      >"$SERVER_LOG" 2>&1 &
-  fi
+  nohup env SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" \
+    SAMOSA_QWEN_MODEL="$MODEL" SAMOSA_TOKENIZER="$TOKENIZER" \
+    SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
+    SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+    "$GATEWAY" >"$SERVER_LOG" 2>&1 &
   pid=$!
   printf '%s\n' "$pid" >"$PID_FILE"
   i=0
@@ -308,21 +299,29 @@ doctor() {
   else
     echo "bonsai:    not installed (optional)"
   fi
-  [ -f "$MODEL/experts.bin" ] && echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))" || { echo "model:     MISSING"; ok=0; }
-  if [ -f "$MODEL/manifest.json" ]; then
-    if grep -q 'groupwise-q4-gate-up-row-q8-down-v1' "$MODEL/manifest.json"; then
-      echo "format:    mixed group-q4 gate/up + row-q8 down (experimental)"
-    elif grep -q 'groupwise-symmetric-q4-v1' "$MODEL/manifest.json"; then
-      group=$(sed -n 's/.*"group_size"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$MODEL/manifest.json" | head -1)
-      echo "format:    groupwise q4 (group ${group:-unknown})"
+  # A model-free runtime is a normal, supported state (docs/TASKS_UI_CHUTNI.md
+  # T1.0) -- no Qwen weights yet is not an installation failure, so it does
+  # not clear `ok`. Format/tokenizer checks only apply once weights exist;
+  # otherwise there is nothing yet to be broken.
+  if [ -f "$MODEL/experts.bin" ]; then
+    echo "model:     ok ($(du -sh "$MODEL" 2>/dev/null | awk '{print $1}'))"
+    if [ -f "$MODEL/manifest.json" ]; then
+      if grep -q 'groupwise-q4-gate-up-row-q8-down-v1' "$MODEL/manifest.json"; then
+        echo "format:    mixed group-q4 gate/up + row-q8 down (experimental)"
+      elif grep -q 'groupwise-symmetric-q4-v1' "$MODEL/manifest.json"; then
+        group=$(sed -n 's/.*"group_size"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$MODEL/manifest.json" | head -1)
+        echo "format:    groupwise q4 (group ${group:-unknown})"
+      else
+        echo "format:    LEGACY whole-row q4 - upgrade required"
+      fi
     else
-      echo "format:    LEGACY whole-row q4 - upgrade required"
+      echo "format:    UNKNOWN (manifest missing)"
+      ok=0
     fi
+    [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
   else
-    echo "format:    UNKNOWN (manifest missing)"
-    ok=0
+    echo "model:     none installed yet - open the app or run 'samosa pull' to install one"
   fi
-  [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
   if [ -d "$HOME_DIR/releases" ]; then
     releases=$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' 2>/dev/null | wc -l | tr -d ' ')
     [ "$releases" -le 1 ] || echo "rollback:  $((releases - 1)) previous verified release(s) retained"

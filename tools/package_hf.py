@@ -48,24 +48,20 @@ SOURCE_FILES = [
     "thinking_budget.h",
     "samosa_http.h",
     "samosa_extract.c",
+    # The compiled gateway and filesystem sidecar are the mandatory browser
+    # control plane (docs/TASKS_UI_CHUTNI.md T1.0) -- every release includes
+    # them unconditionally, not as an opt-in capability with a raw-Qwen
+    # HTTP-serve fallback.
+    "samosa_gateway.c",
+    "samosa_fs.c",
+    "read_cache.h",
+    "durable_job.h",
 ]
 
 PDFIUM_ARCHIVES = [
     "pdfium-mac-arm64.tgz",
     "pdfium-linux-x64.tgz",
     "pdfium-linux-arm64.tgz",
-]
-
-# The compiled gateway and filesystem sidecar. Opt-in via --gateway, same
-# reasoning as --pdfium-dir: a
-# release manifest without these entries stays valid for install.sh (it only
-# stages what the manifest lists), and whether to include this capability in
-# a given release is a packaging-time decision, not an automatic one.
-GATEWAY_SOURCE_FILES = [
-    "samosa_gateway.c",
-    "samosa_fs.c",
-    "read_cache.h",
-    "durable_job.h",
 ]
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -97,8 +93,11 @@ def main() -> int:
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     ap.add_argument("--pdfium-dir", type=pathlib.Path,
                     help="directory containing all SHA-reviewed PDFium archives")
-    ap.add_argument("--gateway", action="store_true",
-                    help="include the multi-backend gateway and the Models->Tools->Jobs layer")
+    ap.add_argument("--runtime-only", action="store_true",
+                    help="package the browser control plane (gateway, engine "
+                         "sources, app shell) with no model weights at all -- "
+                         "docs/TASKS_UI_CHUTNI.md T1.0. Model artifacts are "
+                         "installed separately through the in-app catalog.")
     args = ap.parse_args()
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -110,19 +109,20 @@ def main() -> int:
     version = version_file.read_text(encoding="utf-8").strip()
 
     staged: list[pathlib.Path] = []
-    for name in MODEL_FILES:
-        src = args.snapshot / name
-        if not src.exists():
-            print(f"missing model file: {src}", file=sys.stderr)
+    if not args.runtime_only:
+        for name in MODEL_FILES:
+            src = args.snapshot / name
+            if not src.exists():
+                print(f"missing model file: {src}", file=sys.stderr)
+                return 1
+            place(src, out / name, link=True)
+            staged.append(out / name)
+        tok = args.tokenizer
+        if not tok.exists():
+            print(f"missing tokenizer: {tok}", file=sys.stderr)
             return 1
-        place(src, out / name, link=True)
-        staged.append(out / name)
-    tok = args.tokenizer
-    if not tok.exists():
-        print(f"missing tokenizer: {tok}", file=sys.stderr)
-        return 1
-    place(tok, out / "tokenizer_qwen36.json", link=True)
-    staged.append(out / "tokenizer_qwen36.json")
+        place(tok, out / "tokenizer_qwen36.json", link=True)
+        staged.append(out / "tokenizer_qwen36.json")
 
     for name in SOURCE_FILES:
         src = ROOT / "src" / name
@@ -141,19 +141,15 @@ def main() -> int:
             place(src, out / "pdfium" / name, link=False)
             staged.append(out / "pdfium" / name)
 
-    if args.gateway:
-        for name in GATEWAY_SOURCE_FILES:
-            src = ROOT / "src" / name
-            if not src.exists():
-                print(f"missing gateway source file: {src}", file=sys.stderr)
-                return 1
-            place(src, out / "engine" / name, link=False)
-            staged.append(out / "engine" / name)
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
                      (ROOT / "assets" / "app.html", out / "app.html"),
-                     (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png")):
+                     (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png"),
+                     # The model catalog GET /v1/models/catalog serves (T2.1)
+                     # is control-plane data, not a model weight -- staged
+                     # unconditionally, runtime-only or not.
+                     (ROOT / "assets" / "models.json", out / "models.json")):
         if not src.exists():
             print(f"missing dist file: {src}", file=sys.stderr)
             return 1

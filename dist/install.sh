@@ -96,7 +96,10 @@ awk -F '\t' '
 RELEASE_ID=$(sha256_file "$MANIFEST_NEXT" | awk '{print substr($1,1,16)}')
 STAGE="$RELEASES_DIR/.${RELEASE_ID}.partial"
 FINAL="$RELEASES_DIR/$RELEASE_ID"
-mkdir -p "$STAGE/model" "$STAGE/engine" "$STAGE/bin"
+# $STAGE/model is deliberately not pre-created here: a runtime-only release
+# (docs/TASKS_UI_CHUTNI.md T1.0) stages nothing there at all, and fetch()
+# below creates it on demand only when an actual model artifact is staged.
+mkdir -p "$STAGE/engine" "$STAGE/bin"
 
 manifest_field() { # manifest_field <path> <column>
   awk -F '\t' -v p="$1" -v c="$2" '$3==p {print $c; found=1} END {if(!found) exit 1}' "$MANIFEST_NEXT"
@@ -107,7 +110,7 @@ destination() { # destination <remote-path>
     experts.bin|resident.safetensors|manifest.json|config.json|generation_config.json)
       printf '%s/model/%s\n' "$STAGE" "$1" ;;
     tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
-    app.html|samosa-chat.png) printf '%s/%s\n' "$STAGE" "$1" ;;
+    app.html|samosa-chat.png|models.json) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
@@ -115,7 +118,18 @@ destination() { # destination <remote-path>
   esac
 }
 
-INSTALL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json app.html samosa-chat.png engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa"
+# Runtime files are mandatory: they are the browser control plane, not an
+# optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
+# The compiled gateway and filesystem sidecar are part of that runtime, so
+# they are staged unconditionally rather than gated behind a manifest probe.
+INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
+
+# Model weights are a separate, optional concern from the runtime: a
+# runtime-only release (tools/package_hf.py --runtime-only) omits them
+# entirely, and a clean install must make no request for any of them. Stage
+# each only if the release manifest actually lists it -- same pattern as the
+# PDFium/optional-capability blocks below.
+MODEL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json"
 
 # Document extraction is an optional release capability, not a host-package
 # dependency. A PDFium archive is fetched only when the verified release
@@ -136,19 +150,14 @@ if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&
   DOCUMENTS_ENABLED=1
 fi
 
-# The compiled multi-backend gateway (Bonsai/Ornith/Qwen behind one app) and
-# native Jobs controller are likewise optional: only staged when
-# tools/package_hf.py was run with --gateway and the manifest reflects it.
-# Absent, `samosa serve`/`samosa app` fall back to the raw Qwen engine
-# unchanged — this installer behaves exactly as it did before either existed.
-GATEWAY_ENABLED=0
-if manifest_field "engine/samosa_gateway.c" 1 >/dev/null 2>&1; then
-  # The gateway includes the content-addressed document read cache and the
-  # durable background-job primitive directly; stage their headers with the
-  # two compilation units or a clean gateway release cannot build atomically.
-  INSTALL_FILES="$INSTALL_FILES engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
-  GATEWAY_ENABLED=1
-fi
+# Stage a model weight file only if this release's manifest actually lists
+# it. A runtime-only manifest lists none of them, so this loop adds nothing
+# and the install below makes no request for any model artifact.
+for relative in $MODEL_FILES; do
+  if manifest_field "$relative" 1 >/dev/null 2>&1; then
+    INSTALL_FILES="$INSTALL_FILES $relative"
+  fi
+done
 
 required_remaining=0
 for relative in $INSTALL_FILES; do
@@ -262,25 +271,29 @@ if [ "$DOCUMENTS_ENABLED" = 1 ]; then
   rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
 fi
 
-if [ "$GATEWAY_ENABLED" = 1 ]; then
-  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
-    fail "staged gateway compilation failed; live release was not changed"
-  # samosa-jobsd is the same source under a launchd-friendly name (invoked as
-  # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
-  # plist the gateway installs points at current/bin/samosa-jobsd, so the
-  # scheduler is broken on a clean install unless this binary exists.
-  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-    "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" ||
-    fail "staged jobs daemon compilation failed; live release was not changed"
-  $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
-    "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
-    fail "staged filesystem sidecar compilation failed; live release was not changed"
-  chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
-fi
+# The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
+# T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
+$COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
+  fail "staged gateway compilation failed; live release was not changed"
+# samosa-jobsd is the same source under a launchd-friendly name (invoked as
+# `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
+# plist the gateway installs points at current/bin/samosa-jobsd, so the
+# scheduler is broken on a clean install unless this binary exists.
+$COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" ||
+  fail "staged jobs daemon compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
+  "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
+  fail "staged filesystem sidecar compilation failed; live release was not changed"
+chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
-  say "Smoke-testing the inactive local app..."
+  # This is a control-plane smoke, not a model smoke (docs/TASKS_UI_CHUTNI.md
+  # T1.0): the installer's job is the runtime, and a runtime install must
+  # succeed identically whether or not a model happens to be present. It
+  # never requires or forces a real generation.
+  say "Smoke-testing the inactive local control plane..."
   SMOKE_PORT=$((18000 + $$ % 10000))
   SMOKE_LOG="$STAGE/app-smoke.log"
   smoke_pid=""
@@ -292,7 +305,15 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
     wait "$smoke_pid" >/dev/null 2>&1 || true
   }
   trap 'stop_smoke' EXIT HUP INT TERM
-  SAMOSA_RELEASE_DIR="$STAGE" SAMOSA_PORT="$SMOKE_PORT" \
+  # Isolate the smoke run's home from the real ~/.samosa: SAMOSA_RELEASE_DIR
+  # only redirects the engine/app/gateway paths dist/samosa itself computes,
+  # not the gateway's own internal defaults (profile, jobs, models catalog),
+  # which fall back to SAMOSA_HOME. Without an explicit, separate SAMOSA_HOME
+  # here, those routes would silently read and write the real user's
+  # existing ~/.samosa state instead of this inactive staged release.
+  SMOKE_HOME="$STAGE/.smoke-home"
+  SAMOSA_RELEASE_DIR="$STAGE" SAMOSA_HOME="$SMOKE_HOME" \
+    SAMOSA_MODELS_CATALOG="$STAGE/models.json" SAMOSA_PORT="$SMOKE_PORT" \
     "$STAGE/bin/samosa" serve >"$SMOKE_LOG" 2>&1 &
   smoke_pid=$!
   ready=0
@@ -308,16 +329,62 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   done
   [ "$ready" = 1 ] || {
     sed -n '1,120p' "$SMOKE_LOG" >&2 || true
-    fail "staged app server did not become healthy; live release was not changed"
+    fail "staged control plane did not become healthy; live release was not changed"
   }
   curl -fsS --max-time 5 "http://127.0.0.1:$SMOKE_PORT/" |
     grep -q 'Your model.' ||
     fail "staged app UI smoke failed; live release was not changed"
-  curl -fsS --max-time 120 "http://127.0.0.1:$SMOKE_PORT/v1/chat/completions" \
+
+  # /v1/profile, /v1/setup/status, and /v1/models/catalog all require the
+  # per-launch UI token (docs/TASKS_UI_CHUTNI.md §5.0); read it from the same
+  # place the served page and the gateway itself do.
+  TOKEN_FILE="$SMOKE_HOME/run/ui-token"
+  i=0
+  while [ ! -s "$TOKEN_FILE" ] && [ "$i" -lt 40 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -s "$TOKEN_FILE" ] || fail "staged control plane never wrote a UI session token; live release was not changed"
+  UI_TOKEN=$(cat "$TOKEN_FILE")
+
+  # A fresh install has no profile yet, so 404 profile_not_found is the
+  # honest, correct answer here, not a failure -- only reject a status this
+  # route isn't allowed to return at all.
+  PROFILE_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+    -H "X-Samosa-Token: $UI_TOKEN" "http://127.0.0.1:$SMOKE_PORT/v1/profile")
+  case "$PROFILE_STATUS" in
+    200|404) ;;
+    *) fail "staged profile endpoint smoke returned unexpected status $PROFILE_STATUS; live release was not changed" ;;
+  esac
+  curl -fsS --max-time 5 -H "X-Samosa-Token: $UI_TOKEN" \
+    "http://127.0.0.1:$SMOKE_PORT/v1/setup/status" >/dev/null ||
+    fail "staged setup status endpoint smoke failed; live release was not changed"
+  curl -fsS --max-time 5 -H "X-Samosa-Token: $UI_TOKEN" \
+    "http://127.0.0.1:$SMOKE_PORT/v1/models/catalog" >/dev/null ||
+    fail "staged model catalog endpoint smoke failed; live release was not changed"
+
+  # Chat never requires a model to respond honestly: with none installed it
+  # must return the structured 409 model_required error; with one already
+  # installed (e.g. an upgrade around an existing model) a real reply is
+  # fine too, but neither case is forced or assumed here.
+  CHAT_LOG="$STAGE/.chat-smoke.json"
+  CHAT_STATUS=$(curl -sS -o "$CHAT_LOG" -w '%{http_code}' --max-time 120 \
+    "http://127.0.0.1:$SMOKE_PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    --data-binary '{"messages":[{"role":"user","content":"Reply with hello."}],"thinking":"off","max_tokens":16,"seed":11}' |
-    grep -q '"choices"' ||
-    fail "staged app generation smoke failed; live release was not changed"
+    --data-binary '{"messages":[{"role":"user","content":"Reply with hello."}],"thinking":"off","max_tokens":16,"seed":11}')
+  case "$CHAT_STATUS" in
+    200)
+      grep -q '"choices"' "$CHAT_LOG" ||
+        fail "staged app generation smoke returned 200 without a completion; live release was not changed"
+      ;;
+    409)
+      grep -q 'model_required' "$CHAT_LOG" ||
+        fail "staged app chat smoke returned 409 without model_required; live release was not changed"
+      ;;
+    *)
+      sed -n '1,40p' "$CHAT_LOG" >&2 || true
+      fail "staged app chat smoke returned unexpected status $CHAT_STATUS; live release was not changed"
+      ;;
+  esac
+  rm -f "$CHAT_LOG"
+
   stop_smoke
   smoke_pid=""
   trap - EXIT HUP INT TERM

@@ -17,7 +17,7 @@ printf '{}\n' >"$SNAP/generation_config.json"
 printf '{}\n' >"$TMP/tokenizer.json"
 
 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
-  --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa --gateway >/dev/null
+  --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa >/dev/null
 
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
