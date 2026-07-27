@@ -323,6 +323,7 @@
     .chooser-trigger-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
     .mismatch-note { margin: 0 18px 14px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
     .migration-banner { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 14px; max-width: min(560px, 92vw); padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-overlay); font-size: 13px; }
+    .migration-banner[hidden] { display: none; }
     .migration-banner-actions { display: flex; gap: 8px; flex: none; }
 
     @media (max-width: 760px) {
@@ -341,12 +342,14 @@
     }
     /* Chutni placeholder view (T3.1 nav shell; scope views land in T3.3) */
     .chutni-view { flex: 1 1 0; min-height: 0; overflow-y: auto; display: grid; place-items: center; padding: 28px; text-align: center; }
+    .chutni-view[hidden] { display: none; } /* author `display` beats the UA [hidden] rule at equal specificity -- this restores it */
     .chutni-empty { max-width: 420px; color: var(--ink-2); }
     .chutni-empty svg { width: 32px; height: 32px; margin-bottom: 14px; color: var(--ink-3); }
     .chutni-empty h2 { margin: 0 0 8px; font-size: 17px; font-weight: 600; color: var(--ink); }
     .chutni-empty p { margin: 0; font-size: 13px; line-height: 1.55; }
     /* Jobs view */
     .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)) 48px; }
+    .jobs-view[hidden] { display: none; }
     .jobs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
     .jobs-head h1 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; }
     .jobs-head p { margin: 0; color: var(--ink-2); font-size: 12px; }
@@ -409,6 +412,7 @@
       .job-review-arrow { display: none; }
     }
     .job-bar { position: sticky; bottom: 0; margin-top: 16px; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 13px 15px; border-radius: var(--r-md); background: var(--accent-soft); border: 1px solid var(--line); }
+    .job-bar[hidden] { display: none; }
     .job-bar .txt { font-size: 13.5px; color: var(--ink); }
     .job-bar button { border: 0; border-radius: var(--r-sm); padding: 9px 16px; font-weight: 600; cursor: pointer; }
     .job-bar .apply { background: var(--accent); color: var(--accent-ink); }
@@ -633,9 +637,15 @@
     <symbol id="icon-stop" viewBox="0 0 20 20" fill="currentColor">
       <rect x="6" y="6" width="8" height="8" rx="1.5"/>
     </symbol>
-    <symbol id="icon-gear" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="10" cy="10" r="3.1"/>
-      <path d="M10 2.7v2.3M10 15v2.3M17.3 10h-2.3M5 10H2.7M15.4 4.6l-1.6 1.6M6.2 13.8l-1.6 1.6M15.4 15.4l-1.6-1.6M6.2 6.2L4.6 4.6"/>
+    <!-- "Sliders" convention, not a gear/cog -- a hand-drawn circle-of-ticks
+         gear was tried first and, seen rendered, read as a sun/brightness
+         toggle rather than settings (caught by a real screenshot, not a
+         test). This shape is unambiguous at 16-20px. -->
+    <symbol id="icon-gear" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3.5 6h4M10 6h6.5M3.5 10h8.5M15 10h1.5M3.5 14h2.5M9 14h7.5"/>
+      <circle cx="8" cy="6" r="1.7" fill="currentColor" stroke="none"/>
+      <circle cx="13.5" cy="10" r="1.7" fill="currentColor" stroke="none"/>
+      <circle cx="6" cy="14" r="1.7" fill="currentColor" stroke="none"/>
     </symbol>
     <symbol id="icon-chat" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
       <path d="M3.5 5A1.5 1.5 0 0 1 5 3.5h10A1.5 1.5 0 0 1 16.5 5v6.2A1.5 1.5 0 0 1 15 12.7H8.4l-3.4 2.8v-2.8H5A1.5 1.5 0 0 1 3.5 11.2z"/>
