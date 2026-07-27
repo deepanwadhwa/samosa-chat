@@ -2350,6 +2350,36 @@ interlock with until they're built.
 
 #### T3.1 — Apply the design system and information architecture
 
+**Status: DONE (2026-07-27) against this task's own Work list, with one
+acceptance item blocked by the environment.** Evidence:
+[docs/regressions/ui-chutni/t3.1-evidence.md](../regressions/ui-chutni/t3.1-evidence.md).
+`assets/app.html` fully migrated from the old ad-hoc tokens
+(`--paper-2`/`--panel`/`--brand`/`--muted`/`--radius`/`--shadow`/etc.) to
+`docs/UI_DESIGN.md`'s sec2.2 token set; the full subtraction pass landed
+(no more radial washes, gradient buttons, hover-lift, backdrop blur outside
+the topbar/overlays, or radius/weight scatter). All five enumerated glyph
+tells (`＋ ☰ ↑ ■ ✕ ×` plus the `&larr;` chooser arrow) were replaced by a new
+11-symbol inline SVG icon set. Sidebar now carries the Chat/Chutni/Jobs
+navigation (replacing the old topbar Chat/Jobs pill), with conversation
+creation/history beneath it and an active-model/status line at the bottom;
+Chutni's pane is an honest "isn't built yet" placeholder, not a fake
+affordance (T3.3 owns real scope views). The Kill action moved out of the
+primary header into a labeled Troubleshooting section in Settings. Every
+existing UI/gateway test suite that touches this file was re-run and passes
+(`test-ui-setup`, `compiled-gateway-test`, `test-model-manager`, all four
+DOM-fixture `.mjs` tests, `test_samosa_serve`'s CSP check), plus a tag-balance
+and `node --check` sanity pass given the size of the rewrite. **Not done:**
+the acceptance list's "checked-in visual acceptance captures" —
+`screencapture` was tried directly and confirmed non-functional in this
+environment (no display access), so no screenshots exist for light/dark or
+desktop/narrow; this is disclosed, not silently skipped. Name/Welcome/Model
+captures are additionally not applicable yet since those screens are T2.4's
+own deliverable (T2.4 depends on T3.1, not the reverse) — building them now
+would have been scope creep with no capture benefit either way. The
+composer `+` menu and the Jobs activity-log's separate dot-glyph convention
+were deliberately left out of this task's icon-family scope (see the
+evidence doc's scope note).
+
 **Work**
 
 - Implement the warm flat surfaces, hairlines, tokenized color/type/spacing/
