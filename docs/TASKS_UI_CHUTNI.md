@@ -2327,6 +2327,41 @@ interlock with until they're built.
 
 #### T2.4 — Ship Name → Welcome → Model → Chat
 
+**Status: DONE (2026-07-27) against this task's own Work/Acceptance lists,
+two items disclosed as structurally-verified rather than measured.** Evidence:
+[docs/regressions/ui-chutni/t2.4-evidence.md](../regressions/ui-chutni/t2.4-evidence.md).
+Landing real setup screens exposed that `GET /v1/setup/status`'s `next_step`
+was still on T1.2/T1.4's original interim bridges and that nothing persisted
+`selected_model_id`/`selected_model_version` anywhere — both closed as part
+of this task rather than left as a separate follow-up, since the screens
+have nothing real to render against otherwise. `setup_status_resolve()`
+(`src/samosa_gateway.c`) now derives `next_step` from real T2.1 catalog +
+T2.2 install-job + T2.3 selection state per §5.1's ordered rule, including
+legacy-install adoption using the catalog's real version string (not a
+filename basename, fixing the debt the T1.2 evidence doc named). Four
+full-screen setup views landed in `assets/app.html`
+(`#setupViewName`/`#setupViewWelcome`/`#setupViewModel`, `download` collapsing
+into the Model view rather than a 5th screen), server-driven throughout —
+`refreshSetup()` re-derives the current view from `GET /v1/setup/status` on
+every call (initial load, a 1.5s poll while on the Model view, and every
+action handler), so a reload never needs client-stored job-id state to
+resume exactly where it left off. Testing this task found and fixed two real
+bugs beyond its own scope, both disclosed in the evidence doc: the gateway's
+listening socket had no `FD_CLOEXEC` (any forked child — a backend engine or
+a curl download — kept it open across a restart, breaking real rebinding,
+not just a test artifact), and a killed install job's orphaned curl child
+could race a resumed download into a corrupt `size_mismatch` until shutdown
+was taught to signal-then-wait for it properly. New
+`tests/test_setup_flow.sh` (7 scenarios, real compiled gateway) and
+`tests/test_setup_flow_ui.mjs` (DOM-fixture, same pattern as
+`tests/test_model_catalog_ui.mjs`), both wired into `make test-model-manager`.
+**Disclosed, not measured:** no real interactive click-through or
+screen-reader pass (this environment has no browser-automation tool and no
+display access at all — the same constraint every prior UI task in this
+program has hit); the accessibility acceptance item is met structurally
+(focus management, `role="alert"`, `aria-live`) but T3.4 owns an actual
+screen-reader gate.
+
 **Depends on:** T1.2, T2.1–T2.3, and the T3.1 design-system foundation.
 
 **Work**

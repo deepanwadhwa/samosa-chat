@@ -79,12 +79,22 @@ test-chutni: samosa-fs tests/test_chutni_inventory.sh
 # the prior working backend on a readiness timeout, an immediate child
 # crash, a fingerprint mismatch, or a durable-registry commit failure --
 # tests/test_model_selection.sh against tests/fake_openai_backend.c (T0.1's
-# /healthz alias and SAMOSA_FAKE_HEALTH_DELAY_MS knob).
-test-model-manager: samosa-gateway test_fake_openai_backend fake_model_download_server tests/test_model_catalog.sh tests/test_model_install.sh tests/test_model_catalog_ui.mjs tests/test_model_selection.sh
+# /healthz alias and SAMOSA_FAKE_HEALTH_DELAY_MS knob). T2.4:
+# tests/test_setup_flow.sh covers GET /v1/setup/status's next_step now
+# resolving against this same real catalog/install/selection state (rather
+# than the old T1.2/T1.4 interim bridge), selection persistence at
+# install-start and backend-select time, legacy-install adoption, and
+# install-job repair across a gateway restart. The frontend half (the real
+# Name/Welcome/Model setup screens in assets/app.html, replacing the
+# hardcoded-nothing that existed before) has its own DOM-fixture coverage in
+# tests/test_setup_flow_ui.mjs, same pattern as tests/test_model_catalog_ui.mjs.
+test-model-manager: samosa-gateway test_fake_openai_backend fake_model_download_server tests/test_model_catalog.sh tests/test_model_install.sh tests/test_model_catalog_ui.mjs tests/test_model_selection.sh tests/test_setup_flow.sh tests/test_setup_flow_ui.mjs
 	sh tests/test_model_catalog.sh
 	sh tests/test_model_install.sh
 	node tests/test_model_catalog_ui.mjs
 	sh tests/test_model_selection.sh
+	sh tests/test_setup_flow.sh
+	node tests/test_setup_flow_ui.mjs
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled

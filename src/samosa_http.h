@@ -2,6 +2,7 @@
 #define SAMOSA_HTTP_H
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -237,6 +238,14 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
     pthread_mutex_init(&server->connection_mu,NULL);
     pthread_cond_init(&server->connection_cv,NULL);
     int listener=socket(AF_INET,SOCK_STREAM,0); if(listener<0)return 0;
+    /* Without this, every forked child (a qwen/bonsai/ornith backend engine,
+       or T2.2's curl download subprocess) inherits this listening socket
+       across its execve() and keeps it open for as long as that child lives
+       -- found for real via a T2.4 test that kills and restarts the gateway
+       mid-download: the new process's bind() failed with EADDRINUSE because
+       the orphaned curl child was still holding the old listener fd open,
+       not because anything was actually still listening on purpose. */
+    fcntl(listener, F_SETFD, FD_CLOEXEC);
     int one=1; setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
     struct sockaddr_in address={0}; address.sin_family=AF_INET;
     address.sin_port=htons((uint16_t)port);

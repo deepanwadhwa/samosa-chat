@@ -106,6 +106,11 @@ static int backend_probe(Gateway *g);
 static const char *backend_model(const char *name);
 static int backend_supports_images(Gateway *g, const char *name);
 static int sse_json(int fd, const char *json);
+typedef struct Profile Profile;
+/* T2.4: resolves setup/status's next_step against real T2.1-2.3 catalog/
+   install/selection state (defined later in this file, after that state's
+   own types exist) -- see the block comment above its definition. */
+static void setup_status_resolve(Gateway *g, Profile *p, char out_next_step[16], int *out_profile_complete);
 
 static Gateway *signal_gateway;
 
@@ -4449,7 +4454,7 @@ static int serve_root_html(Gateway *g, int fd) {
    T1.2: profile and setup state (docs/TASKS_UI_CHUTNI.md §5.1).
    ============================================================================ */
 
-typedef struct {
+struct Profile {
     int exists;
     char name[257];
     char welcome_completed_at[32];
@@ -4457,7 +4462,7 @@ typedef struct {
     char selected_model_version[128];
     char created_at[32];
     char updated_at[32];
-} Profile;
+};
 
 /* Valid UTF-8 and a Unicode-scalar-value count (not byte count), matching
    src/samosa_fs.c's is_valid_utf8_text() control-character rules (tab/CR/LF
@@ -4550,6 +4555,30 @@ static int profile_save(Gateway *g, const Profile *p) {
     int result = ok && write_small_file(g->profile_path, json.data);
     free(json.data);
     return result;
+}
+
+/* T2.4: persists "the user selected this model" the moment an install is
+   accepted or a backend switch is accepted (docs/TASKS_UI_CHUTNI.md sec5.1:
+   "Starting an install or selecting an installed model persists the
+   selected model/version") -- not gated on readiness, since next_step's own
+   separate verified/active checks (setup_status_resolve, below) are what
+   decide whether that selection has actually finished loading. A NULL/empty
+   version is kept only when re-selecting the same model_id that was already
+   selected (e.g. a caller that didn't have the catalog version handy);
+   switching to a different model_id with no version clears the stale one
+   rather than misattributing the old model's version string to the new id. */
+static int profile_set_selection(Gateway *g, const char *model_id, const char *version) {
+    Profile p;
+    int had = profile_load(g, &p);
+    if (!had) memset(&p, 0, sizeof(p));
+    int same_model = had && !strcmp(p.selected_model_id, model_id);
+    char now[32]; rfc3339_now_to(now, sizeof(now));
+    if (!p.created_at[0]) path_copy(p.created_at, sizeof(p.created_at), now);
+    path_copy(p.selected_model_id, sizeof(p.selected_model_id), model_id);
+    if (version && version[0]) path_copy(p.selected_model_version, sizeof(p.selected_model_version), version);
+    else if (!same_model) p.selected_model_version[0] = 0;
+    path_copy(p.updated_at, sizeof(p.updated_at), now);
+    return profile_save(g, &p);
 }
 
 static int emit_profile_json(int fd, const Profile *p) {
@@ -4650,24 +4679,33 @@ static void active_model_version(Gateway *g, char *out, size_t cap) {
     path_copy(out, cap, base[0] ? base : "unknown");
 }
 
-/* Interim bridge (T1.2, ahead of T2.1's real model catalog/selection
-   registry): "a selected, verified model" does not exist as a concept yet.
-   Until then, a legacy-detected, currently-ready backend is treated as
-   satisfying that step, so an existing dogfood install is not sent back
-   through a "choose a model" screen it has no real answer for. T2.1/T2.2
-   replace this with real selected_model_id/active_install_job_id state. */
+/* T2.4: retires the T1.2/T1.4 interim bridges above for next_step's model
+   steps -- setup_status_resolve() (defined later in this file, once T2.1's
+   catalog and T2.2/T2.3's install/selection job state all exist) now
+   derives "model" vs "download" vs "chat" from the real persisted
+   selection plus live catalog/job/backend state, per docs/TASKS_UI_CHUTNI.md
+   sec5.1's ordered rule. active_model_id()/active_model_version() above are
+   kept as-is and still answer "what backend is actually live right now" --
+   a true, useful fact independent of catalog identity -- so only next_step
+   itself, plus a legacy-install adoption path inside setup_status_resolve,
+   change here. */
 static int setup_status_handler(Gateway *g, int fd) {
     Profile p;
     int had_profile = profile_load(g, &p);
-    const char *next_step;
-    int profile_complete;
     const char *ready_id = active_model_id(g);
     char ready_version[128] = {0};
     if (ready_id) active_model_version(g, ready_version, sizeof(ready_version));
-    if (!had_profile || !p.name[0]) { next_step = "name"; profile_complete = 0; }
-    else if (!p.welcome_completed_at[0]) { next_step = "welcome"; profile_complete = 0; }
-    else if (!ready_id) { next_step = "model"; profile_complete = 0; }
-    else { next_step = "chat"; profile_complete = 1; }
+
+    char next_step[16] = "name";
+    int profile_complete = 0;
+    if (had_profile && p.name[0]) {
+        if (!p.welcome_completed_at[0]) path_copy(next_step, sizeof(next_step), "welcome");
+        else setup_status_resolve(g, &p, next_step, &profile_complete);
+    }
+
+    pthread_mutex_lock(&g->install_mu);
+    char active_install[40]; path_copy(active_install, sizeof(active_install), g->active_install_job_id);
+    pthread_mutex_unlock(&g->install_mu);
 
     TextBuffer body = {0};
     int ok = text_add(&body, "{\"profile_complete\":") && text_add(&body, profile_complete ? "true" : "false") &&
@@ -4682,15 +4720,12 @@ static int setup_status_handler(Gateway *g, int fd) {
         (p.selected_model_id[0] ? text_json_string(&body, p.selected_model_id) : text_add(&body, "null")) &&
         text_add(&body, ",\"selected_model_version\":") &&
         (p.selected_model_version[0] ? text_json_string(&body, p.selected_model_version) : text_add(&body, "null")) &&
-        text_add(&body, ",\"active_install_job_id\":null,\"active_selection_operation_id\":");
-    /* T2.3: this is the one of the three pre-existing "...null" placeholders
-       in this file that reflects LIVE gateway state (the other two, in
-       profile_save()/emit_profile_json(), are the persisted onboarding
-       record and stay a future T2.4 concern -- this task didn't introduce
-       an onboarding-flow install/selection pointer, only the live registry
-       this field can now honestly report). active_install_job_id above
-       stays null; T2.2 shipped without wiring it here and that gap is
-       unrelated to this task. */
+        text_add(&body, ",\"active_install_job_id\":") &&
+        (active_install[0] ? text_json_string(&body, active_install) : text_add(&body, "null")) &&
+        text_add(&body, ",\"active_selection_operation_id\":");
+    /* Now a real live-registry read, same as active_install_job_id just
+       above (previously both were hardcoded null; see the T2.2/T2.3
+       evidence docs for why that was disclosed as a gap, not fixed there). */
     pthread_mutex_lock(&g->selection_mu);
     char active_selection[40]; path_copy(active_selection, sizeof(active_selection), g->active_selection_job_id);
     pthread_mutex_unlock(&g->selection_mu);
@@ -5703,6 +5738,37 @@ static void install_job_event(Gateway *g, const char *job_id, const char *instal
                           NULL, NULL, "bytes", current_item ? current_item : "", message ? message : "");
 }
 
+/* T2.4: a gateway restart leaves no worker thread alive for any job that
+   was mid-transfer -- its persisted state (queued/downloading/verifying/
+   installing) would otherwise sit forever claiming activity that stopped
+   the moment the process died, and no future pause/resume/cancel call can
+   act on it either (they all gate on g->active_install_job_id, which starts
+   empty every launch). Called once at startup, before the gateway serves
+   any request: reclassifies any such job as "paused" -- the same safe,
+   resumable state an explicit pause already produces -- with an honest
+   event explaining why, rather than a fabricated "downloading" that will
+   never progress. A job already paused/installed/canceled/failed is left
+   untouched. */
+static void install_jobs_repair_after_restart(Gateway *g) {
+    char installs_root[PATH_MAX];
+    if (!path_join(installs_root, sizeof(installs_root), g->models_dir, INSTALL_STAGING_SUBDIR)) return;
+    DIR *dir = opendir(installs_root);
+    if (!dir) return;
+    struct dirent *ent;
+    while ((ent = readdir(dir))) {
+        if (ent->d_name[0] == '.') continue;
+        InstallJob job;
+        if (!install_job_load(g, ent->d_name, &job)) continue;
+        if (strcmp(job.state, "queued") && strcmp(job.state, "downloading") &&
+            strcmp(job.state, "verifying") && strcmp(job.state, "installing")) continue;
+        path_copy(job.state, sizeof(job.state), "paused");
+        iso8601_now(job.updated_at);
+        install_job_save(g, &job);
+        install_job_event(g, job.job_id, "paused", NULL, "Paused: the gateway restarted mid-transfer.");
+    }
+    closedir(dir);
+}
+
 typedef struct {
     Gateway *g;
     char job_id[40];
@@ -5721,6 +5787,50 @@ static void install_clear_active(Gateway *g) {
     g_install_curl_pid = -1;
     atomic_store(&g_install_stop_signal, 0);
     pthread_mutex_unlock(&g->install_mu);
+}
+
+/* T2.4: mirrors backend_stop()'s kill+wait pattern, applied to an in-flight
+   install's curl subprocess. Without this, a gateway shutdown left the curl
+   child orphaned and still writing to the job's staged file -- found for
+   real by a test that killed the gateway mid-download, restarted it, and
+   resumed the same job: the resume raced the still-alive orphaned curl,
+   both writing the same destination file, and the download came back
+   `size_mismatch` corrupt. Called once during shutdown, so
+   install_jobs_repair_after_restart() on the next launch can trust that a
+   job's on-disk bytes are stable rather than possibly still being written
+   by a process nothing else knows about anymore. */
+static void install_worker_stop_for_shutdown(Gateway *g) {
+    pthread_mutex_lock(&g->install_mu);
+    pid_t curl_pid = g_install_curl_pid;
+    pthread_mutex_unlock(&g->install_mu);
+    if (curl_pid <= 0) return;
+    /* Set the same stop signal models_install_pause_handler() uses (1 =
+       "paused") *before* killing curl: the worker thread checks this signal
+       immediately after install_run_curl() returns, ahead of treating a
+       nonzero exit as a real download failure. Without this, the worker
+       thread has no way to tell "curl died because we shut it down on
+       purpose" from "curl died because the network broke", and (found for
+       real) persists a scary download_failed instead of an honest, resumable
+       paused -- worse than install_jobs_repair_after_restart()'s own later
+       fallback (which only ever sees a job stuck actually mid-flight, e.g.
+       after a hard crash with no chance to react to any signal at all). */
+    atomic_store(&g_install_stop_signal, 1);
+    kill(curl_pid, SIGTERM);
+    /* install_run_curl() (the worker thread) already owns a blocking
+       waitpid() on this exact pid -- reaping it here too would race that
+       call for the same child, and whichever loses could end up signaling a
+       pid the kernel has since recycled for something unrelated. Poll the
+       shared pid variable instead, which install_run_curl() clears to -1
+       immediately after its own waitpid() returns. */
+    for (int i = 0; i < 80; ++i) {
+        pthread_mutex_lock(&g->install_mu);
+        int reaped = g_install_curl_pid <= 0;
+        pthread_mutex_unlock(&g->install_mu);
+        if (reaped) return;
+        struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
+        nanosleep(&pause, NULL);
+    }
+    kill(curl_pid, SIGKILL);
 }
 
 /* Shells out to curl, exactly like dist/install.sh already does for every
@@ -6061,6 +6171,15 @@ static int models_install_handler(Gateway *g, int fd, const SamosaHttpRequest *r
     json_free(root); free(catalog_arena);
     if (!compatible)
         return samosa_http_json_error(fd, 422, "incompatible_model", "This model is not compatible with this machine.");
+
+    /* T2.4 (docs/TASKS_UI_CHUTNI.md sec5.1): "Starting an install... persists
+       the selected model/version" -- covers both the dedup-return and the
+       fresh-job branches below uniformly, since either way this request is
+       a validated, accepted expression of the user's choice. Deliberately
+       not gated on the busy check further down: a 503 there just means this
+       particular request can't start a transfer *yet*, not that the user
+       selected something else. */
+    profile_set_selection(g, model_id, version);
 
     /* Dedup: an existing nonterminal job for the same model+version, or a
        repeated client_request_id, returns that job instead of creating a
@@ -6878,6 +6997,120 @@ static int models_selection_active_handler(Gateway *g, int fd) {
     return models_selection_status_handler(g, fd, active);
 }
 
+/* T2.4 (docs/TASKS_UI_CHUTNI.md sec5.1): setup/status's real next_step
+   derivation, defined here (rather than beside setup_status_handler itself,
+   much earlier in this file) because it needs the catalog helpers (T2.1),
+   InstallJob (T2.2), and SelectionJob/g->active_selection_job_id (T2.3) all
+   already defined -- see the forward declaration near the top of this file.
+   Implements the ordered rule verbatim:
+     1. missing name / 2. missing welcome -- handled by the caller already.
+     3. a selected model has a nonterminal or recoverable-failed install job -> download
+     4. no selected, verified model -> model
+     5. selected model verified but not yet the live, ready backend -> download
+     6. selected model ready -> chat
+   A model with no artifact_url at all ("artifact_not_downloadable", e.g.
+   Qwen ahead of a public host -- see the T2.1/T2.2 evidence docs) is the one
+   failed state retry can never fix, so it does NOT count as "recoverable"
+   here; every other failed/paused/nonterminal state does, since Retry/
+   Resume are always offered for those. */
+static void setup_status_resolve(Gateway *g, Profile *p, char out_next_step[16], int *out_profile_complete) {
+    if (!p->selected_model_id[0]) {
+        /* Legacy-install adoption (carried over from the old T1.2/T1.4
+           bridge): a backend already installed and ready before T2.4 ever
+           ran has no onboarding-recorded selection to check. Treat it as an
+           implicit selection of whatever's actually live, and persist that
+           now using the catalog's real version string (not a filename
+           basename) so every later call sees real, checkable state instead
+           of re-deriving this special case forever. */
+        const char *ready_id = active_model_id(g);
+        if (ready_id) {
+            char catalog_version[128] = {0};
+            jval *root = NULL; char *arena = NULL; char reason[128];
+            if (catalog_load_and_validate(g, &root, &arena, reason, sizeof(reason))) {
+                jval *entry = catalog_find_model(root, ready_id, NULL);
+                jval *ver = entry ? json_get(entry, "version") : NULL;
+                if (ver && ver->t == J_STR) path_copy(catalog_version, sizeof(catalog_version), ver->str);
+            }
+            json_free(root); free(arena);
+            if (profile_set_selection(g, ready_id, catalog_version)) profile_load(g, p);
+        }
+    }
+    if (!p->selected_model_id[0]) {
+        path_copy(out_next_step, 16, "model");
+        *out_profile_complete = 0;
+        return;
+    }
+
+    /* Step 3: latest install job for this model_id, any version. */
+    char installs_root[PATH_MAX];
+    int has_recoverable_job = 0;
+    if (path_join(installs_root, sizeof(installs_root), g->models_dir, INSTALL_STAGING_SUBDIR)) {
+        DIR *dir = opendir(installs_root);
+        if (dir) {
+            struct dirent *ent;
+            InstallJob latest; int have_latest = 0;
+            while ((ent = readdir(dir))) {
+                if (ent->d_name[0] == '.') continue;
+                InstallJob job;
+                if (!install_job_load(g, ent->d_name, &job)) continue;
+                if (strcmp(job.model_id, p->selected_model_id)) continue;
+                if (!have_latest || strcmp(job.updated_at, latest.updated_at) > 0) { latest = job; have_latest = 1; }
+            }
+            closedir(dir);
+            if (have_latest) {
+                int nonterminal = !strcmp(latest.state, "queued") || !strcmp(latest.state, "downloading") ||
+                                   !strcmp(latest.state, "verifying") || !strcmp(latest.state, "installing") ||
+                                   !strcmp(latest.state, "paused");
+                int recoverable_failed = !strcmp(latest.state, "failed") &&
+                                          strcmp(latest.error_code, "artifact_not_downloadable");
+                has_recoverable_job = nonterminal || recoverable_failed;
+            }
+        }
+    }
+    if (has_recoverable_job) {
+        path_copy(out_next_step, 16, "download");
+        *out_profile_complete = 0;
+        return;
+    }
+
+    /* Step 4: is the selected model actually verified (installed + all
+       required artifacts present) and compatible with this machine? */
+    int verified = 0;
+    jval *root = NULL; char *arena = NULL; char reason[128];
+    if (catalog_load_and_validate(g, &root, &arena, reason, sizeof(reason))) {
+        jval *entry = catalog_find_model(root, p->selected_model_id,
+            p->selected_model_version[0] ? p->selected_model_version : NULL);
+        if (entry) {
+            int compatible = catalog_platform_matches(json_get(entry, "supported_platforms"));
+            jval *artifacts = json_get(entry, "artifacts");
+            int all_present = compatible;
+            for (int i = 0; all_present && artifacts && i < artifacts->len; ++i) {
+                jval *artifact = artifacts->kids[i];
+                jval *required = json_get(artifact, "required");
+                if ((!required || required->t != J_BOOL || required->boolean) &&
+                    !artifact_is_present(g, p->selected_model_id, artifact)) all_present = 0;
+            }
+            verified = all_present;
+        }
+    }
+    json_free(root); free(arena);
+    if (!verified) {
+        path_copy(out_next_step, 16, "model");
+        *out_profile_complete = 0;
+        return;
+    }
+
+    /* Steps 5/6: verified -- is it actually the live, ready backend, and is
+       no selection operation still in flight for it? */
+    int truly_active = !strcmp(g->backend, p->selected_model_id) && backend_probe(g);
+    pthread_mutex_lock(&g->selection_mu);
+    int selection_in_flight = g->active_selection_job_id[0] != 0;
+    pthread_mutex_unlock(&g->selection_mu);
+    int ready = truly_active && !selection_in_flight;
+    path_copy(out_next_step, 16, ready ? "chat" : "download");
+    *out_profile_complete = ready;
+}
+
 /* GET /v1/models/selection/<job_id>/events?after=<seq>. Plain JSON replay,
    same convention as GET /v1/models/installs/<job_id>/events (see that
    handler's comment for why this isn't SSE). */
@@ -7048,7 +7281,20 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             return samosa_http_json_error(fd, 409, "backend_unavailable", "That model backend is not installed.");
         }
         char name[16]; path_copy(name, sizeof(name), selected->str);
+        /* T2.4: optional -- a caller with the catalog's real version string
+           in hand (T2.4's Model view) can pass it here so the persisted
+           selection matches catalog identity rather than a filename
+           basename; omitted by any older/headless caller, in which case
+           profile_set_selection() below keeps whatever version was already
+           on record for this same model_id. */
+        char model_version[128] = {0};
+        jval *version_v = root && root->t == J_OBJ ? json_get(root, "model_version") : NULL;
+        if (version_v && version_v->t == J_STR) path_copy(model_version, sizeof(model_version), version_v->str);
         json_free(root); free(arena);
+        /* Persists the selection the moment it's accepted, independent of
+           whether the switch below is a no-op or a real fork+watchdog --
+           see the T2.4 comment on profile_set_selection() itself. */
+        profile_set_selection(g, name, model_version);
         if (atomic_load(&g->generating))
             return samosa_http_json_error(fd, 409, "generation_active", "Stop the current response before switching models.");
 
@@ -7295,6 +7541,7 @@ int main(int argc, char **argv) {
        exactly the state /healthz, /v1/backends, and proxy_request() already
        know how to report honestly as "not ready" -- so no other state needs
        inventing here. */
+    install_jobs_repair_after_restart(&gateway);
     if (!backend_start(&gateway))
         fprintf(stderr, "samosa-gateway: backend %s is not installed or failed to start; "
                         "serving the control plane without an active model\n", gateway.backend);
@@ -7313,6 +7560,7 @@ int main(int argc, char **argv) {
             server.port, gateway.backend, backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
     int ok = samosa_http_server_run(&server);
     jobs_stop(&gateway);
+    install_worker_stop_for_shutdown(&gateway);
     backend_stop(&gateway);
     samosa_http_server_destroy(&server);
     pthread_mutex_destroy(&gateway.mu);

@@ -423,10 +423,120 @@
       .job-form .row { justify-content: stretch; }
       .job-run { width: 100%; }
     }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    /* T2.4 (docs/TASKS_UI_CHUTNI.md sec4.1-4.3): Name -> Welcome -> Model ->
+       Chat setup flow. Full-screen, no sidebar/topbar chrome, same warm-flat
+       language as the rest of the app. `.shell` gains [hidden] while setup is
+       showing -- its own `display: grid` would otherwise defeat the UA
+       [hidden] rule at equal specificity, the same bug class T3.1's evidence
+       doc already found (and fixed) twice elsewhere in this file. */
+    .shell[hidden] { display: none; }
+    .setup { display: grid; place-items: start center; min-height: 100vh; min-height: 100dvh; padding: 8vh 24px 24px; background: var(--paper); overflow-y: auto; }
+    .setup[hidden] { display: none; }
+    .setup-card { width: 100%; max-width: 480px; text-align: center; }
+    .setup-mark { width: 56px; height: 56px; object-fit: contain; margin-bottom: 18px; }
+    .setup-view[hidden] { display: none; }
+    .setup-view h1 { margin: 0 0 18px; font: 700 28px/1.2 var(--font-ui); letter-spacing: -.02em; }
+    .setup-view input:not([type="checkbox"]) { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 12px 14px; font: inherit; text-align: center; }
+    .setup-view input:focus { border-color: var(--line-strong); }
+    .setup-error { margin-top: 10px; color: var(--danger); font-size: 13px; }
+    .setup-error[hidden] { display: none; }
+    .setup-primary { margin-top: 14px; width: 100%; border: 0; border-radius: var(--r-md); background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 12px 16px; cursor: pointer; }
+    .setup-primary:hover { background: color-mix(in srgb, var(--accent) 94%, black); }
+    .setup-primary:disabled { opacity: .55; cursor: default; }
+    .setup-primary:active { transform: scale(.985); }
+    .setup-secondary { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: var(--r-md); font-weight: 600; padding: 12px 16px; cursor: pointer; }
+    .setup-caption { margin: 10px 0 0; color: var(--ink-2); font-size: 12.5px; }
+    .setup-points { text-align: left; margin: 0 0 22px; padding: 0 0 0 20px; color: var(--ink-2); font-size: 14px; line-height: 1.7; }
+    .setup-actions { display: flex; gap: 10px; }
+    .setup-actions .setup-secondary { flex: none; }
+    .setup-actions .setup-primary { margin-top: 0; flex: 1; }
+    .setup-status-banner { margin: 0 0 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); color: var(--ink-2); font-size: 13px; text-align: left; }
+    .setup-status-banner.error { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); color: var(--danger); }
+    .setup-status-banner[hidden] { display: none; }
+
+    /* Model chooser + download (spec sec4.3) */
+    #setupViewModel { max-width: 640px; text-align: left; }
+    #setupViewModel h1 { text-align: center; }
+    .model-list { display: grid; gap: 14px; }
+    .model-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 16px 18px; }
+    .model-card.active { border-color: var(--accent); }
+    .model-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .model-card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .model-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; letter-spacing: .02em; }
+    .model-badge.recommended { background: var(--accent-soft); color: var(--accent); }
+    .model-badge.active { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+    .model-card-desc { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+    .model-card-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 0; color: var(--ink-2); font-size: 12.5px; }
+    .model-card-meta strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .model-card-license { margin-top: 8px; font-size: 12px; }
+    .model-card-incompatible { margin-top: 10px; color: var(--warn); font-size: 12.5px; }
+    .model-card-progress { margin-top: 12px; }
+    .model-progress-bar { height: 6px; border-radius: 999px; background: var(--inset); overflow: hidden; }
+    .model-progress-fill { height: 100%; background: var(--accent); border-radius: inherit; transition: width .2s ease-out; }
+    .model-progress-fill.indeterminate { width: 35% !important; animation: model-progress-indeterminate 1.4s ease-in-out infinite; }
+    @keyframes model-progress-indeterminate { 0% { margin-left: 0%; } 50% { margin-left: 65%; } 100% { margin-left: 0%; } }
+    .model-progress-text { margin-top: 6px; display: flex; justify-content: space-between; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .model-card-state { margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+    .model-card-state.error { color: var(--danger); }
+    .model-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .model-card-actions button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: var(--r-sm); padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
+    .model-card-actions button.primary { border: 0; background: var(--accent); color: var(--accent-ink); }
+    .model-card-actions button:disabled { opacity: .5; cursor: default; }
+    @media (max-width: 640px) {
+      .setup { padding: 6vh 16px 20px; }
+      .setup-actions { flex-direction: column-reverse; }
+      .setup-actions .setup-secondary { width: 100%; }
+    }
   </style>
 </head>
 <body>
-  <div class="shell">
+  <!-- T2.4 (docs/TASKS_UI_CHUTNI.md sec4.1-4.3): Name -> Welcome -> Model ->
+       Chat setup flow, gated on GET /v1/setup/status. Hidden by default in
+       markup (alongside .shell below) so nothing flashes before the first
+       status fetch resolves and picks one. -->
+  <main class="setup" id="setup" hidden>
+    <div class="setup-card">
+      <img src="/assets/samosa-chat.png" alt="" class="setup-mark">
+
+      <div class="setup-status-banner" id="setupBanner" role="alert" hidden></div>
+
+      <section class="setup-view" id="setupViewName">
+        <h1>What should Samosa call you?</h1>
+        <form id="setupNameForm" novalidate>
+          <label class="sr-only" for="setupNameInput">Your name</label>
+          <input id="setupNameInput" autocomplete="name" maxlength="256" placeholder="Your name">
+          <div class="setup-error" id="setupNameError" role="alert" hidden></div>
+          <button class="setup-primary" type="submit">Continue</button>
+        </form>
+        <p class="setup-caption">Your name stays on this computer.</p>
+      </section>
+
+      <section class="setup-view" id="setupViewWelcome" hidden>
+        <h1 id="setupWelcomeHeading">Welcome.</h1>
+        <ul class="setup-points">
+          <li>Models run locally on this computer.</li>
+          <li>Your chats and Chutni memory stay on this computer too.</li>
+          <li>The next step downloads a model.</li>
+          <li>Model downloads can be large and take time.</li>
+        </ul>
+        <div class="setup-actions">
+          <button class="setup-secondary" id="setupWelcomeBack" type="button">Back</button>
+          <button class="setup-primary" id="setupWelcomeContinue" type="button">Choose a model</button>
+        </div>
+      </section>
+
+      <section class="setup-view" id="setupViewModel" hidden aria-label="Choose a model">
+        <h1>Choose a model</h1>
+        <div class="setup-error" id="setupModelError" role="alert" hidden></div>
+        <div class="model-list" id="modelList" aria-live="polite"></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="shell" id="shell" hidden>
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <img src="/assets/samosa-chat.png" alt="">
@@ -1244,6 +1354,373 @@
       };
       const chooser = { roots: [], rootId: null, path: null, parent: null, entries: [], focusIndex: -1, opener: null };
 
+      // ========================================================================
+      // T2.4 (docs/TASKS_UI_CHUTNI.md sec4.1-4.3): Name -> Welcome -> Model ->
+      // Chat setup flow, gated on GET /v1/setup/status. Everything here is
+      // server-driven -- no client-stored job id or step flag survives a
+      // reload; a fresh page load always re-fetches /v1/setup/status and the
+      // in-flight install/selection job ids it reports, so "browser refresh/
+      // close/reopen during download resumes exact state" falls out of that
+      // alone rather than needing its own bespoke persistence.
+      // ========================================================================
+      const setupEls = {
+        root: $("setup"), shell: $("shell"), banner: $("setupBanner"),
+        viewName: $("setupViewName"), nameForm: $("setupNameForm"), nameInput: $("setupNameInput"), nameError: $("setupNameError"),
+        viewWelcome: $("setupViewWelcome"), welcomeHeading: $("setupWelcomeHeading"), welcomeBack: $("setupWelcomeBack"), welcomeContinue: $("setupWelcomeContinue"),
+        viewModel: $("setupViewModel"), modelError: $("setupModelError"), modelList: $("modelList"),
+      };
+      let setupPollTimer = null;
+      let setupInstalls = [];
+      let chatBootstrapped = false;
+
+      // --- pure helpers (DOM-fixture tested; no DOM access) ------------------
+
+      // next_step is one of name/welcome/model/download/chat
+      // (docs/TASKS_UI_CHUTNI.md sec5.1); "download" renders the same Model
+      // view as "model" -- T2.4 builds four setup views, not five, and the
+      // download UI is part of the Model view per sec4.3. This is the only
+      // place that collapses the two.
+      function setupViewForNextStep(nextStep) {
+        if (nextStep === "name" || nextStep === "welcome" || nextStep === "chat") return nextStep;
+        return "model";
+      }
+      function formatBytes(n) {
+        const bytes = Number(n) || 0;
+        if (bytes <= 0) return "0 B";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let value = bytes, unit = 0;
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+        return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+      }
+      // Picks the single most relevant install job for a catalog model: the
+      // setup/status-reported active_install_job_id if it matches this model,
+      // else the most recently updated job for that model_id from GET
+      // /v1/models/installs. Pure given both inputs, which is what lets a
+      // reload reconstruct the exact same card state without the client ever
+      // having stored a job id of its own.
+      function installForModel(modelId, installs, activeInstallJobId) {
+        const candidates = (installs || []).filter(j => j.model_id === modelId);
+        if (!candidates.length) return null;
+        if (activeInstallJobId) {
+          const active = candidates.find(j => j.job_id === activeInstallJobId);
+          if (active) return active;
+        }
+        return candidates.reduce((a, b) => (a.updated_at > b.updated_at ? a : b));
+      }
+      // Mirrors setup_status_resolve()'s own server-side recoverability rule
+      // (src/samosa_gateway.c) exactly: every failed install state is
+      // retryable except artifact_not_downloadable (no download host exists
+      // at all yet, e.g. Qwen ahead of a public release host -- see the
+      // T2.1/T2.2 evidence docs).
+      const INSTALL_ERROR_COPY = {
+        download_failed: "Couldn't reach the download host. Check your connection and try again.",
+        size_mismatch: "The download didn't match the expected size and was discarded.",
+        checksum_mismatch: "The download didn't verify and was discarded.",
+        insufficient_space: "Not enough free space for this download.",
+        artifact_not_downloadable: "This model has no download available yet.",
+        catalog_invalid: "The model catalog could not be validated.",
+        model_not_found: "This model is no longer in the catalog.",
+        activation_failed: "The downloaded files could not be installed.",
+      };
+      function installErrorMessage(errorCode) { return INSTALL_ERROR_COPY[errorCode] || "The download failed."; }
+      function installErrorRetryable(errorCode) { return errorCode !== "artifact_not_downloadable"; }
+      const SELECTION_ERROR_COPY = {
+        backend_start_failed: "This model could not be started.",
+        backend_crashed: "This model exited immediately after starting.",
+        readiness_timeout: "This model didn't become ready in time.",
+        fingerprint_mismatch: "This model's files changed while starting. Try again.",
+        registry_commit_failed: "The switch could not be saved. Your previous model is still active.",
+      };
+      function selectionErrorMessage(errorCode) { return SELECTION_ERROR_COPY[errorCode] || "This model could not be started."; }
+      // Derives everything a model card's progress/state/actions need from
+      // the catalog entry plus (if any) its correlated install job and
+      // whether a selection is currently running for it. Pure -- rendering
+      // just reads this; a DOM-fixture test can assert on it with no DOM.
+      function modelCardState(model, job, selectionInFlight) {
+        if (!model.compatible) return { kind: "incompatible", reason: model.compatibility_reason || "Not compatible with this machine." };
+        if (job && ["queued", "downloading", "verifying", "installing"].includes(job.state)) return { kind: "downloading", job };
+        if (job && job.state === "paused") return { kind: "paused", job };
+        if (job && job.state === "failed") {
+          return { kind: "failed", job, message: installErrorMessage(job.error?.code), retryable: installErrorRetryable(job.error?.code) };
+        }
+        if (model.install_state === "ready") return { kind: model.active ? "active" : (selectionInFlight ? "activating" : "ready") };
+        return { kind: "not_installed" };
+      }
+      // Pure: which action buttons a card should show for a given state. The
+      // renderer turns this into real buttons; a DOM-fixture test can assert
+      // on it directly without a DOM.
+      function modelCardActions(state) {
+        switch (state.kind) {
+          case "not_installed": return [{ action: "install", label: "Download", primary: true }];
+          case "downloading": {
+            const actions = [];
+            if (["queued", "downloading"].includes(state.job.state)) actions.push({ action: "pause", label: "Pause" });
+            actions.push({ action: "cancel", label: "Cancel" });
+            return actions;
+          }
+          case "paused": return [{ action: "resume", label: "Resume", primary: true }, { action: "cancel", label: "Cancel" }];
+          case "failed": return state.retryable ? [{ action: "retry", label: "Retry", primary: true }] : [];
+          case "ready": return [{ action: "select", label: "Use this model", primary: true }];
+          default: return [];
+        }
+      }
+      function modelCardStatusText(state) {
+        switch (state.kind) {
+          case "failed": return state.message;
+          case "active": return "Ready on this Mac";
+          case "activating": return "Starting…";
+          case "paused": return "Paused";
+          default: return "";
+        }
+      }
+
+      // --- rendering + wiring (DOM) -------------------------------------------
+
+      function showSetupView(viewName) {
+        setupEls.viewName.hidden = viewName !== "name";
+        setupEls.viewWelcome.hidden = viewName !== "welcome";
+        setupEls.viewModel.hidden = viewName !== "model";
+        if (viewName === "name") setupEls.nameInput.focus();
+        else if (viewName === "welcome") setupEls.welcomeContinue.focus();
+      }
+      function setupShowBanner(message, isError) {
+        setupEls.banner.textContent = message || "";
+        setupEls.banner.hidden = !message;
+        setupEls.banner.classList.toggle("error", !!isError);
+      }
+      async function fetchSetupStatus() {
+        const r = await authFetch("/v1/setup/status", { cache: "no-store" });
+        if (!r.ok) throw new Error("setup_status_failed");
+        return r.json();
+      }
+      function buildModelCard(model, job, selectionInFlight) {
+        const state = modelCardState(model, job, selectionInFlight);
+        const card = document.createElement("div");
+        card.className = "model-card" + (state.kind === "active" ? " active" : "");
+        card.setAttribute("data-model-id", model.id);
+
+        const head = document.createElement("div"); head.className = "model-card-head";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("div"); title.className = "model-card-title";
+        const titleText = document.createElement("span"); titleText.textContent = model.label;
+        title.appendChild(titleText);
+        if (model.preferred_for_backend) {
+          const badge = document.createElement("span"); badge.className = "model-badge recommended"; badge.textContent = "Recommended";
+          title.appendChild(badge);
+        }
+        if (state.kind === "active") {
+          const badge = document.createElement("span"); badge.className = "model-badge active"; badge.textContent = "Active";
+          title.appendChild(badge);
+        }
+        titleWrap.appendChild(title);
+        const desc = document.createElement("div"); desc.className = "model-card-desc"; desc.textContent = model.description || "";
+        titleWrap.appendChild(desc);
+        head.appendChild(titleWrap);
+        card.appendChild(head);
+
+        const meta = document.createElement("div"); meta.className = "model-card-meta";
+        const metaItem = (label, value) => {
+          const span = document.createElement("span");
+          span.appendChild(document.createTextNode(label + " "));
+          const strong = document.createElement("strong"); strong.textContent = value;
+          span.appendChild(strong);
+          meta.appendChild(span);
+        };
+        metaItem("Version", model.version);
+        metaItem("Download", formatBytes(model.download_bytes));
+        metaItem("Free space needed", formatBytes(model.required_free_bytes));
+        const capsSpan = document.createElement("span");
+        capsSpan.textContent = (model.capabilities || []).map(c => c === "image" ? "Image" : "Text").join(", ");
+        meta.appendChild(capsSpan);
+        card.appendChild(meta);
+
+        if (model.license) {
+          const licenseWrap = document.createElement("div"); licenseWrap.className = "model-card-license";
+          const link = document.createElement("a");
+          link.href = model.license.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+          link.textContent = model.license.name;
+          licenseWrap.appendChild(link);
+          card.appendChild(licenseWrap);
+        }
+
+        if (state.kind === "incompatible") {
+          const note = document.createElement("div"); note.className = "model-card-incompatible"; note.textContent = state.reason;
+          card.appendChild(note);
+        }
+
+        if (state.kind === "downloading" || state.kind === "paused") {
+          const progressWrap = document.createElement("div"); progressWrap.className = "model-card-progress";
+          const total = state.job.total_bytes || 0, completed = state.job.completed_bytes || 0;
+          const bar = document.createElement("div"); bar.className = "model-progress-bar";
+          const fill = document.createElement("div"); fill.className = "model-progress-fill";
+          if (total > 0) fill.style.width = `${Math.min(100, (completed / total) * 100).toFixed(1)}%`;
+          else fill.classList.add("indeterminate");
+          bar.appendChild(fill); progressWrap.appendChild(bar);
+          const text = document.createElement("div"); text.className = "model-progress-text";
+          const left = document.createElement("span");
+          left.textContent = state.job.state === "verifying" ? "Verifying…" : state.job.state === "installing" ? "Installing…" : (state.job.current_artifact || "Downloading…");
+          const right = document.createElement("span");
+          right.textContent = total > 0 ? `${formatBytes(completed)} / ${formatBytes(total)}` : formatBytes(completed);
+          text.appendChild(left); text.appendChild(right);
+          progressWrap.appendChild(text);
+          card.appendChild(progressWrap);
+        }
+
+        const statusText = modelCardStatusText(state);
+        if (statusText) {
+          const status = document.createElement("div");
+          status.className = "model-card-state" + (state.kind === "failed" ? " error" : "");
+          status.textContent = statusText;
+          card.appendChild(status);
+        }
+
+        const actionsWrap = document.createElement("div"); actionsWrap.className = "model-card-actions";
+        for (const spec of modelCardActions(state)) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = spec.label;
+          if (spec.primary) button.className = "primary";
+          button.onclick = async () => { button.disabled = true; await runModelCardAction(spec.action, model, state.job); };
+          actionsWrap.appendChild(button);
+        }
+        card.appendChild(actionsWrap);
+        return card;
+      }
+      function renderModelCards(status) {
+        setupEls.modelList.innerHTML = "";
+        const activeInstallJobId = status?.active_install_job_id || null;
+        const selectionInFlight = !!status?.active_selection_operation_id;
+        for (const model of modelCatalog) {
+          const job = installForModel(model.id, setupInstalls, activeInstallJobId);
+          setupEls.modelList.appendChild(buildModelCard(model, job, selectionInFlight));
+        }
+        if (!modelCatalog.length) {
+          const empty = document.createElement("p"); empty.className = "setup-caption"; empty.textContent = "No models are available in this build.";
+          setupEls.modelList.appendChild(empty);
+        }
+      }
+      async function refreshSetupModel(status) {
+        try {
+          const [catalogResp, installsResp] = await Promise.all([
+            authFetch("/v1/models/catalog", { cache: "no-store" }),
+            authFetch("/v1/models/installs", { cache: "no-store" }),
+          ]);
+          if (!catalogResp.ok) throw new Error("catalog_failed");
+          modelCatalog = (await catalogResp.json()).models || [];
+          setupInstalls = installsResp.ok ? (await installsResp.json()).jobs || [] : [];
+        } catch (_) {
+          setupEls.modelError.textContent = "Couldn't load the model list. Check your connection and try again.";
+          setupEls.modelError.hidden = false;
+          return;
+        }
+        setupEls.modelError.hidden = true;
+        renderModelCards(status);
+      }
+      async function runModelCardAction(action, model, job) {
+        setupEls.modelError.hidden = true;
+        try {
+          if (action === "install") {
+            const r = await authFetch("/v1/models/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: model.id, version: model.version }) });
+            if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || "Could not start the download."); }
+          } else if (action === "pause") {
+            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/pause`, { method: "POST" });
+          } else if (action === "resume") {
+            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/resume`, { method: "POST" });
+          } else if (action === "cancel") {
+            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST" });
+          } else if (action === "retry") {
+            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/retry`, { method: "POST" });
+          } else if (action === "select") {
+            const r = await authFetch("/v1/backends/select", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backend: model.id, model_version: model.version }) });
+            if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || selectionErrorMessage(j.error?.code)); }
+          }
+        } catch (error) {
+          setupEls.modelError.textContent = error.message || String(error);
+          setupEls.modelError.hidden = false;
+        }
+        await refreshSetup();
+      }
+      function stopSetupPolling() { if (setupPollTimer) { clearInterval(setupPollTimer); setupPollTimer = null; } }
+      function startSetupPolling() { stopSetupPolling(); setupPollTimer = setInterval(refreshSetup, 1500); }
+      // Runs the normal chat bootstrap exactly once, the moment next_step
+      // first reaches "chat" -- whether that's immediately at page load (an
+      // existing, already-onboarded install) or later, mid-session, once a
+      // download/activation this same page is watching finishes.
+      function enterChat() {
+        if (chatBootstrapped) return;
+        chatBootstrapped = true;
+        stopSetupPolling();
+        setupEls.root.hidden = true; setupEls.shell.hidden = false;
+        els.mode.textContent = els.thinking.options[els.thinking.selectedIndex].text;
+        ensureChat(); render(); resizePrompt(); health(); webStatus();
+        if (state.settings?.contextConfigured) applyContextSetting(true);
+        setInterval(health, 5000);
+        els.prompt.focus();
+      }
+      // The single entry point for every setup transition -- initial load,
+      // the poll timer, and every action handler all call this rather than
+      // maintaining their own view-selection logic, so "detect and skip
+      // completed steps" and "refreshing resumes exact state" are the same
+      // code path as ordinary progress, not a special case.
+      async function refreshSetup() {
+        let status;
+        try { status = await fetchSetupStatus(); }
+        catch (_) {
+          if (chatBootstrapped) return; // already in chat; don't yank the user back over a transient hiccup
+          stopSetupPolling();
+          setupEls.root.hidden = false; setupEls.shell.hidden = true;
+          showSetupView("name");
+          setupShowBanner("Couldn't reach the local Samosa server. Check that it's running and try again.", true);
+          return;
+        }
+        const view = setupViewForNextStep(status.next_step);
+        if (view === "chat") { enterChat(); return; }
+        setupEls.root.hidden = false; setupEls.shell.hidden = true;
+        setupShowBanner("");
+        showSetupView(view);
+        if (view === "name") { stopSetupPolling(); }
+        else if (view === "welcome") {
+          stopSetupPolling();
+          try {
+            const p = await (await authFetch("/v1/profile", { cache: "no-store" })).json();
+            setupEls.welcomeHeading.textContent = p.name ? `Welcome, ${p.name}.` : "Welcome.";
+          } catch (_) { setupEls.welcomeHeading.textContent = "Welcome."; }
+        } else if (view === "model") {
+          await refreshSetupModel(status);
+          startSetupPolling();
+        }
+      }
+      setupEls.nameForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const name = setupEls.nameInput.value;
+        setupEls.nameError.hidden = true;
+        const submitBtn = setupEls.nameForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+          const r = await authFetch("/v1/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+          if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || "Please enter a valid name."); }
+          await refreshSetup();
+        } catch (error) {
+          setupEls.nameError.textContent = error.message || String(error);
+          setupEls.nameError.hidden = false;
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      };
+      setupEls.welcomeBack.onclick = () => showSetupView("name");
+      setupEls.welcomeContinue.onclick = async () => {
+        setupEls.welcomeContinue.disabled = true;
+        try {
+          const r = await authFetch("/v1/setup/welcome/complete", { method: "POST" });
+          if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || "Could not continue."); }
+          await refreshSetup();
+        } catch (error) {
+          setupShowBanner(error.message || String(error), true);
+        } finally {
+          setupEls.welcomeContinue.disabled = false;
+        }
+      };
+
       function showView(name) {
         const jobs = name === "jobs", chutni = name === "chutni", chat = !jobs && !chutni;
         jobEls.view.hidden = !jobs;
@@ -1878,7 +2355,13 @@
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
       els.contextTokens.value=state.settings?.contextTokens||"auto"; els.contextCustom.value=state.settings?.contextCustom||""; syncContextCustom();
       els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
-      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; ensureChat(); render(); resizePrompt(); health(); webStatus(); if(state.settings?.contextConfigured)applyContextSetting(true); setInterval(health,5000); els.prompt.focus();
+      els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text;
+      // T2.4: the chat shell only ever bootstraps (ensureChat/render/health/
+      // webStatus/etc., all now inside enterChat()) once GET /v1/setup/status
+      // says next_step is "chat" -- refreshSetup() is what decides that, for
+      // the very first load exactly the same way it does for every later
+      // poll or post-action refresh.
+      refreshSetup();
     })();
   </script>
 </body>
