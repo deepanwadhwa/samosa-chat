@@ -101,8 +101,11 @@ everything else still work.
 
 Two honest caveats about a free tier:
 
-- **Parallel publishes no rate limits** for keyless use ("light use"). Heavy
-  use may start failing, and Samosa will say so rather than degrade silently.
+- **Parallel publishes no rate limits** for keyless use ("light use"), so
+  Samosa imposes its own: **100 searches per day**. At the cap it says so and
+  suggests adding a key; it resets the next day. Change it with
+  `"daily_limit"` under `"search"` (`0` removes the cap), and note that
+  searches through *your own* provider are never counted or capped.
 - **A free tier can be withdrawn.** Brave's free search tier was deleted in
   February 2026. That is exactly why the keyed presets below are kept.
 

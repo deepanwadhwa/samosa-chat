@@ -423,6 +423,17 @@ static int handler(SamosaHttpServer *server, int fd,
        again rather than looping on an unchanged prompt. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "deciding whether this turn needs the public web")) {
+        /* WK6: a planner that asks for the identical URL every round, however
+           clearly the findings say it already failed. This is not a synthetic
+           worst case -- it is what Ornith 9B did on the first real-model run
+           (2026-07-28), burning its last tool call re-requesting a page that
+           had just returned 403. Checked before the findings case so it keeps
+           repeating across rounds, exactly as the real model did. */
+        if (strstr(request->body, "web tool probe repeat"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"tool\\\":\\\"open_url\\\",\\\"url\\\":\\\"http://example.com/jobs\\\"}\"}}]}", NULL);
         if (strstr(request->body, "Findings so far"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

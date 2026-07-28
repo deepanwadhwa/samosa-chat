@@ -1419,7 +1419,9 @@
           web = {offline:!!c.offline, fetch_available:!!c.fetch_available,
                  search_configured:!!c.search_configured, provider:c.provider||"", reason:c.reason||"",
                  // WK2: tri-state, so the card can tell "never asked" from "said no".
-                 consent:c.consent||"unset", keyless:!!c.keyless, available:!!c.web_available};
+                 consent:c.consent||"unset", keyless:!!c.keyless, available:!!c.web_available,
+                 // WK5: free-tier budget, so the UI can warn before the wall.
+                 searches_today:c.searches_today|0, daily_limit:c.daily_limit|0};
         } catch (_) {
           // An unreachable or unrecognised route means no web capability, not
           // an assumed one. This is also what a pre-Phase-W gateway returns.
@@ -1432,7 +1434,7 @@
             : web.consent !== "granted"
               ? "Internet access is off. Samosa answers from the model alone; nothing leaves this Mac."
               : web.search_configured
-                ? `On. Searches go to ${web.provider}${web.keyless ? " (no account needed)" : ""}; pages are fetched by this Mac directly.`
+                ? `On. Searches go to ${web.provider}${web.keyless ? " (no account needed)" : ""}; pages are fetched by this Mac directly.${webBudgetNote()}`
                 : `Page reading is on. Search is not working — ${web.reason || "check \"search\" in ~/.samosa/config.json."}`;
         }
         if (els.webToggle) {
@@ -1440,6 +1442,18 @@
           els.webToggle.textContent = web.consent === "granted" ? "Turn internet access off" : "Turn internet access on";
         }
         renderWebConsentCard();
+      }
+
+      // WK5: the free tier's daily budget, shown only once it is close enough
+      // to matter. Reporting "3 of 100 used" from the first search would make a
+      // cap nobody will reach look like a limitation of the product.
+      function webBudgetNote() {
+        if (!web.keyless || !web.daily_limit) return "";
+        const left = web.daily_limit - web.searches_today;
+        if (left > web.daily_limit / 4) return "";
+        return left > 0
+          ? ` ${left} of ${web.daily_limit} free searches left today.`
+          : ` Today's ${web.daily_limit} free searches are used up — they reset tomorrow, or add your own search key to remove the cap.`;
       }
 
       // WK2: the one-time question, asked in the composer rather than as a

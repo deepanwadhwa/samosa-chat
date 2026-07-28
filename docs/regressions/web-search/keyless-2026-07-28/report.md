@@ -77,8 +77,8 @@ each with `url`, `title`, `publish_date`, and an `excerpts` array.
 | | Item | Result |
 |---|---|---|
 | ✅ | `web_search` verified against a **real configured provider** | **Now met.** Phase W could not run this at all. See below — a live search through the compiled gateway, keyless. |
-| ❌ | The tool loop verified against a **real model** | **STILL NOT RUN.** The loop was driven end to end against the *live* provider today, but the planner rounds were answered by the fake backend. No real model has yet emitted a `web_search` decision. This remains `TASKS_INTERNET.md` E-I1's local stage. |
-| ❌ | `TASKS_INTERNET.md` E-I4 (end-to-end cost of a web turn) | **STILL NOT MEASURED.** |
+| ✅ | The tool loop verified against a **real model** | **Now met**, on **Ornith 9B** — the backend already installed here. Six web turns, 0 malformed planner replies, correct search/decline judgements, and one real defect found (WK6). Full log: [real-model-planner.md](real-model-planner.md) |
+| ⚠️ | `TASKS_INTERNET.md` E-I4 (end-to-end cost of a web turn) | **Partially measured** — 86 s / 122 s for two web turns, 42 s for a declined one, on Ornith. Not a controlled with/without comparison, and not on Qwen. |
 
 ### The live search, through the compiled gateway
 
@@ -119,9 +119,10 @@ data: {"choices":[{"index":0,"delta":{"reasoning":"Found 8 results.\n"}}]}
 {"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"saw web evidence"}}]}
 ```
 
-The search was real; **the planner decision was not** — the fake backend chose
-`web_search` and supplied the query. That is exactly the gap the second gate
-above still names.
+In that particular run the search was real and the planner decision came from
+the fake backend. **A separate run with the real Ornith 9B backend followed**,
+and is what clears the second gate: see
+[real-model-planner.md](real-model-planner.md).
 
 ## Known quality limitation, stated rather than smoothed over
 

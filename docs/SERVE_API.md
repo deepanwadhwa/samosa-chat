@@ -165,8 +165,8 @@ GET /v1/web/config
 
 ```json
 {"offline": false, "fetch_available": false, "search_configured": true,
- "consent": "unset", "keyless": true, "web_available": false,
- "provider": "parallel", "reason": ""}
+ "consent": "unset", "keyless": true, "searches_today": 0, "daily_limit": 100,
+ "web_available": false, "provider": "parallel", "reason": ""}
 ```
 
 That is a fresh install: search is *configured* (the default provider needs no
@@ -179,6 +179,8 @@ of them is something the user can fix by editing a file.
 - `keyless` — the active provider needs no credential.
 - `web_available` — the effective answer: not offline **and** consent granted.
 - `fetch_available` — same condition; reading a page is an outbound request too.
+- `searches_today` / `daily_limit` — Samosa's own cap on the free tier, by
+  local calendar day. Only meaningful while `keyless`; `0` means uncapped.
 
 Never returns a credential — only whether a usable one is present. `reason`
 explains an unavailable capability and is safe to show a user.
@@ -207,7 +209,8 @@ POST /v1/web/search     {"query": "…"}
 Returns `{ok, provider, results: [{title, url, description}]}`, at most 8
 results. `409 search_not_configured` when no usable provider is configured;
 `409 offline` in offline mode; `502 search_failed` when a configured provider
-fails.
+fails; `429 search_daily_limit` when Samosa's own free-tier cap is reached
+(never raised for a provider the user supplied a key for).
 
 Both outbound routes refuse before consent is answered: `403 consent_required`
 when it is unset, `403 consent_denied` when it was declined. Neither makes a

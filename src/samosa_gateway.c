@@ -116,6 +116,12 @@ typedef struct {
    names none. It is the one preset that needs no credential, which is what
    lets search work on a fresh install without a signup. */
 #define WEB_DEFAULT_PROVIDER "parallel"
+/* WK5: searches per day on the keyless default before Samosa stops and suggests
+   a key. The provider publishes no number for anonymous use ("light use"), so
+   this is our own restraint, not theirs -- an unbounded app on a free tier is
+   how the free tier stops being free, and how one user's runaway loop gets the
+   whole IP refused. A user's own key is never counted against this. */
+#define WEB_KEYLESS_DAILY_DEFAULT 100
 #define MAX_DEFINITION_IMAGE_BYTES (3u << 20)
 /* T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): an attachment's on-wire size is
    already bounded by SAMOSA_HTTP_MAX_BODY (samosa_http.h) -- every request
@@ -1973,6 +1979,85 @@ static int web_search_build(const WebConfig *wc, const char *query, TextBuffer *
     return 1;
 }
 
+/* ============================================================================
+   WK5: the keyless daily budget.
+
+   Counted in <home>/web-usage.json as {"date":"YYYY-MM-DD","count":N}, by local
+   calendar day, and only for the keyless default -- a user who supplied their
+   own credential has their own quota and their own bill, and throttling that
+   would be us rationing something we do not pay for.
+
+   The count is taken *before* the request rather than after a success, so a
+   provider that fails slowly cannot be retried without limit. That trades a
+   little accuracy (a failed call still counts) for the property that matters:
+   the number of requests we send a free service is bounded no matter what.
+   ============================================================================ */
+
+static int web_budget_limit(const WebConfig *wc) {
+    jval *search = wc->root ? json_get(wc->root, "search") : NULL;
+    jval *v = search && search->t == J_OBJ ? json_get(search, "daily_limit") : NULL;
+    if (v && v->t == J_NUM) return (int)v->num;   /* 0 disables the cap */
+    return WEB_KEYLESS_DAILY_DEFAULT;
+}
+
+static void web_budget_today(char *out, size_t cap) {
+    time_t now = time(NULL);
+    struct tm tm;
+    if (localtime_r(&now, &tm)) strftime(out, cap, "%Y-%m-%d", &tm);
+    else path_copy(out, cap, "unknown");
+}
+
+/* Reads today's count. Returns 0 for a missing, unparsable, or stale-dated
+   file: a corrupt counter must not lock a user out of a working feature. */
+static int web_budget_read(Gateway *g, const char *today) {
+    char path[PATH_MAX];
+    if (!path_join(path, sizeof(path), g->home, "web-usage.json")) return 0;
+    char *raw = read_file_limit(path, 4096);
+    if (!raw) return 0;
+    char *arena = NULL; jval *root = json_parse(raw, &arena);
+    int count = 0;
+    if (root && root->t == J_OBJ) {
+        jval *date = json_get(root, "date"), *n = json_get(root, "count");
+        if (date && date->t == J_STR && !strcmp(date->str, today) && n && n->t == J_NUM)
+            count = (int)n->num;
+    }
+    json_free(root); free(arena); free(raw);
+    return count;
+}
+
+static void web_budget_write(Gateway *g, const char *today, int count) {
+    char path[PATH_MAX];
+    if (!path_join(path, sizeof(path), g->home, "web-usage.json")) return;
+    char text[128];
+    snprintf(text, sizeof(text), "{\"date\":\"%s\",\"count\":%d}\n", today, count);
+    write_small_file(path, text);   /* best effort: a failed write must not fail the search */
+}
+
+/* Takes one unit of today's budget. Returns 1 if the request may proceed.
+   Serialised across threads so two concurrent turns cannot both read N and both
+   write N+1. */
+static int web_budget_take(Gateway *g, const WebConfig *wc, char *err, size_t errcap) {
+    if (strcmp(wc->provider, WEB_DEFAULT_PROVIDER)) return 1;   /* the user's own key */
+    int limit = web_budget_limit(wc);
+    if (limit <= 0) return 1;
+
+    static pthread_mutex_t budget_mu = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&budget_mu);
+    char today[16]; web_budget_today(today, sizeof(today));
+    int used = web_budget_read(g, today);
+    int allowed = used < limit;
+    if (allowed) web_budget_write(g, today, used + 1);
+    pthread_mutex_unlock(&budget_mu);
+
+    /* Kept inside errcap (192) deliberately: a truncated sentence would cut off
+       exactly the part that tells the user what to do about it. */
+    if (!allowed)
+        snprintf(err, errcap,
+                 "That is all %d free searches for today. They reset tomorrow, or add your own "
+                 "search key to ~/.samosa/config.json to remove the cap.", limit);
+    return allowed;
+}
+
 /* Runs one configured provider. Returns 1 and fills out[0..*out_n) on success.
 
    Redirects are not followed. curl is already pinned with --max-redirs 0, and
@@ -1980,11 +2065,22 @@ static int web_search_build(const WebConfig *wc, const char *query, TextBuffer *
    the user's API key to whatever host the redirect names
    (docs/TASKS_WEB_SEARCH.md D2). robots.txt is not consulted either -- this is
    a request to an API the user holds credentials for, not crawling. */
+/* `limited` (optional) distinguishes "we stopped this" from "the provider
+   failed", which the caller cannot recover from the message text and which are
+   different things to tell a user. */
 static int web_search_run(Gateway *g, const WebConfig *wc, const char *query,
-                          WebResult *out, int cap, int *out_n, char *err, size_t errcap) {
+                          WebResult *out, int cap, int *out_n, int *limited,
+                          char *err, size_t errcap) {
     *out_n = 0;
+    if (limited) *limited = 0;
     TextBuffer url = {0}, headers = {0}, body = {0};
     if (!web_search_build(wc, query, &url, &headers, &body, err, errcap)) {
+        free(url.data); free(headers.data); free(body.data); return 0;
+    }
+    /* WK5: checked after the request is built (so a misconfigured provider
+       still reports the real problem) but before anything is sent. */
+    if (!web_budget_take(g, wc, err, errcap)) {
+        if (limited) *limited = 1;
         free(url.data); free(headers.data); free(body.data); return 0;
     }
     const char *secrets[32];
@@ -6202,6 +6298,8 @@ typedef struct {
     int search_configured;
     WebConsent consent;
     int keyless;        /* the active provider needs no credential */
+    int searches_today; /* WK5: only meaningful while keyless */
+    int daily_limit;    /* 0 = uncapped */
     char provider[64];
     char reason[192];   /* why search is unavailable; already redacted */
 } WebStatus;
@@ -6220,6 +6318,11 @@ static void web_status(Gateway *g, WebStatus *st) {
     st->offline = wc.offline;
     st->consent = wc.consent;
     st->keyless = !strcmp(wc.provider, WEB_DEFAULT_PROVIDER);
+    if (st->keyless) {
+        char today[16]; web_budget_today(today, sizeof(today));
+        st->searches_today = web_budget_read(g, today);
+        st->daily_limit = web_budget_limit(&wc);
+    }
     path_copy(st->provider, sizeof(st->provider), wc.provider);
     if (wc.offline) {
         path_copy(st->reason, sizeof(st->reason), "Samosa is in offline mode.");
@@ -6245,6 +6348,9 @@ static void web_status(Gateway *g, WebStatus *st) {
 
 static int web_config_handler(Gateway *g, int fd) {
     WebStatus st; web_status(g, &st);
+    char used_buf[16], limit_buf[16];
+    snprintf(used_buf, sizeof(used_buf), "%d", st.searches_today);
+    snprintf(limit_buf, sizeof(limit_buf), "%d", st.daily_limit);
     TextBuffer out = {0};
     int ok = text_add(&out, "{\"offline\":") && text_add(&out, st.offline ? "true" : "false") &&
              /* WK2: reading a page is an outbound request like any other, so it
@@ -6257,6 +6363,9 @@ static int web_config_handler(Gateway *g, int fd) {
              text_json_string(&out, st.consent == WEB_CONSENT_GRANTED ? "granted" :
                                     st.consent == WEB_CONSENT_DENIED  ? "denied" : "unset") &&
              text_add(&out, ",\"keyless\":") && text_add(&out, st.keyless ? "true" : "false") &&
+             /* WK5: so the UI can warn before the wall rather than at it. */
+             text_add(&out, ",\"searches_today\":") && text_add(&out, used_buf) &&
+             text_add(&out, ",\"daily_limit\":") && text_add(&out, limit_buf) &&
              text_add(&out, ",\"web_available\":") && text_add(&out, web_allowed(&st) ? "true" : "false") &&
              /* The provider name is not a credential; the credential itself is
                 never serialised here by any path. */
@@ -6328,14 +6437,19 @@ static int web_search_handler(Gateway *g, int fd, const SamosaHttpRequest *reque
     }
     WebConfig wc; web_config_load(g, &wc);
     WebResult results[WEB_SEARCH_MAX_RESULTS];
-    int n = 0; char err[192];
-    int got = web_search_run(g, &wc, query->str, results, WEB_SEARCH_MAX_RESULTS, &n, err, sizeof(err));
+    int n = 0, limited = 0; char err[192];
+    int got = web_search_run(g, &wc, query->str, results, WEB_SEARCH_MAX_RESULTS, &n,
+                             &limited, err, sizeof(err));
     char provider[64]; path_copy(provider, sizeof(provider), wc.provider);
     const char *secrets[32];
     int nsecrets = web_secret_values(&wc, secrets, 32);
     if (!got) web_redact(err, secrets, nsecrets);
     web_config_free(&wc); json_free(root); free(arena);
     if (!got) {
+        /* WK5: our own cap is a 429, not a 409 -- nothing is misconfigured and
+           the user has nothing to fix today. Checked first because the message
+           mentions config.json, which would otherwise read as unconfigured. */
+        if (limited) return samosa_http_json_error(fd, 429, "search_daily_limit", err);
         int unconfigured = !provider[0] || strstr(err, "config.json") || strstr(err, "not a known preset");
         return samosa_http_json_error(fd, unconfigured ? 409 : 502,
                                       unconfigured ? "search_not_configured" : "search_failed", err);
@@ -6568,6 +6682,22 @@ static int web_sse_reasoning(TextBuffer *out, const char *text) {
            text_json_string(out, text) && text_add(out, "}}]}\n\n");
 }
 
+/* WK6: has this exact tool argument been attempted already this turn? Records
+   it if not. Comparison is exact rather than normalised: the point is to stop a
+   verbatim repeat, and pretending two different-looking URLs are the same is a
+   judgement this has no business making. */
+static int web_already_tried(char **tried, int *ntried, int cap, const char *kind, const char *value) {
+    char key[2400];
+    snprintf(key, sizeof(key), "%s:%s", kind, value);
+    for (int i = 0; i < *ntried; ++i)
+        if (!strcmp(tried[i], key)) return 1;
+    if (*ntried < cap) {
+        char *copy = strdup(key);
+        if (copy) tried[(*ntried)++] = copy;
+    }
+    return 0;
+}
+
 /* Runs up to WEB_TOOL_MAX_CALLS model-chosen tool calls for one turn.
    `evidence` receives the text spliced into the answering turn; `progress`
    receives SSE events describing what happened. Returns 1 if any tool ran. */
@@ -6586,6 +6716,16 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
     if (st.consent != WEB_CONSENT_GRANTED) return 0;
     TextBuffer notes = {0};
     int used = 0;
+    /* WK6: what has already been tried this turn.
+       Found on the first real-model run (Ornith 9B, 2026-07-28): asked for the
+       price of a Raspberry Pi 5, the model searched, opened
+       raspberrypi.com/products/raspberry-pi-5, got HTTP 403 -- and then asked
+       for the identical URL again, spending its last tool call on a page that
+       had just failed. The notes already said it had failed; the model repeated
+       it anyway, so telling it more firmly is not the fix. A repeat is refused
+       here instead, which no prompt wording can regress. */
+    char *tried[WEB_TOOL_MAX_CALLS * 2] = {0};
+    int ntried = 0;
     for (int round = 0; round < WEB_TOOL_MAX_CALLS; ++round) {
         char *decision = web_plan_decide(g, question, notes.data ? notes.data : "",
                                          st.search_configured, WEB_TOOL_MAX_CALLS - round);
@@ -6617,13 +6757,22 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
                 json_free(plan); free(arena); free(decision); break;
             }
             char line[320];
+            if (web_already_tried(tried, &ntried, (int)(sizeof(tried) / sizeof(tried[0])),
+                                  "search", query)) {
+                text_add(&notes, "\nAlready searched for \""); text_add(&notes, query);
+                text_add(&notes, "\" this turn -- the results are above. Use a different "
+                                 "search, open one of the pages found, or stop.\n");
+                json_free(plan); free(arena); free(decision);
+                continue;
+            }
             snprintf(line, sizeof(line), "Searching the web for \"%.200s\"…\n", query);
             web_sse_reasoning(progress, line);
 
             WebConfig wc; web_config_load(g, &wc);
             WebResult results[WEB_SEARCH_MAX_RESULTS];
             int n = 0; char err[192];
-            int got = web_search_run(g, &wc, query, results, WEB_SEARCH_MAX_RESULTS, &n, err, sizeof(err));
+            int got = web_search_run(g, &wc, query, results, WEB_SEARCH_MAX_RESULTS, &n,
+                                     NULL, err, sizeof(err));
             const char *secrets[32];
             int nsecrets = web_secret_values(&wc, secrets, 32);
             if (!got) web_redact(err, secrets, nsecrets);
@@ -6660,6 +6809,17 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
             const char *url = u && u->t == J_STR ? u->str : NULL;
             if (!url || !*url) { json_free(plan); free(arena); free(decision); break; }
             char line[2400];
+            /* WK6: the defect the first real-model run found. A page that just
+               returned 403 will return 403 again; spending the turn's last tool
+               call re-proving that is the worst possible use of it. */
+            if (web_already_tried(tried, &ntried, (int)(sizeof(tried) / sizeof(tried[0])),
+                                  "open", url)) {
+                text_add(&notes, "\nAlready tried "); text_add(&notes, url);
+                text_add(&notes, " this turn and it will not succeed on a retry. "
+                                 "Open a different page, or stop and answer.\n");
+                json_free(plan); free(arena); free(decision);
+                continue;
+            }
             snprintf(line, sizeof(line), "Reading %.2000s…\n", url);
             web_sse_reasoning(progress, line);
             PublicPage page; char err[192];
@@ -6703,10 +6863,12 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
             evidence->data[WEB_EVIDENCE_MAX_CHARS] = 0;
             evidence->len = WEB_EVIDENCE_MAX_CHARS;
             text_add(evidence, "\n[... web evidence truncated ...]");
+            for (int i = 0; i < ntried; ++i) free(tried[i]);
             free(notes.data);
             return used;
         }
     }
+    for (int i = 0; i < ntried; ++i) free(tried[i]);
     free(notes.data);
     return used;
 }

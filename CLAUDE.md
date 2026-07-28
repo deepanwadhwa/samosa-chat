@@ -126,7 +126,8 @@ that is the only branch this agent session can commit to — reconcile onto
 same applies to Phase W's own doc rewrites, which edit `main`-resident files
 from this branch.
 
-**To close Phase W (OPEN, #4)** — gate (a) is now **cleared**; two remain.
+**Phase W + WK (#4) — both original gates now CLEARED; Qwen and a full E-I4
+remain.**
 Phase WK (2026-07-28, `ui-chutni`) made search work with **no API key, no
 account, and no install**, per the owner's requirement: the default provider is
 Parallel's Search MCP, which answers anonymous requests over ordinary HTTPS
@@ -139,13 +140,21 @@ a free tier disappearing is a demonstrated risk, not a theoretical one) and
 remain **unverified**. Search text now leaves the machine, so WK added
 **ask-once consent** (`POST /v1/web/consent`, stored in `config.json`); until
 it is answered the tool loop does not run at all and a `web:true` turn is
-byte-identical to a pre-W turn. Still open: (b) the tool loop against the real
-Ornith or Qwen with a malformed rate recorded — `TASKS_INTERNET.md` E-I1's
-local stage, still never run, since every planner decision so far came from the
-fake backend; and E-I4, what a web turn costs end to end, still not measured.
+byte-identical to a pre-W turn. WK5 adds Samosa's **own 100/day cap** on the
+free tier (the provider publishes none), never applied to a user's own key.
+**Gate (b) is also cleared** — the tool loop ran on the real **Ornith 9B**.
+*It never needed the 24 GB Qwen*: the planner is one stateless call with one
+system and one user message, which every backend runs. 6 web turns, **0
+malformed planner replies**, searched for time-sensitive questions and
+correctly declined for static ones — and it **found a real defect**: the model
+re-requested a URL that had just 403'd, burning its last tool call. Now refused
+in code (WK6) with a regression test built from what the model actually did.
+Still open: the loop on **Qwen** specifically, and a proper E-I4 (only
+wall-clock so far — 86 s / 122 s per web turn, 42 s for a declined one).
 Also unverifiable here: whether keyless access works from **other** IPs
-(Firecrawl's keyless tier refused this Mac by IP), and the free tier's
-undocumented rate limits. Evidence:
+(Firecrawl's keyless tier refused this Mac by IP). Evidence:
+[real-model-planner.md](docs/regressions/web-search/keyless-2026-07-28/real-model-planner.md)
+and
 [docs/regressions/web-search/keyless-2026-07-28/report.md](docs/regressions/web-search/keyless-2026-07-28/report.md);
 spec: [docs/TASKS_WEB_SEARCH.md](docs/TASKS_WEB_SEARCH.md) **Phase WK**.
 

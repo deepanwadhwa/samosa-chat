@@ -316,6 +316,48 @@ A runtime placeholder beside `{query}`, generated per gateway process from
 session for rate-limiting; a value written to `config.json` would instead be a
 permanent identifier linking every search the install ever makes.
 
+## WK5 — Our own daily cap on the free tier
+
+The provider publishes **no** rate limit for anonymous use — "light use" is the
+whole specification. Shipping an app with no bound of its own onto a free tier
+is how the free tier stops being free, and how one runaway loop gets an IP
+refused for everyone behind it.
+
+- **100 keyless searches per local calendar day**, counted in
+  `<home>/web-usage.json`, configurable as `search.daily_limit` (`0` = no cap).
+- **Only the keyless default is counted.** A user who supplied their own key
+  has their own quota and their own bill; rationing that would be us limiting
+  something we do not pay for.
+- The budget is taken **before** the request, not after a success, so a
+  provider failing slowly cannot be retried without bound. A failed call still
+  costs a unit — the point is that what we send a free service is bounded no
+  matter what happens.
+- At the cap: `429 search_daily_limit` and a message saying it resets tomorrow
+  or that a key removes it. **This is deliberately not a 409** — nothing is
+  misconfigured and there is nothing for the user to fix today.
+- A missing, corrupt, or stale-dated counter reads as zero. A broken counter
+  file must never lock someone out of a working feature.
+- `GET /v1/web/config` reports `searches_today` and `daily_limit`; the UI
+  mentions it only inside the last quarter of the budget, because "3 of 100
+  used" would make a cap nobody reaches look like a limitation.
+
+## WK6 — No verbatim repeat of a tool call within a turn
+
+Found by the first real-model run, not by review. Ornith 9B, asked the price of
+a Raspberry Pi 5, searched, opened `raspberrypi.com/products/raspberry-pi-5`,
+got `HTTP 403` — and then asked for **the same URL again**, spending the turn's
+last of three tool calls on a page that had just failed.
+
+The findings block already said it had failed. The model repeated it regardless,
+so a firmer prompt is not the fix. `web_already_tried()` refuses a verbatim
+repeat of any `open_url` URL or `web_search` query within a turn and tells the
+planner to choose differently or stop. Exact string comparison, not normalised:
+stopping a literal repeat is the goal, and deciding that two different-looking
+URLs are "the same" is a judgement this has no business making.
+
+Regression test: `tests/test_web_search.sh` 4f, driven by a fake planner that
+asks for the identical URL every round — reproducing what the real model did.
+
 ## WK4 — Frontend
 
 A one-time card above the composer — not a launch-time modal, which is the kind
@@ -334,7 +376,8 @@ is not sent, plus a toggle that reverses the choice.
 | ✅ | Nothing outbound before consent is granted | asserted on the transport's own argv: no call made |
 | ✅ | Consent write preserves an existing API key and unrelated keys | asserted against a populated `config.json` |
 | ✅ | With consent unset, `web:true` is byte-identical to a plain turn | asserted by exact string equality |
-| ❌ | The tool loop verified against a **real model** | **STILL NOT RUN.** The loop ran end to end against the *live provider* today, but every planner decision came from the fake backend. `TASKS_INTERNET.md` E-I1's local stage remains unrun |
-| ❌ | `TASKS_INTERNET.md` E-I4: what a web turn costs end to end | **STILL NOT MEASURED** |
+| ✅ | The tool loop verified against a **real model** | **Met on Ornith 9B**, the backend installed on this machine. 6 web turns, **0 malformed planner replies**, searched for time-sensitive questions and correctly declined for static ones. Found one real defect → WK6. [real-model-planner.md](regressions/web-search/keyless-2026-07-28/real-model-planner.md) |
+| ⚠️ | `TASKS_INTERNET.md` E-I4: what a web turn costs end to end | **Partially measured**: 86 s and 122 s for two web turns, 42 s for a declined one, on Ornith 9B. Not a controlled with/without comparison, and not on Qwen |
+| ⚠️ | The loop on **Qwen** specifically | Not run. W5's protocol is backend-independent by construction, but that is an argument, not a measurement |
 | ⚠️ | Keyless access works from **other** IP addresses | **Unverifiable from one machine.** It worked from this one; Firecrawl's keyless tier refused this same machine, so per-IP denial is a demonstrated failure mode, not a hypothetical |
 | ⚠️ | Free-tier rate limits | Parallel publishes no numbers ("light use"). Handfuls of queries today drew no 429; sustained use is untested |

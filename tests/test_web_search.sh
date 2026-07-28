@@ -410,6 +410,77 @@ if grep -qi 'header = "Authorization' "$FAKE_CURL_CONFIG"; then
 fi
 
 # ===========================================================================
+# 3c. WK5: the keyless daily budget.
+#
+# The provider publishes no rate limit for anonymous use, so Samosa imposes its
+# own. Two properties matter and are asserted separately: the cap actually
+# stops requests going out, and it applies *only* to the free default -- a user
+# who supplied their own key has their own quota, and rationing that would be
+# us limiting something we do not pay for.
+# ===========================================================================
+cat >"$HOME_DIR/config.json" <<'JSON'
+{"search":{"consent":"granted","daily_limit":2,"provider":"parallel",
+ "providers":{"parallel":{"url":"http://203.0.113.10/mcp"}}}}
+JSON
+rm -f "$HOME_DIR/web-usage.json"
+: >"$FAKE_CURL_ARGV"
+auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"one"}' >/dev/null
+auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"two"}' >/dev/null
+[ "$(grep -c . "$FAKE_CURL_ARGV")" = "2" ] || fail "the first two searches under the cap did not go out"
+CFG=$(auth "http://127.0.0.1:$PORT/v1/web/config")
+printf '%s' "$CFG" | grep -q '"searches_today":2' || fail "the config did not report today's usage"
+printf '%s' "$CFG" | grep -q '"daily_limit":2' || fail "the config did not report the cap"
+
+: >"$FAKE_CURL_ARGV"
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"three"}')
+printf '%s' "$S" | grep -q 'free searches for today' || fail "the third search was not capped"
+printf '%s' "$S" | grep -q 'search_daily_limit' || fail "the cap must have its own error code, not 'unconfigured'"
+printf '%s' "$S" | grep -q 'config.json' || fail "the cap message must say how to lift it"
+[ "$(status_of -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"three"}')" = "429" ] || fail "a capped search must be 429, not 409"
+[ ! -s "$FAKE_CURL_ARGV" ] || fail "a capped search still reached the transport"
+
+# A user's own key is not counted and not capped, even past the same limit.
+cat >"$HOME_DIR/config.json" <<JSON
+{"search":{"consent":"granted","daily_limit":2,"provider":"brave",
+ "providers":{"brave":{"api_key":"$SECRET_KEY","url":"http://203.0.113.10/s?q={query}"}}}}
+JSON
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[{"title":"Keyed","url":"https://example.com/k","description":"Still working."}]}}
+JSON
+: >"$FAKE_CURL_ARGV"
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"keyed"}')
+printf '%s' "$S" | grep -q '"title":"Keyed"' || fail "a keyed provider was capped by the keyless budget"
+[ -s "$FAKE_CURL_ARGV" ] || fail "a keyed provider did not reach the transport"
+printf '%s' "$(auth "http://127.0.0.1:$PORT/v1/web/config")" | grep -q '"searches_today":0' \
+  || fail "a keyed search was counted against the free budget"
+
+# daily_limit: 0 turns the cap off entirely.
+cat >"$HOME_DIR/config.json" <<'JSON'
+{"search":{"consent":"granted","daily_limit":0,"provider":"parallel",
+ "providers":{"parallel":{"url":"http://203.0.113.10/mcp"}}}}
+JSON
+printf '{"date":"1970-01-01","count":999}\n' >"$HOME_DIR/web-usage.json"
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"results":[
+  {"url":"https://example.com/u","title":"Uncapped","excerpts":["Still working."]}]}}}
+JSON
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"uncapped"}')
+printf '%s' "$S" | grep -q '"title":"Uncapped"' || fail "daily_limit 0 did not disable the cap"
+# A stale date resets the count rather than carrying yesterday's total forward.
+cat >"$HOME_DIR/config.json" <<'JSON'
+{"search":{"consent":"granted","daily_limit":2,"provider":"parallel",
+ "providers":{"parallel":{"url":"http://203.0.113.10/mcp"}}}}
+JSON
+printf '{"date":"1970-01-01","count":999}\n' >"$HOME_DIR/web-usage.json"
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"newday"}')
+printf '%s' "$S" | grep -q '"title":"Uncapped"' || fail "yesterday's count was not reset"
+# A corrupt counter must not lock the feature out.
+printf 'not json at all' >"$HOME_DIR/web-usage.json"
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"corrupt"}')
+printf '%s' "$S" | grep -q '"title":"Uncapped"' || fail "a corrupt usage file blocked search"
+rm -f "$HOME_DIR/web-usage.json"
+
+# ===========================================================================
 # 4. The model-decided tool loop.
 # ===========================================================================
 cat >"$HOME_DIR/config.json" <<JSON
@@ -457,6 +528,19 @@ PLAIN=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Ty
               "messages":[{"role":"user","content":"hello"}]}')
 [ "$PLAIN" = '{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"compiled reply"}}]}' ] \
   || fail "a plain turn is no longer a byte-for-byte passthrough"
+
+# 4f. WK6: a repeated tool argument is refused rather than re-sent.
+# Regression for the defect the first real-model run exposed: Ornith 9B asked
+# for the same 403ing URL twice, spending its last tool call on it. The planner
+# here asks for the identical URL on every round; the page must be fetched
+# exactly once no matter how many times it is asked for.
+: >"$FAKE_CURL_ARGV"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"web tool probe repeat"}]}')
+[ "$(printf '%s' "$R" | grep -c 'Reading http://example.com/jobs')" = "1" ] \
+  || fail "a repeated open_url was fetched more than once"
+printf '%s' "$R" | grep -q 'saw web evidence' || fail "the first read of the repeated URL did not reach the turn"
 
 # 4e. WK2: an install that has not answered the question is a pre-W install.
 # `web: true` must not merely fail politely -- it must cost nothing at all: no
