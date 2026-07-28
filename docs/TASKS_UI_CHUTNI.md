@@ -1217,6 +1217,18 @@ changed_during_read
 
 #### 5.6.1 Gigatoken adapter boundary
 
+**Extraction cache (T4.3, landed 2026-07-28):** every build writes a new
+`index.g{N}.sqlite3`, so `contents` starts empty and the table was written but
+never read -- each rebuild re-ran samosa-extract and samosa-ocr over unchanged
+files. The previously published generation is now attached read-only as `prev`
+and consulted before any sidecar runs. A hit requires the content hash *and*
+both fingerprints to match, and those fingerprints are now the SHA-256 of the
+sidecar binary itself rather than a fixed string, so upgrading an extractor
+invalidates exactly what it produced. A missing, unreadable, or older-schema
+previous generation is an ordinary miss, never a build failure. Covered by
+`tests/test_chutni_extraction_cache.sh`, which counts sidecar invocations
+directly.
+
 **Implementation handoff (2026-07-28):** a minimized local adapter is present
 at `third_party/gigatoken-adapter` and is covered by
 `make test-gigatoken-adapter`. It supports the pinned Qwen `tokenizer.json` and

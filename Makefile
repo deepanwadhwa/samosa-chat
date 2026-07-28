@@ -76,11 +76,12 @@ test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c s
 
 samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
+	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
 
-test-chutni-db: samosa-chutni-db tests/test_chutni_db.sh tests/test_chutni_scope.sh
+test-chutni-db: samosa-chutni-db tests/test_chutni_db.sh tests/test_chutni_scope.sh tests/test_chutni_extraction_cache.sh
 	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_db.sh
 	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_scope.sh
+	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_extraction_cache.sh
 
 # Kimi Linear metadata preflight. This does not download or quantize the model;
 # the pure-C KDA/MLA runtime must land before a weight converter is enabled.
@@ -335,6 +336,23 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	python3 tests/test_package_pdfium.py
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
+# The compiled gateway, Chutni, and the Kimi preflight are part of the default
+# gate. They were previously reachable only by name, so a regression in any of
+# them left `make test` green. Run as sub-makes, not prerequisites: several
+# bind fixed ports and must not overlap under `make -j`.
+	$(MAKE) compiled-gateway-test
+	$(MAKE) test-chutni-db
+	$(MAKE) test-chutni
+	$(MAKE) chutni-gateway-test
+	$(MAKE) test-kimi-converter
+
+# test-all adds the gates that need a toolchain beyond a C compiler. The
+# Gigatoken adapter needs `cargo +nightly`, so it is deliberately not in
+# `make test`: a machine without Rust must still be able to run the full
+# offline gate for everything else.
+test-all: test
+	$(MAKE) test-gigatoken-adapter
+	$(MAKE) test-gigatoken-supervisor
 
 # Jobs acceptance (offline). Gate 11 removed the Python jobs modules
 # (samosa_jobs/samosa_gateway/samosa_tools/jobs_fs) after native parity, so the

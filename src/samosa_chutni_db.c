@@ -425,6 +425,25 @@ static char *run_capture_local(const char *program, char *const argv[], size_t l
     waitpid(pid, status, 0); out[used] = 0; return out;
 }
 
+/* T4.3 extraction cache, part 1: what produced a piece of text.
+ *
+ * A cached extraction may only be reused by the *same* extractor. The
+ * fingerprint is the SHA-256 of the sidecar binary itself, so upgrading
+ * samosa-extract or samosa-ocr invalidates every entry it produced without
+ * anyone having to remember to bump a version string. Hashing costs a few
+ * milliseconds once per build, against minutes of re-OCR.
+ *
+ * A binary that cannot be read yields "unavailable", which never matches a
+ * stored fingerprint -- an unreadable extractor must miss, not collide. */
+static void sidecar_fingerprint(const char *path, char out[65]) {
+    unsigned char *data = NULL; size_t len = 0; struct stat st;
+    if (!path || !path[0] || !read_regular_file(path, 512ull << 20, &data, &len, &st)) {
+        free(data); snprintf(out, 65, "unavailable"); return;
+    }
+    sha_text(data, len, out);
+    free(data);
+}
+
 static char *extract_evidence_text(const Scope *s, const char *path, const char *media) {
     if (!strcmp(media, "application/pdf")) {
         if (!s->extractor[0] || access(s->extractor, X_OK) != 0) return NULL;
@@ -530,7 +549,10 @@ static int scope_create(const char *state_dir, const char *id, const char *kind,
     iso_now(now); (void)now; return 1;
 }
 
-typedef struct { unsigned long long regular, skipped, indexed, chunks, source_bytes, text_bytes; } BuildCounts;
+/* `reused` is T4.3's extraction-cache hit count. It is reported on stderr
+ * rather than in scope.json: the JSON is a frozen browser contract with
+ * fixtures, and a build statistic does not justify changing it. */
+typedef struct { unsigned long long regular, skipped, indexed, chunks, source_bytes, text_bytes, reused; } BuildCounts;
 
 static int bind_file(sqlite3 *db, const char *file_id, const char *rel, const struct stat *st,
                      const char *hash, const char *media, const char *status, const char *reason,
@@ -569,9 +591,80 @@ static int token_count_bounded(Tok *tok, const char *text, size_t len) {
     return tok_encode_policy(tok, text, (int)len, ids, 801, 0);
 }
 
-static int insert_content(sqlite3 *db, const char *hash, const char *text, size_t len) {
+/* T4.3 extraction cache, part 2: the fingerprint pair for one media type.
+ *
+ * These were previously stored as a constant ("text-reader-v1"/"none") for
+ * every file regardless of what read it, which made them decorative -- a PDF
+ * extracted by samosa-extract recorded the plain-text reader's name. They now
+ * describe the actual producer, which is what makes them safe to key a cache
+ * on. */
+static void content_fingerprints(const char *media, const char *parser_fp, const char *ocr_fp,
+                                 const char **out_parser, const char **out_ocr) {
+    if (!strcmp(media, "application/pdf")) { *out_parser = parser_fp; *out_ocr = "none"; return; }
+    if (!strcmp(media, "image/png") || !strcmp(media, "image/jpeg")) { *out_parser = "none"; *out_ocr = ocr_fp; return; }
+    *out_parser = "text-reader-v1"; *out_ocr = "none";
+}
+
+static int insert_content(sqlite3 *db, const char *hash, const char *text, size_t len,
+                          const char *parser_fp, const char *ocr_fp) {
     sqlite3_stmt *q=NULL; int ok=sqlite3_prepare_v2(db,"INSERT OR IGNORE INTO contents(content_sha256,extraction_ref,parser_fingerprint,ocr_fingerprint,extracted_text,text_bytes) VALUES(?,?,?,?,?,?)",-1,&q,NULL)==SQLITE_OK;
-    if(ok)ok=bind_text(q,1,hash)&&bind_text(q,2,hash)&&bind_text(q,3,"text-reader-v1")&&bind_text(q,4,"none")&&bind_text(q,5,text)&&sqlite3_bind_int64(q,6,(sqlite3_int64)len)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE; if(!ok)fprintf(stderr,"chutni: content insert: %s\n",sqlite3_errmsg(db));sqlite3_finalize(q);return ok;
+    if(ok)ok=bind_text(q,1,hash)&&bind_text(q,2,hash)&&bind_text(q,3,parser_fp)&&bind_text(q,4,ocr_fp)&&bind_text(q,5,text)&&sqlite3_bind_int64(q,6,(sqlite3_int64)len)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE; if(!ok)fprintf(stderr,"chutni: content insert: %s\n",sqlite3_errmsg(db));sqlite3_finalize(q);return ok;
+}
+
+/* T4.3 extraction cache, part 3: the read the schema was always missing.
+ *
+ * Every build writes a brand-new index.g{N}.sqlite3 and unlinks anything at
+ * that path, so `contents` starts empty each time -- which is why the table
+ * was written but never read. The previous generation's database is attached
+ * read-only as `prev`, and a hit there is what lets a rebuild skip re-running
+ * samosa-extract or samosa-ocr over files that have not changed.
+ *
+ * The lookup requires the content hash *and* both fingerprints to match, so a
+ * changed file, a changed extractor, or a changed OCR pack all miss.
+ * Returns malloc'd text, or NULL for any miss. NULL is always safe: it costs
+ * an extraction, never a wrong answer. */
+static char *cached_extraction(sqlite3 *db, int have_prev, const char *hash,
+                               const char *parser_fp, const char *ocr_fp) {
+    if (!have_prev || !hash || !hash[0]) return NULL;
+    sqlite3_stmt *q = NULL;
+    const char *sql = "SELECT extracted_text FROM prev.contents WHERE content_sha256=?1"
+                      " AND parser_fingerprint=?2 AND ocr_fingerprint=?3 AND extracted_text IS NOT NULL";
+    if (sqlite3_prepare_v2(db, sql, -1, &q, NULL) != SQLITE_OK) return NULL;
+    char *out = NULL;
+    if (bind_text(q, 1, hash) && bind_text(q, 2, parser_fp) && bind_text(q, 3, ocr_fp) &&
+        sqlite3_step(q) == SQLITE_ROW) {
+        const char *text = (const char *)sqlite3_column_text(q, 0);
+        if (text) out = strdup(text);
+    }
+    sqlite3_finalize(q);
+    return out;
+}
+
+/* Attaches the currently-published database as `prev`. Absent, unreadable, or
+ * corrupt is an ordinary cache miss for the whole build, not a build failure:
+ * the index is derived data and can always be rebuilt from the files. */
+static int attach_previous_generation(sqlite3 *db, const Scope *s) {
+    char path[PATH_MAX], dbpath[PATH_MAX], *raw, *arena = NULL;
+    if (!path_join_local(path, sizeof(path), s->scope_dir, "active.json")) return 0;
+    if ((raw = read_all_local(path)) == NULL) return 0;
+    jval *r = json_parse(raw, &arena);
+    const char *dbn = json_string_field(r, "database");
+    int ok = dbn && path_join_local(dbpath, sizeof(dbpath), s->scope_dir, dbn);
+    json_free(r); free(arena); free(raw);
+    if (!ok || access(dbpath, R_OK) != 0) return 0;
+
+    sqlite3_stmt *q = NULL;
+    if (sqlite3_prepare_v2(db, "ATTACH DATABASE ?1 AS prev", -1, &q, NULL) != SQLITE_OK) return 0;
+    ok = bind_text(q, 1, dbpath) && sqlite3_step(q) == SQLITE_DONE;
+    sqlite3_finalize(q);
+    if (!ok) return 0;
+    /* An attached file from an older schema may have no contents table at all;
+       probe once here rather than letting every per-file lookup fail. */
+    if (!exec_sql(db, "SELECT 1 FROM prev.contents LIMIT 1;")) {
+        exec_sql(db, "DETACH DATABASE prev;");
+        return 0;
+    }
+    return 1;
 }
 
 static int insert_chunk(sqlite3 *db, const char *chunk_id, const char *file_id, int ordinal, const char *rel,
@@ -591,9 +684,11 @@ static size_t next_chunk_end(Tok *tok, const unsigned char *p, size_t start, siz
     size_t cut=best;while(cut>start&&p[cut-1]!='\n'&&p[cut-1]!='\r')cut--;if(cut>start&&token_count_bounded(tok,(const char*)p+start,cut-start)<=800)return cut;return best;
 }
 
-static int build_text_chunks(sqlite3 *db, const Scope *s, Tok *tok, int generation, BuildCounts *counts, const char *tokenizer_fingerprint) {
+static int build_text_chunks(sqlite3 *db, const Scope *s, Tok *tok, int generation, BuildCounts *counts,
+                             const char *tokenizer_fingerprint, const char *parser_fp, const char *ocr_fp,
+                             int have_prev) {
     sqlite3_stmt *q=NULL;int rc=sqlite3_prepare_v2(db,"SELECT m.file_id,f.relative_path,m.content_sha256,m.media_type FROM manifest m JOIN files f ON f.file_id=m.file_id WHERE m.generation=? AND m.status='discovered' AND m.media_type IN ('text/plain','application/pdf','image/png','image/jpeg') ORDER BY f.relative_path,m.file_id",-1,&q,NULL);if(rc!=SQLITE_OK){fprintf(stderr,"chutni: manifest query: %s\n",sqlite3_errmsg(db));return 0;}sqlite3_bind_int(q,1,generation);
-    while((rc=sqlite3_step(q))==SQLITE_ROW){if(build_canceled){sqlite3_finalize(q);return 1;}const char *fid=(const char*)sqlite3_column_text(q,0),*rel=(const char*)sqlite3_column_text(q,1),*hash=(const char*)sqlite3_column_text(q,2),*media=(const char*)sqlite3_column_text(q,3);char path[PATH_MAX];if(!path_join_local(path,sizeof(path),s->root,rel)){continue;}unsigned char *data=NULL;size_t len=0;struct stat st;if(!read_regular_file(path,s->max_file_bytes,&data,&len,&st)){free(data);continue;}char *evidence=NULL;if(!strcmp(media,"text/plain")){if(utf8_valid(data,len)){evidence=strdup((const char*)data);}free(data);}else{free(data);evidence=extract_evidence_text(s,path,media);}if(!evidence)continue;len=strlen(evidence);if(!utf8_valid((const unsigned char*)evidence,len)){free(evidence);continue;}if(!insert_content(db,hash,evidence,len)){free(evidence);sqlite3_finalize(q);return 0;}const unsigned char *bytes=(const unsigned char*)evidence;size_t off=0;int ord=0;while(off<len){size_t end=next_chunk_end(tok,bytes,off,len);int n=token_count_bounded(tok,(const char*)bytes+off,end-off);if(n>800||end<=off){free(evidence);sqlite3_finalize(q);return 0;}char key[256],cid[65];snprintf(key,sizeof(key),"%s/%s/%s/%zu/%zu",hash,fid,CHUNKER_FINGERPRINT,off,end);sha_text(key,strlen(key),cid);char *chunk=malloc(end-off+1);if(!chunk){free(evidence);sqlite3_finalize(q);return 0;}memcpy(chunk,bytes+off,end-off);chunk[end-off]=0;if(!insert_chunk(db,cid,fid,ord++,rel,chunk,off,end,n,generation,tokenizer_fingerprint)){free(chunk);free(evidence);sqlite3_finalize(q);return 0;}free(chunk);counts->chunks++;off=end;}counts->indexed++;counts->text_bytes+=(unsigned long long)len;free(evidence);}
+    while((rc=sqlite3_step(q))==SQLITE_ROW){if(build_canceled){sqlite3_finalize(q);return 1;}const char *fid=(const char*)sqlite3_column_text(q,0),*rel=(const char*)sqlite3_column_text(q,1),*hash=(const char*)sqlite3_column_text(q,2),*media=(const char*)sqlite3_column_text(q,3);char path[PATH_MAX];if(!path_join_local(path,sizeof(path),s->root,rel)){continue;}unsigned char *data=NULL;size_t len=0;struct stat st;if(!read_regular_file(path,s->max_file_bytes,&data,&len,&st)){free(data);continue;}const char *pfp,*ofp;content_fingerprints(media,parser_fp,ocr_fp,&pfp,&ofp);char *evidence=NULL;if(!strcmp(media,"text/plain")){if(utf8_valid(data,len)){evidence=strdup((const char*)data);}free(data);}else{free(data);/* T4.3: a hit here is one samosa-extract or samosa-ocr run not repeated. */evidence=cached_extraction(db,have_prev,hash,pfp,ofp);if(evidence)counts->reused++;else evidence=extract_evidence_text(s,path,media);}if(!evidence)continue;len=strlen(evidence);if(!utf8_valid((const unsigned char*)evidence,len)){free(evidence);continue;}if(!insert_content(db,hash,evidence,len,pfp,ofp)){free(evidence);sqlite3_finalize(q);return 0;}const unsigned char *bytes=(const unsigned char*)evidence;size_t off=0;int ord=0;while(off<len){size_t end=next_chunk_end(tok,bytes,off,len);int n=token_count_bounded(tok,(const char*)bytes+off,end-off);if(n>800||end<=off){free(evidence);sqlite3_finalize(q);return 0;}char key[256],cid[65];snprintf(key,sizeof(key),"%s/%s/%s/%zu/%zu",hash,fid,CHUNKER_FINGERPRINT,off,end);sha_text(key,strlen(key),cid);char *chunk=malloc(end-off+1);if(!chunk){free(evidence);sqlite3_finalize(q);return 0;}memcpy(chunk,bytes+off,end-off);chunk[end-off]=0;if(!insert_chunk(db,cid,fid,ord++,rel,chunk,off,end,n,generation,tokenizer_fingerprint)){free(chunk);free(evidence);sqlite3_finalize(q);return 0;}free(chunk);counts->chunks++;off=end;}counts->indexed++;counts->text_bytes+=(unsigned long long)len;free(evidence);}
     sqlite3_finalize(q);if(rc!=SQLITE_DONE)fprintf(stderr,"chutni: manifest step: %s (%d)\n",sqlite3_errmsg(db),rc);return rc==SQLITE_DONE;
 }
 
@@ -630,12 +725,21 @@ static int scope_build(const char *state_dir, const char *id, const char *tokeni
     if(!inventory_only&&access(tokenizer,R_OK)!=0)return 0;
     unsigned long long generation=active_generation(&s)+1;char dbname[128],dbpath[PATH_MAX];snprintf(dbname,sizeof(dbname),"index.g%llu.sqlite3",generation);if(!path_join_local(dbpath,sizeof(dbpath),s.scope_dir,dbname))return 0;unlink(dbpath);unlink(strcat(strcpy((char[PATH_MAX]){0},dbpath),"-wal"));unlink(strcat(strcpy((char[PATH_MAX]){0},dbpath),"-shm"));
     sqlite3 *db=open_db(dbpath,1);if(!db)return 0;BuildCounts c={0};build_canceled=0;
+    /* T4.3 extraction cache. Fingerprints are computed once per build, and
+       only the previously published generation is consulted -- the staging
+       database this build is writing starts empty by design. */
+    char parser_fp[65],ocr_fp[65];sidecar_fingerprint(s.extractor,parser_fp);sidecar_fingerprint(s.ocr,ocr_fp);
+    int have_prev=inventory_only?0:attach_previous_generation(db,&s);
+
     if(!exec_sql(db,"BEGIN IMMEDIATE;")||!inventory_dir(db,&s,s.root,"",(int)generation,&c)){fprintf(stderr,"chutni: inventory failed\n");sqlite3_close(db);unlink(dbpath);return 0;}
-    if(!inventory_only){char *tok_bytes=read_all_local(tokenizer);char tok_fp[65],combined_fp[65],fp_input[160];if(!tok_bytes){exec_sql(db,"ROLLBACK;");sqlite3_close(db);unlink(dbpath);return 0;}sha_text(tok_bytes,strlen(tok_bytes),tok_fp);free(tok_bytes);snprintf(fp_input,sizeof(fp_input),"%s/%s",tok_fp,CHUNKER_FINGERPRINT);sha_text(fp_input,strlen(fp_input),combined_fp);Tok tok;tok_load(&tok,tokenizer);if(!build_text_chunks(db,&s,&tok,(int)generation,&c,combined_fp)){fprintf(stderr,"chutni: chunking failed\n");tok_free(&tok);exec_sql(db,"ROLLBACK;");sqlite3_close(db);unlink(dbpath);return 0;}tok_free(&tok);}
+    if(!inventory_only){char *tok_bytes=read_all_local(tokenizer);char tok_fp[65],combined_fp[65],fp_input[160];if(!tok_bytes){exec_sql(db,"ROLLBACK;");sqlite3_close(db);unlink(dbpath);return 0;}sha_text(tok_bytes,strlen(tok_bytes),tok_fp);free(tok_bytes);snprintf(fp_input,sizeof(fp_input),"%s/%s",tok_fp,CHUNKER_FINGERPRINT);sha_text(fp_input,strlen(fp_input),combined_fp);Tok tok;tok_load(&tok,tokenizer);if(!build_text_chunks(db,&s,&tok,(int)generation,&c,combined_fp,parser_fp,ocr_fp,have_prev)){fprintf(stderr,"chutni: chunking failed\n");tok_free(&tok);exec_sql(db,"ROLLBACK;");sqlite3_close(db);unlink(dbpath);return 0;}tok_free(&tok);}
     if(build_canceled){exec_sql(db,"ROLLBACK;");sqlite3_close(db);unlink(dbpath);scope_event(&s,"chutni_build","canceled",generation,"build canceled before publication");return 2;}
     c.skipped = c.regular >= c.indexed ? c.regular - c.indexed : 0;
     if (!insert_scope_metadata(db, &s, generation, dbname, &c)) { fprintf(stderr,"chutni: scope metadata failed\n"); exec_sql(db,"ROLLBACK;"); sqlite3_close(db); unlink(dbpath); return 0; }
     if(!exec_sql(db,"COMMIT;")||!validate_staging(db)){fprintf(stderr,"chutni: staging validation failed\n");sqlite3_close(db);unlink(dbpath);return 0;}
+    /* DETACH only after COMMIT: SQLite refuses it inside a transaction, and
+       every failure path above closes the connection, which detaches anyway. */
+    if(have_prev){fprintf(stderr,"chutni: reused %llu cached extraction%s\n",c.reused,c.reused==1?"":"s");exec_sql(db,"DETACH DATABASE prev;");}
     int frames=0,checkpointed=0;sqlite3_wal_checkpoint_v2(db,NULL,SQLITE_CHECKPOINT_TRUNCATE,&frames,&checkpointed);sqlite3_close(db);int fd=open(dbpath,O_RDONLY);if(fd>=0){int ok=fsync(fd)==0;close(fd);if(!ok){unlink(dbpath);return 0;}}if(!publish_staging(&s,dbname,generation,&c)){fprintf(stderr,"chutni: publication failed\n");unlink(dbpath);return 0;}return 1;
 }
 
