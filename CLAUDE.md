@@ -82,6 +82,31 @@ users to avoid thinking mode to protect hardware, on a false premise.
 Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H1** (owner decision —
 touches a published README and model card).
 
+**Internet-search feature does not exist (OPEN, found on `ui-chutni` 2026-07-27,
+docs live on `main`)** — [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md)
+and [docs/SERVE_API.md](docs/SERVE_API.md) describe a fully built feature (model-
+invoked `web_search`/`open_url` tools, `GET /v1/web/config`, `POST /v1/web/fetch`,
+`POST /v1/web/search`, a declarative multi-provider search-config executor with
+DNS pinning and SSRF protections) and claim it was "verified live against a
+config-defined provider" and "exercised by `make test`". **None of it exists in
+the C source, on any branch, at any commit** — grepped `web_search`/`open_url`/
+`v1/web/` across `src/` and full git history; nothing. `assets/app.html` calls
+these endpoints from its Settings "Internet source" card; verified live that the
+compiled gateway 404s all three. Issue #4's own spec
+([docs/TASKS_INTERNET.md](docs/TASKS_INTERNET.md)) already documents "Refolded
+into Samosa Jobs — reused as scheduled public-web input" as the *replacement*
+design, so these two docs describe an earlier, abandoned design that was never
+removed or corrected. Needs an owner decision: build the standalone chat-composer
+web-search feature for real (a real, security-sensitive undertaking — SSRF/DNS-
+pinning, a provider-config executor, a model tool-calling loop), or correct the
+docs and remove the dead frontend affordance. T3.2 (docs/TASKS_UI_CHUTNI.md,
+`ui-chutni` branch) capability-gates the composer's Web-page option off rather
+than building or fixing this. Evidence:
+[docs/regressions/ui-chutni/t3.2-evidence.md](docs/regressions/ui-chutni/t3.2-evidence.md).
+This entry itself was added on `ui-chutni`, not `main`, since
+that is the only branch this agent session can commit to — reconcile onto
+`main` per the working agreement in docs/ISSUE_TASKS.md when convenient.
+
 **Resolved 2026-07-15:**
 
 - **G8.1** (Fixed) — Linked `test_kv_cache` in the `Makefile` with `-lm` to avoid undefined references on Linux/glibc.

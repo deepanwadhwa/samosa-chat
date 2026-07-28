@@ -394,6 +394,17 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"compiled reply\"}}]}", NULL);
+    /* T3.2: stands in for qwen36b.c's own real /v1/settings and /v1/compact
+       handlers when this fixture is wired up as SAMOSA_QWEN_ENGINE -- proves
+       samosa_gateway.c's generic proxy_request() reaches them (method, path,
+       and body all forwarded verbatim) without needing the real 24 GB model. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/settings"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"context_limit_tokens\":24576,\"context_limit_mode\":\"configured\","
+            "\"model_context_limit_tokens\":32768,\"auto_compact\":true,\"compact_threshold_percent\":80}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/compact"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"before_tokens\":1000,\"after_tokens\":400,\"retained_recent_tokens\":400}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/shutdown")) {
         samosa_http_response(fd, 200, "application/json", "{}", NULL);
         samosa_http_server_stop(server); return 1;

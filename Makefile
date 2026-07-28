@@ -196,11 +196,12 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	node tests/test_conversation_migration_ui.mjs
 	sh tests/test_v1_fail_closed_default.sh
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh
+compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" sh tests/test_compiled_gateway.sh
+	sh tests/test_settings_compact_proxy.sh
 
 # doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor
 # regression for the PDF page-batch-cap fix. Skips gracefully (exit 0) if no

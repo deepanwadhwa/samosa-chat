@@ -1243,7 +1243,7 @@
         if (value!=="auto"&&!/^[1-9][0-9]*$/.test(value)) { els.contextHelp.textContent="Enter a positive whole-token limit, or choose Auto."; return false; }
         els.applyContext.disabled=true;
         try {
-          const r=await fetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value,auto_compact:els.autoCompact.checked,compact_threshold_percent:Number(els.compactThreshold.value)})});
+          const r=await authFetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value,auto_compact:els.autoCompact.checked,compact_threshold_percent:Number(els.compactThreshold.value)})});
           const result=await r.json(); if(!r.ok)throw new Error(result.error?.message||"Could not change the context setting.");
           state.settings.contextConfigured=true; saveState();
           const effective=Number(result.context_limit_tokens||0), model=Number(result.model_context_limit_tokens||0);
@@ -1260,7 +1260,7 @@
         if(!chat||!chat.messages.length){els.compactHelp.textContent="Send at least one message before compacting this conversation.";return;}
         setGenerating(true);els.compactNow.disabled=true;els.closure.textContent="Compacting";
         try {
-          const r=await fetch("/v1/compact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation_id:chat.id})});
+          const r=await authFetch("/v1/compact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation_id:chat.id})});
           const result=await r.json();if(!r.ok)throw new Error(result.error?.message||"Could not compact this conversation.");
           els.compactHelp.textContent=`Compacted ${result.before_tokens.toLocaleString()} → ${result.after_tokens.toLocaleString()} tokens; retained ${result.retained_recent_tokens.toLocaleString()} recent tokens verbatim.`;
           els.closure.textContent="Compacted";health();

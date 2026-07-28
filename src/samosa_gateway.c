@@ -7431,6 +7431,26 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return chat_completions_request(g, fd, request);
     if (!strcmp(request->path, "/v1/models"))
         return proxy_request(g, fd, request);
+    /* T3.2: assets/app.html has always called these two, but the compiled
+       gateway never routed them -- they 404'd unconditionally (verified
+       live before this fix). qwen36b.c's own --serve HTTP server already
+       implements both (samosa_serve_settings/samosa_serve_compact) natively
+       against its live KV cache/session state, which only that backend
+       process holds; proxy_request() is a generic passthrough to whichever
+       backend port is currently active, so this reaches the real
+       implementation when Qwen is active. Bonsai/Ornith run through
+       llama-server, a third-party binary with no such routes -- context
+       size for those is fixed at launch (backend_start()'s hardcoded "-c
+       8192"), so a proxied request there returns llama-server's own 404,
+       which is an honest "this doesn't exist for this backend" rather than
+       a silent success. Deliberately NOT added to
+       v1_route_is_legacy_unauthenticated() below -- these are new to the
+       compiled gateway, so per the T1.2 fail-closed-by-default design they
+       require the UI session token like any other new route; the frontend
+       call sites were updated to use authFetch() accordingly. */
+    if (!strcmp(request->method, "POST") &&
+        (!strcmp(request->path, "/v1/settings") || !strcmp(request->path, "/v1/compact")))
+        return proxy_request(g, fd, request);
     if (!strncmp(request->path, "/v1/conversations/", 18))
         return conversations_dispatch(g, fd, request);
     if (!strncmp(request->path, "/v1/jobs/", 9))
