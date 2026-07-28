@@ -108,9 +108,13 @@ decode) — on the final answering turn alone.
 
 This is **not** the full E-I4 measurement: it is Ornith 9B, not Qwen, and it is
 wall-clock for a handful of questions rather than a controlled comparison
-against the same turns without web. It does establish the order of magnitude —
-a web turn costs one to two minutes here, and the planner rounds are a small
-part of it next to reading a page.
+against the same turns without web.
+
+What it does establish: a web turn here runs **86 s to 359 s**, and the spread
+is driven by how much the model *writes*, not by the web. Q5 took 359 s while
+touching the network **zero** times — a long unaided explanation of Bloom
+filters — which is longer than any of the web turns. Decode at ~14 tok/s
+dominates; the planner rounds are small beside it.
 
 ## What this still does not cover
 
