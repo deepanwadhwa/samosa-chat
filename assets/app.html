@@ -232,6 +232,21 @@
     .generating .send { display: none; } .generating .stop { display: grid; }
 
     .composer-hint { padding-top: 8px; text-align: center; color: var(--ink-2); font-size: 12px; }
+    /* WK2: the one-time internet question. Sits above the composer, reads as
+       part of the page rather than as an alert -- it is a choice, not a
+       warning, and styling it as a warning would push people to decline
+       something the app works better with. */
+    .web-consent { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
+      flex-wrap: wrap; margin-bottom: 9px; padding: 11px 13px; border: 1px solid var(--line);
+      border-radius: var(--r-md); background: var(--inset); }
+    .web-consent-text { flex: 1 1 320px; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+    .web-consent-text strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 13px; }
+    .web-consent-actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+    .web-consent button { padding: 6px 13px; border-radius: var(--r-sm); font-size: 12px; cursor: pointer; }
+    .web-consent-no { border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+    .web-consent-yes { border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .web-toggle { margin-top: 8px; padding: 5px 11px; border: 1px solid var(--line); border-radius: var(--r-sm);
+      background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; }
 
     /* T3.2: the `+` menu. One popover for Image, Document, Web page, and
        Directory; a disabled item keeps its label visible and states why it
@@ -606,6 +621,22 @@
       <button class="jump-latest" id="jumpLatest" type="button" hidden><svg aria-hidden="true"><use href="#icon-arrow-down"></use></svg>Latest</button>
 
       <div class="composer-wrap">
+        <!-- WK2 (docs/TASKS_WEB_SEARCH.md Phase WK): the one-time internet
+             question. Hidden by default and revealed only when the server says
+             consent is genuinely unset, so an install that has already answered
+             never sees it flash on load. Either button is an answer; there is
+             no dismiss, because a card that can be ignored gets ignored and
+             then the feature silently never works. -->
+        <div class="web-consent" id="webConsent" hidden>
+          <div class="web-consent-text">
+            <strong>Let Samosa look things up online?</strong>
+            <span>When a question needs current information, the search text is sent to Parallel — no account or API key needed. Pages are then fetched by this Mac directly. Your chats, files, and the model itself stay local either way, and you can change this any time in Settings.</span>
+          </div>
+          <div class="web-consent-actions">
+            <button type="button" class="web-consent-no" id="webConsentNo">Not now</button>
+            <button type="button" class="web-consent-yes" id="webConsentYes">Allow</button>
+          </div>
+        </div>
         <div style="position: relative;">
           <!-- T3.2 (docs/TASKS_UI_CHUTNI.md sec4.4/sec5.8): one `+` menu for
                Image, Document, Web page, and Directory. Each item's enabled
@@ -771,8 +802,9 @@
          ~/.samosa/config.json, which is the only place it is ever written or
          read. This card states what the server reports and never displays,
          echoes, or accepts a key. -->
-    <div class="local-card"><strong>Web access</strong><br><span id="webStatus">Checking…</span></div>
-    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Nothing is sent off this machine. Web pages are fetched only for a turn you explicitly opt in.</div>
+    <div class="local-card"><strong>Web access</strong><br><span id="webStatus">Checking…</span>
+      <br><button type="button" class="web-toggle" id="webToggle" hidden>Turn internet access on</button></div>
+    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. The model itself never leaves this Mac. With internet access on, a search sends only the search text to the provider below, and pages are fetched by this Mac; with it off, nothing goes out at all.</div>
     <!-- T3.1 (docs/TASKS_UI_CHUTNI.md sec4.4): process termination does not
          belong in the primary header -- it lives in this clearly labeled
          Troubleshooting surface instead. -->
@@ -921,6 +953,8 @@
         attachImageReason: $("attachImageReason"), attachDocumentReason: $("attachDocumentReason"),
         attachWebReason: $("attachWebReason"), attachWebSearchReason: $("attachWebSearchReason"),
         attachDirectoryReason: $("attachDirectoryReason"), webStatus: $("webStatus"),
+        webConsent: $("webConsent"), webConsentYes: $("webConsentYes"), webConsentNo: $("webConsentNo"),
+        webToggle: $("webToggle"),
         kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
@@ -950,7 +984,10 @@
       // reported. Starts fully closed so no web action is ever offered before
       // the server has confirmed it -- the same rule the other capabilities
       // follow. `reason` is the server's own explanation and is shown verbatim.
-      let web = {offline:false, fetch_available:false, search_configured:false, provider:"", reason:""};
+      // Starts closed on every axis: until GET /v1/web/config answers, the app
+      // assumes it may not reach the network and has not been given permission.
+      let web = {offline:false, fetch_available:false, search_configured:false, provider:"", reason:"",
+                 consent:"unset", keyless:false, available:false};
       // Profile name for the personalized empty state (sec4.4). Loaded once
       // on entering chat; rendering always escapes it (sec4.1).
       let profileName = "";
@@ -1380,20 +1417,54 @@
           if (!r.ok) throw new Error();
           const c = await r.json();
           web = {offline:!!c.offline, fetch_available:!!c.fetch_available,
-                 search_configured:!!c.search_configured, provider:c.provider||"", reason:c.reason||""};
+                 search_configured:!!c.search_configured, provider:c.provider||"", reason:c.reason||"",
+                 // WK2: tri-state, so the card can tell "never asked" from "said no".
+                 consent:c.consent||"unset", keyless:!!c.keyless, available:!!c.web_available};
         } catch (_) {
           // An unreachable or unrecognised route means no web capability, not
           // an assumed one. This is also what a pre-Phase-W gateway returns.
           web = {offline:false, fetch_available:false, search_configured:false, provider:"",
-                 reason:"This build has no web reader."};
+                 reason:"This build has no web reader.", consent:"denied", keyless:false, available:false};
         }
         if (els.webStatus) {
           els.webStatus.textContent = web.offline
             ? "Offline mode is on. No outbound request is made, including for Jobs."
-            : web.search_configured
-              ? `Reading public pages is available. Search is configured through ${web.provider}.`
-              : `Reading public pages is available. Search is not configured — ${web.reason || "add a provider under \"search\" in ~/.samosa/config.json."}`;
+            : web.consent !== "granted"
+              ? "Internet access is off. Samosa answers from the model alone; nothing leaves this Mac."
+              : web.search_configured
+                ? `On. Searches go to ${web.provider}${web.keyless ? " (no account needed)" : ""}; pages are fetched by this Mac directly.`
+                : `Page reading is on. Search is not working — ${web.reason || "check \"search\" in ~/.samosa/config.json."}`;
         }
+        if (els.webToggle) {
+          els.webToggle.hidden = !!web.offline;
+          els.webToggle.textContent = web.consent === "granted" ? "Turn internet access off" : "Turn internet access on";
+        }
+        renderWebConsentCard();
+      }
+
+      // WK2: the one-time question, asked in the composer rather than as a
+      // modal on first launch -- it belongs next to the thing it affects, and a
+      // launch-time dialog is the kind of consent people click through without
+      // reading. Shown only while the answer is genuinely unknown; "denied" is
+      // an answer, so it hides the card and lives in Settings from then on.
+      function renderWebConsentCard() {
+        const card = els.webConsent;
+        if (!card) return;
+        card.hidden = !(web.consent === "unset" && !web.offline && web.search_configured);
+      }
+      async function answerWebConsent(granted) {
+        try {
+          const r = await authFetch("/v1/web/consent", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({granted: !!granted})
+          });
+          if (!r.ok) throw new Error();
+        } catch (_) {
+          if (els.webConsent) els.webConsent.hidden = true;
+          return;
+        }
+        await refreshWebConfig();
+        applyCapabilities();
       }
       async function health() {
         try {
@@ -1534,12 +1605,22 @@
         setAttachItem(els.attachDocument, els.attachDocumentReason, !!backend.supports_documents,
           "The document reader isn't installed in this build.",
           "PDF, read on this computer.");
+        // WK2: an unanswered consent question is its own reason, distinct from
+        // "not configured" -- one is a question, the other is a broken setup,
+        // and telling a new user to edit config.json for the first would be
+        // exactly the everyday-user failure this phase set out to remove.
+        const consentReason = web.consent === "unset"
+          ? "Turn on internet access below to use this."
+          : "Internet access is off — turn it on in Settings.";
         setAttachItem(els.attachWeb, els.attachWebReason, !!web.fetch_available,
           web.offline ? "Samosa is in offline mode."
+            : web.consent !== "granted" ? consentReason
             : "Not available yet — this build has no web reader.",
           "Read one public page.");
-        setAttachItem(els.attachWebSearch, els.attachWebSearchReason, !!web.search_configured,
+        setAttachItem(els.attachWebSearch, els.attachWebSearchReason,
+          !!web.search_configured && !!web.available,
           web.offline ? "Samosa is in offline mode."
+            : web.consent !== "granted" ? consentReason
             : web.reason || "No search provider is configured in ~/.samosa/config.json.",
           web.provider ? `The model may search using ${web.provider}.` : "The model may search the web.");
         setAttachItem(els.attachDirectory, els.attachDirectoryReason, false,
@@ -1554,7 +1635,8 @@
         // must drop staged context rather than send a turn that silently
         // cannot do what its chip says it will.
         const beforeWeb = pendingWeb.length;
-        pendingWeb = pendingWeb.filter(w => w.kind === "url" ? !!web.fetch_available : !!web.search_configured);
+        pendingWeb = pendingWeb.filter(w => w.kind === "url" ? !!web.fetch_available
+                                                            : (!!web.search_configured && !!web.available));
         if (pendingWeb.length !== beforeWeb) renderAttachments();
       }
       function setAttachItem(button, reasonEl, enabled, disabledReason, enabledHint) {
@@ -2771,6 +2853,11 @@
         if (url !== null) addWebPage(url);
       };
       els.attachWebSearch.onclick = () => { closeAttachMenu(true); addWebSearch(); };
+      // WK2: both buttons are answers, and both are recorded server-side, so a
+      // reload cannot re-ask a question the user has already settled.
+      if (els.webConsentYes) els.webConsentYes.onclick = () => answerWebConsent(true);
+      if (els.webConsentNo) els.webConsentNo.onclick = () => answerWebConsent(false);
+      if (els.webToggle) els.webToggle.onclick = () => answerWebConsent(web.consent !== "granted");
       // Directory is still rendered disabled by applyCapabilities() (no
       // Chutni directory-context API exists), so it needs no click handler --
       // a disabled button cannot be activated, and wiring a handler that

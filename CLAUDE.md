@@ -126,13 +126,28 @@ that is the only branch this agent session can commit to — reconcile onto
 same applies to Phase W's own doc rewrites, which edit `main`-resident files
 from this branch.
 
-**To close Phase W (OPEN, #4)** — two gates the reference Mac cannot clear:
-(a) run one real search against a provider the owner holds a key for, which is
-the only way the five presets' request/response shapes get checked at all; and
-(b) run the tool loop against the real Ornith or Qwen and record the malformed
-rate, which is `TASKS_INTERNET.md` E-I1's local stage, still never run.
-`TASKS_INTERNET.md` E-I4 (what a web turn actually costs end to end) is also
-still not measured. Spec: [docs/TASKS_WEB_SEARCH.md](docs/TASKS_WEB_SEARCH.md).
+**To close Phase W (OPEN, #4)** — gate (a) is now **cleared**; two remain.
+Phase WK (2026-07-28, `ui-chutni`) made search work with **no API key, no
+account, and no install**, per the owner's requirement: the default provider is
+Parallel's Search MCP, which answers anonymous requests over ordinary HTTPS
+(nothing vendored, so no AGPL exposure). Because it needs no credential, the
+reference Mac could finally run the real-provider gate Phase W never could —
+**a live keyless search through the compiled gateway returned 8 results**, so
+that preset's shapes are observed rather than transcribed. The four keyed
+presets are kept as the escape hatch (Brave deleted its free tier in Feb 2026 —
+a free tier disappearing is a demonstrated risk, not a theoretical one) and
+remain **unverified**. Search text now leaves the machine, so WK added
+**ask-once consent** (`POST /v1/web/consent`, stored in `config.json`); until
+it is answered the tool loop does not run at all and a `web:true` turn is
+byte-identical to a pre-W turn. Still open: (b) the tool loop against the real
+Ornith or Qwen with a malformed rate recorded — `TASKS_INTERNET.md` E-I1's
+local stage, still never run, since every planner decision so far came from the
+fake backend; and E-I4, what a web turn costs end to end, still not measured.
+Also unverifiable here: whether keyless access works from **other** IPs
+(Firecrawl's keyless tier refused this Mac by IP), and the free tier's
+undocumented rate limits. Evidence:
+[docs/regressions/web-search/keyless-2026-07-28/report.md](docs/regressions/web-search/keyless-2026-07-28/report.md);
+spec: [docs/TASKS_WEB_SEARCH.md](docs/TASKS_WEB_SEARCH.md) **Phase WK**.
 
 **Resolved 2026-07-27 (on `ui-chutni`, T3.2):**
 

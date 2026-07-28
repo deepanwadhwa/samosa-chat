@@ -42,7 +42,14 @@ it directly.
 
 ## Decisions taken, and why
 
-### D1 — No keyless default search provider
+### D1 — No keyless default search provider — **REVERSED 2026-07-28, see Phase WK**
+
+> **This decision no longer holds.** It was correct about every option that
+> existed when it was written, and wrong by 2026-07-28: a keyless provider now
+> exists that needs no scraping and no robots exemption. Phase WK (bottom of
+> this card) supersedes it. The original reasoning is kept because the *rejected*
+> options are still rejected for the reasons given.
+
 
 `MODELS_AND_INTERNET.md` claimed `web_search` falls back to DuckDuckGo's
 keyless HTML endpoint with Bing RSS behind it. **That is not built and will not
@@ -234,3 +241,100 @@ The two failures are stated rather than softened because a preset with a wrong
 field name, or a model that cannot emit a usable decision, would both produce
 evidence that looks exactly like the evidence that exists. Neither can be
 cleared here; both need the owner's machine and, for the first, a key.
+
+> **The first of those two was cleared on 2026-07-28 by Phase WK**, which found
+> a provider needing no key and therefore no owner credential. The second — a
+> real model emitting a planner decision — is still not run.
+
+---
+
+# Phase WK — search that works without an API key
+
+**Status: WK1–WK4 built and landed 2026-07-28 on `ui-chutni`.** Evidence:
+[docs/regressions/web-search/keyless-2026-07-28/report.md](regressions/web-search/keyless-2026-07-28/report.md).
+
+Phase W left search working only for someone willing to obtain an API key. The
+owner's requirement is narrower and harder: **not AGPL, no extra dependency
+install, and no key for everyday users.** WK meets it.
+
+## Why D1 could be reversed
+
+D1's conclusion — "no key-free search API is dependable enough to hardcode" —
+rested on the only keyless options then available being *scrapes* of an HTML
+endpoint whose own `robots.txt` forbids it. That is still true of DuckDuckGo.
+What changed is that vendors began offering **anonymous access to a real search
+API** as a way to get agents onto their platform.
+
+The survey, with each rejection's cause, is in the evidence report. The short
+version: Firecrawl's keyless tier **refused the reference Mac by IP**;
+DuckDuckGo's Instant Answer API returns an empty document for ordinary queries;
+Brave **deleted its free tier in February 2026**; SearXNG is AGPL and an
+install. Parallel's Search MCP answered a real query from this machine with no
+account, and is a hosted HTTPS endpoint — so nothing is vendored (no AGPL
+exposure) and nothing is installed.
+
+## WK1 — The keyless default provider
+
+- A `parallel` preset, and `WEB_DEFAULT_PROVIDER` so it applies when
+  `config.json` names no provider. **The four keyed presets stay.** A free tier
+  can be withdrawn — Brave's was, five months ago — so the documented escape
+  hatch to a provider the user controls is part of the design, not a leftover.
+- No silent fallback chain between providers. Phase W's D1 deleted silent
+  fallback for a reason that still holds: it makes an outage indistinguishable
+  from a misconfiguration.
+- Two executor gaps had to close, both driven by the real response shape:
+  `result.structuredContent.results` (already reachable — `json_dotpath`
+  handles nesting), and a **description field that is an array of passages**
+  rather than a string, which the executor now joins.
+
+## WK2 — Ask once, then remember
+
+Search that needs no setup means the first web-touching turn would otherwise
+send a user's words to a company they were never told about, from an app whose
+entire pitch is that nothing leaves the machine. So consent is explicit,
+asked once, and recorded in `search.consent`.
+
+- `POST /v1/web/consent {granted: bool}` merges into `config.json` — every
+  other key, including the user's API keys, is copied through verbatim, and the
+  write is atomic and `0600`.
+- **Unset ≠ denied.** Unset means ask; denied means never ask again. A
+  two-state boolean could not express that, so it is a string.
+- **With consent unanswered the tool loop does not run at all** — no planner
+  call, no added latency, byte-identical to a pre-W install. This is W5's gate,
+  re-asserted for the state every new install now starts in.
+- `open_url` and the composer's Web page action are gated too: reading a page
+  is an outbound request like any other.
+- **Jobs' scheduled public inputs are deliberately *not* gated by this.** Those
+  URLs are already an explicit per-job action the user typed, and retroactively
+  disabling a working scheduled job on upgrade would be a regression wearing a
+  privacy feature's clothes. `SAMOSA_OFFLINE` still covers everything.
+
+## WK3 — `{session_id}`
+
+A runtime placeholder beside `{query}`, generated per gateway process from
+`/dev/urandom` and **never persisted**. The provider asks for a stable id per
+session for rate-limiting; a value written to `config.json` would instead be a
+permanent identifier linking every search the install ever makes.
+
+## WK4 — Frontend
+
+A one-time card above the composer — not a launch-time modal, which is the kind
+of consent people click through unread. Either button is an answer; there is no
+dismiss, because a card that can be ignored gets ignored and the feature then
+silently never works. Settings gains a plain-language statement of what is and
+is not sent, plus a toggle that reverses the choice.
+
+## Acceptance
+
+| | Item | Result |
+|---|---|---|
+| ✅ | Search works on a fresh install with no key, no account, no install | live through the compiled gateway; 8 results |
+| ✅ | Not AGPL, no new dependency | hosted HTTPS over the existing pinned curl transport; nothing vendored |
+| ✅ | `web_search` verified against a real provider (**Phase W's first failure**) | **cleared** — real network, real curl, no stub |
+| ✅ | Nothing outbound before consent is granted | asserted on the transport's own argv: no call made |
+| ✅ | Consent write preserves an existing API key and unrelated keys | asserted against a populated `config.json` |
+| ✅ | With consent unset, `web:true` is byte-identical to a plain turn | asserted by exact string equality |
+| ❌ | The tool loop verified against a **real model** | **STILL NOT RUN.** The loop ran end to end against the *live provider* today, but every planner decision came from the fake backend. `TASKS_INTERNET.md` E-I1's local stage remains unrun |
+| ❌ | `TASKS_INTERNET.md` E-I4: what a web turn costs end to end | **STILL NOT MEASURED** |
+| ⚠️ | Keyless access works from **other** IP addresses | **Unverifiable from one machine.** It worked from this one; Firecrawl's keyless tier refused this same machine, so per-IP denial is a demonstrated failure mode, not a hypothetical |
+| ⚠️ | Free-tier rate limits | Parallel publishes no numbers ("light use"). Handfuls of queries today drew no 429; sustained use is untested |

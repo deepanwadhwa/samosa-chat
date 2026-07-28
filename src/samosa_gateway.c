@@ -112,6 +112,10 @@ typedef struct {
 #define WEB_TOOL_MAX_CALLS 3
 /* W5: evidence spliced into one chat turn, across all tool calls. */
 #define WEB_EVIDENCE_MAX_CHARS 20000
+/* WK1 (docs/TASKS_WEB_SEARCH.md Phase WK): the provider used when config.json
+   names none. It is the one preset that needs no credential, which is what
+   lets search work on a fresh install without a signup. */
+#define WEB_DEFAULT_PROVIDER "parallel"
 #define MAX_DEFINITION_IMAGE_BYTES (3u << 20)
 /* T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): an attachment's on-wire size is
    already bounded by SAMOSA_HTTP_MAX_BODY (samosa_http.h) -- every request
@@ -926,6 +930,32 @@ typedef struct { char scheme[8]; char host[256]; int port; char path[2048]; } Pa
 static int url_parse(const char *url, ParsedUrl *p, char *err, size_t errcap);
 
 static const struct { const char *name; const char *json; } web_search_presets[] = {
+    /* WK1: the default, and the only preset that needs no credential.
+       Parallel's Search MCP answers an anonymous request, which is what makes
+       search work on a fresh install with no signup -- the everyday-user
+       requirement that WK exists for.
+
+       It speaks MCP over "streamable HTTP", but a tools/call is a single
+       self-contained JSON-RPC POST: verified on the reference Mac that no
+       initialize handshake and no session negotiation are needed, and that the
+       reply comes back as one application/json body rather than SSE frames
+       (docs/regressions/web-search/keyless-2026-07-28/). So it needs no new
+       transport -- it is an ordinary declarative provider like the four below.
+
+       Results are read from `structuredContent`, the parsed object MCP returns
+       alongside the text rendering, so no second JSON parse of a string is
+       required. `excerpts` is an array of strings, not a scalar; the executor
+       joins it (web_result_description). */
+    { "parallel",
+      "{\"url\":\"https://search.parallel.ai/mcp\","
+      "\"headers\":{\"Content-Type\":\"application/json\","
+                   "\"Accept\":\"application/json, text/event-stream\"},"
+      "\"body\":{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\","
+                "\"params\":{\"name\":\"web_search\",\"arguments\":{"
+                    "\"objective\":\"{query}\",\"search_queries\":[\"{query}\"],"
+                    "\"session_id\":\"{session_id}\"}}},"
+      "\"results\":\"result.structuredContent.results\","
+      "\"fields\":{\"title\":\"title\",\"url\":\"url\",\"description\":\"excerpts\"}}" },
     { "brave",
       "{\"url\":\"https://api.search.brave.com/res/v1/web/search?q={query}&count=8\","
       "\"headers\":{\"Accept\":\"application/json\",\"X-Subscription-Token\":\"{api_key}\"},"
@@ -952,6 +982,50 @@ static const struct { const char *name; const char *json; } web_search_presets[]
     { NULL, NULL }
 };
 
+/* WK1: {session_id} for the keyless default. Parallel's tool schema asks for a
+   stable random id so it can rate-limit and correlate a run's calls, and treats
+   it as advisory (it is ignored on paid keys).
+
+   It is generated once per gateway process and **never written to disk**. A
+   value persisted in config.json would become a permanent identifier linking
+   every search this install ever makes, which is a worse privacy trade than the
+   rate-limit grouping is worth; regenerating per process matches what the
+   schema actually asks for ("at the start of your session"). */
+static const char *web_session_id(void) {
+    static char id[33];
+    if (id[0]) return id;
+    unsigned char raw[16];
+    int fd = open("/dev/urandom", O_RDONLY);
+    size_t got = 0;
+    while (fd >= 0 && got < sizeof(raw)) {
+        ssize_t n = read(fd, raw + got, sizeof(raw) - got);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        got += (size_t)n;
+    }
+    if (fd >= 0) close(fd);
+    /* A weaker id is not a security failure here -- it groups rate limiting, it
+       does not authenticate anything -- so a urandom failure degrades rather
+       than taking the search path down with it. */
+    if (got < sizeof(raw)) {
+        unsigned long seed = (unsigned long)time(NULL) ^ ((unsigned long)getpid() << 16);
+        for (size_t i = got; i < sizeof(raw); ++i) {
+            seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+            raw[i] = (unsigned char)(seed >> 33);
+        }
+    }
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < sizeof(raw); ++i) {
+        id[i * 2] = hex[raw[i] >> 4];
+        id[i * 2 + 1] = hex[raw[i] & 0xf];
+    }
+    id[sizeof(raw) * 2] = 0;
+    return id;
+}
+
+/* WK2: whether the user has agreed to let chat reach the network at all. */
+typedef enum { WEB_CONSENT_UNSET = 0, WEB_CONSENT_GRANTED = 1, WEB_CONSENT_DENIED = -1 } WebConsent;
+
 typedef struct {
     char *raw;            /* config.json text (owned) */
     char *arena;          /* json arena for `root` (owned) */
@@ -961,6 +1035,7 @@ typedef struct {
     jval *user;           /* borrowed from root: search.providers[provider] */
     char provider[64];
     int offline;
+    WebConsent consent;
 } WebConfig;
 
 static void web_config_free(WebConfig *wc) {
@@ -992,11 +1067,26 @@ static void web_config_load(Gateway *g, WebConfig *wc) {
     web_offline_env(&wc->offline);
 
     jval *search = wc->root ? json_get(wc->root, "search") : NULL;
-    if (!search || search->t != J_OBJ) return;
-    jval *name = json_get(search, "provider");
-    if (!name || name->t != J_STR || !name->str[0]) return;
-    if (!path_copy(wc->provider, sizeof(wc->provider), name->str)) { wc->provider[0] = 0; return; }
-    jval *providers = json_get(search, "providers");
+    if (search && search->t != J_OBJ) search = NULL;
+
+    /* WK2: consent is stored, not inferred. "unset" is a distinct state from
+       "denied" -- unset means ask, denied means never ask again -- so this is a
+       string rather than a bool. */
+    jval *consent = search ? json_get(search, "consent") : NULL;
+    if (consent && consent->t == J_STR) {
+        if (!strcmp(consent->str, "granted")) wc->consent = WEB_CONSENT_GRANTED;
+        else if (!strcmp(consent->str, "denied")) wc->consent = WEB_CONSENT_DENIED;
+    }
+
+    /* WK1: with no provider named, the keyless default applies. This is what
+       makes search work on a fresh install with no signup; it is still inert
+       until consent is granted, so defaulting here reaches the network on
+       nobody's behalf without them having said yes first. */
+    jval *name = search ? json_get(search, "provider") : NULL;
+    const char *chosen = name && name->t == J_STR && name->str[0]
+                       ? name->str : WEB_DEFAULT_PROVIDER;
+    if (!path_copy(wc->provider, sizeof(wc->provider), chosen)) { wc->provider[0] = 0; return; }
+    jval *providers = search ? json_get(search, "providers") : NULL;
     wc->user = providers && providers->t == J_OBJ ? json_get(providers, wc->provider) : NULL;
     if (wc->user && wc->user->t != J_OBJ) wc->user = NULL;
     for (int i = 0; web_search_presets[i].name; ++i)
@@ -1103,6 +1193,10 @@ static int web_substitute(TextBuffer *out, const char *tmpl, const WebConfig *wc
         memcpy(key, name, klen); key[klen] = 0;
         const char *value = NULL;
         if (!strcmp(key, "query")) value = query;
+        /* WK1: a runtime placeholder like {query}, not a config value. A user
+           config may still override it by defining its own "session_id". */
+        else if (!strcmp(key, "session_id") && !web_cfg_field(wc, "session_id"))
+            value = web_session_id();
         else {
             jval *v = web_cfg_field(wc, key);
             if (v && v->t == J_STR) value = v->str;
@@ -1808,6 +1902,32 @@ static const char *web_result_field(jval *item, jval *fields, const char *name, 
     return v && v->t == J_STR ? v->str : NULL;
 }
 
+/* WK1: a result's description may be a string or an array of strings. Parallel
+   returns `excerpts`, several passages pulled from the page rather than one
+   snippet -- which is most of why its results are usable without a follow-up
+   fetch, so dropping all but the first would throw away the good part.
+
+   Returns a malloc'd string (caller frees), already capped, or NULL if the
+   field is absent or of an unusable type. Non-string array entries are skipped
+   rather than failing the result: a provider that mixes types still yields
+   whatever prose it did return. */
+static char *web_result_description(jval *item, jval *fields) {
+    jval *mapped = fields && fields->t == J_OBJ ? json_get(fields, "description") : NULL;
+    const char *path = mapped && mapped->t == J_STR ? mapped->str : "description";
+    jval *v = json_dotpath(item, path);
+    if (!v) return NULL;
+    if (v->t == J_STR) return strdup(v->str);
+    if (v->t != J_ARR) return NULL;
+    TextBuffer joined = {0};
+    for (int i = 0; i < v->len && joined.len <= WEB_SEARCH_MAX_DESCRIPTION; ++i) {
+        if (!v->kids[i] || v->kids[i]->t != J_STR || !v->kids[i]->str[0]) continue;
+        if (joined.len && !text_add(&joined, " … ")) { free(joined.data); return NULL; }
+        if (!text_add(&joined, v->kids[i]->str)) { free(joined.data); return NULL; }
+    }
+    if (!joined.data) return NULL;
+    return joined.data;
+}
+
 /* Builds the concrete request for `query`. Also the honest answer to "is search
    configured?": a provider whose placeholders do not resolve is not configured,
    however much of it is present in the file. */
@@ -1925,14 +2045,14 @@ static int web_search_run(Gateway *g, const WebConfig *wc, const char *query,
         if (!item || item->t != J_OBJ) continue;
         const char *u = web_result_field(item, fields, "url", "url");
         const char *t = web_result_field(item, fields, "title", "title");
-        const char *d = web_result_field(item, fields, "description", "description");
         /* Never hand the model a link it could not open anyway, and never a
            javascript:/data: URL that a careless renderer might make clickable. */
         if (!u || (strncasecmp(u, "http://", 7) && strncasecmp(u, "https://", 8))) continue;
+        char *d = web_result_description(item, fields);
         WebResult *r = &out[(*out_n)++];
         r->url = strdup(u);
         r->title = strdup(t && *t ? t : u);
-        r->description = strdup(d ? d : "");
+        r->description = d ? d : strdup("");
         if (r->description && strlen(r->description) > WEB_SEARCH_MAX_DESCRIPTION)
             r->description[WEB_SEARCH_MAX_DESCRIPTION] = 0;
         if (!r->url || !r->title || !r->description) {
@@ -6080,14 +6200,26 @@ static int attachment_augment(Gateway *g, const char *id, TextBuffer *doc_eviden
 typedef struct {
     int offline;
     int search_configured;
+    WebConsent consent;
+    int keyless;        /* the active provider needs no credential */
     char provider[64];
     char reason[192];   /* why search is unavailable; already redacted */
 } WebStatus;
+
+/* `search_configured` answers "could a request be built", which is separate
+   from "may we send it" (consent) -- the UI needs to tell a missing key apart
+   from an unanswered question, because only one of them is the user's to fix
+   in a text editor. web_allowed() is the single place the two are combined. */
+static int web_allowed(const WebStatus *st) {
+    return !st->offline && st->consent == WEB_CONSENT_GRANTED;
+}
 
 static void web_status(Gateway *g, WebStatus *st) {
     memset(st, 0, sizeof(*st));
     WebConfig wc; web_config_load(g, &wc);
     st->offline = wc.offline;
+    st->consent = wc.consent;
+    st->keyless = !strcmp(wc.provider, WEB_DEFAULT_PROVIDER);
     path_copy(st->provider, sizeof(st->provider), wc.provider);
     if (wc.offline) {
         path_copy(st->reason, sizeof(st->reason), "Samosa is in offline mode.");
@@ -6115,8 +6247,17 @@ static int web_config_handler(Gateway *g, int fd) {
     WebStatus st; web_status(g, &st);
     TextBuffer out = {0};
     int ok = text_add(&out, "{\"offline\":") && text_add(&out, st.offline ? "true" : "false") &&
-             text_add(&out, ",\"fetch_available\":") && text_add(&out, st.offline ? "false" : "true") &&
+             /* WK2: reading a page is an outbound request like any other, so it
+                waits for the same yes. */
+             text_add(&out, ",\"fetch_available\":") && text_add(&out, web_allowed(&st) ? "true" : "false") &&
              text_add(&out, ",\"search_configured\":") && text_add(&out, st.search_configured ? "true" : "false") &&
+             /* WK2: the browser needs consent as a tri-state to know whether to
+                ask, stay quiet, or show the setting as off. */
+             text_add(&out, ",\"consent\":") &&
+             text_json_string(&out, st.consent == WEB_CONSENT_GRANTED ? "granted" :
+                                    st.consent == WEB_CONSENT_DENIED  ? "denied" : "unset") &&
+             text_add(&out, ",\"keyless\":") && text_add(&out, st.keyless ? "true" : "false") &&
+             text_add(&out, ",\"web_available\":") && text_add(&out, web_allowed(&st) ? "true" : "false") &&
              /* The provider name is not a credential; the credential itself is
                 never serialised here by any path. */
              text_add(&out, ",\"provider\":") && text_json_string(&out, st.provider) &&
@@ -6127,7 +6268,29 @@ static int web_config_handler(Gateway *g, int fd) {
     return ok ? sent : samosa_http_json_error(fd, 500, "web_config_failed", "Could not read the web configuration.");
 }
 
+/* WK2: the one refusal every outbound chat route shares. Returns 1 (and has
+   already answered `fd`) when the request must not go out.
+
+   Offline is a flat 409: the user asked for no network and gets none. An
+   unanswered consent question is 403 `consent_required`, which the browser
+   turns into the one-time prompt rather than an error -- distinguishing the two
+   is the whole point, since one is a decision and the other is a setting. */
+static int web_refuse_if_not_allowed(Gateway *g, int fd) {
+    WebStatus st; web_status(g, &st);
+    if (st.offline)
+        return samosa_http_json_error(fd, 409, "offline",
+            "Samosa is in offline mode, so no network request was made."), 1;
+    if (st.consent == WEB_CONSENT_UNSET)
+        return samosa_http_json_error(fd, 403, "consent_required",
+            "Samosa has not been allowed to reach the internet yet."), 1;
+    if (st.consent == WEB_CONSENT_DENIED)
+        return samosa_http_json_error(fd, 403, "consent_denied",
+            "Internet access is turned off for this install. Turn it on in Settings."), 1;
+    return 0;
+}
+
 static int web_fetch_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (web_refuse_if_not_allowed(g, fd)) return 1;
     char *arena = NULL;
     jval *root = json_parse(request->body, &arena);
     jval *url = root && root->t == J_OBJ ? json_get(root, "url") : NULL;
@@ -6155,6 +6318,7 @@ static int web_fetch_handler(Gateway *g, int fd, const SamosaHttpRequest *reques
 }
 
 static int web_search_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (web_refuse_if_not_allowed(g, fd)) return 1;
     char *arena = NULL;
     jval *root = json_parse(request->body, &arena);
     jval *query = root && root->t == J_OBJ ? json_get(root, "query") : NULL;
@@ -6163,11 +6327,6 @@ static int web_search_handler(Gateway *g, int fd, const SamosaHttpRequest *reque
         return samosa_http_json_error(fd, 400, "query_required", "A query is required.");
     }
     WebConfig wc; web_config_load(g, &wc);
-    if (wc.offline) {
-        web_config_free(&wc); json_free(root); free(arena);
-        return samosa_http_json_error(fd, 409, "offline",
-            "Samosa is in offline mode, so no network request was made.");
-    }
     WebResult results[WEB_SEARCH_MAX_RESULTS];
     int n = 0; char err[192];
     int got = web_search_run(g, &wc, query->str, results, WEB_SEARCH_MAX_RESULTS, &n, err, sizeof(err));
@@ -6198,9 +6357,76 @@ static int web_search_handler(Gateway *g, int fd, const SamosaHttpRequest *reque
     return ok ? sent : samosa_http_json_error(fd, 500, "search_encode_failed", "Could not encode the results.");
 }
 
+/* WK2: records the answer to the one-time question, merging into config.json
+   rather than rewriting it.
+
+   Every other top-level key, and every other key under "search", is copied
+   through verbatim -- this file holds the user's API keys, and a consent click
+   that silently dropped them would be a data-loss bug wearing a privacy
+   feature's clothes. The write is atomic and 0600 (write_small_file), so a
+   crash mid-write cannot leave a truncated config either.
+
+   Comments and key order are not preserved: this is a JSON file the gateway
+   already re-parses per request, not a hand-maintained dotfile, and preserving
+   layout would mean carrying a round-tripping parser for one boolean. */
+static int web_consent_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *body_arena = NULL;
+    jval *body = json_parse(request->body, &body_arena);
+    jval *granted = body && body->t == J_OBJ ? json_get(body, "granted") : NULL;
+    if (!granted || granted->t != J_BOOL) {
+        json_free(body); free(body_arena);
+        return samosa_http_json_error(fd, 400, "granted_required",
+                                      "A boolean \"granted\" is required.");
+    }
+    const char *verdict = granted->boolean ? "granted" : "denied";
+    json_free(body); free(body_arena);
+
+    char path[PATH_MAX];
+    if (!path_join(path, sizeof(path), g->home, "config.json"))
+        return samosa_http_json_error(fd, 500, "consent_failed", "Could not locate config.json.");
+
+    char *raw = read_file_limit(path, 1 << 20);
+    char *arena = NULL;
+    jval *root = raw ? json_parse(raw, &arena) : NULL;
+    if (root && root->t != J_OBJ) { json_free(root); free(arena); root = NULL; arena = NULL; }
+    jval *search = root ? json_get(root, "search") : NULL;
+    if (search && search->t != J_OBJ) search = NULL;
+
+    TextBuffer out = {0};
+    int ok = text_add(&out, "{");
+    for (int i = 0; ok && root && i < root->len; ++i) {
+        if (!strcmp(root->keys[i], "search")) continue;
+        ok = (out.len > 1 ? text_add(&out, ",") : 1) &&
+             text_json_string(&out, root->keys[i]) && text_add(&out, ":") &&
+             text_json_value(&out, root->kids[i]);
+    }
+    ok = ok && (out.len > 1 ? text_add(&out, ",") : 1) && text_add(&out, "\"search\":{");
+    int wrote = 0;
+    for (int i = 0; ok && search && i < search->len; ++i) {
+        if (!strcmp(search->keys[i], "consent")) continue;
+        ok = (wrote++ ? text_add(&out, ",") : 1) &&
+             text_json_string(&out, search->keys[i]) && text_add(&out, ":") &&
+             text_json_value(&out, search->kids[i]);
+    }
+    ok = ok && (wrote ? text_add(&out, ",") : 1) &&
+         text_add(&out, "\"consent\":") && text_json_string(&out, verdict) &&
+         text_add(&out, "}}\n");
+    json_free(root); free(arena); free(raw);
+
+    if (!ok || !write_small_file(path, out.data)) {
+        free(out.data);
+        return samosa_http_json_error(fd, 500, "consent_failed",
+                                      "Could not save the choice to config.json.");
+    }
+    free(out.data);
+    return web_config_handler(g, fd);   /* answer with the state that now holds */
+}
+
 static int web_dispatch(Gateway *g, int fd, const SamosaHttpRequest *request) {
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/web/config"))
         return web_config_handler(g, fd);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/web/consent"))
+        return web_consent_handler(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/web/fetch"))
         return web_fetch_handler(g, fd, request);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/web/search"))
@@ -6351,6 +6577,13 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
         web_sse_reasoning(progress, "Web access is off (offline mode). Answering without it.\n");
         return 0;
     }
+    /* WK2: no consent, no planner call. Returning before the planner is what
+       keeps W5's gate intact -- an install that has not said yes is byte-for-
+       byte a pre-W install, with no added latency and no added prompt text.
+       Saying nothing here is deliberate: the browser asks the question once, in
+       the composer, and a stream that narrated "I would have searched" on every
+       turn would be nagging rather than asking. */
+    if (st.consent != WEB_CONSENT_GRANTED) return 0;
     TextBuffer notes = {0};
     int used = 0;
     for (int round = 0; round < WEB_TOOL_MAX_CALLS; ++round) {
@@ -6536,6 +6769,20 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
        decided -- and only then does the model get to choose further steps, so
        its first decision is made with the page it was handed already in hand. */
     TextBuffer web_evidence = {0}, web_progress = {0};
+    /* WK2: a pasted URL is an explicit request, so unlike the planner path this
+       one says why it did nothing rather than staying silent -- the user is
+       watching for that page to be read. The composer asks the consent question
+       before it ever sends web_urls, so this is the backstop for a client that
+       did not (or a stale tab), not the normal route. */
+    if (have_web_urls) {
+        WebStatus st; web_status(g, &st);
+        if (!web_allowed(&st)) {
+            web_sse_reasoning(&web_progress, st.offline
+                ? "Offline mode is on, so that page was not read.\n"
+                : "Samosa has not been allowed to reach the internet, so that page was not read.\n");
+            have_web_urls = 0;
+        }
+    }
     for (int i = 0; have_web_urls && i < web_urls->len && i < WEB_TOOL_MAX_CALLS; i++) {
         jval *uv = web_urls->kids[i];
         if (!uv || uv->t != J_STR || !uv->str[0]) continue;

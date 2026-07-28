@@ -143,13 +143,22 @@ auth() { curl -sS -H "X-Samosa-Token: $TOKEN" "$@"; }
 status_of() { curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "$@"; }
 
 # ===========================================================================
-# 1. Unconfigured: fetch is available, search is not, and it says why.
+# 1. A fresh install (WK): the keyless default is ready but not yet allowed.
+#
+# This is the state every new user starts in, so it is asserted precisely:
+# search is *configured* (a request can be built with no credential at all --
+# that is what WK1 bought) and simultaneously *not allowed* (nobody has
+# answered the question yet -- that is what WK2 costs). The two are separate
+# fields because only one of them is a problem the user can fix in an editor.
 # ===========================================================================
 start_gateway nostub
 CFG=$(auth "http://127.0.0.1:$PORT/v1/web/config")
-printf '%s' "$CFG" | grep -q '"fetch_available":true' || fail "fetch should be available unconfigured"
-printf '%s' "$CFG" | grep -q '"search_configured":false' || fail "search must not claim to be configured"
-printf '%s' "$CFG" | grep -q 'no search provider is configured' || fail "config must state why search is unavailable"
+printf '%s' "$CFG" | grep -q '"provider":"parallel"' || fail "the keyless provider must be the default"
+printf '%s' "$CFG" | grep -q '"keyless":true' || fail "the default provider must report keyless"
+printf '%s' "$CFG" | grep -q '"search_configured":true' || fail "the keyless default must build without a credential"
+printf '%s' "$CFG" | grep -q '"consent":"unset"' || fail "a fresh install must report consent unset"
+printf '%s' "$CFG" | grep -q '"web_available":false' || fail "web must not be available before consent"
+printf '%s' "$CFG" | grep -q '"fetch_available":false' || fail "fetch must wait for consent too"
 
 # The routes are new, so they must be token-gated (T1.2 fail-closed default).
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/web/config")" = "401" ] \
@@ -157,10 +166,55 @@ printf '%s' "$CFG" | grep -q 'no search provider is configured' || fail "config 
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/v1/web/search" \
      -H 'Content-Type: application/json' --data '{"query":"x"}')" = "401" ] \
   || fail "/v1/web/search must require the UI token"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/v1/web/consent" \
+     -H 'Content-Type: application/json' --data '{"granted":true}')" = "401" ] \
+  || fail "/v1/web/consent must require the UI token"
 
-# Unconfigured search is a clean 409 naming the missing configuration.
+# --- Nothing reaches the network before the question is answered -----------
+: >"$FAKE_CURL_ARGV"
 S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"x"}')
-printf '%s' "$S" | grep -q 'search_not_configured' || fail "unconfigured search must report search_not_configured"
+printf '%s' "$S" | grep -q 'consent_required' || fail "search before consent must report consent_required"
+F=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/fetch" -H 'Content-Type: application/json' \
+     --data '{"url":"http://example.com/jobs"}')
+printf '%s' "$F" | grep -q 'consent_required' || fail "fetch before consent must report consent_required"
+[ ! -s "$FAKE_CURL_ARGV" ] || fail "a request was sent before consent was given"
+
+# ===========================================================================
+# 1b. WK2: the one-time question is recorded, and both answers stick.
+# ===========================================================================
+# A pre-existing config proves the merge: consent must not eat the user's key.
+cat >"$HOME_DIR/config.json" <<JSON
+{"offline":false,"search":{"provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY"}}}}
+JSON
+auth -X POST "http://127.0.0.1:$PORT/v1/web/consent" -H 'Content-Type: application/json' \
+  --data '{"granted":false}' >/dev/null
+grep -q '"consent":"denied"' "$HOME_DIR/config.json" || fail "a denial was not persisted"
+grep -q "$SECRET_KEY" "$HOME_DIR/config.json" || fail "recording consent destroyed the user's API key"
+grep -q '"offline":false' "$HOME_DIR/config.json" || fail "recording consent dropped an unrelated top-level key"
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$HOME_DIR/config.json" \
+  || fail "recording consent produced malformed JSON"
+[ "$(status_of -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' \
+     --data '{"query":"x"}')" = "403" ] || fail "a denied install must refuse search"
+printf '%s' "$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' \
+  --data '{"query":"x"}')" | grep -q 'consent_denied' || fail "denied must be distinct from unset"
+
+# Denial is reversible from the UI, and granting it is what opens the routes.
+auth -X POST "http://127.0.0.1:$PORT/v1/web/consent" -H 'Content-Type: application/json' \
+  --data '{"granted":true}' >/dev/null
+grep -q '"consent":"granted"' "$HOME_DIR/config.json" || fail "consent was not persisted"
+CFG=$(auth "http://127.0.0.1:$PORT/v1/web/config")
+printf '%s' "$CFG" | grep -q '"consent":"granted"' || fail "config did not report the new consent"
+printf '%s' "$CFG" | grep -q '"fetch_available":true' || fail "fetch must open once consent is given"
+if printf '%s' "$CFG" | grep -q "$SECRET_KEY"; then fail "/v1/web/consent leaked the API key in its reply"; fi
+# A malformed request must not silently flip anything.
+[ "$(status_of -X POST "http://127.0.0.1:$PORT/v1/web/consent" -H 'Content-Type: application/json' \
+     --data '{"granted":"yes"}')" = "400" ] || fail "a non-boolean consent must be rejected"
+grep -q '"consent":"granted"' "$HOME_DIR/config.json" || fail "a rejected request changed the stored consent"
+
+rm -f "$HOME_DIR/config.json"
+auth -X POST "http://127.0.0.1:$PORT/v1/web/consent" -H 'Content-Type: application/json' \
+  --data '{"granted":true}' >/dev/null
+grep -q '"consent":"granted"' "$HOME_DIR/config.json" || fail "consent must create config.json when absent"
 
 # ===========================================================================
 # 2. SSRF and URL validation on POST /v1/web/fetch.
@@ -204,6 +258,7 @@ if printf '%s' "$F" | grep -q 'secret'; then fail "fetch leaked <script> text in
 cat >"$HOME_DIR/config.json" <<JSON
 {
   "search": {
+    "consent": "granted",
     "provider": "brave",
     "providers": { "brave": { "api_key": "$SECRET_KEY",
                               "url": "http://203.0.113.10/res/v1/web/search?q={query}&count=8" } }
@@ -244,7 +299,7 @@ fi
 
 # --- An unresolved placeholder is an error, never an empty credential ------
 cat >"$HOME_DIR/config.json" <<'JSON'
-{"search":{"provider":"brave","providers":{"brave":{"url":"http://203.0.113.10/s?q={query}"}}}}
+{"search":{"consent":"granted","provider":"brave","providers":{"brave":{"url":"http://203.0.113.10/s?q={query}"}}}}
 JSON
 CFG=$(auth "http://127.0.0.1:$PORT/v1/web/config")
 printf '%s' "$CFG" | grep -q '"search_configured":false' || fail "a provider missing api_key must not report configured"
@@ -257,14 +312,14 @@ auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: applicatio
 
 # --- A provider URL is SSRF-checked like any other -------------------------
 cat >"$HOME_DIR/config.json" <<'JSON'
-{"search":{"provider":"searxng","providers":{"searxng":{"base_url":"http://127.0.0.1"}}}}
+{"search":{"consent":"granted","provider":"searxng","providers":{"searxng":{"base_url":"http://127.0.0.1"}}}}
 JSON
 S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"x"}')
 printf '%s' "$S" | grep -q 'blocked non-public address' || fail "a loopback provider base_url was not blocked"
 # A non-standard port in a provider URL is refused before resolution, the same
 # way it is for a page fetch.
 cat >"$HOME_DIR/config.json" <<'JSON'
-{"search":{"provider":"searxng","providers":{"searxng":{"base_url":"http://203.0.113.10:8888"}}}}
+{"search":{"consent":"granted","provider":"searxng","providers":{"searxng":{"base_url":"http://203.0.113.10:8888"}}}}
 JSON
 S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"x"}')
 printf '%s' "$S" | grep -q 'non-standard URL ports are blocked' || fail "a non-standard provider port was not blocked"
@@ -274,14 +329,14 @@ printf '%s' "$S" | python3 -c 'import json,sys; json.load(sys.stdin)' \
   || fail "an error message containing quotes produced malformed JSON"
 
 cat >"$HOME_DIR/config.json" <<'JSON'
-{"search":{"provider":"searxng","providers":{"searxng":{"base_url":"http://169.254.169.254"}}}}
+{"search":{"consent":"granted","provider":"searxng","providers":{"searxng":{"base_url":"http://169.254.169.254"}}}}
 JSON
 S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' --data '{"query":"x"}')
 printf '%s' "$S" | grep -q 'blocked non-public address' || fail "a metadata-service provider base_url was not blocked"
 
 # --- A POST provider sends a body, and its body-borne key is also hidden ---
 cat >"$HOME_DIR/config.json" <<JSON
-{"search":{"provider":"tavily","providers":{"tavily":{"api_key":"$SECRET_KEY",
+{"search":{"consent":"granted","provider":"tavily","providers":{"tavily":{"api_key":"$SECRET_KEY",
  "url":"http://203.0.113.10/search"}}}}
 JSON
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
@@ -297,10 +352,68 @@ grep -q '\\"phrase\\"' "$FAKE_CURL_BODY" || fail "a quoted query was not JSON-es
 if grep -q "$SECRET_KEY" "$FAKE_CURL_ARGV"; then fail "a body-borne API key appeared in argv"; fi
 
 # ===========================================================================
+# 3b. WK1: the keyless default preset, end to end.
+#
+# The response fixture is the *shape* observed from the real service on
+# 2026-07-28 (docs/regressions/web-search/keyless-2026-07-28/), reduced to two
+# results. That makes this a regression test for the shape: if Parallel changes
+# `structuredContent` or renames `excerpts`, the live check in that report is
+# what catches it, and this is what pins the behaviour we built against.
+# ===========================================================================
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ignored rendering"}],
+ "structuredContent":{"search_id":"search_abc","results":[
+   {"url":"https://example.com/one","title":"First hit","publish_date":null,
+    "excerpts":["Opening passage.","Second passage."]},
+   {"url":"https://example.org/two","title":"Second hit","publish_date":null,
+    "excerpts":["Only passage."]}],
+  "warnings":null,"usage":[{"name":"sku_search","count":1}]},"isError":false}}
+JSON
+# The provider URL is the real https://search.parallel.ai/mcp, so point the
+# preset at TEST-NET-3 for this run. Everything else -- body, dot-path, field
+# mapping, {session_id} -- comes from the shipped preset, untouched.
+cat >"$HOME_DIR/config.json" <<'JSON'
+{"search":{"consent":"granted","provider":"parallel",
+ "providers":{"parallel":{"url":"http://203.0.113.10/mcp"}}}}
+JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_BODY"; : >"$FAKE_CURL_CONFIG"
+S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' \
+     --data '{"query":"keyless probe"}')
+printf '%s' "$S" | grep -q '"provider":"parallel"' || fail "the keyless provider did not run"
+printf '%s' "$S" | grep -q '"title":"First hit"' || fail "result.structuredContent.results dot-path failed"
+printf '%s' "$S" | grep -q '"url":"https://example.org/two"' || fail "second keyless result missing"
+# The excerpts array is joined, not truncated to its first element: dropping the
+# rest would throw away most of what makes these results answerable directly.
+printf '%s' "$S" | grep -q 'Opening passage. … Second passage.' \
+  || fail "the excerpts array was not joined into the description"
+# A single-element array must not gain a separator.
+printf '%s' "$S" | grep -q '"description":"Only passage."' || fail "a one-element excerpts array was mangled"
+
+# The JSON-RPC envelope is built from the preset, and {session_id} resolves to
+# a runtime value rather than erroring as an unresolved placeholder would.
+grep -q '"method":"tools/call"' "$FAKE_CURL_BODY" || fail "the MCP envelope was not sent"
+grep -q '"name":"web_search"' "$FAKE_CURL_BODY" || fail "the MCP tool name was not sent"
+grep -q '"objective":"keyless probe"' "$FAKE_CURL_BODY" || fail "{query} did not reach objective"
+grep -q '"search_queries":\["keyless probe"\]' "$FAKE_CURL_BODY" || fail "{query} did not reach search_queries"
+grep -q '"session_id":"[0-9a-f]\{32\}"' "$FAKE_CURL_BODY" || fail "{session_id} did not resolve to a random hex id"
+if grep -q '{session_id}' "$FAKE_CURL_BODY"; then fail "{session_id} was sent literally"; fi
+# ...and it is stable within a process, which is what the provider asks for.
+FIRST_SESSION=$(grep -o '"session_id":"[0-9a-f]*"' "$FAKE_CURL_BODY" | head -1)
+: >"$FAKE_CURL_BODY"
+auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' \
+  --data '{"query":"second probe"}' >/dev/null
+[ "$(grep -o '"session_id":"[0-9a-f]*"' "$FAKE_CURL_BODY" | head -1)" = "$FIRST_SESSION" ] \
+  || fail "the session id changed between calls in one process"
+# No Authorization header is invented for a provider that has no credential.
+if grep -qi 'header = "Authorization' "$FAKE_CURL_CONFIG"; then
+  fail "the keyless provider sent an Authorization header"
+fi
+
+# ===========================================================================
 # 4. The model-decided tool loop.
 # ===========================================================================
 cat >"$HOME_DIR/config.json" <<JSON
-{"search":{"provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY",
+{"search":{"consent":"granted","provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY",
  "url":"http://203.0.113.10/res/v1/web/search?q={query}"}}}}
 JSON
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
@@ -345,12 +458,37 @@ PLAIN=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Ty
 [ "$PLAIN" = '{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"compiled reply"}}]}' ] \
   || fail "a plain turn is no longer a byte-for-byte passthrough"
 
+# 4e. WK2: an install that has not answered the question is a pre-W install.
+# `web: true` must not merely fail politely -- it must cost nothing at all: no
+# planner round trip, no transport call, and no added text in the reply. This
+# is W5's gate re-asserted for the state every new install now starts in.
+cat >"$HOME_DIR/config.json" <<'JSON'
+{"search":{"provider":"parallel","providers":{"parallel":{"url":"http://203.0.113.10/mcp"}}}}
+JSON
+: >"$FAKE_CURL_ARGV"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"hello"}]}')
+[ "$R" = '{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"compiled reply"}}]}' ] \
+  || fail "web:true without consent was not byte-identical to a plain turn"
+[ ! -s "$FAKE_CURL_ARGV" ] || fail "a turn without consent still reached the transport"
+
+# A pasted URL is different: the user explicitly asked, so it says why it did
+# not read the page instead of silently dropping it.
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,
+              "web_urls":["http://example.com/jobs"],
+              "messages":[{"role":"user","content":"web tool probe pasted"}]}')
+printf '%s' "$R" | grep -q 'not been allowed to reach the internet' \
+  || fail "a pasted URL without consent must explain itself"
+printf '%s' "$R" | grep -q 'missing web evidence' || fail "a pasted URL without consent still fetched"
+
 # ===========================================================================
 # 5. The offline kill switch.
 # ===========================================================================
 # 5a. via config.json
 cat >"$HOME_DIR/config.json" <<JSON
-{"offline":true,"search":{"provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY",
+{"offline":true,"search":{"consent":"granted","provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY",
  "url":"http://203.0.113.10/res/v1/web/search?q={query}"}}}}
 JSON
 CFG=$(auth "http://127.0.0.1:$PORT/v1/web/config")

@@ -1,0 +1,9 @@
+### Chat turn with web:true, consent granted, LIVE keyless provider
+data: {"choices":[{"index":0,"delta":{"reasoning":"Searching the web for \"careers page\"…\n"}}]}
+
+data: {"choices":[{"index":0,"delta":{"reasoning":"Found 8 results.\n"}}]}
+
+{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"saw web evidence"}}]}
+
+### The served app.html carries the consent card
+webConsent occurrences: 1

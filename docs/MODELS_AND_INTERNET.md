@@ -31,24 +31,32 @@ text-only as installed.
 
 ## Internet sources
 
-> **Status.** Built and landed 2026-07-28 (Phase W). Read
-> [regressions/web-search/report.md](regressions/web-search/report.md) before
-> relying on any claim here: it lists exactly what was run on the reference
-> Mac and what was not. In particular, **no search provider has ever been
-> contacted from this machine** — nobody here holds credentials for one — so
-> the five presets below are transcribed from each vendor's published API and
-> are unverified. Page reading was verified live.
+> **Status.** Built and landed 2026-07-28 (Phase W, then Phase WK). Read
+> [regressions/web-search/report.md](regressions/web-search/report.md) and
+> [regressions/web-search/keyless-2026-07-28/report.md](regressions/web-search/keyless-2026-07-28/report.md)
+> before relying on any claim here: together they list exactly what was run on
+> the reference Mac and what was not.
+>
+> **Verified live on the reference Mac:** page reading, and search through the
+> default keyless provider (real network, no stub, 8 results).
+> **Not verified:** the four *keyed* presets — nobody here holds credentials
+> for those, so they remain transcribed from each vendor's published API. And
+> **no real model has ever emitted a planner decision**; every tool-loop test
+> to date had the decision supplied by a fake backend.
 >
 > An earlier version of this section described all of this as already shipped
 > and "verified live against a config-defined provider". That was false: none
 > of it existed in the C source at any commit. See the T3.2 evidence doc.
 
-Nothing reaches the network unless you ask for it on that turn. The composer's
-**+** menu carries two web actions:
+Samosa asks once, on first use, whether it may reach the internet at all.
+Until you answer, nothing goes out and web turns cost nothing — no extra model
+call, no added latency. You can change the answer any time in Settings, and
+`SAMOSA_OFFLINE=1` overrides it outright.
+
+With access on, the composer's **+** menu carries two web actions:
 
 - **Web page** — paste one public `http(s)` URL to read for this message.
 - **Web search** — let the model decide whether to search, and for what.
-  Only offered when a search provider is configured.
 
 A turn that uses neither is byte-for-byte identical to a turn from before this
 feature existed: no extra model call, no added prompt text, no latency.
@@ -79,21 +87,37 @@ because that needs a controlled resolver this repo does not have.
 
 ## Connecting a search service
 
-**There is no default search provider, on purpose.** No key-free search API is
-dependable enough to hardcode, and scraping one would be disallowed by that
-host's own `robots.txt` — which Samosa honours. With nothing configured,
-`web_search` reports that it is unconfigured and the model tells you how to fix
-it; `open_url` needs no credentials and works either way.
+**Search works out of the box, with no account and no API key.** The default
+provider is [Parallel](https://parallel.ai)'s Search MCP, which answers
+anonymous requests. Nothing is installed for this and no code is vendored: it
+is an ordinary HTTPS call over the same pinned transport everything else uses.
 
-To give your local models search, connect a service you have credentials for in
-`~/.samosa/config.json`. Samosa never ships a shared API key, and credentials
+What that costs you, stated plainly: **your search text is sent to Parallel.**
+Not your chats, not your files, not the model — only the words being searched
+for, and only after you have said yes. Pages found in the results are then
+fetched by your own Mac directly. If you would rather no third party see search
+text at all, decline the prompt or set `SAMOSA_OFFLINE=1`; page reading and
+everything else still work.
+
+Two honest caveats about a free tier:
+
+- **Parallel publishes no rate limits** for keyless use ("light use"). Heavy
+  use may start failing, and Samosa will say so rather than degrade silently.
+- **A free tier can be withdrawn.** Brave's free search tier was deleted in
+  February 2026. That is exactly why the keyed presets below are kept.
+
+### Using your own provider instead
+
+Name one in `~/.samosa/config.json` and it replaces the default. Credentials
 never leave your machine except to the service you configured. The key is
 passed to `curl` through a `0600` config file, never on a command line, so it
 is not visible to other processes on your machine; it is also kept out of logs
-and out of any error the model or the browser sees.
+and out of any error the model or the browser sees. Samosa never ships a shared
+API key.
 
 Presets exist for `brave`, `tavily`, `serpapi`, `google` (Programmable
-Search), and `searxng` — name one and supply only its credentials:
+Search), and `searxng` — name one and supply only its credentials. (Note that
+`brave`'s free tier ended in February 2026; it now requires a card on file.)
 
 ```json
 {
@@ -114,7 +138,10 @@ Search), and `searxng` — name one and supply only its credentials:
 changes. `{query}` is the URL-encoded search text; every other `{name}`
 placeholder resolves from the provider's own config values; `results` is a
 dot-path to the result array in the response; `fields` maps title/url/
-description within one result. A `body` object makes the request a POST.
+description within one result. A `body` object makes the request a POST. A
+`description` field may point at an **array of strings** as well as a string;
+an array is joined, which is how the default provider's multi-passage excerpts
+are handled.
 
 ```json
 {
@@ -150,10 +177,20 @@ takes effect without restarting the app.
 **Verification status of the presets:** the generic executor is exercised
 offline by `make compiled-gateway-test` (URL/body/header construction,
 placeholder resolution, dot-path result extraction, field mapping, and the
-credential-handling rules above). The preset request/response *shapes* follow
-each service's published API and **have not been observed working** — no
-credentials for any of them exist on the machine this was built on. A wrong
-field name in a preset would not have been caught.
+credential-handling rules above).
+
+- The **default `parallel` preset was verified live** on the reference Mac on
+  2026-07-28 — real network, real `curl`, no stub, 8 results with titles, URLs,
+  and joined excerpts. Its request and response shapes are therefore observed,
+  not transcribed.
+- The **four keyed presets** still follow each vendor's published API and
+  **have not been observed working**: no credentials for any of them exist on
+  the machine this was built on. A wrong field name in one of those would not
+  have been caught.
+
+Keyless access was verified from **one** IP address. Providers grant anonymous
+access per-IP and can refuse it — Firecrawl's keyless tier refused this same
+machine outright — so it is not guaranteed to work from every network.
 
 Set `SAMOSA_OFFLINE=1` before starting the app, or set `"offline": true` in
 the config file, to disable every outbound path — page reads, search, and the

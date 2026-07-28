@@ -1,0 +1,23 @@
+### 1. Fresh install, before consent
+{"offline":false,"fetch_available":false,"search_configured":true,"consent":"unset","keyless":true,"web_available":false,"provider":"parallel","reason":""}
+### 2. Search refused before consent (no packet leaves)
+{"error":{"message":"Samosa has not been allowed to reach the internet yet.","type":"invalid_request_error","code":"consent_required"}}
+### 3. Consent granted
+{"offline":false,"fetch_available":true,"search_configured":true,"consent":"granted","keyless":true,"web_available":true,"provider":"parallel","reason":""}
+### 4. config.json as written
+{"search":{"consent":"granted"}}
+-rw------- 
+### 5. LIVE search against real search.parallel.ai, keyless
+ok: True  provider: parallel  n: 8
+ - Who is and has been Secretary-General of the United Nations?
+    https://ask.un.org/faq/14625
+   desc: Toggle navigation [Welcome to the United Nations](https://www.un.org/)  + 中文     + English     + Fra ...
+ - Secretary-General | United Nations
+    https://www.un.org/sg/en
+   desc: ## Javier Perez de Cuellar, Former Secretary-General of the United Nations  Javier Perez de Cuellar, ...
+ - About the Secretary-General | Secretary-General
+    https://www.un.org/sg/en/about-secretary-general
+   desc: Priorities for 2025  Image  ### Annual Report on the Work of the Organization  The past year has tes ...
+ - Secretary-General of the United Nations
+    https://ipfs.io/ipfs/QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco/wiki/UN_Se
+   desc: The role of the United Nations Secretariat, and of the Secretary-General in particular, is laid out  ...
