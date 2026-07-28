@@ -1,0 +1,21 @@
+### GET /v1/web/config
+{"offline":false,"fetch_available":true,"search_configured":false,"provider":"","reason":"no search provider is configured"}
+
+### POST /v1/web/fetch  https://example.com/
+{"ok": true, "url": "https://example.com/", "title": "Example Domain", "truncated": false, "text": "Example Domain\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\nLearn more"}
+
+### POST /v1/web/fetch  https://www.rfc-editor.org/rfc/rfc9110.txt (text/plain, real redirect check)
+{"ok": true, "url": "https://www.rfc-editor.org/rfc/rfc9110.txt", "title": "rfc9110.txt", "truncated": true, "text": "\ufeff\n\n\n\nInternet Engineering Task Force (IETF)                  R. Fielding, Ed.\nRequest for Comments: 9110                                         Adobe\nSTD: 97                                               M. Nottingham, \u2026 <119998 chars total; elided from this transcript>"}
+
+### POST /v1/web/search (unconfigured)
+{"error":{"message":"no search provider is configured","type":"invalid_request_error","code":"search_not_configured"}}
+
+### chat turn with web_urls (real page, fake backend answers)
+data: {"choices":[{"index":0,"delta":{"reasoning":"Reading https://example.com/…\n"}}]}
+
+data: {"choices":[{"index":0,"delta":{"reasoning":"Read \"Example Domain\".\n"}}]}
+
+{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"saw web evidence"}}]}
+
+### gateway log
+[gateway] compiled ready http://127.0.0.1:19050 backend=qwen ready=false

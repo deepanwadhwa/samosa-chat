@@ -100,13 +100,45 @@ static int samosa_http_response(int fd, int status, const char *content_type,
            (!length || samosa_send_all(fd,body,length));
 }
 
+/* Escapes `value` into `out` as JSON string contents (no surrounding quotes),
+   stopping cleanly at a character boundary rather than truncating mid-escape.
+   Returns the number of bytes written. */
+static size_t samosa_json_escape(char *out, size_t cap, const char *value) {
+    size_t used=0;
+    for (const unsigned char *p=(const unsigned char *)value; *p; ++p) {
+        char unit[8]; size_t n;
+        switch (*p) {
+            case '"':  memcpy(unit,"\\\"",2); n=2; break;
+            case '\\': memcpy(unit,"\\\\",2); n=2; break;
+            case '\n': memcpy(unit,"\\n",2);  n=2; break;
+            case '\r': memcpy(unit,"\\r",2);  n=2; break;
+            case '\t': memcpy(unit,"\\t",2);  n=2; break;
+            default:
+                if (*p<0x20) { n=(size_t)snprintf(unit,sizeof(unit),"\\u%04x",*p); }
+                else { unit[0]=(char)*p; n=1; }
+        }
+        if (used+n+1>cap) break;
+        memcpy(out+used,unit,n); used+=n;
+    }
+    if (cap) out[used]=0;
+    return used;
+}
+
+/* Phase W (docs/TASKS_WEB_SEARCH.md): `message` used to be interpolated raw,
+   on the assumption -- stated in a comment here -- that every caller passes a
+   fixed technical string with no JSON metacharacters. Phase W broke that: its
+   errors quote configuration keys and provider responses, so an unescaped
+   quote produced malformed JSON and gave remote content a way into the error
+   body. Escaping here fixes it for every caller rather than requiring each new
+   one to remember the old rule. */
 static int samosa_http_json_error(int fd, int status, const char *code,
                                   const char *message) {
-    char body[1024];
-    /* Internal callers use fixed technical messages without JSON metacharacters. */
+    char body[2048], safe_message[1024], safe_code[128];
+    samosa_json_escape(safe_message,sizeof(safe_message),message?message:"");
+    samosa_json_escape(safe_code,sizeof(safe_code),code?code:"error");
     snprintf(body,sizeof(body),
         "{\"error\":{\"message\":\"%s\",\"type\":\"invalid_request_error\","
-        "\"code\":\"%s\"}}",message,code);
+        "\"code\":\"%s\"}}",safe_message,safe_code);
     return samosa_http_response(fd,status,"application/json",body,
                                 status==429?"Retry-After: 1\r\n":NULL);
 }

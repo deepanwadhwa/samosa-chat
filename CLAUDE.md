@@ -82,8 +82,23 @@ users to avoid thinking mode to protect hardware, on a false premise.
 Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H1** (owner decision —
 touches a published README and model card).
 
-**Internet-search feature does not exist (OPEN, found on `ui-chutni` 2026-07-27,
-docs live on `main`)** — [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md)
+**Internet-search feature did not exist (BUILT 2026-07-28 on `ui-chutni`;
+real-provider verification still pending)** — the owner's decision was build it,
+not correct the docs. Phase W ([docs/TASKS_WEB_SEARCH.md](docs/TASKS_WEB_SEARCH.md))
+shipped the three `/v1/web/*` routes, the declarative multi-provider search
+executor, the model-decided `web_search`/`open_url` loop, the `SAMOSA_OFFLINE`
+kill switch, and the composer's Web page / Web search actions; both docs were
+rewritten to describe what is actually built. **Page reading is verified live
+against real public pages on the reference Mac. Search is not: no credentials
+for any provider exist on this machine, so the five presets' request/response
+shapes are transcribed from vendor documentation and have never been observed
+working — a wrong field name in a preset would not have been caught.** The tool
+loop has only ever been driven by the fake backend; no real model has emitted a
+planner decision. Evidence, including four defects found while building:
+[docs/regressions/web-search/report.md](docs/regressions/web-search/report.md).
+The original defect record follows.
+
+[docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md)
 and [docs/SERVE_API.md](docs/SERVE_API.md) describe a fully built feature (model-
 invoked `web_search`/`open_url` tools, `GET /v1/web/config`, `POST /v1/web/fetch`,
 `POST /v1/web/search`, a declarative multi-provider search-config executor with
@@ -99,15 +114,25 @@ design, so these two docs describe an earlier, abandoned design that was never
 removed or corrected. **The dead frontend half is now gone** — T3.2 removed the
 Settings "Internet source" card, its CSS, and its three `/v1/web/*` call sites,
 and the composer's `+` menu shows Web page as a visibly disabled item stating
-the real reason. **What remains open is the owner decision on the docs:** build
+the real reason. **What remained open was the owner decision on the docs:** build
 the standalone chat-composer web-search feature for real (a security-sensitive
 undertaking — SSRF/DNS-pinning, a provider-config executor, a model tool-calling
-loop), or correct `MODELS_AND_INTERNET.md`/`SERVE_API.md`, which still describe
-it as built and verified. Evidence:
+loop), or correct `MODELS_AND_INTERNET.md`/`SERVE_API.md`, which still described
+it as built and verified. **Decided 2026-07-28: build it.** Evidence:
 [docs/regressions/ui-chutni/t3.2-evidence.md](docs/regressions/ui-chutni/t3.2-evidence.md).
 This entry itself was added on `ui-chutni`, not `main`, since
 that is the only branch this agent session can commit to — reconcile onto
-`main` per the working agreement in docs/ISSUE_TASKS.md when convenient.
+`main` per the working agreement in docs/ISSUE_TASKS.md when convenient. The
+same applies to Phase W's own doc rewrites, which edit `main`-resident files
+from this branch.
+
+**To close Phase W (OPEN, #4)** — two gates the reference Mac cannot clear:
+(a) run one real search against a provider the owner holds a key for, which is
+the only way the five presets' request/response shapes get checked at all; and
+(b) run the tool loop against the real Ornith or Qwen and record the malformed
+rate, which is `TASKS_INTERNET.md` E-I1's local stage, still never run.
+`TASKS_INTERNET.md` E-I4 (what a web turn actually costs end to end) is also
+still not measured. Spec: [docs/TASKS_WEB_SEARCH.md](docs/TASKS_WEB_SEARCH.md).
 
 **Resolved 2026-07-27 (on `ui-chutni`, T3.2):**
 

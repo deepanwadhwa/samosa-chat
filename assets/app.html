@@ -625,6 +625,10 @@
               <svg aria-hidden="true"><use href="#icon-globe"></use></svg>
               <span><span class="attach-item-label">Web page</span><span class="attach-item-reason" id="attachWebReason"></span></span>
             </button>
+            <button class="attach-item" id="attachWebSearch" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+              <span><span class="attach-item-label">Web search</span><span class="attach-item-reason" id="attachWebSearchReason"></span></span>
+            </button>
             <button class="attach-item" id="attachDirectory" type="button" role="menuitem" disabled>
               <svg aria-hidden="true"><use href="#icon-folder"></use></svg>
               <span><span class="attach-item-label">Directory</span><span class="attach-item-reason" id="attachDirectoryReason"></span></span>
@@ -760,16 +764,15 @@
       <div class="chooser-selected-path" id="chooserSelectedPath" hidden></div>
       <small>Previews the folder picker Chutni will use to authorize a folder, drive, or this computer. Picking a folder here does not yet create any Chutni memory.</small>
     </div>
-    <!-- T3.2: the "Internet source" card that stood here called
-         GET /v1/web/config, POST /v1/web/search, and POST /v1/web/fetch.
-         None of those routes exist in the compiled gateway (verified live:
-         all three 404) or anywhere in the C source at any commit -- see the
-         open "Internet-search feature does not exist" defect in CLAUDE.md.
-         The card is removed rather than left rendering a dead control; the
-         composer's `+` menu now carries Web page as a visibly disabled item
-         that states the real reason, which is the honest surface for a
-         capability the packaged gateway does not have (sec5.8). -->
-    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Nothing is sent off this machine.</div>
+    <!-- Phase W (docs/TASKS_WEB_SEARCH.md W6). T3.2 removed the old "Internet
+         source" card because it drove three routes that did not exist. This
+         replacement is deliberately read-only: web access is chosen per turn
+         from the composer's `+` menu, and the credential lives in
+         ~/.samosa/config.json, which is the only place it is ever written or
+         read. This card states what the server reports and never displays,
+         echoes, or accepts a key. -->
+    <div class="local-card"><strong>Web access</strong><br><span id="webStatus">Checking…</span></div>
+    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Nothing is sent off this machine. Web pages are fetched only for a turn you explicitly opt in.</div>
     <!-- T3.1 (docs/TASKS_UI_CHUTNI.md sec4.4): process termination does not
          belong in the primary header -- it lives in this clearly labeled
          Troubleshooting surface instead. -->
@@ -840,6 +843,13 @@
       <circle cx="10" cy="10" r="6.5"/>
       <path d="M3.6 10h12.8M10 3.5c1.8 1.9 2.7 4.1 2.7 6.5s-.9 4.6-2.7 6.5c-1.8-1.9-2.7-4.1-2.7-6.5S8.2 5.4 10 3.5z"/>
     </symbol>
+    <!-- Phase W (docs/TASKS_WEB_SEARCH.md W6): the twelfth member of T3.1's
+         icon family. Web search needed its own glyph -- reusing the globe for
+         both web items would have made two different actions look like one. -->
+    <symbol id="icon-search" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="8.8" cy="8.8" r="5.3"/>
+      <path d="M12.6 12.6 16.5 16.5"/>
+    </symbol>
   </svg>
 
   <div class="chooser-scrim" id="chooserScrim" hidden></div>
@@ -907,9 +917,10 @@
         imageInput: $("imageInput"), documentInput: $("documentInput"), attachBtn: $("attachBtn"),
         attachMenu: $("attachMenu"), attachChips: $("attachChips"), attachError: $("attachError"),
         attachImage: $("attachImage"), attachDocument: $("attachDocument"),
-        attachWeb: $("attachWeb"), attachDirectory: $("attachDirectory"),
+        attachWeb: $("attachWeb"), attachWebSearch: $("attachWebSearch"), attachDirectory: $("attachDirectory"),
         attachImageReason: $("attachImageReason"), attachDocumentReason: $("attachDocumentReason"),
-        attachWebReason: $("attachWebReason"), attachDirectoryReason: $("attachDirectoryReason"),
+        attachWebReason: $("attachWebReason"), attachWebSearchReason: $("attachWebSearchReason"),
+        attachDirectoryReason: $("attachDirectoryReason"), webStatus: $("webStatus"),
         kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
@@ -935,6 +946,11 @@
       // `id` is the server's SHA-256 and is the only part sent with a turn.
       let pendingAttachments = [];
       let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_documents:false,version:"",ready:false};
+      // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config last
+      // reported. Starts fully closed so no web action is ever offered before
+      // the server has confirmed it -- the same rule the other capabilities
+      // follow. `reason` is the server's own explanation and is shown verbatim.
+      let web = {offline:false, fetch_available:false, search_configured:false, provider:"", reason:""};
       // Profile name for the personalized empty state (sec4.4). Loaded once
       // on entering chat; rendering always escapes it (sec4.1).
       let profileName = "";
@@ -1270,6 +1286,9 @@
         // localStorage record (sec5.8).
         const attachments = pendingAttachments.map(a => ({ id: a.id, name: a.name, kind: a.kind }));
         const attachmentIds = attachments.map(a => a.id);
+        // Captured before clearAttachments() empties the composer below.
+        const webUrls = pendingWeb.filter(w => w.kind === "url").map(w => w.url);
+        const wantsWebSearch = pendingWeb.some(w => w.kind === "search");
         const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
         chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
 
@@ -1291,6 +1310,12 @@
         // The gateway resolves these into image data URIs / extracted
         // document text server-side; the browser never builds either.
         if (attachmentIds.length) payload.attachment_ids = attachmentIds;
+        // Phase W (docs/TASKS_WEB_SEARCH.md W5). Two separate opt-ins, and
+        // neither is ever inferred from the message text: `web_urls` means
+        // "read exactly these", `web` means "you may reach the web, decide for
+        // yourself". A turn with neither is byte-identical to a pre-W turn.
+        if (webUrls.length) payload.web_urls = webUrls;
+        if (wantsWebSearch) payload.web = true;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         try {
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -1346,9 +1371,34 @@
         if (activeAssistant) { activeAssistant.streaming = false; activeAssistant.error = "Server killed."; updateAssistantNode(activeAssistant); }
         els.closure.textContent = "killed";
       }
+      // Phase W: refreshed alongside health so editing ~/.samosa/config.json
+      // (adding a key, flipping offline) takes effect in an open tab without a
+      // reload, matching the gateway's own re-read-per-request behaviour.
+      async function refreshWebConfig() {
+        try {
+          const r = await authFetch("/v1/web/config", {cache:"no-store"});
+          if (!r.ok) throw new Error();
+          const c = await r.json();
+          web = {offline:!!c.offline, fetch_available:!!c.fetch_available,
+                 search_configured:!!c.search_configured, provider:c.provider||"", reason:c.reason||""};
+        } catch (_) {
+          // An unreachable or unrecognised route means no web capability, not
+          // an assumed one. This is also what a pre-Phase-W gateway returns.
+          web = {offline:false, fetch_available:false, search_configured:false, provider:"",
+                 reason:"This build has no web reader."};
+        }
+        if (els.webStatus) {
+          els.webStatus.textContent = web.offline
+            ? "Offline mode is on. No outbound request is made, including for Jobs."
+            : web.search_configured
+              ? `Reading public pages is available. Search is configured through ${web.provider}.`
+              : `Reading public pages is available. Search is not configured — ${web.reason || "add a provider under \"search\" in ~/.samosa/config.json."}`;
+        }
+      }
       async function health() {
         try {
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
+          await refreshWebConfig();
           const previousBackend=backend.id;
           if(h.gateway) {
             backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready};
@@ -1464,12 +1514,17 @@
       // --- T3.2 composer attachments (docs/TASKS_UI_CHUTNI.md sec5.8) -------
       // Capability gating is driven entirely by what the server reports, so
       // the UI can never present a working action for a route the packaged
-      // gateway does not serve. Web page and Directory are disabled here on
-      // purpose and say why: neither /v1/web/* nor the Chutni directory-
-      // context API exists in the compiled gateway (grepped across the C
-      // source and full history; see CLAUDE.md's open defect). When those
-      // land, only these two reason strings and their `enabled` flags change.
+      // gateway does not serve. Directory stays disabled here on purpose and
+      // says why: the Chutni directory-context API still does not exist in the
+      // compiled gateway. Web page and Web search are live as of Phase W
+      // (docs/TASKS_WEB_SEARCH.md W6) and are gated on GET /v1/web/config, so
+      // "search is configured" is the server's answer, never a guess.
       const MAX_ATTACHMENTS = 6;
+      // Phase W: web context for the next turn, kept separate from
+      // pendingAttachments because none of it is an uploaded blob -- there is
+      // no server-side ID to issue, mark referenced, or delete. Entries are
+      // {clientId, kind:"url"|"search", name, url}.
+      let pendingWeb = [];
       function applyCapabilities() {
         const imageReady = !!backend.supports_images && !!backend.ready;
         setAttachItem(els.attachImage, els.attachImageReason, imageReady,
@@ -1479,8 +1534,14 @@
         setAttachItem(els.attachDocument, els.attachDocumentReason, !!backend.supports_documents,
           "The document reader isn't installed in this build.",
           "PDF, read on this computer.");
-        setAttachItem(els.attachWeb, els.attachWebReason, false,
-          "Not available yet — this build has no web reader.", "");
+        setAttachItem(els.attachWeb, els.attachWebReason, !!web.fetch_available,
+          web.offline ? "Samosa is in offline mode."
+            : "Not available yet — this build has no web reader.",
+          "Read one public page.");
+        setAttachItem(els.attachWebSearch, els.attachWebSearchReason, !!web.search_configured,
+          web.offline ? "Samosa is in offline mode."
+            : web.reason || "No search provider is configured in ~/.samosa/config.json.",
+          web.provider ? `The model may search using ${web.provider}.` : "The model may search the web.");
         setAttachItem(els.attachDirectory, els.attachDirectoryReason, false,
           "Not available yet — Chutni folder memory isn't built.", "");
         // A model switch can revoke image support mid-session; drop anything
@@ -1489,6 +1550,12 @@
           pendingAttachments = pendingAttachments.filter(a => a.kind !== "image");
           renderAttachments();
         }
+        // The same rule for web context: going offline, or losing a provider,
+        // must drop staged context rather than send a turn that silently
+        // cannot do what its chip says it will.
+        const beforeWeb = pendingWeb.length;
+        pendingWeb = pendingWeb.filter(w => w.kind === "url" ? !!web.fetch_available : !!web.search_configured);
+        if (pendingWeb.length !== beforeWeb) renderAttachments();
       }
       function setAttachItem(button, reasonEl, enabled, disabledReason, enabledHint) {
         if (!button) return;
@@ -1534,6 +1601,8 @@
       }
       function setAttachError(message) { els.attachError.textContent = message || ""; }
       function removeAttachment(clientId) {
+        const web = pendingWeb.find(w => w.clientId === clientId);
+        if (web) { pendingWeb = pendingWeb.filter(w => w.clientId !== clientId); renderAttachments(); return; }
         const entry = pendingAttachments.find(a => a.clientId === clientId);
         pendingAttachments = pendingAttachments.filter(a => a.clientId !== clientId);
         renderAttachments();
@@ -1569,6 +1638,34 @@
           const remove = document.createElement("button");
           remove.type = "button"; remove.className = "attach-chip-remove";
           remove.setAttribute("aria-label", `Remove ${item.kind === "image" ? "image" : "document"} ${item.name}`);
+          const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          const rUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          rUse.setAttribute("href", "#icon-x"); rIcon.setAttribute("aria-hidden", "true");
+          rIcon.appendChild(rUse); remove.appendChild(rIcon);
+          remove.onclick = () => removeAttachment(item.clientId);
+          chip.appendChild(remove);
+          els.attachChips.appendChild(chip);
+        }
+        // Phase W: web context chips share the row and the removal affordance,
+        // so "removable chip" holds for every kind of context, not just files.
+        for (const item of pendingWeb) {
+          const chip = document.createElement("span");
+          chip.className = "attach-chip";
+          chip.dataset.clientId = item.clientId;
+          const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          use.setAttribute("href", item.kind === "url" ? "#icon-globe" : "#icon-search");
+          icon.setAttribute("aria-hidden", "true");
+          icon.appendChild(use); chip.appendChild(icon);
+          const name = document.createElement("span");
+          name.className = "attach-chip-name";
+          // A URL is untrusted text and is always rendered as text.
+          name.textContent = item.name;
+          chip.appendChild(name);
+          const remove = document.createElement("button");
+          remove.type = "button"; remove.className = "attach-chip-remove";
+          remove.setAttribute("aria-label", item.kind === "url"
+            ? `Remove web page ${item.name}` : "Remove web search");
           const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           const rUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
           rUse.setAttribute("href", "#icon-x"); rIcon.setAttribute("aria-hidden", "true");
@@ -1624,9 +1721,47 @@
         setAttachError("");
         (kind === "image" ? els.imageInput : els.documentInput).click();
       }
+      // Phase W (docs/TASKS_WEB_SEARCH.md W6). The scheme check here is a
+      // courtesy so a typo fails instantly instead of after a round trip; it
+      // is not the security boundary. The gateway re-parses the URL, rejects
+      // credentials and non-standard ports, resolves the host itself and
+      // rejects every private range, and revalidates each redirect hop -- none
+      // of which the browser could be trusted to have done.
+      function addWebPage(rawUrl) {
+        const url = (rawUrl || "").trim();
+        if (!url) return false;
+        if (!/^https?:\/\//i.test(url)) {
+          setAttachError("Enter a public http:// or https:// address.");
+          return false;
+        }
+        if (pendingWeb.some(w => w.kind === "url" && w.url === url)) return true;
+        if (pendingWeb.filter(w => w.kind === "url").length >= 3) {
+          setAttachError("You can add up to 3 web pages to one message.");
+          return false;
+        }
+        setAttachError("");
+        pendingWeb.push({
+          clientId: `w-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          kind: "url", url, name: url
+        });
+        renderAttachments();
+        return true;
+      }
+      function addWebSearch() {
+        setAttachError("");
+        if (!pendingWeb.some(w => w.kind === "search")) {
+          pendingWeb.push({
+            clientId: `w-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            kind: "search", name: "Web search", url: null
+          });
+          renderAttachments();
+        }
+        return true;
+      }
       function clearAttachments() {
         for (const item of pendingAttachments) if (item.thumb) URL.revokeObjectURL(item.thumb);
         pendingAttachments = [];
+        pendingWeb = [];
         els.imageInput.value = ""; els.documentInput.value = "";
         renderAttachments(); setAttachError("");
       }
@@ -2627,10 +2762,19 @@
       };
       els.attachImage.onclick = () => pickAttachment("image");
       els.attachDocument.onclick = () => pickAttachment("document");
-      // Web page and Directory are rendered disabled by applyCapabilities()
-      // (no /v1/web/* and no Chutni directory-context API exist), so they
-      // need no click handlers -- a disabled button cannot be activated, and
-      // wiring a handler that silently did nothing would be worse.
+      // Phase W (docs/TASKS_WEB_SEARCH.md W6). prompt() is the app's existing
+      // idiom for one-line input and needs no new dialog chrome; the value is
+      // validated by addWebPage() and then again, properly, by the gateway.
+      els.attachWeb.onclick = () => {
+        closeAttachMenu(true);
+        const url = prompt("Public page to read for this message:");
+        if (url !== null) addWebPage(url);
+      };
+      els.attachWebSearch.onclick = () => { closeAttachMenu(true); addWebSearch(); };
+      // Directory is still rendered disabled by applyCapabilities() (no
+      // Chutni directory-context API exists), so it needs no click handler --
+      // a disabled button cannot be activated, and wiring a handler that
+      // silently did nothing would be worse.
       els.imageInput.onchange = (e) => {
         const file = e.target.files[0];
         e.target.value = ""; // let the same file be picked again after removal

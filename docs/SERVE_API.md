@@ -150,15 +150,52 @@ POST /v1/cancel
 
 ## Optional public Internet sources
 
+Built 2026-07-28 (Phase W, [TASKS_WEB_SEARCH.md](TASKS_WEB_SEARCH.md)). An
+earlier version of this section listed these three routes before any of them
+existed; they exist now. What has and has not been verified is recorded in
+[regressions/web-search/report.md](regressions/web-search/report.md).
+
+All three require the `X-Samosa-Token` UI session token.
+
 ```http
 GET /v1/web/config
-POST /v1/web/fetch
-POST /v1/web/search
 ```
 
-These are separate from model installation. Fetch/search validates public
-destinations and caps content. See
-[MODELS_AND_INTERNET.md](MODELS_AND_INTERNET.md).
+```json
+{"offline": false, "fetch_available": true, "search_configured": false,
+ "provider": "", "reason": "no search provider is configured"}
+```
+
+Never returns a credential — only whether a usable one is present. `reason`
+explains an unavailable capability and is safe to show a user.
+
+```http
+POST /v1/web/fetch      {"url": "https://…"}
+```
+
+Returns `{ok, url, title, truncated, text}` for one public page. `url` is the
+final URL after redirects. Rejections (SSRF, scheme, port, credentials in the
+URL, robots, unreadable JS-only page) are `400 fetch_failed` with the reason.
+
+```http
+POST /v1/web/search     {"query": "…"}
+```
+
+Returns `{ok, provider, results: [{title, url, description}]}`, at most 8
+results. `409 search_not_configured` when no usable provider is configured;
+`409 offline` in offline mode; `502 search_failed` when a configured provider
+fails.
+
+Chat turns opt into the web per request, on `POST /v1/chat/completions`:
+
+- `"web_urls": ["https://…"]` — read exactly these pages (max 3).
+- `"web": true` — let the model choose `web_search`/`open_url`, max 3 calls.
+
+Both splice the resulting text into the final user message and, on a streaming
+turn, emit tool activity as `delta.reasoning` SSE events before the answer. A
+request with neither field is forwarded to the backend unchanged.
+
+See [MODELS_AND_INTERNET.md](MODELS_AND_INTERNET.md) for configuration.
 
 ## Shutdown
 

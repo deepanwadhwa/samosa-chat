@@ -416,6 +416,46 @@ static int handler(SamosaHttpServer *server, int fd,
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
     }
+    /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
+       Planner rounds are recognised by their system prompt; the second round
+       is told apart from the first by the accumulated findings block, which
+       is what proves the loop actually fed a tool result back before asking
+       again rather than looping on an unchanged prompt. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "deciding whether this turn needs the public web")) {
+        if (strstr(request->body, "Findings so far"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"tool\\\":\\\"none\\\"}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe open"))
+            /* Deliberately wrapped in a reasoning span and a code fence: a
+               reasoning model does this, and the gateway must recover the
+               object rather than fail the turn. */
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"<think>{\\\"tool\\\":\\\"open_url\\\",\\\"url\\\":\\\"http://decoy.example/\\\"}</think>"
+                "Sure.\\n```json\\n{\\\"tool\\\":\\\"open_url\\\",\\\"url\\\":\\\"http://example.com/jobs\\\"}\\n```\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe search"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"tool\\\":\\\"web_search\\\",\\\"query\\\":\\\"careers page\\\"}\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"tool\\\":\\\"none\\\"}\"}}]}", NULL);
+    }
+    /* The answering turn. Reports whether the web evidence actually arrived
+       spliced into the user message, so a silently dropped splice fails the
+       test instead of looking like a pass. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Web page:") || strstr(request->body, "--- Web search results")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw web evidence\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing web evidence\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
