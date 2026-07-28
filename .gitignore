@@ -7,3 +7,4 @@ __pycache__/
 dist/libpdfium.dylib
 dist/samosa-extract
 /results/
+.DS_Store
