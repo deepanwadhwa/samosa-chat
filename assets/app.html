@@ -397,6 +397,55 @@
     .chutni-empty svg { width: 32px; height: 32px; margin-bottom: 14px; color: var(--ink-3); }
     .chutni-empty h2 { margin: 0 0 8px; font-size: 17px; font-weight: 600; color: var(--ink); }
     .chutni-empty p { margin: 0; font-size: 13px; line-height: 1.55; }
+    /* T3.3 scope library and views. The view is a centred grid for the empty
+       state, so anything with real content opts out of that centring. */
+    .chutni-view:has(.chutni-pane:not([hidden])),
+    .chutni-view:has(.chutni-panel:not([hidden])) { place-items: start stretch; text-align: left; }
+    .chutni-pane, .chutni-panel { width: 100%; max-width: 760px; margin: 0 auto; }
+    .chutni-panel[hidden], .chutni-pane[hidden] { display: none; }
+    .chutni-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .chutni-head h1 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; }
+    .chutni-head p { margin: 4px 0 0; color: var(--ink-2); font-size: 12px; }
+    .chutni-primary { padding: 7px 14px; border: 1px solid transparent; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-ink); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .chutni-secondary { padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
+    .chutni-danger { padding: 7px 14px; border: 1px solid transparent; border-radius: var(--r-sm); background: var(--danger); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .chutni-empty .chutni-primary { margin-top: 16px; }
+    .chutni-error { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: var(--r-sm); color: var(--danger); font-size: 12px; }
+    .chutni-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+    .chutni-card { padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+    .chutni-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .chutni-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .chutni-path { margin: 3px 0 0; color: var(--ink-3); font-size: 11px; word-break: break-all; }
+    .chutni-chip { flex: 0 0 auto; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--line); color: var(--ink-2); }
+    .chutni-chip.ok { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+    .chutni-chip.warn { border-color: var(--danger); color: var(--danger); }
+    .chutni-chip.busy { border-color: transparent; background: var(--inset); color: var(--ink-2); }
+    .chutni-facts { margin: 11px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; color: var(--ink-2); font-size: 12px; }
+    .chutni-facts b { font-weight: 600; color: var(--ink); }
+    .chutni-why { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+    .chutni-why.bad { color: var(--danger); }
+    .chutni-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .chutni-actions button { font-size: 12px; padding: 5px 11px; }
+    /* Phase rows. Each stage is labelled separately and never merged into one
+       bar: fast tokenization and slow model summarising are not one number. */
+    .chutni-phases { margin: 12px 0 0; display: grid; gap: 7px; }
+    .chutni-phase { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 12px; color: var(--ink-2); }
+    .chutni-phase-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--inset); overflow: hidden; }
+    .chutni-phase-bar i { display: block; height: 100%; background: var(--accent); }
+    /* Unknown total: motion without a number, because a percentage here would
+       be invented. */
+    .chutni-phase-bar.indeterminate i { width: 35%; animation: chutni-slide 1.4s ease-in-out infinite; }
+    @keyframes chutni-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+    @media (prefers-reduced-motion: reduce) { .chutni-phase-bar.indeterminate i { animation: none; width: 100%; opacity: .45; } }
+    .chutni-panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+    .chutni-panel label { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+    .chutni-panel input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); color: var(--ink); font-size: 13px; }
+    .chutni-note { margin: 10px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+    .chutni-panel-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+    .chutni-preflight { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); font-size: 12px; color: var(--ink-2); }
+    .chutni-preflight dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+    .chutni-preflight dt { font-weight: 600; color: var(--ink); }
+    .chutni-preflight dd { margin: 0; }
     /* Jobs view */
     .jobs-view { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)) 48px; }
     .jobs-view[hidden] { display: none; }
@@ -679,11 +728,55 @@
         <div class="composer-hint">Enter to send · Shift+Enter for a new line · responses stay on this Mac</div>
       </div>
 
+      <!-- T3.3 (docs/TASKS_UI_CHUTNI.md): the Chutni library and scope views.
+           Everything here renders from server truth fetched per refresh, never
+           from client-held progress, so reloading a long-running view
+           reconstructs it exactly (T3.3 acceptance). -->
       <section class="chutni-view" id="chutniView" hidden>
-        <div class="chutni-empty">
+        <div class="chutni-empty" id="chutniEmpty">
           <svg aria-hidden="true"><use href="#icon-chutni"></use></svg>
-          <h2>Chutni isn't built yet</h2>
-          <p>This is where your durable local memory for authorized folders, drives, or this computer will live. Nothing is scanned until you explicitly add a scope here.</p>
+          <h2>No folder memory yet</h2>
+          <p>Chutni is durable local memory for folders you authorize. Nothing is scanned until you add one, and your files are only ever read — never moved or changed.</p>
+          <button type="button" class="chutni-primary" id="chutniAddEmpty">Add a folder</button>
+        </div>
+
+        <div class="chutni-pane" id="chutniPane" hidden>
+          <div class="chutni-head">
+            <div>
+              <h1>Chutni</h1>
+              <p id="chutniSubhead">Durable local memory for folders you authorize.</p>
+            </div>
+            <button type="button" class="chutni-primary" id="chutniAdd">Add a folder</button>
+          </div>
+          <div class="chutni-error" id="chutniError" role="alert" hidden></div>
+          <ul class="chutni-list" id="chutniList"></ul>
+        </div>
+
+        <!-- Add + preflight. Preflight is a separate confirmation step because
+             it is where the estimate and the effective policy are shown before
+             anything is scanned. -->
+        <div class="chutni-panel" id="chutniAddPanel" hidden>
+          <h2 id="chutniAddTitle">Add a folder</h2>
+          <label for="chutniPath">Folder to remember</label>
+          <input type="text" id="chutniPath" placeholder="/Users/you/Documents/Research" spellcheck="false" autocomplete="off">
+          <p class="chutni-note">Samosa reads these files to build a local index. It never moves, edits, or uploads them.</p>
+          <div class="chutni-preflight" id="chutniPreflight" hidden></div>
+          <div class="chutni-panel-actions">
+            <button type="button" class="chutni-secondary" id="chutniAddCancel">Cancel</button>
+            <button type="button" class="chutni-primary" id="chutniAddNext">Check folder</button>
+          </div>
+        </div>
+
+        <!-- Forget confirmation. The reassurance about user files is required
+             by T3.3 acceptance and is deliberately not softened. -->
+        <div class="chutni-panel" id="chutniForgetPanel" hidden>
+          <h2>Forget this memory?</h2>
+          <p class="chutni-note" id="chutniForgetWhat"></p>
+          <p class="chutni-note"><strong>Your files are not touched.</strong> This deletes only the index Samosa built. Every document stays exactly where it is, unchanged.</p>
+          <div class="chutni-panel-actions">
+            <button type="button" class="chutni-secondary" id="chutniForgetCancel">Keep it</button>
+            <button type="button" class="chutni-danger" id="chutniForgetConfirm">Forget memory</button>
+          </div>
         </div>
       </section>
 
@@ -2272,6 +2365,407 @@
           item.classList.toggle("active", on); item.setAttribute("aria-selected", String(on));
         }
         if (jobs && !jobEls.folder.value) jobEls.folder.focus();
+        if (chutni) refreshChutni(); else stopChutniPolling();
+      }
+
+      // =====================================================================
+      // T3.3 — Chutni library and scope views.
+      //
+      // One rule shapes all of it: every visible number comes from the server
+      // response of the current refresh. Nothing is carried in a client-side
+      // counter, so a reload mid-build reconstructs the same view rather than
+      // restarting a local animation at zero (T3.3 acceptance).
+      // =====================================================================
+      const chutniEls = {
+        view: $("chutniView"), empty: $("chutniEmpty"), pane: $("chutniPane"),
+        list: $("chutniList"), error: $("chutniError"), subhead: $("chutniSubhead"),
+        add: $("chutniAdd"), addEmpty: $("chutniAddEmpty"),
+        addPanel: $("chutniAddPanel"), path: $("chutniPath"), preflight: $("chutniPreflight"),
+        addNext: $("chutniAddNext"), addCancel: $("chutniAddCancel"),
+        forgetPanel: $("chutniForgetPanel"), forgetWhat: $("chutniForgetWhat"),
+        forgetConfirm: $("chutniForgetConfirm"), forgetCancel: $("chutniForgetCancel")
+      };
+      let chutniScopes = [];        // full summaries, server truth
+      let chutniPollTimer = null;
+      let chutniPreflightId = null; // set once a preflight has been accepted
+      let chutniForgetId = null;
+
+      const KB = 1024;
+      function bytesLabel(n) {
+        if (typeof n !== "number" || !isFinite(n) || n < 0) return null;
+        if (n < KB) return `${n} B`;
+        const units = ["KB", "MB", "GB", "TB"];
+        let v = n / KB, i = 0;
+        while (v >= KB && i < units.length - 1) { v /= KB; i++; }
+        return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+      }
+      // Timestamps are shown as the server's own ISO value rendered locally.
+      // "3 minutes ago" would imply a precision the build clock does not have.
+      function whenLabel(iso) {
+        if (!iso) return null;
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? null : d.toLocaleString();
+      }
+
+      function stopChutniPolling() {
+        if (chutniPollTimer) { clearTimeout(chutniPollTimer); chutniPollTimer = null; }
+      }
+      // Polls only while something is genuinely moving. A settled library
+      // makes no requests at all.
+      function scheduleChutniPoll() {
+        stopChutniPolling();
+        if (navEls.chutniView.hidden) return;
+        if (!chutniScopes.some(s => CHUTNI_BUSY.has(s.state))) return;
+        chutniPollTimer = setTimeout(refreshChutni, 1500);
+      }
+      const CHUTNI_BUSY = new Set(["building", "queued", "canceling", "improving"]);
+
+      async function refreshChutni() {
+        try {
+          const r = await authFetch("/v1/chutni/scopes", { cache: "no-store" });
+          if (!r.ok) throw new Error(`scopes ${r.status}`);
+          const list = (await r.json()).scopes || [];
+          // The registry carries only id/root/state; the per-scope document is
+          // the one with counts and phase, so each is fetched for its own view.
+          const full = await Promise.all(list.map(async entry => {
+            try {
+              const d = await authFetch(`/v1/chutni/scopes/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
+              return d.ok ? await d.json() : { ...entry, state: entry.state || "unknown", unreadable: true };
+            } catch (_) { return { ...entry, state: entry.state || "unknown", unreadable: true }; }
+          }));
+          chutniScopes = full;
+          chutniEls.error.hidden = true;
+        } catch (err) {
+          // A library that cannot be read is its own state: say so and offer
+          // the retry rather than rendering an empty library, which would read
+          // as "you have no memories".
+          chutniEls.error.hidden = false;
+          chutniEls.error.textContent = "Could not read your Chutni library from the local server. It may still be starting.";
+          chutniScopes = null;
+        }
+        renderChutni();
+        scheduleChutniPoll();
+      }
+
+      // Maps a scope document to how it should read. Every branch that is not
+      // "working normally" must supply an action, per T3.3's requirement that
+      // every error state has a safe next one.
+      function chutniPresentation(s) {
+        const warn = Array.isArray(s.warnings) ? s.warnings : [];
+        const gen = s.evidence_generation || 0;
+        if (s.unreadable)
+          return { chip: "unreadable", tone: "warn",
+                   why: "Samosa could not read this scope's status file.", actions: ["retry"] };
+        switch (s.state) {
+          case "disconnected":
+            return { chip: "drive disconnected", tone: "warn",
+                     why: "The volume this folder lives on is not attached, so it cannot be refreshed. "
+                        + (gen ? "The memory Samosa already built is still searchable." : "No memory was built yet."),
+                     actions: gen ? ["recheck", "forget"] : ["recheck", "forget"] };
+          case "permission":
+            return { chip: "needs permission", tone: "warn",
+                     why: "Samosa no longer has permission to read this folder. Grant access in System Settings › Privacy & Security, then re-check.",
+                     actions: ["recheck", "forget"] };
+          case "paused_user":
+            return { chip: "paused", tone: "busy", why: "You paused this build. It resumes exactly where it stopped.",
+                     actions: ["resume", "cancel"] };
+          case "paused_chat":
+            return { chip: "paused for chat", tone: "busy",
+                     why: "Paused automatically so the model stays responsive while you are chatting. It resumes on its own.",
+                     actions: ["resume", "cancel"] };
+          case "queued":
+            return { chip: "queued", tone: "busy", why: "Waiting to start.", actions: ["cancel"] };
+          case "building":
+            return { chip: "building", tone: "busy", why: null, actions: ["pause", "cancel"] };
+          case "canceling":
+            return { chip: "canceling", tone: "busy", why: "Stopping. Nothing already published is removed.", actions: [] };
+          case "failed_initial":
+            return { chip: "first build failed", tone: "warn",
+                     why: "The first build did not finish, so there is no memory to search yet. Nothing was left half-written.",
+                     actions: ["build", "forget"] };
+          case "canceled_initial":
+            return { chip: "canceled", tone: "warn",
+                     why: "You canceled the first build, so there is no memory to search yet.",
+                     actions: ["build", "forget"] };
+          case "failed":
+            return { chip: "refresh failed", tone: "warn",
+                     why: "The last refresh did not finish. The memory from before it is still searchable.",
+                     actions: ["build", "forget"] };
+          case "unbuilt":
+            return { chip: "not built", tone: null, why: "Nothing has been scanned yet.", actions: ["build", "forget"] };
+          case "ready": {
+            // "Ready" describes published evidence only. Summaries improving on
+            // top of it is a separate, additive state and is labelled as such --
+            // it must never make published evidence look unfinished, and
+            // unpublished evidence must never be called Ready.
+            const improving = s.enhancement_state === "improving";
+            return { chip: improving ? "ready · improving summaries" : "ready", tone: "ok",
+                     why: warn.length ? null : null, actions: ["build", "forget"] };
+          }
+          default:
+            return { chip: s.state || "unknown", tone: null, why: null, actions: ["build", "forget"] };
+        }
+      }
+
+      // Phase rows. A stage with a known completed/total renders a real
+      // proportion; a stage that is running with no total renders indeterminate
+      // motion and no number. No stage is ever merged with another, and no ETA
+      // is shown -- extraction speed says nothing about model-summary speed.
+      function chutniPhaseRows(s) {
+        const rows = [];
+        const phase = s.phase || "";
+        const known = (done, total) => typeof done === "number" && typeof total === "number" && total > 0;
+        const add = (label, done, total, active) => {
+          if (!active && !known(done, total)) return;
+          rows.push({ label, done, total, determinate: known(done, total), active });
+        };
+        if (CHUTNI_BUSY.has(s.state)) {
+          add("Looking through files", s.files_indexed, s.regular_files_seen, phase === "inventory" || !phase);
+          add("Reading documents", s.files_indexed, s.regular_files_seen, phase === "extract");
+          add("Preparing text", s.chunks_indexed, s.chunks_total, phase === "tokenize");
+          add("Publishing", null, null, phase === "publish");
+        }
+        if (s.enhancement_state === "improving")
+          add("Improving summaries", s.chunks_summarized, s.chunks_total, true);
+        return rows;
+      }
+
+      function renderChutni() {
+        if (chutniScopes === null) {          // read failure
+          chutniEls.empty.hidden = true; chutniEls.pane.hidden = false;
+          chutniEls.list.innerHTML = "";
+          return;
+        }
+        const any = chutniScopes.length > 0;
+        const panelOpen = !chutniEls.addPanel.hidden || !chutniEls.forgetPanel.hidden;
+        chutniEls.empty.hidden = any || panelOpen;
+        chutniEls.pane.hidden = !any || panelOpen;
+        if (!any) return;
+
+        chutniEls.subhead.textContent = chutniScopes.length === 1
+          ? "1 folder remembered." : `${chutniScopes.length} folders remembered.`;
+        chutniEls.list.innerHTML = "";
+        for (const s of chutniScopes) chutniEls.list.appendChild(chutniCard(s));
+      }
+
+      function chutniCard(s) {
+        const p = chutniPresentation(s);
+        const li = document.createElement("li");
+        li.className = "chutni-card";
+
+        const top = document.createElement("div"); top.className = "chutni-card-top";
+        const namebox = document.createElement("div");
+        const name = document.createElement("div"); name.className = "chutni-name";
+        name.textContent = s.display_name || s.id;
+        const path = document.createElement("p"); path.className = "chutni-path";
+        path.textContent = s.canonical_root || "";
+        namebox.appendChild(name); namebox.appendChild(path);
+        const chip = document.createElement("span");
+        chip.className = "chutni-chip" + (p.tone ? ` ${p.tone}` : "");
+        chip.textContent = p.chip;
+        top.appendChild(namebox); top.appendChild(chip);
+        li.appendChild(top);
+
+        // Facts, each omitted rather than guessed when the server did not send
+        // it. A missing count is not a zero.
+        const facts = [];
+        if (typeof s.files_indexed === "number") {
+          const seen = typeof s.regular_files_seen === "number" ? s.regular_files_seen : null;
+          facts.push(["Files remembered", seen === null ? `${s.files_indexed}` : `${s.files_indexed} of ${seen}`]);
+        }
+        if (typeof s.files_skipped === "number" && s.files_skipped > 0) facts.push(["Skipped", `${s.files_skipped}`]);
+        if (typeof s.chunks_indexed === "number") facts.push(["Passages", `${s.chunks_indexed}`]);
+        const size = bytesLabel(s.index_bytes);
+        if (size) facts.push(["Memory size", size]);
+        const built = whenLabel(s.last_successful_build_at);
+        if (built) facts.push(["Last built", built]);
+        if (facts.length) {
+          const ul = document.createElement("ul"); ul.className = "chutni-facts";
+          for (const [k, v] of facts) {
+            const li2 = document.createElement("li");
+            li2.appendChild(document.createTextNode(`${k} `));
+            const b = document.createElement("b"); b.textContent = v; li2.appendChild(b);
+            ul.appendChild(li2);
+          }
+          li.appendChild(ul);
+        }
+
+        // Exclusions are shown because a user who cannot see why a file is
+        // missing has no way to tell an exclusion from a bug.
+        const pol = s.effective_policy || {};
+        const excl = [].concat(pol.mandatory_exclusions || [], pol.user_exclusions || []);
+        if (excl.length || pol.include_hidden === false) {
+          const note = document.createElement("p"); note.className = "chutni-why";
+          const parts = [];
+          if (pol.include_hidden === false) parts.push("hidden files");
+          if (excl.length) parts.push(excl.join(", "));
+          note.textContent = `Not included: ${parts.join(", ")}.`;
+          li.appendChild(note);
+        }
+
+        for (const row of chutniPhaseRows(s)) {
+          const wrap = document.createElement("div"); wrap.className = "chutni-phase";
+          const label = document.createElement("span"); label.textContent = row.label;
+          const count = document.createElement("span");
+          count.textContent = row.determinate ? `${row.done} / ${row.total}` : "";
+          const bar = document.createElement("div");
+          bar.className = "chutni-phase-bar" + (row.determinate ? "" : " indeterminate");
+          const fill = document.createElement("i");
+          if (row.determinate) fill.style.width = `${Math.min(100, Math.round((row.done / row.total) * 100))}%`;
+          bar.appendChild(fill);
+          wrap.appendChild(label); wrap.appendChild(count); wrap.appendChild(bar);
+          if (!li.querySelector(".chutni-phases")) {
+            const box = document.createElement("div"); box.className = "chutni-phases"; li.appendChild(box);
+          }
+          li.querySelector(".chutni-phases").appendChild(wrap);
+        }
+
+        if (p.why) {
+          const why = document.createElement("p");
+          why.className = "chutni-why" + (p.tone === "warn" ? " bad" : "");
+          why.textContent = p.why;
+          li.appendChild(why);
+        }
+        for (const w of (s.warnings || [])) {
+          const why = document.createElement("p"); why.className = "chutni-why bad";
+          why.textContent = typeof w === "string" ? w : (w.message || JSON.stringify(w));
+          li.appendChild(why);
+        }
+
+        const LABELS = { build: "Refresh", resume: "Resume", pause: "Pause", cancel: "Cancel",
+                         recheck: "Check again", retry: "Try again", forget: "Forget" };
+        if (p.actions.length) {
+          const box = document.createElement("div"); box.className = "chutni-actions";
+          for (const a of p.actions) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = a === "forget" ? "chutni-secondary" : (a === "build" || a === "resume" ? "chutni-primary" : "chutni-secondary");
+            b.textContent = LABELS[a] || a;
+            b.onclick = () => chutniAction(s, a);
+            box.appendChild(b);
+          }
+          li.appendChild(box);
+        }
+        return li;
+      }
+
+      async function chutniAction(scope, action) {
+        if (action === "forget") { chutniForgetId = scope.id; openChutniForget(scope); return; }
+        if (action === "retry" || action === "recheck") { await refreshChutni(); return; }
+        try {
+          const r = await authFetch(`/v1/chutni/scopes/${encodeURIComponent(scope.id)}/${action}`,
+                                    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          if (!r.ok) {
+            const detail = await r.json().catch(() => null);
+            throw new Error((detail && detail.error && detail.error.message) || `${action} failed`);
+          }
+          chutniEls.error.hidden = true;
+        } catch (err) {
+          chutniEls.error.hidden = false;
+          chutniEls.error.textContent = err.message || `Could not ${action} that folder.`;
+        }
+        await refreshChutni();
+      }
+
+      function openChutniForget(scope) {
+        chutniEls.forgetWhat.textContent =
+          `Samosa will delete the index it built for “${scope.display_name || scope.id}”.`;
+        chutniEls.pane.hidden = true; chutniEls.empty.hidden = true;
+        chutniEls.forgetPanel.hidden = false;
+        chutniEls.forgetCancel.focus();
+      }
+      function closeChutniPanels() {
+        chutniEls.addPanel.hidden = true; chutniEls.forgetPanel.hidden = true;
+        chutniPreflightId = null; chutniForgetId = null;
+        chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
+        chutniEls.addNext.textContent = "Check folder";
+        renderChutni();
+      }
+
+      function openChutniAdd() {
+        chutniEls.path.value = "";
+        chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
+        chutniPreflightId = null;
+        chutniEls.addNext.textContent = "Check folder";
+        chutniEls.pane.hidden = true; chutniEls.empty.hidden = true;
+        chutniEls.addPanel.hidden = false;
+        chutniEls.path.focus();
+      }
+
+      // Two-step: preflight reports what would be scanned and what it will
+      // cost, and only a second, explicit click starts any scanning.
+      async function chutniAddNext() {
+        const path = (chutniEls.path.value || "").trim();
+        if (!path) { chutniEls.path.focus(); return; }
+        if (!chutniPreflightId) {
+          try {
+            const r = await authFetch("/v1/chutni/preflight", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "folder", roots: [{ path }] })
+            });
+            const body = await r.json().catch(() => null);
+            if (!r.ok) throw new Error((body && body.error && body.error.message) || "That folder could not be checked.");
+            renderPreflight(body);
+            chutniPreflightId = body.preflight_id || "accepted";
+            chutniEls.addNext.textContent = "Build memory";
+          } catch (err) {
+            chutniEls.preflight.hidden = false;
+            chutniEls.preflight.textContent = err.message;
+          }
+          return;
+        }
+        try {
+          const r = await authFetch("/v1/chutni/scopes", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "folder", display_name: baseName(path), roots: [{ path }] })
+          });
+          const body = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((body && body.error && body.error.message) || "That folder could not be added.");
+          closeChutniPanels();
+          await refreshChutni();
+        } catch (err) {
+          chutniEls.preflight.hidden = false;
+          chutniEls.preflight.textContent = err.message;
+        }
+      }
+
+      function renderPreflight(pf) {
+        const est = pf.estimate || {}, pol = pf.effective_policy || {};
+        const dl = document.createElement("dl");
+        const row = (k, v) => {
+          if (v === null || v === undefined) return;
+          const dt = document.createElement("dt"); dt.textContent = k;
+          const dd = document.createElement("dd"); dd.textContent = v;
+          dl.appendChild(dt); dl.appendChild(dd);
+        };
+        // "About" is honest for a sampled estimate; an exact-looking number
+        // from a sample would be fake precision.
+        const approx = est.sampled ? "About " : "";
+        if (typeof est.files === "number") row("Files", `${approx}${est.files}`);
+        row("Source size", bytesLabel(est.source_bytes));
+        const need = bytesLabel(est.peak_additional_disk_bytes), free = bytesLabel(est.available_disk_bytes);
+        if (need) row("Extra disk needed", free ? `${need} (${free} free)` : need);
+        if (pol.include_hidden === false) row("Hidden files", "Not included");
+        const excl = [].concat(pol.mandatory_exclusions || [], pol.user_exclusions || []);
+        if (excl.length) row("Excluded", excl.join(", "));
+        chutniEls.preflight.innerHTML = "";
+        chutniEls.preflight.appendChild(dl);
+        const roots = pf.roots || [];
+        const bad = roots.filter(r => r.readable === false || r.connected === false);
+        for (const b of bad) {
+          const p = document.createElement("p"); p.className = "chutni-why bad";
+          p.textContent = b.connected === false
+            ? `${b.path} is on a volume that is not attached.`
+            : `${b.path} cannot be read with Samosa's current permissions.`;
+          chutniEls.preflight.appendChild(p);
+        }
+        for (const w of (pf.warnings || [])) {
+          const p = document.createElement("p"); p.className = "chutni-why";
+          p.textContent = typeof w === "string" ? w : (w.message || JSON.stringify(w));
+          chutniEls.preflight.appendChild(p);
+        }
+        if (bad.length) { chutniEls.addNext.textContent = "Check folder"; chutniPreflightId = null; }
+        chutniEls.preflight.hidden = false;
       }
 
       const baseName = p => (p || "").split("/").filter(Boolean).pop() || p;
@@ -2898,6 +3392,42 @@
       if (migrationRecoveryRaw) showMigrationBanner();
       els.modelBackend.onchange=switchBackend;
       navEls.chat.onclick=()=>showView("chat"); navEls.chutni.onclick=()=>showView("chutni"); navEls.jobs.onclick=()=>showView("jobs");
+      // T3.3 wiring.
+      chutniEls.add.onclick = openChutniAdd;
+      chutniEls.addEmpty.onclick = openChutniAdd;
+      chutniEls.addCancel.onclick = closeChutniPanels;
+      chutniEls.addNext.onclick = chutniAddNext;
+      chutniEls.path.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); chutniAddNext(); } };
+      // A new path invalidates an accepted preflight: the estimate on screen
+      // describes the old folder, and building from it would scan something
+      // the user never confirmed.
+      chutniEls.path.oninput = () => {
+        if (!chutniPreflightId) return;
+        chutniPreflightId = null;
+        chutniEls.addNext.textContent = "Check folder";
+        chutniEls.preflight.hidden = true;
+      };
+      chutniEls.forgetCancel.onclick = closeChutniPanels;
+      chutniEls.forgetConfirm.onclick = async () => {
+        const id = chutniForgetId;
+        if (!id) { closeChutniPanels(); return; }
+        try {
+          const r = await authFetch(`/v1/chutni/scopes/${encodeURIComponent(id)}/forget`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: true, client_request_id: `forget-${Date.now()}` })
+          });
+          if (!r.ok) {
+            const detail = await r.json().catch(() => null);
+            throw new Error((detail && detail.error && detail.error.message) || "That memory could not be forgotten.");
+          }
+          closeChutniPanels();
+        } catch (err) {
+          closeChutniPanels();
+          chutniEls.error.hidden = false;
+          chutniEls.error.textContent = err.message;
+        }
+        await refreshChutni();
+      };
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
       jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
       jobEls.previewDef.onclick=previewDefinitionJob;

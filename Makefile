@@ -348,6 +348,9 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	$(MAKE) test-chutni
 	$(MAKE) chutni-gateway-test
 	$(MAKE) test-kimi-converter
+# T3.3 view logic. Skips with a message where node is unavailable rather than
+# passing silently -- the rendering itself cannot be verified headlessly.
+	sh tests/test_chutni_views.sh
 
 # test-all adds the gates that need a toolchain beyond a C compiler. The
 # Gigatoken adapter needs `cargo +nightly`, so it is deliberately not in

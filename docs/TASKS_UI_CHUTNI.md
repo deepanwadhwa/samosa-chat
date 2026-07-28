@@ -1217,6 +1217,31 @@ changed_during_read
 
 #### 5.6.1 Gigatoken adapter boundary
 
+**Scope views (T3.3, landed 2026-07-28):** the Chutni tab renders a real
+library from server truth. Empty, add, preflight, building, ready,
+ready-improving, paused (user and chat, distinguishable), permission,
+disconnected, failed/failed-initial, canceled-initial, attention (warnings),
+and forget-confirmation are all implemented in `assets/app.html`.
+
+Rules honoured: nothing is held in a client-side counter, so reloading a
+long-running view reconstructs it from the next `GET`; polling runs only while
+a scope is genuinely busy; extraction, tokenization, publication and summary
+improvement are separate labelled rows that are never blended and carry no
+ETA; a phase with no known total renders indeterminate motion and no number;
+a missing count is omitted rather than shown as zero; and forget confirmation
+states plainly that user files are unchanged.
+
+Live events are deliberately *not* wired — per this task, that waits for T4.5.
+Progress comes from polling the scope document.
+
+`tests/test_chutni_views.sh` extracts the decision functions from the shipped
+page (not a copy) and asserts the acceptance rules: every error state has a
+next action and an explanation, no internal state name leaks into a label,
+unpublished evidence is never labelled ready, zero totals never become
+proportions, and summaries never merge into evidence progress. It skips with a
+message where node is absent. Validated by removing a state's actions and
+confirming the suite fails.
+
 **Injected-failure recovery (T4.5, landed 2026-07-28):**
 `tests/test_chutni_recovery.sh` injects volume detach, permission loss,
 SIGKILL landed mid-build, and a genuinely full filesystem, and asserts the same
