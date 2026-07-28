@@ -1,0 +1,17 @@
+[package]
+name = "samosa-gigatoken-adapter"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Bounded offline Samosa adapter for the vendored Gigatoken tokenizer core"
+
+[dependencies]
+eyre = "0.6.12"
+serde = { version = "1.0.228", features = ["derive"] }
+sonic-rs = "0.5.8"
+samosa-gigatoken-core = { path = "vendor/gigatoken" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

@@ -1,0 +1,21 @@
+[package]
+name = "samosa-gigatoken-core"
+version = "0.10.0-samosa.1"
+edition = "2024"
+license = "MIT"
+description = "Vendored local-only tokenizer core derived from gigatoken 0.10.0"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aho-corasick = "1.1"
+base64 = "0.22"
+eyre = "0.6.12"
+icu = { version = "2.2", features = ["compiled_data", "datagen"] }
+memchr = "2.8.0"
+rayon = "1.11"
+rustc-hash = "2.1"
+serde = { version = "1.0.228", features = ["derive"] }
+sonic-rs = "0.5.8"
+spm_precompiled = "0.1.4"

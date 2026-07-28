@@ -95,6 +95,17 @@ typedef struct {
        tests/test_compiled_gateway.sh's vision-backend scenario. */
     pthread_mutex_t selection_mu;
     char active_selection_job_id[40];
+    /* Chutni is a gateway-owned durable job.  The SQLite sidecar remains the
+       only writer of evidence; this small controller owns HTTP lifecycle,
+       admission, and the child process that can be stopped and resumed. */
+    pthread_mutex_t chutni_mu;
+    pthread_t chutni_thread;
+    int chutni_worker_active;
+    char chutni_active_scope_id[96];
+    char chutni_active_job_id[96];
+    atomic_int chutni_control; /* 0=run, 1=pause, 2=cancel */
+    char chutni_root[PATH_MAX];
+    char chutni_db[PATH_MAX];
 } Gateway;
 
 #define MAX_PUBLIC_JOB_URLS 20
@@ -137,6 +148,7 @@ static int backend_probe(Gateway *g);
 static const char *backend_model(const char *name);
 static int backend_supports_images(Gateway *g, const char *name);
 static int sse_json(int fd, const char *json);
+static int durable_job_id_generate(char out[40]);
 typedef struct Profile Profile;
 /* T2.4: resolves setup/status's next_step against real T2.1-2.3 catalog/
    install/selection state (defined later in this file, after that state's
@@ -5013,6 +5025,7 @@ static void backend_stop(Gateway *g) {
 }
 
 static void jobs_stop(Gateway *g) {
+    atomic_store(&g->chutni_control, 2);
     pid_t pids[16] = {0};
     pthread_mutex_lock(&g->mu);
     memcpy(pids, g->job_pids, sizeof(pids));
@@ -9302,6 +9315,446 @@ static int models_selection_dispatch(Gateway *g, int fd, const SamosaHttpRequest
     return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
 }
 
+/* -------------------------------------------------------------------------
+ * Chutni HTTP lifecycle (T4.5). The database sidecar owns inventory,
+ * extraction/chunk publication, and rollback. The gateway owns only the
+ * durable job handle and its cancellable child.
+ */
+
+static int chutni_scope_dir(Gateway *g, const char *scope_id, char out[PATH_MAX]) {
+    if (!durable_id_valid(scope_id)) return 0;
+    char scopes[PATH_MAX];
+    return path_join(scopes, sizeof(scopes), g->chutni_root, "scopes") &&
+           path_join(out, PATH_MAX, scopes, scope_id);
+}
+
+static int chutni_job_path(Gateway *g, const char *scope_id, const char *name,
+                           char out[PATH_MAX]) {
+    char dir[PATH_MAX];
+    return chutni_scope_dir(g, scope_id, dir) && path_join(out, PATH_MAX, dir, name);
+}
+
+static int chutni_job_event(Gateway *g, const char *scope_id, const char *job_id,
+                            const char *state, const char *phase,
+                            const char *message) {
+    char path[PATH_MAX];
+    if (!chutni_job_path(g, scope_id, "events.jsonl", path)) return 0;
+    long seq = 1;
+    FILE *f = fopen(path, "r");
+    if (f) { char line[4096]; while (fgets(line, sizeof(line), f)) seq++; fclose(f); }
+    long completed = 0;
+    return durable_event_append(path, seq, job_id, "chutni_build", state, phase,
+                                &completed, NULL, "files", "", message);
+}
+
+static int chutni_job_write(Gateway *g, const char *scope_id, const char *job_id,
+                            const char *state, const char *phase,
+                            unsigned long long generation, const char *message) {
+    char path[PATH_MAX]; TextBuffer b = {0};
+    if (!chutni_job_path(g, scope_id, "job.json", path) ||
+        !text_add(&b, "{\"schema_version\":1,\"job_id\":") ||
+        !text_json_string(&b, job_id) || !text_add(&b, ",\"scope_id\":") ||
+        !text_json_string(&b, scope_id) || !text_add(&b, ",\"kind\":\"build\",\"state\":") ||
+        !text_json_string(&b, state) || !text_add(&b, ",\"phase\":") ||
+        !text_json_string(&b, phase) || !text_add(&b, ",\"evidence_generation_target\":")) {
+        free(b.data); return 0;
+    }
+    char n[64]; snprintf(n, sizeof(n), "%llu", generation);
+    int ok = text_add(&b, n) && text_add(&b, ",\"message\":") &&
+             text_json_string(&b, message ? message : "") && text_add(&b, "}\n") &&
+             write_small_file(path, b.data);
+    free(b.data);
+    return ok;
+}
+
+static int chutni_job_load(Gateway *g, const char *scope_id, char job_id[96],
+                           char state[32], unsigned long long *generation) {
+    char path[PATH_MAX], *raw = NULL, *arena = NULL;
+    if (!chutni_job_path(g, scope_id, "job.json", path) ||
+        !(raw = read_file_limit(path, 65536))) return 0;
+    jval *root = json_parse(raw, &arena);
+    jval *id = root && root->t == J_OBJ ? json_get(root, "job_id") : NULL;
+    jval *st = root && root->t == J_OBJ ? json_get(root, "state") : NULL;
+    jval *gen = root && root->t == J_OBJ ? json_get(root, "evidence_generation_target") : NULL;
+    int ok = id && id->t == J_STR && valid_job_id(id->str) && st && st->t == J_STR;
+    if (ok) {
+        path_copy(job_id, 96, id->str); path_copy(state, 32, st->str);
+        if (generation) *generation = gen && gen->t == J_NUM ? (unsigned long long)gen->num : 0;
+    }
+    json_free(root); free(arena); free(raw); return ok;
+}
+
+typedef struct {
+    Gateway *g;
+    char scope_id[96], job_id[96];
+    unsigned long long generation;
+} ChutniWorkerArgs;
+
+static void *chutni_worker(void *opaque) {
+    ChutniWorkerArgs *args = opaque; Gateway *g = args->g;
+    char state_dir[PATH_MAX], tokenizer[PATH_MAX];
+    path_copy(state_dir, sizeof(state_dir), g->chutni_root);
+    path_copy(tokenizer, sizeof(tokenizer), g->tokenizer);
+    chutni_job_write(g, args->scope_id, args->job_id, "running", "inventory", args->generation,
+                     "The scope build is running.");
+    chutni_job_event(g, args->scope_id, args->job_id, "running", "inventory",
+                     "The scope build is running.");
+
+    pid_t child = fork(); int status = 1;
+    if (child == 0) {
+        char *argv[] = {g->chutni_db, (char *)"scope-build", state_dir,
+                        args->scope_id, tokenizer, g->samosa_extract, g->samosa_ocr, NULL};
+        execv(g->chutni_db, argv); _Exit(127);
+    }
+    if (child > 0) {
+        track_job_pid(g, child, 1); int signaled = 0;
+        for (;;) {
+            pid_t waited = waitpid(child, &status, WNOHANG);
+            if (waited == child || waited < 0) break;
+            int control = atomic_load(&g->chutni_control);
+            if (control && !signaled) { kill(child, SIGTERM); signaled = control; }
+            sleep_millis(50);
+        }
+        track_job_pid(g, child, 0);
+        if (signaled == 1) status = (status & ~0xff) | 2;
+        else if (signaled == 2) status = (status & ~0xff) | 3;
+    }
+
+    int control = atomic_load(&g->chutni_control);
+    const char *final_state = "failed", *phase = "finalizing";
+    const char *message = "The scope build failed.";
+    if (control == 1) { final_state = "paused_user"; phase = "inventory"; message = "Paused by the user."; }
+    else if (control == 2) { final_state = "canceled"; message = "Canceled by the user."; }
+    else if (child > 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        final_state = "completed"; message = "Evidence published.";
+    }
+    unsigned long long target = 0;
+    char active_path[PATH_MAX];
+    if (chutni_job_path(g, args->scope_id, "active.json", active_path)) {
+        char *raw = read_file_limit(active_path, 16384), *arena = NULL;
+        jval *root = raw ? json_parse(raw, &arena) : NULL;
+        jval *v = root && root->t == J_OBJ ? json_get(root, "evidence_generation") : NULL;
+        if (v && v->t == J_NUM) target = (unsigned long long)v->num;
+        json_free(root); free(arena); free(raw);
+    }
+    if (!target) {
+        target = args->generation;
+    }
+    chutni_job_write(g, args->scope_id, args->job_id, final_state, phase, target, message);
+    chutni_job_event(g, args->scope_id, args->job_id,
+                     !strcmp(final_state, "completed") ? "completed" :
+                     !strcmp(final_state, "paused_user") ? "paused_user" :
+                     !strcmp(final_state, "canceled") ? "canceled" : "failed",
+                     phase, message);
+    pthread_mutex_lock(&g->chutni_mu);
+    if (!strcmp(g->chutni_active_scope_id, args->scope_id) &&
+        !strcmp(g->chutni_active_job_id, args->job_id)) {
+        g->chutni_worker_active = 0;
+        g->chutni_active_scope_id[0] = 0; g->chutni_active_job_id[0] = 0;
+    }
+    pthread_mutex_unlock(&g->chutni_mu);
+    free(args); return NULL;
+}
+
+static int chutni_start_worker(Gateway *g, const char *scope_id, const char *job_id,
+                               unsigned long long generation, const char *initial_state) {
+    pthread_mutex_lock(&g->chutni_mu);
+    if (g->chutni_worker_active) { pthread_mutex_unlock(&g->chutni_mu); return 0; }
+    g->chutni_worker_active = 1;
+    path_copy(g->chutni_active_scope_id, sizeof(g->chutni_active_scope_id), scope_id);
+    path_copy(g->chutni_active_job_id, sizeof(g->chutni_active_job_id), job_id);
+    atomic_store(&g->chutni_control, 0);
+    pthread_mutex_unlock(&g->chutni_mu);
+    chutni_job_write(g, scope_id, job_id, initial_state, "inventory", generation,
+                     "Queued for the Chutni sidecar.");
+    chutni_job_event(g, scope_id, job_id, "queued", "inventory", "Queued for the Chutni sidecar.");
+    ChutniWorkerArgs *args = calloc(1, sizeof(*args));
+    if (!args) {
+        pthread_mutex_lock(&g->chutni_mu);
+        g->chutni_worker_active = 0;
+        g->chutni_active_scope_id[0] = 0;
+        g->chutni_active_job_id[0] = 0;
+        pthread_mutex_unlock(&g->chutni_mu);
+        return 0;
+    }
+    args->g = g; path_copy(args->scope_id, sizeof(args->scope_id), scope_id);
+    path_copy(args->job_id, sizeof(args->job_id), job_id);
+    args->generation = generation;
+    if (pthread_create(&g->chutni_thread, NULL, chutni_worker, args) != 0) {
+        free(args); pthread_mutex_lock(&g->chutni_mu); g->chutni_worker_active = 0; pthread_mutex_unlock(&g->chutni_mu);
+        return 0;
+    }
+    pthread_detach(g->chutni_thread); return 1;
+}
+
+static void chutni_repair_after_restart(Gateway *g) {
+    char scopes[PATH_MAX];
+    if (!path_join(scopes, sizeof(scopes), g->chutni_root, "scopes")) return;
+    DIR *dir = opendir(scopes); if (!dir) return;
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (!durable_id_valid(entry->d_name)) continue;
+        char job_id[96] = {0}, state[32] = {0}; unsigned long long generation = 0;
+        if (!chutni_job_load(g, entry->d_name, job_id, state, &generation)) continue;
+        if (strcmp(state, "queued") && strcmp(state, "running") && strcmp(state, "canceling")) continue;
+        chutni_job_write(g, entry->d_name, job_id, "paused_user", "inventory", generation,
+                         "Paused because the gateway restarted.");
+        chutni_job_event(g, entry->d_name, job_id, "paused_user", "inventory",
+                         "Paused because the gateway restarted.");
+    }
+    closedir(dir);
+}
+
+static void chutni_stop_for_shutdown(Gateway *g) {
+    atomic_store(&g->chutni_control, 2);
+    for (int i = 0; i < 100; ++i) {
+        pthread_mutex_lock(&g->chutni_mu);
+        int active = g->chutni_worker_active;
+        pthread_mutex_unlock(&g->chutni_mu);
+        if (!active) return;
+        sleep_millis(20);
+    }
+}
+
+static void chutni_wait_worker_idle(Gateway *g, const char *scope_id, const char *job_id) {
+    for (int i = 0; i < 200; ++i) {
+        pthread_mutex_lock(&g->chutni_mu);
+        int active = g->chutni_worker_active &&
+                     !strcmp(g->chutni_active_scope_id, scope_id) &&
+                     !strcmp(g->chutni_active_job_id, job_id);
+        pthread_mutex_unlock(&g->chutni_mu);
+        if (!active) return;
+        sleep_millis(20);
+    }
+}
+
+static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *root = json_parse(request->body, &arena);
+    jval *kind = root && root->t == J_OBJ ? json_get(root, "kind") : NULL;
+    jval *roots = root && root->t == J_OBJ ? json_get(root, "roots") : NULL;
+    jval *first = roots && roots->t == J_ARR && roots->len == 1 ? roots->kids[0] : NULL;
+    jval *path_v = first && first->t == J_OBJ ? json_get(first, "path") : NULL;
+    char canonical[PATH_MAX]; struct stat st;
+    if (!kind || kind->t != J_STR || strcmp(kind->str, "folder") ||
+        !path_v || path_v->t != J_STR || !realpath(path_v->str, canonical) ||
+        stat(canonical, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_preflight", "A readable folder root is required.");
+    }
+    char id[40]; if (!durable_job_id_generate(id)) { json_free(root); free(arena); return samosa_http_json_error(fd, 500, "id_generation_failed", "A preflight could not be created."); }
+    char dir[PATH_MAX], file[PATH_MAX];
+    int ok = path_join(dir, sizeof(dir), g->chutni_root, "preflights") && mkdirs(dir) && path_join(file, sizeof(file), dir, id);
+    TextBuffer b = {0}; char volume[64], identity[96];
+    snprintf(volume, sizeof(volume), "%llu", (unsigned long long)st.st_dev);
+    snprintf(identity, sizeof(identity), "%llu:%llu", (unsigned long long)st.st_dev, (unsigned long long)st.st_ino);
+    ok = ok && text_add(&b, "{\"preflight_id\":") && text_json_string(&b, id) &&
+         text_add(&b, ",\"kind\":\"folder\",\"canonical_root\":") && text_json_string(&b, canonical) &&
+         text_add(&b, ",\"volume_identity\":") && text_json_string(&b, volume) &&
+         text_add(&b, ",\"root_file_identity\":") && text_json_string(&b, identity) &&
+         text_add(&b, ",\"effective_policy\":{\"include_hidden\":false,\"cross_filesystems\":false,\"maximum_file_bytes\":268435456,\"mandatory_exclusions\":[\".samosa\"],\"user_exclusions\":[]},\"warnings\":[]}\n") &&
+         write_small_file(file, b.data);
+    free(b.data); json_free(root); free(arena);
+    if (!ok) return samosa_http_json_error(fd, 500, "preflight_failed", "The preflight could not be saved.");
+    char *saved = read_file_limit(file, 8192);
+    int sent = saved && samosa_http_response(fd, 200, "application/json", saved, NULL); free(saved); return sent;
+}
+
+static int chutni_scope_create(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *root = json_parse(request->body, &arena);
+    jval *pf = root && root->t == J_OBJ ? json_get(root, "preflight_id") : NULL;
+    jval *name = root && root->t == J_OBJ ? json_get(root, "display_name") : NULL;
+    char *preflight = NULL, *pf_arena = NULL; jval *p = NULL; char path[PATH_MAX], preflights[PATH_MAX];
+    if (!pf || pf->t != J_STR || !valid_job_id(pf->str) ||
+        !path_join(preflights, sizeof(preflights), g->chutni_root, "preflights") ||
+        !path_join(path, sizeof(path), preflights, pf->str) ||
+        !(preflight = read_file_limit(path, 8192)) || !(p = json_parse(preflight, &pf_arena))) {
+        json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
+        return samosa_http_json_error(fd, 400, "invalid_preflight", "That preflight is unavailable.");
+    }
+    jval *kind = json_get(p, "kind"), *canonical = json_get(p, "canonical_root");
+    if (!kind || kind->t != J_STR || !canonical || canonical->t != J_STR ||
+        !name || name->t != J_STR || !*name->str) {
+        json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
+        return samosa_http_json_error(fd, 400, "invalid_scope", "display_name and a valid preflight are required.");
+    }
+    char scope_id[40]; if (!durable_job_id_generate(scope_id)) { json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight); return samosa_http_json_error(fd, 500, "id_generation_failed", "A scope could not be created."); }
+    char *argv[] = {g->chutni_db, (char *)"scope-create", g->chutni_root, scope_id,
+                    (char *)"folder", name->str, canonical->str, NULL};
+    int status = 0; char *created = run_capture(g, g->chutni_db, argv, 4096, &status);
+    int created_ok = created && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    free(created); json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
+    if (!created_ok) return samosa_http_json_error(fd, 409, "scope_exists", "That folder already has a Chutni scope or cannot be registered.");
+    char job_id[40]; if (!durable_job_id_generate(job_id) || !chutni_start_worker(g, scope_id, job_id, 1, "queued"))
+        return samosa_http_json_error(fd, 500, "job_start_failed", "The scope was created but its build could not start.");
+    TextBuffer out = {0};
+    text_add(&out, "{\"scope_id\":"); text_json_string(&out, scope_id);
+    text_add(&out, ",\"job_id\":"); text_json_string(&out, job_id);
+    text_add(&out, ",\"state\":\"queued\",\"status_url\":\"/v1/chutni/scopes/");
+    text_add(&out, scope_id); text_add(&out, "\",\"events_url\":\"/v1/chutni/scopes/");
+    text_add(&out, scope_id); text_add(&out, "/events?job_id="); text_add(&out, job_id); text_add(&out, "\"}");
+    int sent = samosa_http_response(fd, 201, "application/json", out.data, NULL); free(out.data); return sent;
+}
+
+static int chutni_scope_show(Gateway *g, int fd, const char *scope_id) {
+    if (!durable_id_valid(scope_id)) return samosa_http_json_error(fd, 400, "invalid_scope_id", "The scope identifier is invalid.");
+    char *argv[] = {g->chutni_db, (char *)"scope-show", g->chutni_root, (char *)scope_id, NULL};
+    int status = 0; char *raw = run_capture(g, g->chutni_db, argv, 1 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status) != 0) { free(raw); return samosa_http_json_error(fd, 404, "scope_not_found", "That Chutni scope was not found."); }
+    /* scope.json is the sidecar's durable publication snapshot.  While the
+       gateway worker is active, overlay only the user-visible lifecycle state;
+       never rewrite the sidecar snapshot before publication. */
+    char job_id[96] = {0}, job_state[32] = {0}; unsigned long long generation = 0;
+    if (chutni_job_load(g, scope_id, job_id, job_state, &generation) &&
+        strcmp(job_state, "completed")) {
+        char *arena = NULL; jval *root = json_parse(raw, &arena);
+        jval *state = root && root->t == J_OBJ ? json_get(root, "state") : NULL;
+        const char *visible = !strcmp(job_state, "paused_user") ? "paused_user" :
+                              !strcmp(job_state, "failed") ? "failed_initial" :
+                              !strcmp(job_state, "canceled") ? "canceled_initial" : "building";
+        if (state && state->t == J_STR) {
+            free(state->str); state->str = strdup(visible);
+            TextBuffer snapshot = {0};
+            if (text_json_value(&snapshot, root)) {
+                int sent = samosa_http_response(fd, 200, "application/json", snapshot.data, NULL);
+                free(snapshot.data); json_free(root); free(arena); free(raw); return sent;
+            }
+            free(snapshot.data);
+        }
+        json_free(root); free(arena);
+    }
+    int sent = samosa_http_response(fd, 200, "application/json", raw, NULL); free(raw); return sent;
+}
+
+static int chutni_query(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    char *arena = NULL; jval *body = json_parse(request->body, &arena);
+    jval *query = body && body->t == J_OBJ ? json_get(body, "query") : NULL;
+    jval *ctx = body && body->t == J_OBJ ? json_get(body, "directory_context") : NULL;
+    jval *scope = ctx && ctx->t == J_OBJ ? json_get(ctx, "scope_id") : NULL;
+    if (!query || query->t != J_STR || !scope || scope->t != J_STR ||
+        !durable_id_valid(scope->str)) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_query",
+                                      "query and directory_context.scope_id are required.");
+    }
+    char scope_id[96], query_copy[4096];
+    path_copy(scope_id, sizeof(scope_id), scope->str);
+    path_copy(query_copy, sizeof(query_copy), query->str);
+    json_free(body); free(arena);
+    char *argv[] = {g->chutni_db, (char *)"scope-query", g->chutni_root,
+                    scope_id, query_copy, NULL};
+    int status = 0; char *raw = run_capture(g, g->chutni_db, argv, 2 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        free(raw);
+        return samosa_http_json_error(fd, 409, "scope_not_ready",
+                                      "That Chutni scope is not ready for retrieval.");
+    }
+    TextBuffer out = {0};
+    text_add(&out, "{\"scope_id\":"); text_json_string(&out, scope_id);
+    text_add(&out, ",\"used\":"); text_add(&out, *raw ? "true" : "false");
+    text_add(&out, ",\"reason_code\":\"useful_evidence\",\"results\":[");
+    int first = 1; char *save = NULL;
+    for (char *line = strtok_r(raw, "\n", &save); line;
+         line = strtok_r(NULL, "\n", &save)) {
+        char *a = strchr(line, '\t'); if (!a) continue; *a++ = 0;
+        char *b = strchr(a, '\t'); if (!b) continue; *b++ = 0;
+        char *c = strchr(b, '\t'); if (!c) continue; *c++ = 0;
+        if (!first) text_add(&out, ","); first = 0;
+        text_add(&out, "{\"chunk_id\":"); text_json_string(&out, line);
+        text_add(&out, ",\"citation\":{\"relative_path\":"); text_json_string(&out, a);
+        text_add(&out, "},\"text\":"); text_json_string(&out, c); text_add(&out, "}");
+    }
+    text_add(&out, "]}");
+    int sent = samosa_http_response(fd, 200, "application/json", out.data, NULL);
+    free(out.data); free(raw); return sent;
+}
+
+static int chutni_scope_events(Gateway *g, int fd, const char *scope_id, const SamosaHttpRequest *request) {
+    char path[PATH_MAX]; if (!chutni_job_path(g, scope_id, "events.jsonl", path)) return samosa_http_json_error(fd, 400, "invalid_scope_id", "The scope identifier is invalid.");
+    long after = -1; char requested_job[96] = {0};
+    if (request->query[0]) {
+        const char *p = strstr(request->query, "after=");
+        if (p) after = strtol(p + 6, NULL, 10);
+        p = strstr(request->query, "job_id=");
+        if (p) {
+            p += 7; size_t n = strcspn(p, "&");
+            if (n < sizeof(requested_job)) { memcpy(requested_job, p, n); requested_job[n] = 0; }
+        }
+    }
+    char current_job[96] = {0}, current_state[32] = {0}; unsigned long long generation = 0;
+    if (!requested_job[0] ||
+        !chutni_job_load(g, scope_id, current_job, current_state, &generation) ||
+        strcmp(requested_job, current_job))
+        return samosa_http_json_error(fd, 409, "job_changed", "A current job_id is required for event replay.");
+    char *raw = read_file_limit(path, 8 << 20); if (!raw) return samosa_http_json_error(fd, 404, "job_not_found", "That Chutni job has no event history.");
+    TextBuffer out = {0}; text_add(&out, "{\"scope_id\":"); text_json_string(&out, scope_id);
+    text_add(&out, ",\"job_id\":"); text_json_string(&out, current_job); text_add(&out, ",\"events\":[");
+    int first = 1; char *save = NULL;
+    for (char *line = strtok_r(raw, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+        long seq = -1; sscanf(line, "{\"seq\":%ld", &seq); if (after >= 0 && seq <= after) continue;
+        if (!first) text_add(&out, ","); first = 0; text_add(&out, line);
+    }
+    text_add(&out, "]}"); int sent = samosa_http_response(fd, 200, "application/json", out.data, NULL); free(out.data); free(raw); return sent;
+}
+
+static int chutni_build_action(Gateway *g, int fd, const char *scope_id, const char *action,
+                               const SamosaHttpRequest *request) {
+    char current_job[96] = {0}, state[32] = {0}; unsigned long long target = 0;
+    int have_job = chutni_job_load(g, scope_id, current_job, state, &target);
+    if (!have_job && strcmp(action, "build")) return samosa_http_json_error(fd, 409, "invalid_state", "That scope has no resumable build.");
+    char requested[96] = {0};
+    if (request && request->body_len) {
+        char *arena = NULL; jval *body = json_parse(request->body, &arena); jval *id = body && body->t == J_OBJ ? json_get(body, "job_id") : NULL;
+        if (id && id->t == J_STR) path_copy(requested, sizeof(requested), id->str);
+        json_free(body); free(arena);
+    }
+    if (!strcmp(action, "pause") || !strcmp(action, "cancel")) {
+        if (!requested[0] || !have_job || strcmp(requested, current_job)) return samosa_http_json_error(fd, 409, "job_changed", "The requested job is no longer current.");
+        int control = !strcmp(action, "pause") ? 1 : 2; atomic_store(&g->chutni_control, control);
+        chutni_job_write(g, scope_id, current_job, control == 1 ? "paused_user" : "canceling", "finalizing", target, control == 1 ? "Pausing the build." : "Canceling the build.");
+        chutni_wait_worker_idle(g, scope_id, current_job);
+        char response[256]; snprintf(response, sizeof(response), "{\"job_id\":\"%s\",\"state\":\"%s\"}", current_job, control == 1 ? "paused_user" : "canceling");
+        return samosa_http_response(fd, 202, "application/json", response, NULL);
+    }
+    if (!strcmp(action, "resume")) {
+        if (!requested[0] || !have_job || strcmp(requested, current_job)) return samosa_http_json_error(fd, 409, "job_changed", "The requested job is no longer current.");
+        if (strcmp(state, "paused_user")) return samosa_http_json_error(fd, 409, "invalid_state", "Only a user-paused job can be resumed.");
+        if (!chutni_start_worker(g, scope_id, current_job, target, "queued")) return samosa_http_json_error(fd, 409, "index_busy", "Another Chutni build is active.");
+        char response[256]; snprintf(response, sizeof(response), "{\"job_id\":\"%s\",\"state\":\"queued\"}", current_job);
+        return samosa_http_response(fd, 202, "application/json", response, NULL);
+    }
+    if (!strcmp(action, "build") || !strcmp(action, "refresh") || !strcmp(action, "rebuild")) {
+        pthread_mutex_lock(&g->chutni_mu); int busy = g->chutni_worker_active; pthread_mutex_unlock(&g->chutni_mu);
+        if (busy) return samosa_http_json_error(fd, 409, "index_busy", "Another Chutni build is active.");
+        char job_id[40]; if (!durable_job_id_generate(job_id)) return samosa_http_json_error(fd, 500, "id_generation_failed", "A build job could not be created.");
+        unsigned long long next = target + 1; if (!have_job) next = 1;
+        if (!chutni_start_worker(g, scope_id, job_id, next, "queued")) return samosa_http_json_error(fd, 500, "job_start_failed", "The build could not be started.");
+        char response[384]; snprintf(response, sizeof(response), "{\"job_id\":\"%s\",\"scope_id\":\"%s\",\"state\":\"queued\",\"status_url\":\"/v1/chutni/scopes/%s\",\"events_url\":\"/v1/chutni/scopes/%s/events?job_id=%s\"}", job_id, scope_id, scope_id, scope_id, job_id);
+        return samosa_http_response(fd, 202, "application/json", response, NULL);
+    }
+    return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
+}
+
+static int chutni_dispatch(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/chutni/scopes")) {
+        char path[PATH_MAX]; if (!path_join(path, sizeof(path), g->chutni_root, "scopes.json")) return 0;
+        char *raw = read_file_limit(path, 1 << 20); if (!raw) raw = strdup("{\"schema_version\":2,\"scopes\":[]}");
+        int sent = samosa_http_response(fd, 200, "application/json", raw, NULL); free(raw); return sent;
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chutni/preflight")) return chutni_preflight(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chutni/scopes")) return chutni_scope_create(g, fd, request);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chutni/query")) return chutni_query(g, fd, request);
+    static const char prefix[] = "/v1/chutni/scopes/";
+    if (strncmp(request->path, prefix, sizeof(prefix) - 1)) return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
+    const char *rest = request->path + sizeof(prefix) - 1; const char *slash = strchr(rest, '/');
+    char scope_id[96]; size_t n = slash ? (size_t)(slash - rest) : strlen(rest);
+    if (!n || n >= sizeof(scope_id)) return samosa_http_json_error(fd, 400, "invalid_scope_id", "The scope identifier is invalid.");
+    memcpy(scope_id, rest, n); scope_id[n] = 0;
+    if (!slash || !slash[1]) return !strcmp(request->method, "GET") ? chutni_scope_show(g, fd, scope_id) : samosa_http_json_error(fd, 405, "method_not_allowed", "Only GET is supported.");
+    if (!strcmp(request->method, "GET") && !strcmp(slash + 1, "events")) return chutni_scope_events(g, fd, scope_id, request);
+    if (!strcmp(request->method, "POST")) return chutni_build_action(g, fd, scope_id, slash + 1, request);
+    return samosa_http_json_error(fd, 405, "method_not_allowed", "Only the documented Chutni methods are supported.");
+}
+
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
@@ -9602,6 +10055,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return web_dispatch(g, fd, request);
     if (!strncmp(request->path, "/v1/conversations/", 18))
         return conversations_dispatch(g, fd, request);
+    if (!strncmp(request->path, "/v1/chutni/", sizeof("/v1/chutni/") - 1))
+        return chutni_dispatch(g, fd, request);
     if (!strncmp(request->path, "/v1/jobs/", 9))
         return samosa_http_json_error(fd, 503, "jobs_port_in_progress",
                                       "The compiled Jobs controller is not available yet.");
@@ -9632,11 +10087,13 @@ static int load_config(Gateway *g) {
     pthread_mutex_init(&g->mu, NULL);
     pthread_mutex_init(&g->install_mu, NULL);
     pthread_mutex_init(&g->selection_mu, NULL);
+    pthread_mutex_init(&g->chutni_mu, NULL);
     atomic_init(&g->generating, 0);
     atomic_init(&g->interactive_active, 0);
     atomic_init(&g->last_interactive_mono_ms, 0);
     atomic_init(&g->last_interactive_wall_ms, 0);
     atomic_init(&g->stopping, 0);
+    atomic_init(&g->chutni_control, 0);
     const char *home = getenv("SAMOSA_HOME");
     const char *user_home = getenv("HOME");
     char pw_home[PATH_MAX] = {0};
@@ -9669,6 +10126,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
     ENV_PATH(samosa_extract, "SAMOSA_EXTRACT", "current/bin/samosa-extract");
     ENV_PATH(samosa_ocr, "SAMOSA_OCR", "current/bin/samosa-ocr");
+    ENV_PATH(chutni_db, "SAMOSA_CHUTNI_DB", "current/bin/samosa-chutni-db");
 #undef ENV_PATH
     const char *jobs_root = getenv("SAMOSA_JOBS_ROOT");
     if (jobs_root ? !path_copy(g->jobs_root, sizeof(g->jobs_root), jobs_root) :
@@ -9677,7 +10135,9 @@ static int load_config(Gateway *g) {
         !path_join(g->selection_file, sizeof(g->selection_file), g->home, "model-backend") ||
         !path_join(g->profile_path, sizeof(g->profile_path), g->home, "profile.json") ||
         !path_join(g->attachments_dir, sizeof(g->attachments_dir), g->home, "attachments") ||
+        !path_join(g->chutni_root, sizeof(g->chutni_root), g->home, "chutni") ||
         !mkdirs(g->home) || !mkdirs(g->attachments_dir)) return 0;
+    if (!mkdirs(g->chutni_root)) return 0;
     char selected[32] = {0};
     if (read_small_file(g->selection_file, selected, sizeof(selected)) &&
         backend_available(g, selected)) path_copy(g->backend, sizeof(g->backend), selected);
@@ -9712,6 +10172,7 @@ int main(int argc, char **argv) {
        know how to report honestly as "not ready" -- so no other state needs
        inventing here. */
     install_jobs_repair_after_restart(&gateway);
+    chutni_repair_after_restart(&gateway);
     if (!backend_start(&gateway))
         fprintf(stderr, "samosa-gateway: backend %s is not installed or failed to start; "
                         "serving the control plane without an active model\n", gateway.backend);
@@ -9730,10 +10191,12 @@ int main(int argc, char **argv) {
             server.port, gateway.backend, backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
     int ok = samosa_http_server_run(&server);
     jobs_stop(&gateway);
+    chutni_stop_for_shutdown(&gateway);
     install_worker_stop_for_shutdown(&gateway);
     backend_stop(&gateway);
     samosa_http_server_destroy(&server);
     pthread_mutex_destroy(&gateway.mu);
+    pthread_mutex_destroy(&gateway.chutni_mu);
     signal_gateway = NULL;
     return ok ? 0 : 2;
 }

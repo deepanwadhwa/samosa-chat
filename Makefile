@@ -56,6 +56,37 @@ samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
+# T0.5: build the separate, minimized MIT-licensed Gigatoken adapter. Keeping
+# it outside the C gateway means a Rust/toolchain failure cannot make the
+# browser control plane unavailable.
+gigatoken-adapter:
+	sh tools/build_gigatoken_adapter.sh
+
+tok-oracle: tests/tok_oracle.c src/tok.h src/tok_unicode.h src/json.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -Isrc tests/tok_oracle.c -o $(BUILD_DIR)/tok-oracle
+
+test-gigatoken-adapter: gigatoken-adapter tok-oracle tests/test_gigatoken_adapter.py
+	python3 tests/test_gigatoken_adapter.py
+
+test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c src/samosa_gigatoken.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -pthread -Isrc tests/test_gigatoken_supervisor.c -o $(BUILD_DIR)/test_gigatoken_supervisor
+	SAMOSA_GIGATOKEN_ADAPTER="$(PWD)/$(BUILD_DIR)/samosa-gigatoken-adapter" SAMOSA_TOKENIZER="$(PWD)/tokenizer_qwen36.json" $(BUILD_DIR)/test_gigatoken_supervisor
+
+samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
+
+test-chutni-db: samosa-chutni-db tests/test_chutni_db.sh tests/test_chutni_scope.sh
+	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_db.sh
+	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_scope.sh
+
+# Kimi Linear metadata preflight. This does not download or quantize the model;
+# the pure-C KDA/MLA runtime must land before a weight converter is enabled.
+test-kimi-converter: tools/convert_kimi_linear.py tests/test_kimi_conversion_plan.py
+	python3 tests/test_kimi_conversion_plan.py
+
 # test-chutni: T0.2+ gate for docs/TASKS_UI_CHUTNI.md Chutni core work
 # (streaming inventory scan, full-hash-on-request, symlink/permission safety).
 test-chutni: samosa-fs tests/test_chutni_inventory.sh
@@ -146,10 +177,15 @@ tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_
 r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
 	sh tests/test_r7_r6_handwriting.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h
+samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h samosa-chutni-db
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway
+
+# Chutni's HTTP controller invokes the same installed sidecar binary as the
+# standalone scope tests.
+chutni-gateway-test: samosa-gateway samosa-chutni-db tests/test_chutni_gateway.sh
+	sh tests/test_chutni_gateway.sh
 
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,

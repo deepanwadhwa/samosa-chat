@@ -1217,6 +1217,13 @@ changed_during_read
 
 #### 5.6.1 Gigatoken adapter boundary
 
+**Implementation handoff (2026-07-28):** a minimized local adapter is present
+at `third_party/gigatoken-adapter` and is covered by
+`make test-gigatoken-adapter`. It supports the pinned Qwen `tokenizer.json` and
+Kimi's `tiktoken.model` sidecar format. It is not yet activated by the Chutni
+gateway: the production request-ID, fingerprint, cancellation, supervision,
+and exact-parity gates below remain mandatory before direct token-ID ingestion.
+
 Pin Gigatoken v0.10.0 at
 `34a1599f0c0ae7d7cd0d1c530e6522320158b360`. Record the upstream source URL,
 commit, unmodified MIT license, Samosa patch set, build toolchain, target, and

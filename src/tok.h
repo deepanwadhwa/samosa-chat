@@ -252,7 +252,16 @@ static void pretok_chunk(Tok *T, const unsigned char *p, int a, int b, int *out,
 }
 
 /* ---------- encode: testo -> id (split sugli added token, poi pretok+BPE) ---------- */
-static int tok_encode(Tok *T, const char *text, int len, int *out, int max){
+/* `allow_added_tokens` is the explicit trust-policy seam used by Chutni's
+ * document oracle.  The historical tok_encode() behavior remains unchanged:
+ * trusted model prompts recognize configured added/special tokens. */
+static int tok_encode_policy(Tok *T, const char *text, int len, int *out, int max,
+                             int allow_added_tokens){
+    if(!allow_added_tokens){
+        int no=0;
+        pretok_chunk(T,(const unsigned char *)text,0,len,out,&no,max);
+        return no;
+    }
     const unsigned char *p=(const unsigned char*)text; int no=0; int i=0;
     while(i<len){
         /* prossima occorrenza di un added-token a partire da >= i (match piu' lungo) */
@@ -270,6 +279,10 @@ static int tok_encode(Tok *T, const char *text, int len, int *out, int max){
         i=hitpos+hitlen;
     }
     return no;
+}
+
+static int tok_encode(Tok *T, const char *text, int len, int *out, int max){
+    return tok_encode_policy(T,text,len,out,max,1);
 }
 
 /* id di un added-token dato il suo contenuto (es. "<|endoftext|>"); -1 se assente */
