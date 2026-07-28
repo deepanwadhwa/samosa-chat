@@ -73,14 +73,19 @@ amd64 container there has no AVX2/AVX512/SSE4.2. Needs real x86 hardware.
 Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H2**; evidence:
 [docs/regressions/linux/x86-dispatch.md](docs/regressions/linux/x86-dispatch.md).
 
-**Published-claim defect (OPEN)** — [README.md](README.md) and
-[dist/MODEL_CARD.md](dist/MODEL_CARD.md) state that expert-streaming *reads* wear
-the SSD. **They do not** — NAND endurance is consumed by writes (TBW/DWPD are
-write ratings). The README also calls 9 GB of swap *writes* "tiny" beside 376 GB
-of reads; those writes cause more wear than the reads do. It currently tells
-users to avoid thinking mode to protect hardware, on a false premise.
-Spec: [docs/TASKS_HARDWARE.md](docs/TASKS_HARDWARE.md) **H1** (owner decision —
-touches a published README and model card).
+**Published-claim defect (H1) — FIXED in `c829f20`; this entry was stale and
+was re-reported as open on 2026-07-28. Verify the files before reopening it.**
+[dist/MODEL_CARD.md](dist/MODEL_CARD.md) now states the correct physics — "SSD
+reads do **not** consume drive endurance. Flash endurance is rated in TBW
+(Terabytes *Written*, JEDEC JESD218) and DWPD (Drive *Writes* Per Day);
+program/erase cycles wear NAND, reads do not" — and [README.md](README.md)
+carries no wear claim at all, only that Qwen performance depends on SSD
+throughput. Nothing tells users to avoid thinking mode to protect hardware.
+
+Left here as a marker rather than deleted: this entry outlived its defect and
+cost the owner time when an agent relayed it without opening the files. **A
+defect record is not evidence.** Check the source before repeating anything in
+this section.
 
 **Internet-search feature did not exist (BUILT 2026-07-28 on `ui-chutni`;
 real-provider verification still pending)** — the owner's decision was build it,
