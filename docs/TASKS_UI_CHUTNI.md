@@ -1217,6 +1217,21 @@ changed_during_read
 
 #### 5.6.1 Gigatoken adapter boundary
 
+**Injected-failure recovery (T4.5, landed 2026-07-28):**
+`tests/test_chutni_recovery.sh` injects volume detach, permission loss,
+SIGKILL landed mid-build, and a genuinely full filesystem, and asserts the same
+five invariants after each: source bytes unchanged, the last complete
+generation still queryable, the active pointer unmoved, no duplicated rows on
+retry, and recovery without manual repair. ENOSPC uses a real 32 MiB RAM disk
+on macOS with an adaptively sized ballast, and reports SKIP rather than
+silently passing where one cannot be created. Initial-generation failure is
+covered separately: with no prior generation, no `active.json` is published and
+queries are refused instead of answering from a partial index.
+
+The behaviour under all four was already correct; what was missing was any
+proof of it. The harness itself was validated by disabling the volume-identity
+guard and confirming the suite fails.
+
 **Extraction cache (T4.3, landed 2026-07-28):** every build writes a new
 `index.g{N}.sqlite3`, so `contents` starts empty and the table was written but
 never read -- each rebuild re-ran samosa-extract and samosa-ocr over unchanged
