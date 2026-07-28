@@ -390,6 +390,32 @@ static int handler(SamosaHttpServer *server, int fd,
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
             "\"{\\\"merchant\\\":\\\"Cafe\\\",\\\"total\\\":4.5}\"}}]}", NULL);
+    /* T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): proves samosa_gateway.c's
+       attachment_ids resolution actually rewrote the outgoing request body
+       (base64 image data URI / doc.read-extracted text) before it reached
+       this stand-in backend, rather than forwarding the client's plain
+       attachment_ids field through unmodified. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment image probe")) {
+        if (!strstr(request->body, "\"type\":\"image_url\"") ||
+            !strstr(request->body, "\"url\":\"data:image/png;base64,"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing image attachment\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw the image attachment\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment document probe")) {
+        if (!strstr(request->body, "Attached document") || !strstr(request->body, "Hello PDFium"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing document attachment\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
+    }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

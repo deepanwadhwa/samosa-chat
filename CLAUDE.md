@@ -96,16 +96,36 @@ compiled gateway 404s all three. Issue #4's own spec
 ([docs/TASKS_INTERNET.md](docs/TASKS_INTERNET.md)) already documents "Refolded
 into Samosa Jobs — reused as scheduled public-web input" as the *replacement*
 design, so these two docs describe an earlier, abandoned design that was never
-removed or corrected. Needs an owner decision: build the standalone chat-composer
-web-search feature for real (a real, security-sensitive undertaking — SSRF/DNS-
-pinning, a provider-config executor, a model tool-calling loop), or correct the
-docs and remove the dead frontend affordance. T3.2 (docs/TASKS_UI_CHUTNI.md,
-`ui-chutni` branch) capability-gates the composer's Web-page option off rather
-than building or fixing this. Evidence:
+removed or corrected. **The dead frontend half is now gone** — T3.2 removed the
+Settings "Internet source" card, its CSS, and its three `/v1/web/*` call sites,
+and the composer's `+` menu shows Web page as a visibly disabled item stating
+the real reason. **What remains open is the owner decision on the docs:** build
+the standalone chat-composer web-search feature for real (a security-sensitive
+undertaking — SSRF/DNS-pinning, a provider-config executor, a model tool-calling
+loop), or correct `MODELS_AND_INTERNET.md`/`SERVE_API.md`, which still describe
+it as built and verified. Evidence:
 [docs/regressions/ui-chutni/t3.2-evidence.md](docs/regressions/ui-chutni/t3.2-evidence.md).
 This entry itself was added on `ui-chutni`, not `main`, since
 that is the only branch this agent session can commit to — reconcile onto
 `main` per the working agreement in docs/ISSUE_TASKS.md when convenient.
+
+**Resolved 2026-07-27 (on `ui-chutni`, T3.2):**
+
+- **`doc.read` PDF crash** (Fixed) — the OCR-failure path in
+  `doc_read_handler()` (`src/samosa_gateway.c`) freed `ext_json`/`arena_ext`/
+  `ext_raw` and then `break`-ed out of the *inner page* loop, so the
+  unconditional cleanup after that loop freed all three a second time. Any PDF
+  page that escalated to OCR and failed aborted the **whole gateway process** —
+  Chat, Jobs, and backend supervision with it. Pre-existing and reachable
+  before T3.2; nothing had exercised the path. Caught by ASan via the new
+  `tests/test_attachments.sh` document case.
+- **`doc.read` discarded readable PDFs when OCR was unavailable** (Fixed) —
+  `needs_image` is a sparseness heuristic (`toks < 20`), so a short but
+  perfectly readable page escalated to OCR; with no OCR pack installed (the
+  reference Mac has none) the entire document read failed, throwing away
+  text-layer content already in hand. Now falls back to that text, labeled
+  `source: "text_layer_ocr_unavailable"`. A page with no text layer at all
+  still fails honestly.
 
 **Resolved 2026-07-15:**
 

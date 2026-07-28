@@ -30,6 +30,8 @@ typedef struct {
     char range[128]; /* raw `Range:` header value, empty if absent */
     char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
     char origin[256]; /* raw `Origin:` header value, empty if absent */
+    char attachment_media_type[128]; /* raw `X-Samosa-Media-Type:` header value, empty if absent */
+    char attachment_filename_b64[600]; /* raw `X-Samosa-Filename-B64:` header value, empty if absent */
 } SamosaHttpRequest;
 
 struct SamosaHttpServer;
@@ -182,6 +184,16 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             size_t n=strlen(value);
             if (n>=sizeof(request->origin)) n=sizeof(request->origin)-1;
             memcpy(request->origin,value,n); request->origin[n]=0;
+        } else if (!strncasecmp(cursor,"X-Samosa-Media-Type:",20)) {
+            char *value=cursor+20; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->attachment_media_type)) n=sizeof(request->attachment_media_type)-1;
+            memcpy(request->attachment_media_type,value,n); request->attachment_media_type[n]=0;
+        } else if (!strncasecmp(cursor,"X-Samosa-Filename-B64:",22)) {
+            char *value=cursor+22; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->attachment_filename_b64)) n=sizeof(request->attachment_filename_b64)-1;
+            memcpy(request->attachment_filename_b64,value,n); request->attachment_filename_b64[n]=0;
         } else if (!strncasecmp(cursor,"Transfer-Encoding:",18) &&
                    strcasestr(cursor+18,"chunked")) {
             free(buffer); return 0;

@@ -185,7 +185,7 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # and the fail-closed-by-default /v1/ dispatcher gate (any new v1 route not
 # on the closed legacy-exemption list requires a valid session token before
 # route matching, so it can't ship unauthenticated by omission).
-test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh
+test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
@@ -195,13 +195,18 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	sh tests/test_conversation_binding.sh
 	node tests/test_conversation_migration_ui.mjs
 	sh tests/test_v1_fail_closed_default.sh
+	node tests/test_composer_ui.mjs
+	node tests/test_composer_perf.mjs
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh
+compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" sh tests/test_compiled_gateway.sh
 	sh tests/test_settings_compact_proxy.sh
+	SAMOSA_EXTRACT="$${SAMOSA_EXTRACT:-$$PWD/$(BUILD_DIR)/samosa-extract}" \
+	SAMOSA_OCR="$${SAMOSA_OCR:-$$PWD/$(BUILD_DIR)/samosa-ocr}" \
+	sh tests/test_attachments.sh
 
 # doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor
 # regression for the PDF page-batch-cap fix. Skips gracefully (exit 0) if no

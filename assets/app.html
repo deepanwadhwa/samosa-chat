@@ -231,12 +231,54 @@
     .stop { display: none; background: var(--danger); }
     .generating .send { display: none; } .generating .stop { display: grid; }
 
-    .image-preview-wrap { display: none; position: absolute; bottom: calc(100% + 12px); left: 18px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); z-index: 10; }
-    .image-preview-wrap.show { display: block; }
-    .image-preview { width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-sm); }
-    .remove-image { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; display: grid; place-items: center; }
-    .remove-image svg { width: 10px; height: 10px; }
     .composer-hint { padding-top: 8px; text-align: center; color: var(--ink-2); font-size: 12px; }
+
+    /* T3.2: the `+` menu. One popover for Image, Document, Web page, and
+       Directory; a disabled item keeps its label visible and states why it
+       is unavailable rather than disappearing, so the menu never implies a
+       capability the packaged gateway does not have (sec5.8). */
+    .attach-menu {
+      position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20;
+      min-width: 268px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-lg);
+      background: var(--surface); box-shadow: var(--shadow-overlay);
+    }
+    .attach-menu[hidden] { display: none; }
+    .attach-item {
+      display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 10px;
+      width: 100%; padding: 9px 10px; border: 0; border-radius: var(--r-md);
+      background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+    }
+    .attach-item svg { width: 18px; height: 18px; margin-top: 1px; color: var(--ink-2); }
+    .attach-item:hover:not(:disabled), .attach-item:focus-visible:not(:disabled) { background: var(--accent-soft); }
+    .attach-item:hover:not(:disabled) svg { color: var(--accent); }
+    .attach-item:disabled { cursor: default; color: var(--ink-2); }
+    .attach-item-label { font-size: 13px; font-weight: 500; }
+    .attach-item:disabled .attach-item-label { font-weight: 400; }
+    .attach-item-reason { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.4; color: var(--ink-2); }
+
+    /* Attachment chips sit above the input, inside the composer's own box so
+       they read as part of the message being written, not as page chrome. */
+    .attach-chips { display: flex; flex-wrap: wrap; gap: 7px; grid-column: 1 / -1; margin: 0 0 8px 4px; }
+    .attach-chips:empty { display: none; }
+    .attach-chip {
+      display: inline-flex; align-items: center; gap: 7px; max-width: 260px;
+      padding: 5px 6px 5px 9px; border: 1px solid var(--line); border-radius: 99px;
+      background: var(--inset); font-size: 12px; color: var(--ink);
+    }
+    .attach-chip svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--ink-2); }
+    .attach-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attach-chip-thumb { width: 20px; height: 20px; border-radius: var(--r-sm); object-fit: cover; flex: 0 0 auto; }
+    .attach-chip.pending { opacity: .6; }
+    .attach-chip.failed { border-color: var(--danger); color: var(--danger); }
+    .attach-chip.failed svg { color: var(--danger); }
+    .attach-chip-remove {
+      width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center;
+      border: 0; border-radius: 99px; background: transparent; color: var(--ink-2); cursor: pointer;
+    }
+    .attach-chip-remove svg { width: 9px; height: 9px; }
+    .attach-chip-remove:hover { background: var(--line); color: var(--ink); }
+    .attach-error { grid-column: 1 / -1; margin: 0 0 6px 4px; color: var(--danger); font-size: 12px; }
+    .attach-error:empty { display: none; }
 
     .telemetry { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 17px; min-height: 28px; padding: 8px 20px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 12px; }
     .telemetry span { white-space: nowrap; }
@@ -268,15 +310,8 @@
     .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 10px 11px; outline: none; }
     .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--inset); color: var(--ink-2); font-size: 12px; }
     .local-card strong { color: var(--ink); }
-    .web-card { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 20px; }
-    .web-row { display: flex; gap: 8px; }
-    .web-row input { min-width: 0; flex: 1; }
-    .web-button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: var(--r-md); padding: 9px 11px; cursor: pointer; }
-    .web-button:disabled { opacity: .5; cursor: wait; }
-    .web-results { margin-top: 10px; display: grid; gap: 8px; font-size: 12px; }
-    .web-result { border: 1px solid var(--line); border-radius: var(--r-md); padding: 9px; background: var(--paper); }
-    .web-result button { display: block; margin-top: 6px; }
-    .web-note { margin-top: 8px; color: var(--ink-2); font-size: 12px; line-height: 1.45; }
+    /* T3.2: the .web-* rules that stood here styled the Settings
+       "Internet source" card, removed with the feature's dead frontend. */
     .troubleshoot-card { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
     .troubleshoot-card label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }
     .troubleshoot-card p { margin: 0 0 12px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
@@ -572,13 +607,35 @@
 
       <div class="composer-wrap">
         <div style="position: relative;">
-          <div class="image-preview-wrap" id="imagePreviewWrap">
-            <img src="" class="image-preview" id="imagePreview" alt="">
-            <button type="button" class="remove-image" id="removeImage" aria-label="Remove image"><svg aria-hidden="true"><use href="#icon-x"></use></svg></button>
+          <!-- T3.2 (docs/TASKS_UI_CHUTNI.md sec4.4/sec5.8): one `+` menu for
+               Image, Document, Web page, and Directory. Each item's enabled
+               state is set from server truth at runtime by applyCapabilities();
+               the markup ships them disabled so a capability is never briefly
+               offered before it has been confirmed. -->
+          <div class="attach-menu" id="attachMenu" role="menu" aria-labelledby="attachBtn" hidden>
+            <button class="attach-item" id="attachImage" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-image"></use></svg>
+              <span><span class="attach-item-label">Image</span><span class="attach-item-reason" id="attachImageReason"></span></span>
+            </button>
+            <button class="attach-item" id="attachDocument" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-document"></use></svg>
+              <span><span class="attach-item-label">Document</span><span class="attach-item-reason" id="attachDocumentReason"></span></span>
+            </button>
+            <button class="attach-item" id="attachWeb" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-globe"></use></svg>
+              <span><span class="attach-item-label">Web page</span><span class="attach-item-reason" id="attachWebReason"></span></span>
+            </button>
+            <button class="attach-item" id="attachDirectory" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-folder"></use></svg>
+              <span><span class="attach-item-label">Directory</span><span class="attach-item-reason" id="attachDirectoryReason"></span></span>
+            </button>
           </div>
           <form class="composer" id="composer">
-            <input type="file" id="imageInput" accept="image/*" style="display: none;">
-            <button class="attach-btn" id="attachBtn" type="button" aria-label="Attach image"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
+            <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+            <input type="file" id="documentInput" accept="application/pdf,.pdf" style="display: none;">
+            <div class="attach-error" id="attachError" role="alert"></div>
+            <div class="attach-chips" id="attachChips"></div>
+            <button class="attach-btn" id="attachBtn" type="button" aria-label="Add context" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
             <textarea id="prompt" rows="1" placeholder="Message your local model…" aria-label="Message"></textarea>
             <button class="send" id="send" type="submit" aria-label="Send"><svg aria-hidden="true"><use href="#icon-arrow-up"></use></svg></button>
             <button class="stop" id="stop" type="button" aria-label="Stop generation"><svg aria-hidden="true"><use href="#icon-stop"></use></svg></button>
@@ -703,15 +760,16 @@
       <div class="chooser-selected-path" id="chooserSelectedPath" hidden></div>
       <small>Previews the folder picker Chutni will use to authorize a folder, drive, or this computer. Picking a folder here does not yet create any Chutni memory.</small>
     </div>
-    <div class="web-card">
-      <div class="field">
-        <label for="webInput">Internet source</label>
-        <div class="web-row"><input id="webInput" placeholder="Search terms or https://…"><button class="web-button" id="webAction" type="button">Search</button></div>
-        <div class="web-note" id="webNote">Internet access is user-initiated. Samosa reads only public pages; the model cannot browse on its own.</div>
-        <div class="web-results" id="webResults"></div>
-      </div>
-    </div>
-    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Only Internet sources you explicitly choose are fetched.</div>
+    <!-- T3.2: the "Internet source" card that stood here called
+         GET /v1/web/config, POST /v1/web/search, and POST /v1/web/fetch.
+         None of those routes exist in the compiled gateway (verified live:
+         all three 404) or anywhere in the C source at any commit -- see the
+         open "Internet-search feature does not exist" defect in CLAUDE.md.
+         The card is removed rather than left rendering a dead control; the
+         composer's `+` menu now carries Web page as a visibly disabled item
+         that states the real reason, which is the honest surface for a
+         capability the packaged gateway does not have (sec5.8). -->
+    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. Nothing is sent off this machine.</div>
     <!-- T3.1 (docs/TASKS_UI_CHUTNI.md sec4.4): process termination does not
          belong in the primary header -- it lives in this clearly labeled
          Troubleshooting surface instead. -->
@@ -766,6 +824,21 @@
     </symbol>
     <symbol id="icon-jobs" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4.2 6h1.6M4.2 10h1.6M4.2 14h1.6M8 6h7.8M8 10h7.8M8 14h5.5"/>
+    </symbol>
+    <!-- T3.2 composer `+` menu icons, same 20x20 hairline convention as the
+         set above so the menu reads as one family with the sidebar. -->
+    <symbol id="icon-image" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <rect x="3" y="4.5" width="14" height="11" rx="1.5"/>
+      <circle cx="7.5" cy="8.5" r="1.3"/>
+      <path d="M3.5 13.5l3.6-3.2a1.4 1.4 0 0 1 1.9 0l2.6 2.4 1.6-1.3a1.4 1.4 0 0 1 1.8 0l3 2.4"/>
+    </symbol>
+    <symbol id="icon-document" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M5 3.5h6L15 7.5v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z"/>
+      <path d="M10.8 3.6v4.1h4M6.8 11h6.4M6.8 14h4.4"/>
+    </symbol>
+    <symbol id="icon-globe" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="10" cy="10" r="6.5"/>
+      <path d="M3.6 10h12.8M10 3.5c1.8 1.9 2.7 4.1 2.7 6.5s-.9 4.6-2.7 6.5c-1.8-1.9-2.7-4.1-2.7-6.5S8.2 5.4 10 3.5z"/>
     </symbol>
   </svg>
 
@@ -831,11 +904,14 @@
         thinking: $("thinking"), maxTokens: $("maxTokens"), seed: $("seed"), contextTokens: $("contextTokens"), contextCustom: $("contextCustom"), applyContext: $("applyContext"), mode: $("modeValue"),
         autoCompact: $("autoCompact"), compactThreshold: $("compactThreshold"), compactNow: $("compactNow"), compactHelp: $("compactHelp"),
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
-        imageInput: $("imageInput"), attachBtn: $("attachBtn"), removeImage: $("removeImage"),
-        imagePreviewWrap: $("imagePreviewWrap"), imagePreview: $("imagePreview"),
+        imageInput: $("imageInput"), documentInput: $("documentInput"), attachBtn: $("attachBtn"),
+        attachMenu: $("attachMenu"), attachChips: $("attachChips"), attachError: $("attachError"),
+        attachImage: $("attachImage"), attachDocument: $("attachDocument"),
+        attachWeb: $("attachWeb"), attachDirectory: $("attachDirectory"),
+        attachImageReason: $("attachImageReason"), attachDocumentReason: $("attachDocumentReason"),
+        attachWebReason: $("attachWebReason"), attachDirectoryReason: $("attachDirectoryReason"),
         kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
-        webInput: $("webInput"), webAction: $("webAction"), webNote: $("webNote"), webResults: $("webResults"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
         mismatchFork: $("mismatchFork"), mismatchCancel: $("mismatchCancel"),
         migrationBanner: $("migrationBanner"), migrationExport: $("migrationExport"), migrationReset: $("migrationReset")
@@ -852,8 +928,16 @@
       let generating = false;
       let activeAssistant = null;
       let followOutput = true;
-      let currentImageBase64 = null;
-      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,version:"",ready:false};
+      // T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): composer attachments are
+      // server-issued content-addressed IDs, never Base64 inside the
+      // localStorage record. Each entry is
+      // {clientId, kind, name, id, status:"uploading"|"ready"|"failed", error, thumb}.
+      // `id` is the server's SHA-256 and is the only part sent with a turn.
+      let pendingAttachments = [];
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_documents:false,version:"",ready:false};
+      // Profile name for the personalized empty state (sec4.4). Loaded once
+      // on entering chat; rendering always escapes it (sec4.1).
+      let profileName = "";
       // T2.1 (docs/TASKS_UI_CHUTNI.md sec5.3): the model list itself -- ids,
       // labels, and availability -- comes from GET /v1/models/catalog, not
       // a hardcoded <option> list. modelCatalog holds the last fetch.
@@ -1035,14 +1119,76 @@
         blocks.forEach((block, i) => { out = out.replace(`@@CODE${i}@@`, block); });
         return out;
       }
+      // T3.2 (sec4.4): the empty state greets the user by name when the
+      // profile has one. escapeHTML() is mandatory here -- a name is
+      // arbitrary user input and is never interpolated as markup (sec4.1).
       function welcomeHTML() {
-        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>Your model. Your machine.</h1><p>Ask ${escapeHTML(backend.label)} anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
+        const heading = profileName ? `Welcome, ${escapeHTML(profileName)}` : "Your model. Your machine.";
+        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>${heading}</h1><p>Ask ${escapeHTML(backend.label)} anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
       }
+      // A document attachment (and an image whose bytes could not be loaded)
+      // renders as a named chip. Built with textContent throughout -- a
+      // filename is user data.
+      function attachmentChipNode(attachment) {
+        const chip = document.createElement("span");
+        chip.className = "attach-chip";
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", attachment.kind === "image" ? "#icon-image" : "#icon-document");
+        icon.setAttribute("aria-hidden", "true"); icon.appendChild(use); chip.appendChild(icon);
+        const name = document.createElement("span");
+        name.className = "attach-chip-name";
+        name.textContent = attachment.name || (attachment.kind === "image" ? "Image" : "Document");
+        chip.appendChild(name);
+        return chip;
+      }
+      // GET /v1/attachments/<id> requires the session token, which a plain
+      // <img src> cannot send -- so the bytes are fetched with authFetch and
+      // handed to the element as an object URL. Putting the token in the URL
+      // instead would leak it into history and any copied link.
+      function attachmentImageNode(attachment) {
+        const img = document.createElement("img");
+        img.className = "user-attached-image";
+        img.alt = attachment.name || "Attached image";
+        authFetch(`/v1/attachments/${encodeURIComponent(attachment.id)}`)
+          .then(r => (r.ok ? r.blob() : Promise.reject(new Error("unavailable"))))
+          .then(blob => {
+            const url = URL.createObjectURL(blob);
+            img.src = url;
+            img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+          })
+          .catch(() => { if (img.isConnected) img.replaceWith(attachmentChipNode(attachment)); });
+        return img;
+      }
+      // T3.2 acceptance: a 1,000-message conversation must stay usable. Only
+      // the most recent window is put in the DOM; older turns stay in state
+      // and are revealed on demand. Rendering every message eagerly is what
+      // makes a long conversation slow -- each one costs a markdown parse and
+      // a subtree, and nothing above the fold is being read.
+      const RENDER_WINDOW = 60;
+      let renderLimit = RENDER_WINDOW;
       function renderMessages() {
         const chat = activeChat();
         if (!chat || !chat.messages.length) { els.messages.innerHTML = welcomeHTML(); els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); }); return; }
         els.messages.innerHTML = "";
-        for (const msg of chat.messages) appendMessageNode(msg);
+        const total = chat.messages.length;
+        const start = Math.max(0, total - renderLimit);
+        if (start > 0) {
+          const more = document.createElement("button");
+          more.type = "button"; more.className = "prompt-chip"; more.style.margin = "0 auto 14px";
+          more.textContent = `Show ${Math.min(start, RENDER_WINDOW)} earlier message${Math.min(start, RENDER_WINDOW) === 1 ? "" : "s"} (${start} above)`;
+          more.onclick = () => {
+            // Hold the scroll position across the re-render so revealing
+            // history doesn't yank the reader away from where they were.
+            const anchor = els.messages.scrollHeight - els.messages.scrollTop;
+            renderLimit += RENDER_WINDOW;
+            followOutput = false;
+            renderMessages();
+            els.messages.scrollTop = els.messages.scrollHeight - anchor;
+          };
+          els.messages.appendChild(more);
+        }
+        for (let i = start; i < total; i++) appendMessageNode(chat.messages[i]);
         followOutput=true; scrollBottom(false,true);
       }
       function appendMessageNode(msg) {
@@ -1056,11 +1202,19 @@
           row.innerHTML = `<div class="bubble"></div>`;
           const bubble = row.querySelector(".bubble");
           bubble.textContent = msg.content;
+          // T3.2: attachments render from their server ID. `msg.image` is the
+          // pre-T3.2 shape (a Base64 data URI stored in the conversation) --
+          // still displayed so existing transcripts keep their images, but
+          // nothing writes that field any more.
           if (msg.image) {
             const img = document.createElement("img");
             img.src = msg.image;
             img.className = "user-attached-image";
             bubble.appendChild(img);
+          }
+          for (const attachment of msg.attachments || []) {
+            if (attachment.kind === "image") bubble.appendChild(attachmentImageNode(attachment));
+            else bubble.appendChild(attachmentChipNode(attachment));
           }
         }
         els.messages.appendChild(row); return row;
@@ -1075,7 +1229,10 @@
           els.list.appendChild(item);
         }
       }
-      function render() { ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; }
+      // Switching or creating a conversation starts a fresh render window --
+      // "show earlier" expansion belongs to the conversation you expanded,
+      // not to the next one you open.
+      function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; }
       function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
       function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
       function resizePrompt() { els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.send.disabled=!els.prompt.value.trim()||generating; }
@@ -1090,19 +1247,33 @@
         }
         const chat=ensureChat();
         if (chatNeedsExplicitAction(chat, backend)) { openMismatchDialog(chat); return; }
+        // T3.2: an attachment still uploading has no server ID yet, and one
+        // that failed has nothing to send. Block the turn rather than
+        // silently dropping a file the user can see attached.
+        if (pendingAttachments.some(a => a.status === "uploading")) {
+          setAttachError("One moment — an attachment is still being added.");
+          return;
+        }
+        if (pendingAttachments.some(a => a.status === "failed")) {
+          setAttachError("Remove the attachment that couldn't be added, then send.");
+          return;
+        }
         // Create-once binding (sec5.2): the first send under a real backend
         // stamps this conversation's model identity; the gateway records the
         // matching canonical binding the same moment it admits the turn.
         if (!chat.model_id && backend.id && backend.version) {
           chat.model_id = backend.id; chat.model_version = backend.version; chat.model_binding_source = "explicit";
         }
-        const user={id:makeId(),role:"user",content:text.trim(),image:currentImageBase64}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
+        // The transcript records attachment identity only -- IDs, names, and
+        // kinds. Bytes live in the server's content-addressed store, so a
+        // long conversation full of images no longer inflates the single
+        // localStorage record (sec5.8).
+        const attachments = pendingAttachments.map(a => ({ id: a.id, name: a.name, kind: a.kind }));
+        const attachmentIds = attachments.map(a => a.id);
+        const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
         chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
 
-        let payloadContent = [{ type: "text", text: user.content }];
-        if (user.image) payloadContent.push({ type: "image_url", image_url: { url: user.image } });
-
-        els.prompt.value=""; removeAttachedImage(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
+        els.prompt.value=""; clearAttachments(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
         if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
         activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
 
@@ -1113,10 +1284,13 @@
             conversation_id:chat.id,model_id:chat.model_id,model_version:chat.model_version,
             chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
         } else {
-          payload={model:backend.model,messages:[{role:"user",content:payloadContent}],conversation_id:chat.id,
+          payload={model:backend.model,messages:[{role:"user",content:user.content}],conversation_id:chat.id,
             model_id:chat.model_id,model_version:chat.model_version,
             stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
         }
+        // The gateway resolves these into image data URIs / extracted
+        // document text server-side; the browser never builds either.
+        if (attachmentIds.length) payload.attachment_ids = attachmentIds;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         try {
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -1177,15 +1351,17 @@
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
           const previousBackend=backend.id;
           if(h.gateway) {
-            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,ready:h.ready};
+            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready};
             els.modelBackend.value=h.backend;
-            els.attachBtn.disabled=!h.supports_images;
-            els.attachBtn.title=h.supports_images?"Attach an image":"This model was installed without a vision projector";
-            if(!h.supports_images)removeAttachedImage();
+            // T3.2: the `+` button itself stays enabled -- it opens a menu
+            // that explains, per item, what is and isn't available. Disabling
+            // the whole button would hide those reasons entirely.
+            applyCapabilities();
             els.dot.className=h.ready?"status-dot online":"status-dot";
             els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
           } else {
-            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,ready:true};
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true};
+            applyCapabilities();
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
           }
           els.sideDot.className=els.dot.className; els.sideStatus.textContent=backend.label;
@@ -1285,48 +1461,174 @@
           alert(error.message||String(error));
         } finally {els.modelBackend.disabled=false;}
       }
-      async function webRequest(path, body) {
-        const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-        const data=await r.json();
-        if(!r.ok)throw new Error(data.error?.message||"Internet request failed");
-        return data;
+      // --- T3.2 composer attachments (docs/TASKS_UI_CHUTNI.md sec5.8) -------
+      // Capability gating is driven entirely by what the server reports, so
+      // the UI can never present a working action for a route the packaged
+      // gateway does not serve. Web page and Directory are disabled here on
+      // purpose and say why: neither /v1/web/* nor the Chutni directory-
+      // context API exists in the compiled gateway (grepped across the C
+      // source and full history; see CLAUDE.md's open defect). When those
+      // land, only these two reason strings and their `enabled` flags change.
+      const MAX_ATTACHMENTS = 6;
+      function applyCapabilities() {
+        const imageReady = !!backend.supports_images && !!backend.ready;
+        setAttachItem(els.attachImage, els.attachImageReason, imageReady,
+          !backend.ready ? "Available once a model is ready."
+            : "This model was installed without a vision projector.",
+          "PNG, JPEG, WEBP, or GIF.");
+        setAttachItem(els.attachDocument, els.attachDocumentReason, !!backend.supports_documents,
+          "The document reader isn't installed in this build.",
+          "PDF, read on this computer.");
+        setAttachItem(els.attachWeb, els.attachWebReason, false,
+          "Not available yet — this build has no web reader.", "");
+        setAttachItem(els.attachDirectory, els.attachDirectoryReason, false,
+          "Not available yet — Chutni folder memory isn't built.", "");
+        // A model switch can revoke image support mid-session; drop anything
+        // the new backend cannot actually accept rather than sending it.
+        if (!imageReady && pendingAttachments.some(a => a.kind === "image")) {
+          pendingAttachments = pendingAttachments.filter(a => a.kind !== "image");
+          renderAttachments();
+        }
       }
-      async function ingestUrl(url) {
-        els.webAction.disabled=true; els.webNote.textContent="Reading and cleaning the public page…";
-        try {
-          const page=await webRequest("/v1/web/fetch",{url});
-          const citation=`\n\nWeb source: ${page.title}\nURL: ${page.url}\n---\n${page.text}\n---\n`;
-          els.prompt.value=(els.prompt.value.trim()?els.prompt.value.trim()+"\n\n":"Please answer using this source and cite its URL.")+citation;
-          resizePrompt(); closePanels(); els.prompt.focus();
-          els.webNote.textContent=page.truncated?"Source added (trimmed to the safe context limit).":"Source added to your next message.";
-        } catch(error) {els.webNote.textContent=error.message||String(error);}
-        finally {els.webAction.disabled=false;}
+      function setAttachItem(button, reasonEl, enabled, disabledReason, enabledHint) {
+        if (!button) return;
+        button.disabled = !enabled;
+        reasonEl.textContent = enabled ? enabledHint : disabledReason;
+        // A disabled control is not announced as merely dimmed: the reason is
+        // part of its accessible name, so it reads the same to a screen
+        // reader as it looks on screen.
+        const label = button.querySelector(".attach-item-label").textContent;
+        button.setAttribute("aria-label", enabled && !enabledHint ? label : `${label} — ${reasonEl.textContent}`);
       }
-      async function internetAction() {
-        const value=els.webInput.value.trim(); if(!value)return;
-        if(/^https?:\/\//i.test(value)){await ingestUrl(value);return;}
-        els.webAction.disabled=true; els.webResults.innerHTML=""; els.webNote.textContent="Searching the public web…";
-        try {
-          const data=await webRequest("/v1/web/search",{query:value});
-          els.webNote.textContent=data.results.length?"Choose a result to read and add to your next message.":"No results found.";
-          for(const result of data.results) {
-            const card=document.createElement("div"); card.className="web-result";
-            const title=document.createElement("strong"); title.textContent=result.title||result.url;
-            const description=document.createElement("div"); description.textContent=result.description||result.url;
-            const button=document.createElement("button"); button.className="web-button"; button.textContent="Read this page";
-            button.onclick=()=>ingestUrl(result.url);
-            card.append(title,description,button); els.webResults.appendChild(card);
+      function openAttachMenu() {
+        applyCapabilities();
+        els.attachMenu.hidden = false;
+        els.attachBtn.setAttribute("aria-expanded", "true");
+        const first = els.attachMenu.querySelector(".attach-item:not(:disabled)");
+        if (first) first.focus();
+        document.addEventListener("keydown", attachMenuKeydown, true);
+        document.addEventListener("mousedown", attachMenuOutside, true);
+      }
+      function closeAttachMenu(refocus) {
+        if (els.attachMenu.hidden) return;
+        els.attachMenu.hidden = true;
+        els.attachBtn.setAttribute("aria-expanded", "false");
+        document.removeEventListener("keydown", attachMenuKeydown, true);
+        document.removeEventListener("mousedown", attachMenuOutside, true);
+        if (refocus) els.attachBtn.focus();
+      }
+      function attachMenuKeydown(e) {
+        if (e.key === "Escape") { e.preventDefault(); closeAttachMenu(true); return; }
+        if (e.key !== "Tab") return;
+        // Keep Tab inside the open menu so keyboard focus can't wander into
+        // the page behind an open popover.
+        const items = [...els.attachMenu.querySelectorAll(".attach-item:not(:disabled)")];
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+      function attachMenuOutside(e) {
+        if (!els.attachMenu.contains(e.target) && e.target !== els.attachBtn && !els.attachBtn.contains(e.target))
+          closeAttachMenu(false);
+      }
+      function setAttachError(message) { els.attachError.textContent = message || ""; }
+      function removeAttachment(clientId) {
+        const entry = pendingAttachments.find(a => a.clientId === clientId);
+        pendingAttachments = pendingAttachments.filter(a => a.clientId !== clientId);
+        renderAttachments();
+        // Best-effort server-side cleanup. A 409 here is correct and expected
+        // when the same content was already sent in an earlier turn -- that
+        // attachment belongs to a message now, so it must survive.
+        if (entry && entry.id) authFetch(`/v1/attachments/${encodeURIComponent(entry.id)}`, { method: "DELETE" }).catch(() => {});
+      }
+      function renderAttachments() {
+        els.attachChips.innerHTML = "";
+        for (const item of pendingAttachments) {
+          const chip = document.createElement("span");
+          chip.className = `attach-chip${item.status === "uploading" ? " pending" : ""}${item.status === "failed" ? " failed" : ""}`;
+          chip.dataset.clientId = item.clientId;
+          if (item.thumb) {
+            const img = document.createElement("img");
+            img.className = "attach-chip-thumb"; img.src = item.thumb; img.alt = "";
+            chip.appendChild(img);
+          } else {
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+            use.setAttribute("href", item.kind === "image" ? "#icon-image" : "#icon-document");
+            icon.setAttribute("aria-hidden", "true");
+            icon.appendChild(use); chip.appendChild(icon);
           }
-        } catch(error){els.webNote.textContent=error.message||String(error);}
-        finally{els.webAction.disabled=false;}
+          const name = document.createElement("span");
+          name.className = "attach-chip-name";
+          // Filenames are user data and are always rendered as text.
+          name.textContent = item.status === "uploading" ? `${item.name} — adding…`
+            : item.status === "failed" ? `${item.name} — ${item.error || "couldn't be added"}`
+            : item.name;
+          chip.appendChild(name);
+          const remove = document.createElement("button");
+          remove.type = "button"; remove.className = "attach-chip-remove";
+          remove.setAttribute("aria-label", `Remove ${item.kind === "image" ? "image" : "document"} ${item.name}`);
+          const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          const rUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          rUse.setAttribute("href", "#icon-x"); rIcon.setAttribute("aria-hidden", "true");
+          rIcon.appendChild(rUse); remove.appendChild(rIcon);
+          remove.onclick = () => removeAttachment(item.clientId);
+          chip.appendChild(remove);
+          els.attachChips.appendChild(chip);
+        }
+        resizePrompt();
       }
-      async function webStatus() {
+      // Uploads one file to the content-addressed store and records the
+      // server's ID. The bytes go up raw with the declared type and an
+      // encoded display filename in headers (sec5.8) -- the server decides
+      // the real type by sniffing, so a wrong header cannot mislabel it.
+      async function uploadAttachment(file, kind) {
+        if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+          setAttachError(`You can attach up to ${MAX_ATTACHMENTS} files to one message.`);
+          return;
+        }
+        setAttachError("");
+        const entry = {
+          clientId: `a-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          kind, name: file.name || (kind === "image" ? "image" : "document"),
+          id: null, status: "uploading", error: "", thumb: null
+        };
+        pendingAttachments.push(entry);
+        renderAttachments();
         try {
-          const r=await fetch("/v1/web/config",{cache:"no-store"}); if(!r.ok)return; const config=await r.json();
-          if(config.offline){els.webAction.disabled=true;els.webNote.textContent="Internet access is disabled by the Samosa offline switch.";}
-          else if(!config.search_configured)els.webNote.textContent="URL reading is ready. Configure DuckDuckGo, Brave, or SearXNG search in ~/.samosa/config.json.";
-          else els.webNote.textContent=`Web tools are on (${config.search_backend}). The model decides when to search or read pages; you can also add a specific URL here.`;
-        } catch(_){}
+          let filenameHeader = "";
+          try { filenameHeader = btoa(unescape(encodeURIComponent(entry.name))); } catch (_) { filenameHeader = ""; }
+          const headers = { "Content-Type": file.type || "application/octet-stream" };
+          if (file.type) headers["X-Samosa-Media-Type"] = file.type;
+          if (filenameHeader) headers["X-Samosa-Filename-B64"] = filenameHeader;
+          const r = await authFetch("/v1/attachments", { method: "POST", headers, body: file });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error?.message || "That file could not be attached.");
+          // The composer may have been cleared (sent, or the chip removed)
+          // while this upload was in flight; don't resurrect a stale entry.
+          if (!pendingAttachments.includes(entry)) return;
+          entry.id = data.id;
+          entry.name = data.filename || entry.name;
+          entry.status = "ready";
+          if (kind === "image") entry.thumb = URL.createObjectURL(file);
+        } catch (error) {
+          if (!pendingAttachments.includes(entry)) return;
+          entry.status = "failed";
+          entry.error = error.message || String(error);
+        }
+        renderAttachments();
+      }
+      function pickAttachment(kind) {
+        closeAttachMenu(false);
+        setAttachError("");
+        (kind === "image" ? els.imageInput : els.documentInput).click();
+      }
+      function clearAttachments() {
+        for (const item of pendingAttachments) if (item.thumb) URL.revokeObjectURL(item.thumb);
+        pendingAttachments = [];
+        els.imageInput.value = ""; els.documentInput.value = "";
+        renderAttachments(); setAttachError("");
       }
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
       const jobEls = {
@@ -1652,7 +1954,15 @@
         stopSetupPolling();
         setupEls.root.hidden = true; setupEls.shell.hidden = false;
         els.mode.textContent = els.thinking.options[els.thinking.selectedIndex].text;
-        ensureChat(); render(); resizePrompt(); health(); webStatus();
+        ensureChat(); render(); resizePrompt(); health();
+        applyCapabilities();
+        // T3.2 (sec4.4): personalize the empty state. The name is display-only
+        // and is never inserted into a model prompt (sec4.1); a failed lookup
+        // just leaves the generic heading.
+        authFetch("/v1/profile", { cache: "no-store" })
+          .then(r => (r.ok ? r.json() : null))
+          .then(p => { if (p && p.name) { profileName = p.name; renderMessages(); } })
+          .catch(() => {});
         if (state.settings?.contextConfigured) applyContextSetting(true);
         setInterval(health, 5000);
         els.prompt.focus();
@@ -2309,25 +2619,27 @@
       function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
       function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
       
-      function removeAttachedImage() {
-        currentImageBase64 = null;
-        els.imageInput.value = "";
-        els.imagePreview.src = "";
-        els.imagePreviewWrap.classList.remove("show");
-      }
-
-      els.attachBtn.onclick = () => { if (!generating) els.imageInput.click(); };
-      els.removeImage.onclick = removeAttachedImage;
+      // T3.2 composer `+` menu wiring. The button toggles the menu; each item
+      // either opens its file picker or is disabled with a stated reason.
+      els.attachBtn.onclick = () => {
+        if (generating) return;
+        if (els.attachMenu.hidden) openAttachMenu(); else closeAttachMenu(true);
+      };
+      els.attachImage.onclick = () => pickAttachment("image");
+      els.attachDocument.onclick = () => pickAttachment("document");
+      // Web page and Directory are rendered disabled by applyCapabilities()
+      // (no /v1/web/* and no Chutni directory-context API exist), so they
+      // need no click handlers -- a disabled button cannot be activated, and
+      // wiring a handler that silently did nothing would be worse.
       els.imageInput.onchange = (e) => {
         const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          currentImageBase64 = e.target.result;
-          els.imagePreview.src = currentImageBase64;
-          els.imagePreviewWrap.classList.add("show");
-        };
-        reader.readAsDataURL(file);
+        e.target.value = ""; // let the same file be picked again after removal
+        if (file) uploadAttachment(file, "image");
+      };
+      els.documentInput.onchange = (e) => {
+        const file = e.target.files[0];
+        e.target.value = "";
+        if (file) uploadAttachment(file, "document");
       };
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
@@ -2345,7 +2657,6 @@
       jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
       jobEls.previewDef.onclick=previewDefinitionJob;
       jobEls.runDef.onclick=runDefinitionJob;
-      els.webAction.onclick=internetAction; els.webInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();internetAction();}};
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
       els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
@@ -2357,7 +2668,7 @@
       els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
       els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text;
       // T2.4: the chat shell only ever bootstraps (ensureChat/render/health/
-      // webStatus/etc., all now inside enterChat()) once GET /v1/setup/status
+      // capabilities/profile, all inside enterChat()) once GET /v1/setup/status
       // says next_step is "chat" -- refreshSetup() is what decides that, for
       // the very first load exactly the same way it does for every later
       // poll or post-action refresh.
