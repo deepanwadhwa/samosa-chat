@@ -496,7 +496,7 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
      --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
               "messages":[{"role":"user","content":"web tool probe open"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "open_url evidence never reached the answering turn"
-printf '%s' "$R" | grep -q '"reasoning":"Reading http://example.com/jobs' || fail "no tool-activity event was streamed"
+printf '%s' "$R" | grep -q '"web_activity":"Reading http://example.com/jobs' || fail "no tool-activity event was streamed"
 printf '%s' "$R" | grep -q 'Read \\"Careers\\"' || fail "no completion event for the page read"
 # The decoy URL inside the <think> span must not have been fetched.
 if printf '%s' "$R" | grep -q 'decoy.example'; then fail "a URL inside a <think> span was acted on"; fi
@@ -521,7 +521,7 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
      --data '{"model":"qwen3.6-35b-a3b","stream":true,
               "messages":[{"role":"user","content":"web tool probe plain"}]}')
 printf '%s' "$R" | grep -q 'missing web evidence' || fail "a non-web turn was given web evidence"
-if printf '%s' "$R" | grep -q '"reasoning"'; then fail "a non-web turn emitted web activity events"; fi
+if printf '%s' "$R" | grep -q '"web_activity"'; then fail "a non-web turn emitted web activity events"; fi
 # Byte-identical to a pre-W turn: same body, no SSE preamble, no added fields.
 PLAIN=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,

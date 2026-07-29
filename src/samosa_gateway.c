@@ -26,6 +26,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
 
 #include "json.h"
 #include "samosa_http.h"
@@ -327,6 +330,75 @@ static const char *reader_fingerprint(Gateway *g) {
 
 /* Fork/exec a long-lived helper (e.g. caffeinate) whose stdout we discard and
    whose pid we track so a Kill tears it down with everything else. */
+/* ============================================================================
+   Backend sizing from the machine it is actually running on.
+
+   llama.cpp's own defaults are "every core, one fixed context", which is the
+   wrong shape on both ends: it cooks a fanless 16 GB laptop and leaves a 64 GB
+   desktop indexing at a fraction of what it could hold. These derive both from
+   installed RAM and the real performance-core count.
+
+   Thread count uses *performance* cores, not the logical total. On Apple
+   silicon the efficiency cores are slower than the work queue they would join,
+   so including them adds heat and contention without adding throughput -- an
+   M3 Air reports 8 logical cores and should run 4.
+
+   Context is the KV-cache lever, and the largest single memory cost after the
+   weights. The 16 GB tier keeps the value the reference machine has always
+   used, so this change cannot regress the only configuration that has been
+   measured; the larger tiers are the ones that grow.
+   ============================================================================ */
+static long machine_ram_bytes(void) {
+#if defined(__APPLE__)
+    int64_t bytes = 0; size_t len = sizeof(bytes);
+    if (sysctlbyname("hw.memsize", &bytes, &len, NULL, 0) == 0 && bytes > 0) return (long)bytes;
+#else
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            unsigned long kb = 0;
+            if (sscanf(line, "MemTotal: %lu kB", &kb) == 1) { fclose(f); return (long)kb * 1024L; }
+        }
+        fclose(f);
+    }
+#endif
+    return 0;   /* unknown: callers fall back to the conservative default */
+}
+
+static int machine_perf_cores(void) {
+#if defined(__APPLE__)
+    int cores = 0; size_t len = sizeof(cores);
+    /* perflevel0 is the performance cluster on Apple silicon; absent on Intel,
+       where the logical count is already the right answer. */
+    if (sysctlbyname("hw.perflevel0.logicalcpu", &cores, &len, NULL, 0) == 0 && cores > 0) return cores;
+#endif
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (int)n : 0;
+}
+
+/* Chosen once and logged, so the numbers a run used are recoverable from the
+   log rather than inferred from behaviour. */
+static void backend_limits(int *out_ctx, int *out_threads) {
+    long ram = machine_ram_bytes();
+    double gb = ram > 0 ? (double)ram / (1024.0 * 1024.0 * 1024.0) : 0.0;
+    int ctx;
+    if (gb <= 0)         ctx = 8192;    /* unknown machine: the measured default */
+    else if (gb <= 9.0)  ctx = 2048;
+    else if (gb <= 17.0) ctx = 8192;
+    else if (gb <= 33.0) ctx = 16384;
+    else                 ctx = 32768;
+
+    int cores = machine_perf_cores();
+    /* Leave one core for the gateway, the browser, and the user's machine.
+       Beyond 12 threads llama.cpp gains little and contends more. */
+    int threads = cores > 1 ? cores - 1 : 0;
+    if (threads > 12) threads = 12;
+
+    *out_ctx = ctx;
+    *out_threads = threads;
+}
+
 static pid_t spawn_tracked(Gateway *g, const char *program, char *const argv[]) {
     pid_t pid = fork();
     if (pid < 0) return -1;
@@ -5057,9 +5129,37 @@ static int backend_start(Gateway *g) {
             char *model = is_ornith ? g->ornith_model : g->bonsai_model;
             char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
             char *argv[24]; int a = 0;
+            /* Machine safety (CLAUDE.md): llama.cpp defaults to every
+               performance core and a full-size KV cache, which on a fanless
+               M3 Air means sustained heat and a large resident footprint.
+               Both are now tunable without editing code:
+                 SAMOSA_LLAMA_THREADS  cap CPU threads (unset = llama.cpp default)
+                 SAMOSA_LLAMA_CTX      KV cache size in tokens (default 8192)
+                 SAMOSA_LLAMA_NGL      layers offloaded to Metal (default 99)
+               Values are passed through only when they parse as positive
+               integers, so a typo cannot turn into a malformed argv. */
+            int auto_ctx = 8192, auto_threads = 0;
+            backend_limits(&auto_ctx, &auto_threads);
+            const char *env_ctx = getenv("SAMOSA_LLAMA_CTX");
+            const char *env_ngl = getenv("SAMOSA_LLAMA_NGL");
+            const char *env_thr = getenv("SAMOSA_LLAMA_THREADS");
+            char ctx_buf[16], ngl_buf[16], thr_buf[16];
+            snprintf(ctx_buf, sizeof(ctx_buf), "%d", auto_ctx);
+            const char *ctx_val = ctx_buf, *ngl_val = "99", *thr_val = NULL;
+            if (auto_threads > 0) { snprintf(thr_buf, sizeof(thr_buf), "%d", auto_threads); thr_val = thr_buf; }
+            /* An explicit value always wins: the machine is a starting point,
+               not a policy the user cannot escape. */
+            if (env_ctx && atoi(env_ctx) > 0) { snprintf(ctx_buf, sizeof(ctx_buf), "%d", atoi(env_ctx)); ctx_val = ctx_buf; }
+            if (env_ngl && atoi(env_ngl) >= 0) { snprintf(ngl_buf, sizeof(ngl_buf), "%d", atoi(env_ngl)); ngl_val = ngl_buf; }
+            if (env_thr && atoi(env_thr) > 0) { snprintf(thr_buf, sizeof(thr_buf), "%d", atoi(env_thr)); thr_val = thr_buf; }
+            fprintf(stderr, "[samosa] backend sizing: %.0f GB RAM, %d performance cores -> -c %s%s%s\n",
+                    machine_ram_bytes() / 1073741824.0, machine_perf_cores(),
+                    ctx_val, thr_val ? " -t " : "", thr_val ? thr_val : "");
+
             argv[a++] = g->llama_server; argv[a++] = (char *)"-m"; argv[a++] = model;
-            argv[a++] = (char *)"-ngl"; argv[a++] = (char *)"99";
-            argv[a++] = (char *)"-c"; argv[a++] = (char *)"8192";
+            argv[a++] = (char *)"-ngl"; argv[a++] = (char *)ngl_val;
+            argv[a++] = (char *)"-c"; argv[a++] = (char *)ctx_val;
+            if (thr_val) { argv[a++] = (char *)"-t"; argv[a++] = (char *)thr_val; }
             argv[a++] = (char *)"-np"; argv[a++] = (char *)"1";
             argv[a++] = (char *)"--cache-ram"; argv[a++] = (char *)"0";
             argv[a++] = (char *)"--host"; argv[a++] = (char *)"127.0.0.1";
@@ -6688,10 +6788,16 @@ static char *web_plan_decide(Gateway *g, const char *question, const char *notes
 }
 
 static int web_sse_reasoning(TextBuffer *out, const char *text) {
-    /* The browser routes delta.reasoning into the Thinking disclosure and
-       renders it with textContent, so tool activity shows up where the user
-       expects it and cannot inject markup. */
-    return text_add(out, "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":") &&
+    /* Its own delta field, not `reasoning`.
+       Tool activity used to be streamed as reasoning, which the browser routes
+       into the collapsed "Thinking" disclosure -- so a turn that spent two
+       minutes searching and reading pages showed a blinking cursor, with the
+       explanation hidden inside a fold labelled as the model's private
+       thoughts. Fetching a page is something Samosa is *doing* on the user's
+       behalf, not something the model is thinking, and it is the only signal
+       that a long turn is progressing at all.
+       Rendered with textContent by the browser, so it cannot inject markup. */
+    return text_add(out, "data: {\"choices\":[{\"index\":0,\"delta\":{\"web_activity\":") &&
            text_json_string(out, text) && text_add(out, "}}]}\n\n");
 }
 
@@ -6727,6 +6833,11 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
        the composer, and a stream that narrated "I would have searched" on every
        turn would be nagging rather than asking. */
     if (st.consent != WEB_CONSENT_GRANTED) return 0;
+    /* Deliberately silent until a tool actually runs. Announcing "checking
+       whether this needs the web" on every turn made the app look foolish on
+       questions no one would search for -- "what is my name?" is not a web
+       question, and saying so out loud is worse than saying nothing. The first
+       visible line is now the search or the fetch itself. */
     TextBuffer notes = {0};
     int used = 0;
     /* WK6: what has already been tried this turn.
@@ -6813,7 +6924,8 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
                 text_add(&notes, " — "); text_add(&notes, results[i].url); text_add(&notes, "\n");
             }
             text_add(evidence, "--- end of search results ---");
-            snprintf(line, sizeof(line), "Found %d result%s.\n", n, n == 1 ? "" : "s");
+            snprintf(line, sizeof(line),
+                     "Found %d result%s, with excerpts from each.\n", n, n == 1 ? "" : "s");
             web_sse_reasoning(progress, line);
             web_results_free(results, n);
             used = 1;
@@ -6883,6 +6995,10 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
     }
     for (int i = 0; i < ntried; ++i) free(tried[i]);
     free(notes.data);
+    /* The final answer is generated with all the evidence in its prompt, which
+       on this machine is the slowest part of the whole turn. Name it, so the
+       longest silence is the one stretch the user was told to expect. */
+    if (used) web_sse_reasoning(progress, "Writing the answer from what it found…\n");
     return used;
 }
 

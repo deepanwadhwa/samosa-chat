@@ -351,6 +351,11 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 # T3.3 view logic. Skips with a message where node is unavailable rather than
 # passing silently -- the rendering itself cannot be verified headlessly.
 	sh tests/test_chutni_views.sh
+	sh tests/test_hidden_toggles.sh
+# Backend sizing must be correct for machines this repo cannot run on, so the
+# tier table is unit-tested and guarded against drifting from the gateway.
+	$(CC) -O1 -Wall -Wextra -Werror -std=c11 tests/test_backend_limits.c -o $(BUILD_DIR)/test_backend_limits && ./$(BUILD_DIR)/test_backend_limits
+	sh tests/test_backend_limits_match.sh
 
 # test-all adds the gates that need a toolchain beyond a C compiler. The
 # Gigatoken adapter needs `cargo +nightly`, so it is deliberately not in
