@@ -467,6 +467,16 @@ static int handler(SamosaHttpServer *server, int fd,
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw web evidence\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"missing web evidence\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "chutni memory probe"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Chutni local memory") &&
+            strstr(request->body, "[Source: report.txt]") &&
+            strstr(request->body, "renewal date June")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw Chutni memory\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing Chutni memory\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

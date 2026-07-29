@@ -51,6 +51,8 @@ assert_no_model_requests() {
 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runtime-only --repo-id test/samosa >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
+grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the bundled Chutni service source"
 for name in $MODEL_ARTIFACT_NAMES; do
   grep -q "	$name$" "$REMOTE/release-manifest.tsv" &&
     fail "runtime-only manifest unexpectedly lists model artifact '$name'"
@@ -80,6 +82,7 @@ SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ] || fail "gateway binary missing after install"
 [ -x "$HOME_DIR/current/bin/samosa-fs" ] || fail "filesystem sidecar missing after install"
+[ -x "$HOME_DIR/current/bin/chutni-mcp" ] || fail "Chutni service missing after install"
 [ -x "$HOME_DIR/current/bin/qwen36b" ] || fail "engine binary missing after install"
 [ -f "$HOME_DIR/current/app.html" ] || fail "app shell missing after install"
 [ ! -e "$HOME_DIR/current/model" ] || fail "a model directory was created by a runtime-only install"

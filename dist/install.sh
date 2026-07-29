@@ -124,6 +124,12 @@ destination() { # destination <remote-path>
 # they are staged unconditionally rather than gated behind a manifest probe.
 INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
 
+# Chutni is an application runtime component, not a user-installed prerequisite.
+# These pinned sources build the same generic service Samosa uses locally and
+# MCP-capable applications can launch directly.
+CHUTNI_FILES="engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c"
+INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
+
 # Model weights are a separate, optional concern from the runtime: a
 # runtime-only release (tools/package_hf.py --runtime-only) omits them
 # entirely, and a clean install must make no request for any of them. Stage
@@ -235,6 +241,26 @@ $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
 
+$COMPILER -std=c99 -O2 -pthread \
+  -I"$STAGE/engine/chutni/include" -I"$STAGE/engine/chutni/src" \
+  -I"$STAGE/engine/chutni/third_party/blake3" -I"$STAGE/engine/sqlite" \
+  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 \
+  -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0 \
+  -DSQLITE_ENABLE_FTS5 -DSQLITE_OMIT_LOAD_EXTENSION \
+  -DSQLITE_THREADSAFE=1 -DSQLITE_DQS=0 \
+  -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_ENABLE_JSON1 \
+  "$STAGE/engine/chutni/src/chutni.c" \
+  "$STAGE/engine/chutni/src/scan.c" \
+  "$STAGE/engine/chutni/src/cj.c" \
+  "$STAGE/engine/chutni/src/mcp.c" \
+  "$STAGE/engine/chutni/third_party/blake3/blake3.c" \
+  "$STAGE/engine/chutni/third_party/blake3/blake3_dispatch.c" \
+  "$STAGE/engine/chutni/third_party/blake3/blake3_portable.c" \
+  "$STAGE/engine/sqlite/sqlite3.c" \
+  -o "$STAGE/bin/chutni-mcp" -lm ||
+  fail "staged Chutni service compilation failed; live release was not changed"
+chmod +x "$STAGE/bin/chutni-mcp"
+
 if [ "$DOCUMENTS_ENABLED" = 1 ]; then
   command -v tar >/dev/null 2>&1 || fail "PDF support needs tar to unpack its verified release artifact"
   PDFIUM_ROOT="$STAGE/pdfium/unpacked"
@@ -286,7 +312,7 @@ $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$S
 $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
   fail "staged filesystem sidecar compilation failed; live release was not changed"
-chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs"
+chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/chutni-mcp"
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   # This is a control-plane smoke, not a model smoke (docs/TASKS_UI_CHUTNI.md

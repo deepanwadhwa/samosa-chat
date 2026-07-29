@@ -1,0 +1,3 @@
+[submodule "vendor/chutni"]
+	path = vendor/chutni
+	url = https://github.com/deepanwadhwa/chutni-protocol.git

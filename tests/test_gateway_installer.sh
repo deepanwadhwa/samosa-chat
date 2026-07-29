@@ -22,6 +22,7 @@ python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/read_cache.h' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv"
 
 SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="file://$REMOTE" SAMOSA_HOME="$HOME_DIR" \
@@ -29,6 +30,7 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
+[ -x "$HOME_DIR/current/bin/chutni-mcp" ]
 # The launchd scheduler's plist runs current/bin/samosa-jobsd, so the installer
 # must build it or the scheduler is broken on a clean install.
 [ -x "$HOME_DIR/current/bin/samosa-jobsd" ]
@@ -36,5 +38,6 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ ! -e "$HOME_DIR/current/bin/samosa_jobs.py" ]
 file "$HOME_DIR/current/bin/samosa-gateway" | grep -q 'executable'
 file "$HOME_DIR/current/bin/samosa-jobsd" | grep -q 'executable'
+file "$HOME_DIR/current/bin/chutni-mcp" | grep -q 'executable'
 
 echo "gateway installer: PASS"

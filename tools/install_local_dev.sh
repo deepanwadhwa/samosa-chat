@@ -14,13 +14,13 @@ ENGINE="$BUILD_DIR/qwen36b"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 JOBSD="$BUILD_DIR/samosa-jobsd"
-CHUTNI_DB="$BUILD_DIR/samosa-chutni-db"
+CHUTNI_SERVICE="$BUILD_DIR/chutni-mcp"
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_DB" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" \
   "$ROOT/dist/samosa"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
@@ -37,7 +37,7 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
-release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/dist/samosa" |
+release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/dist/samosa" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
@@ -62,11 +62,11 @@ cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"
 cp "$JOBSD" "$stage/bin/samosa-jobsd"
-cp "$CHUTNI_DB" "$stage/bin/samosa-chutni-db"
+cp "$CHUTNI_SERVICE" "$stage/bin/chutni-mcp"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 cp "$ROOT/assets/models.json" "$stage/models.json"
-chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/samosa-chutni-db"
+chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp"
 
 # Document extraction (PDF text via libpdfium, docs/TASKS_DOCUMENTS.md) is an
 # optional capability, not a hard dependency of this installer: most dev

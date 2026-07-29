@@ -1492,6 +1492,7 @@
         // is byte-identical to a pre-W turn, which is W5's gate.
         if (webUrls.length) payload.web_urls = webUrls;
         if (wantsWebSearch || web.available) payload.web = true;
+        if (chat.directory_context) payload.directory_context = chat.directory_context;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         try {
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -2746,14 +2747,20 @@
           li.appendChild(why);
         }
 
-        const LABELS = { build: "Refresh", resume: "Resume", pause: "Pause", cancel: "Cancel",
+        const chat = activeChat();
+        const selectedHere = !!(chat && chat.directory_context &&
+                                chat.directory_context.scope_id === s.id);
+        const actions = p.actions.slice();
+        if (s.state === "ready") actions.unshift(selectedHere ? "unuse" : "use");
+        const LABELS = { use: "Use in this chat", unuse: "Stop using in this chat",
+                         build: "Refresh", resume: "Resume", pause: "Pause", cancel: "Cancel",
                          recheck: "Check again", retry: "Try again", forget: "Forget" };
-        if (p.actions.length) {
+        if (actions.length) {
           const box = document.createElement("div"); box.className = "chutni-actions";
-          for (const a of p.actions) {
+          for (const a of actions) {
             const b = document.createElement("button");
             b.type = "button";
-            b.className = a === "forget" ? "chutni-secondary" : (a === "build" || a === "resume" ? "chutni-primary" : "chutni-secondary");
+            b.className = a === "use" ? "chutni-primary" : "chutni-secondary";
             b.textContent = LABELS[a] || a;
             b.onclick = () => chutniAction(s, a);
             box.appendChild(b);
@@ -2764,6 +2771,15 @@
       }
 
       async function chutniAction(scope, action) {
+        if (action === "use" || action === "unuse") {
+          const chat = ensureChat();
+          chat.directory_context = action === "use" ? { scope_id: scope.id } : null;
+          chat.updated = Date.now();
+          chat.updated_at = new Date().toISOString();
+          saveState();
+          renderChutni();
+          return;
+        }
         if (action === "forget") { chutniForgetId = scope.id; openChutniForget(scope); return; }
         if (action === "retry" || action === "recheck") { await refreshChutni(); return; }
         try {
@@ -2783,7 +2799,8 @@
 
       function openChutniForget(scope) {
         chutniEls.forgetWhat.textContent =
-          `Samosa will delete the index it built for “${scope.display_name || scope.id}”.`;
+          `Samosa will remove “${scope.display_name || scope.id}” from this app. `
+          + "Its portable .chutni memory will remain beside the folder so another compatible app can reuse it.";
         chutniEls.pane.hidden = true; chutniEls.empty.hidden = true;
         chutniEls.forgetPanel.hidden = false;
         chutniEls.forgetCancel.focus();
@@ -2854,6 +2871,7 @@
 
       function renderPreflight(pf) {
         const est = pf.estimate || {}, pol = pf.effective_policy || {};
+        const chutni = pf.chutni || {};
         const dl = document.createElement("dl");
         const row = (k, v) => {
           if (v === null || v === undefined) return;
@@ -2868,6 +2886,10 @@
         row("Source size", bytesLabel(est.source_bytes));
         const need = bytesLabel(est.peak_additional_disk_bytes), free = bytesLabel(est.available_disk_bytes);
         if (need) row("Extra disk needed", free ? `${need} (${free} free)` : need);
+        row("Portable memory", chutni.store_path);
+        if (chutni.action === "create_store") row("Action", "Create new .chutni memory");
+        if (chutni.action === "open_store") row("Action", "Open and refresh existing memory");
+        if (chutni.action === "authorize_root") row("Action", "Add this folder to existing memory");
         if (pol.include_hidden === false) row("Hidden files", "Not included");
         const excl = [].concat(pol.mandatory_exclusions || [], pol.user_exclusions || []);
         if (excl.length) row("Excluded", excl.join(", "));
@@ -3543,6 +3565,11 @@
             const detail = await r.json().catch(() => null);
             throw new Error((detail && detail.error && detail.error.message) || "That memory could not be forgotten.");
           }
+          for (const chat of state.chats || []) {
+            if (chat.directory_context && chat.directory_context.scope_id === id)
+              chat.directory_context = null;
+          }
+          saveState();
           closeChutniPanels();
         } catch (err) {
           closeChutniPanels();

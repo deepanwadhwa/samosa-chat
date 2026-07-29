@@ -36,7 +36,7 @@ Install OpenMP:
 
 ```sh
 brew install libomp
-git clone https://github.com/deepanwadhwa/samosa-chat
+git clone --recurse-submodules https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
 make install
 ~/.samosa/bin/samosa app
@@ -50,7 +50,7 @@ Install build dependencies and OpenMP:
 
 ```sh
 sudo apt-get install build-essential libomp-dev
-git clone https://github.com/deepanwadhwa/samosa-chat
+git clone --recurse-submodules https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
 make install
 ~/.samosa/bin/samosa app
@@ -100,6 +100,24 @@ Access the interface at <http://127.0.0.1:8642>. Available settings include:
 - Inference parameters (thinking budget, max tokens, seed) and optional web context tools.
 
 State and conversation ledgers are persisted under `~/.samosa/chats`.
+
+### Folder memory with Chutni
+
+Samosa bundles the independent [Chutni protocol](https://github.com/deepanwadhwa/chutni-protocol)
+service; there is no separate Chutni installation.
+
+1. Open **Chutni** in the app and choose a folder.
+2. Review the proposed adjacent `Folder.chutni` path and scan policy.
+3. Click **Build memory**.
+4. On the ready folder, click **Use in this chat**.
+
+Samosa creates or reuses that portable store. For a chat bound to the folder,
+the gateway searches before each local-model turn and injects only bounded,
+source-labelled excerpts as untrusted file data. Another Chutni-capable
+application can use the same store without conversion.
+The current scanner extracts text-like files and records metadata for other
+files; PDF page extraction, OCR, images, spreadsheets, and audio are not on the
+protocol path yet. See [docs/CHUTNI_PROTOCOL.md](docs/CHUTNI_PROTOCOL.md).
 
 ## Terminal Interface
 
@@ -166,6 +184,7 @@ For complete documentation, see [docs/SERVE_API.md](docs/SERVE_API.md).
 ```sh
 make              # Build Qwen C engine
 make omp          # Build multithreaded OpenMP engine
+make chutni-gateway-test  # Build and test the bundled Chutni handoff
 make test         # Run unit and integration test suite
 ```
 
@@ -193,6 +212,7 @@ Test logs and regression benchmarks are located in [docs/regressions](docs/regre
 | App & Terminal Usage | [docs/USAGE.md](docs/USAGE.md) |
 | Model Specifications & Network | [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md) |
 | Gateway API | [docs/SERVE_API.md](docs/SERVE_API.md) |
+| Chutni folder memory | [docs/CHUTNI_PROTOCOL.md](docs/CHUTNI_PROTOCOL.md) |
 | Architecture | [docs/DESIGN.md](docs/DESIGN.md) |
 | Performance Benchmarks | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
 | Regression Logs | [docs/regressions](docs/regressions) |

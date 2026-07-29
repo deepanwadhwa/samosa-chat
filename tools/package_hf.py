@@ -56,6 +56,27 @@ SOURCE_FILES = [
     "samosa_fs.c",
     "read_cache.h",
     "durable_job.h",
+    # Chutni reuses the exact SQLite amalgamation already vendored by Samosa.
+    "sqlite/sqlite3.c",
+    "sqlite/sqlite3.h",
+]
+
+CHUTNI_SOURCE_FILES = [
+    "LICENSE",
+    "NOTICE",
+    "include/chutni.h",
+    "src/chutni.c",
+    "src/scan.c",
+    "src/cj.c",
+    "src/cj.h",
+    "src/mcp.c",
+    "third_party/blake3/LICENSE_A2",
+    "third_party/blake3/LICENSE_CC0",
+    "third_party/blake3/blake3.c",
+    "third_party/blake3/blake3.h",
+    "third_party/blake3/blake3_dispatch.c",
+    "third_party/blake3/blake3_impl.h",
+    "third_party/blake3/blake3_portable.c",
 ]
 
 PDFIUM_ARCHIVES = [
@@ -131,6 +152,18 @@ def main() -> int:
             return 1
         place(src, out / "engine" / name, link=False)
         staged.append(out / "engine" / name)
+
+    chutni_root = ROOT / "vendor" / "chutni"
+    for name in CHUTNI_SOURCE_FILES:
+        src = chutni_root / name
+        if not src.exists():
+            print(
+                f"missing Chutni source: {src}; run git submodule update --init",
+                file=sys.stderr,
+            )
+            return 1
+        place(src, out / "engine" / "chutni" / name, link=False)
+        staged.append(out / "engine" / "chutni" / name)
 
     if args.pdfium_dir:
         for name in PDFIUM_ARCHIVES:

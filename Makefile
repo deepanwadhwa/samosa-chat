@@ -23,6 +23,9 @@ NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python
 ENGINE_HEADERS := $(wildcard src/*.h)
 PDFIUM_DIR ?=
 PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
+CHUTNI_DIR ?= vendor/chutni
+CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
+CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
 
 # PDFium is deliberately optional: the engine's normal build remains
 # dependency-free.  The installer supplies a SHA-pinned platform artifact and
@@ -77,6 +80,16 @@ test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c s
 samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
+
+# The generic service is pinned as a submodule and shipped as an application
+# runtime component. Samosa calls its public JSON tool surface; it does not
+# compile or maintain a private Chutni storage implementation.
+.PHONY: chutni-service
+chutni-service:
+	@test -f "$(CHUTNI_DIR)/Makefile" || { echo "missing Chutni submodule; run: git submodule update --init" >&2; exit 2; }
+	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" "$(CHUTNI_BUILD)/chutni-mcp"
+	@mkdir -p $(BUILD_DIR)
+	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
 
 test-chutni-db: samosa-chutni-db tests/test_chutni_db.sh tests/test_chutni_scope.sh tests/test_chutni_extraction_cache.sh tests/test_chutni_recovery.sh
 	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_db.sh
@@ -181,14 +194,13 @@ tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_
 r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
 	sh tests/test_r7_r6_handwriting.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h samosa-chutni-db
+samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway
 
-# Chutni's HTTP controller invokes the same installed sidecar binary as the
-# standalone scope tests.
-chutni-gateway-test: samosa-gateway samosa-chutni-db tests/test_chutni_gateway.sh
+# The HTTP controller invokes the same generic service that MCP hosts use.
+chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh
 	sh tests/test_chutni_gateway.sh
 
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
