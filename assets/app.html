@@ -2702,7 +2702,13 @@
         };
         add("Plain-text files read", s.scan_text_artifacts);
         add("Unchanged files reused", s.scan_unchanged, s.scan_unchanged > 0);
-        add("Metadata-only at scan", s.scan_metadata_artifacts);
+        // Chutni 0.2 writes a {size_bytes, depth} record for every file, not
+        // only for the ones it could not read, so this counter stopped meaning
+        // "metadata-only" and started meaning "files recorded". Measured: 4 on
+        // a four-file folder with one unreadable file, where 0.1 reported 1.
+        // The honest metadata-only number is the post-build "Metadata only"
+        // fact above, which comes from counts.metadata_only_sources.
+        add("File records written", s.scan_metadata_artifacts);
         add("PDF pages read", s.pdf_pages_read);
         add("OCR outputs", s.ocr_outputs);
         add("Image captions", s.image_captions);

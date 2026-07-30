@@ -85,6 +85,27 @@ SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ] || fail "gateway binary missing after install"
 [ -x "$HOME_DIR/current/bin/samosa-fs" ] || fail "filesystem sidecar missing after install"
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ] || fail "Chutni service missing after install"
+
+# dist/install.sh compiles Chutni without its Makefile, so it must pass
+# -DCHUTNI_VERSION itself. The in-source fallback is "0.0.0-unversioned", and
+# the scanner writes its version into the producer record of every artifact
+# (SPEC §16.1) -- a shipped fallback would permanently attribute a real user's
+# store to a build that never existed. Assert against the store, not against
+# the binary's own help output, because the store is where it does damage.
+CHUTNI_PROBE="$TMP/chutni-version-probe"
+mkdir -p "$CHUTNI_PROBE/d" "$CHUTNI_PROBE/home"
+printf 'version probe\n' >"$CHUTNI_PROBE/d/a.txt"
+HOME="$CHUTNI_PROBE/home" CHUTNI_HOME="$CHUTNI_PROBE/home/chutni" \
+  "$HOME_DIR/current/bin/chutni-mcp" --call chutni_folder_activate \
+  "{\"path\":\"$CHUTNI_PROBE/d\",\"confirmed\":true,\"register\":true,\"label\":\"probe\",\"app_name\":\"Samosa\",\"app_version\":\"runtime-only-test\"}" \
+  >"$CHUTNI_PROBE/activate.json" 2>&1 ||
+  fail "installed Chutni service could not activate a folder"
+EXPECTED_CHUTNI_VERSION=$(tr -d ' \n' <"$ROOT/vendor/chutni/VERSION")
+RECORDED_CHUTNI_VERSION=$(sqlite3 \
+  "file:$CHUTNI_PROBE/d.chutni/catalog.sqlite?immutable=1" \
+  "SELECT DISTINCT version FROM producers WHERE name='chutni-reference-scanner';")
+[ "$RECORDED_CHUTNI_VERSION" = "$EXPECTED_CHUTNI_VERSION" ] ||
+  fail "installed Chutni recorded producer version '$RECORDED_CHUTNI_VERSION', expected '$EXPECTED_CHUTNI_VERSION'"
 [ -x "$HOME_DIR/current/bin/qwen36b" ] || fail "engine binary missing after install"
 [ -f "$HOME_DIR/current/app.html" ] || fail "app shell missing after install"
 [ ! -e "$HOME_DIR/current/model" ] || fail "a model directory was created by a runtime-only install"

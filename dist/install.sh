@@ -127,7 +127,7 @@ INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expe
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
-CHUTNI_FILES="engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c"
+CHUTNI_FILES="engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c"
 INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 
 # Model weights are a separate, optional concern from the runtime: a
@@ -241,9 +241,20 @@ $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
 
+# Chutni's own Makefile compiles its release version in from VERSION, and that
+# string lands in the producer record of every artifact the service writes
+# (SPEC §16.1). This build bypasses that Makefile, so it must pass the same
+# define: the in-source fallback is "0.0.0-unversioned", which would attribute
+# every artifact in a user's store to a build that never existed. Fail loudly
+# rather than silently shipping the fallback.
+CHUTNI_VERSION=$(cat "$STAGE/engine/chutni/VERSION" 2>/dev/null | tr -d ' \n')
+[ -n "$CHUTNI_VERSION" ] ||
+  fail "staged Chutni release is missing VERSION; live release was not changed"
+
 $COMPILER -std=c99 -O2 -pthread \
   -I"$STAGE/engine/chutni/include" -I"$STAGE/engine/chutni/src" \
   -I"$STAGE/engine/chutni/third_party/blake3" -I"$STAGE/engine/sqlite" \
+  -DCHUTNI_VERSION="\"$CHUTNI_VERSION\"" \
   -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 \
   -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0 \
   -DSQLITE_ENABLE_FTS5 -DSQLITE_OMIT_LOAD_EXTENSION \

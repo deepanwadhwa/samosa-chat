@@ -65,6 +65,13 @@ SOURCE_FILES = [
 CHUTNI_SOURCE_FILES = [
     "LICENSE",
     "NOTICE",
+    # Chutni 0.3.0 compiles its release version in rather than hardcoding it in
+    # a source file, and stamps it into the producer record of every artifact
+    # it writes (SPEC §16.1). Ship VERSION so dist/install.sh can pass
+    # -DCHUTNI_VERSION: without it the fallback is "0.0.0-unversioned", which
+    # is not a build that exists and would be written permanently into the
+    # user's own store.
+    "VERSION",
     "include/chutni.h",
     "src/chutni.c",
     "src/scan.c",

@@ -160,6 +160,25 @@ printf '%s' "$RESULT" | grep -q '"used":true'
 printf '%s' "$RESULT" | grep -q 'report.txt'
 printf '%s' "$RESULT" | grep -q '"freshness":"current"'
 
+# Chutni 0.2 indexes a {"size_bytes":N,"depth":N} file_metadata artifact per
+# file and a directory_listing per enumerated directory. Both rank alongside
+# real content, so retrieval must drop them: they are machine bookkeeping, and
+# on this machine every token spliced into a prompt is paid for in prefill.
+# The store genuinely contains them -- assert that directly, so this stays a
+# test of Samosa's filter and not of whether the scanner wrote them.
+METADATA_COUNT=$(sqlite3 "$DB_URI" \
+  "SELECT count(*) FROM artifacts WHERE artifact_kind='file_metadata' AND status='active';")
+test "$METADATA_COUNT" -gt 0
+METADATA_PROBE=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/query" \
+  --data-binary "{\"query\":\"size_bytes depth\",\"directory_context\":{\"scope_id\":\"$SCOPE\"}}")
+! printf '%s' "$METADATA_PROBE" | grep -q 'size_bytes'
+! printf '%s' "$METADATA_PROBE" | grep -q '"artifact_kind":"file_metadata"'
+! printf '%s' "$METADATA_PROBE" | grep -q 'directory_listing'
+# A query that matches only bookkeeping is not useful evidence, and saying
+# otherwise would report a retrieval the model never sees.
+printf '%s' "$METADATA_PROBE" | grep -q '"used":false'
+
 # Binding the ready scope to a chat turn makes the gateway retrieve, bound,
 # label, and inject the evidence before the local model receives the request.
 CHAT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \

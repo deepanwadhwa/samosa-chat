@@ -1,0 +1,27 @@
+# A store written at spec 0.1 by the vendored pin, then handled by 0.3.0 (spec 0.2).
+
+## 1. create with the OLD build
+   manifest spec_version = 0.1
+   sha256 before:
+f840d853310e3f51787627f197793bc166c7dbf5276951a0ac481a8de9eec221       data.chutni/manifest.json
+37a993b04943e5d65ee1e583544babcb7733a7256b3fe73b06bc4b68cccf098c       data.chutni/catalog.sqlite
+8ac930964ec5929f22613feeb448d8b645986f220850263dbbe2b98719ba933f       data.chutni/indexes/lexical.sqlite
+
+## 2. READ-ONLY operations with the NEW build
+   chutni_store_info      -> ok=True
+   chutni_list_sources    -> ok=True
+   chutni_search          -> ok=True
+   manifest spec_version = 0.1
+   sha256 after (unchanged => not rewritten on open):
+f840d853310e3f51787627f197793bc166c7dbf5276951a0ac481a8de9eec221       data.chutni/manifest.json
+37a993b04943e5d65ee1e583544babcb7733a7256b3fe73b06bc4b68cccf098c       data.chutni/catalog.sqlite
+8ac930964ec5929f22613feeb448d8b645986f220850263dbbe2b98719ba933f       data.chutni/indexes/lexical.sqlite
+
+## 3. a WRITE with the NEW build upgrades the manifest in place
+   manifest spec_version = 0.2
+   capabilities = ['sources', 'artifacts', 'provenance', 'full_text_optional', 'hierarchical_sources', 'bounded_coverage', 'directory_definitions']
+
+## 4. the OLD 0.1 build still reads the upgraded store (rollback survives)
+   reason: the &sect;35 reader gate rejects only major > 0 (src/chutni.c:788-795)
+   old store_info -> ok=True
+   old search    -> ok=True count=1

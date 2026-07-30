@@ -1,0 +1,29 @@
+# Counters on one identical folder: vendored 0fc912c vs main 04a7451 (0.3.0)
+# Fixture: 4 files (2 plain text, 1 nested, 1 binary), 1 subdirectory.
+
+--- old build ---
+  scan.files_seen           = 4
+  scan.sources_indexed      = 4
+  scan.text_artifacts       = 3
+  scan.metadata_artifacts   = 1
+  counts.sources            = 4
+  counts.sources_files      = None
+  counts.content_artifacts  = 3
+  counts.metadata_artifacts = 1
+  counts.content_readable_sources = 3
+  counts.metadata_only_sources = 1
+  counts.artifacts_active   = 4
+
+--- new build ---
+  scan.files_seen           = 4
+  scan.sources_indexed      = 4
+  scan.text_artifacts       = 3
+  scan.metadata_artifacts   = 4
+  counts.sources            = 6
+  counts.sources_files      = 4
+  counts.content_artifacts  = 3
+  counts.metadata_artifacts = 4
+  counts.content_readable_sources = 3
+  counts.metadata_only_sources = 1
+  counts.artifacts_active   = 10
+
