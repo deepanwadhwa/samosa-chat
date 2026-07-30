@@ -155,6 +155,8 @@ function loadSetupFlowUi() {
   assert.equal(fns.modelCardState({ compatible: true, install_state: "not_installed" }, null, false).kind, "not_installed");
   assert.equal(fns.modelCardState({ compatible: true, install_state: "ready", active: false }, null, false).kind, "ready");
   assert.equal(fns.modelCardState({ compatible: true, install_state: "ready", active: true }, null, false).kind, "active");
+  assert.equal(fns.modelCardState({ compatible: true, install_state: "ready", active: true }, null, false, false).kind, "activating",
+    "a catalog-active model whose backend is still loading must show progress instead of looking inert");
   assert.equal(fns.modelCardState({ compatible: true, install_state: "ready", active: false }, null, true).kind, "activating",
     "a ready-but-not-yet-active model while a selection is in flight reads as activating, not a plain 'ready' invite to click again");
 }

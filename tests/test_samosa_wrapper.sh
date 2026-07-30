@@ -23,11 +23,13 @@ cat >"$TMP/bin/samosa-gateway" <<'EOF'
 #!/bin/sh
 printf 'port=%s\n' "${SAMOSA_PORT:-}"
 printf 'context=%s\n' "${SAMOSA_CONTEXT_TOKENS:-}"
+printf 'chutni=%s\n' "${SAMOSA_CHUTNI_SERVICE:-}"
 EOF
 chmod +x "$TMP/bin/samosa-gateway"
 
 run() {
-  SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 sh "$ROOT/dist/samosa" "$@"
+  SAMOSA_DISABLE_LAUNCHD=1 SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 \
+    sh "$ROOT/dist/samosa" "$@"
 }
 
 direct=$(run "hello world")
@@ -59,11 +61,12 @@ custom_context=$(run --context-tokens 65536 "remember this")
 printf '%s\n' "$custom_context" | grep -qx -- '--context-tokens'
 printf '%s\n' "$custom_context" | grep -qx -- '65536'
 
-serve=$(run serve)
+serve=$(run serve --foreground)
 printf '%s\n' "$serve" | grep -qx -- 'port=18642'
 printf '%s\n' "$serve" | grep -qx -- 'context=auto'
+printf '%s\n' "$serve" | grep -qx -- "chutni=$TMP/bin/chutni-mcp"
 
-serve_custom=$(run serve --context-tokens 65536)
+serve_custom=$(run serve --foreground --context-tokens 65536)
 printf '%s\n' "$serve_custom" | grep -qx -- 'context=65536'
 
 cat >"$TMP/fake-curl" <<'EOF'
@@ -79,7 +82,7 @@ app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" run app)
 printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:18642'
 printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
 already=$(SAMOSA_CURL="$TMP/fake-curl" run serve)
-printf '%s\n' "$already" | grep -q -- 'server already running at http://127.0.0.1:18642'
+printf '%s\n' "$already" | grep -q -- 'Samosa server running independently at http://127.0.0.1:18642'
 if printf '%s\n' "$already" | grep -q -- 'answer a question'; then
   echo "serve fell through to usage after reporting an existing server" >&2
   exit 1

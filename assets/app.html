@@ -232,6 +232,14 @@
     .generating .send { display: none; } .generating .stop { display: grid; }
 
     .composer-hint { padding-top: 8px; text-align: center; color: var(--ink-2); font-size: 12px; }
+    .chat-memory-context {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-bottom: 8px; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+      border-radius: var(--r-md); background: var(--accent-soft); color: var(--ink-2); font-size: 12px;
+    }
+    .chat-memory-context[hidden] { display: none; }
+    .chat-memory-context strong { display: block; color: var(--ink); font-size: 13px; }
+    .chat-memory-context button { flex: none; border: 0; background: transparent; color: var(--accent); font-weight: 600; cursor: pointer; padding: 4px 6px; }
     /* WK2: the one-time internet question. Sits above the composer, reads as
        part of the page rather than as an alert -- it is a choice, not a
        warning, and styling it as a warning would push people to decline
@@ -440,6 +448,19 @@
     .chutni-chip.busy { border-color: transparent; background: var(--inset); color: var(--ink-2); }
     .chutni-facts { margin: 11px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; color: var(--ink-2); font-size: 12px; }
     .chutni-facts b { font-weight: 600; color: var(--ink); }
+    .chutni-monitor { margin-top: 12px; padding: 11px 12px; border-radius: var(--r-sm); background: var(--inset); }
+    .chutni-monitor-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--ink-2); font-size: 11px; }
+    .chutni-monitor-head strong { color: var(--ink); font-size: 12px; }
+    .chutni-monitor-grid { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 9px 16px; }
+    .chutni-monitor-grid div { min-width: 0; }
+    .chutni-monitor-grid dt { margin: 0 0 2px; color: var(--ink-3); font-size: 10px; }
+    .chutni-monitor-grid dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .chutni-current { margin: 8px 0 0; overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .chutni-summary-setting { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+    .chutni-summary-setting-row { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+    .chutni-summary-setting label { display: grid; gap: 4px; color: var(--ink-2); font-size: 11px; font-weight: 600; }
+    .chutni-summary-setting input { width: 118px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); color: var(--ink); font: inherit; }
+    .chutni-summary-setting p { margin: 6px 0 0; color: var(--ink-3); font-size: 11px; line-height: 1.4; }
     .chutni-why { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
     .chutni-why.bad { color: var(--danger); }
     .chutni-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -457,7 +478,10 @@
     @media (prefers-reduced-motion: reduce) { .chutni-phase-bar.indeterminate i { animation: none; width: 100%; opacity: .45; } }
     .chutni-panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
     .chutni-panel label { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
-    .chutni-panel input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); color: var(--ink); font-size: 13px; }
+    .chutni-panel input[type="text"], .chutni-panel input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); color: var(--ink); font-size: 13px; }
+    .chutni-budget-field { margin-top: 14px; max-width: 240px; }
+    .folder-picker-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+    .folder-picker-field button { min-width: 92px; }
     .chutni-note { margin: 10px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
     .chutni-panel-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
     .chutni-preflight { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); font-size: 12px; color: var(--ink-2); }
@@ -476,6 +500,8 @@
     .job-form input:not([type="checkbox"]), .job-form textarea { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
     .job-form #jobGoal { min-height: 86px; max-height: 180px; padding: 13px; font-size: 16px; line-height: 1.45; }
     .job-form input:not([type="checkbox"]):focus, .job-form textarea:focus { border-color: var(--line-strong); }
+    .job-memory-access { margin-top: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); color: var(--ink-2); font-size: 12px; line-height: 1.45; }
+    .job-memory-access strong { color: var(--ink); }
     .job-form .row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
     .job-advanced { margin: 0 0 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
     .job-advanced > summary { padding: 11px 2px; color: var(--ink-2); cursor: pointer; font-size: 12px; font-weight: 600; }
@@ -550,9 +576,9 @@
        [hidden] rule at equal specificity, the same bug class T3.1's evidence
        doc already found (and fixed) twice elsewhere in this file. */
     .shell[hidden] { display: none; }
-    .setup { display: grid; place-items: start center; min-height: 100vh; min-height: 100dvh; padding: 8vh 24px 24px; background: var(--paper); overflow-y: auto; }
+    .setup { display: grid; place-items: start center; width: 100%; height: 100vh; height: 100dvh; min-height: 0; padding: 8vh 24px 32px; background: var(--paper); overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
     .setup[hidden] { display: none; }
-    .setup-card { width: 100%; max-width: 480px; text-align: center; }
+    .setup-card { width: min(100%, 760px); max-width: none; min-width: 0; padding-bottom: 12px; text-align: center; }
     .setup-mark { width: 56px; height: 56px; object-fit: contain; margin-bottom: 18px; }
     .setup-view[hidden] { display: none; }
     .setup-view h1 { margin: 0 0 18px; font: 700 28px/1.2 var(--font-ui); letter-spacing: -.02em; }
@@ -575,12 +601,19 @@
     .setup-status-banner[hidden] { display: none; }
 
     /* Model chooser + download (spec sec4.3) */
-    #setupViewModel { max-width: 640px; text-align: left; }
+    #setupViewModel { max-width: none; text-align: left; }
     #setupViewModel h1 { text-align: center; }
     .model-list { display: grid; gap: 14px; }
-    .model-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 16px 18px; }
+    .model-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 18px 20px; }
     .model-card.active { border-color: var(--accent); }
-    .model-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .model-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .model-card-identity { display: flex; align-items: flex-start; gap: 13px; min-width: 0; }
+    .model-card-brand { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 13px; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
+    .model-card-brand svg { width: 31px; height: 31px; display: block; }
+    .model-card-brand.qwen { background: linear-gradient(145deg, #f59a42, #c94c1e); }
+    .model-card-brand.prism { background: linear-gradient(145deg, #5f6bea, #b447c7); }
+    .model-card-brand.deepreinforce { background: linear-gradient(145deg, #31966a, #176c60); }
+    .model-card-provider { margin-top: 4px; color: var(--ink-3); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
     .model-card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .model-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; letter-spacing: .02em; }
     .model-badge.recommended { background: var(--accent-soft); color: var(--accent); }
@@ -688,6 +721,10 @@
       <button class="jump-latest" id="jumpLatest" type="button" hidden><svg aria-hidden="true"><use href="#icon-arrow-down"></use></svg>Latest</button>
 
       <div class="composer-wrap">
+        <div class="chat-memory-context" id="chatMemoryContext" hidden>
+          <div><strong id="chatMemoryTitle">Chutni memory is on</strong><span id="chatMemoryDetail">Answers will use this folder's remembered files.</span></div>
+          <button type="button" id="chatMemoryChange">Change</button>
+        </div>
         <!-- WK2 (docs/TASKS_WEB_SEARCH.md Phase WK): the one-time internet
              question. Hidden by default and revealed only when the server says
              consent is genuinely unset, so an install that has already answered
@@ -777,8 +814,16 @@
         <div class="chutni-panel" id="chutniAddPanel" hidden>
           <h2 id="chutniAddTitle">Add a folder</h2>
           <label for="chutniPath">Folder to remember</label>
-          <input type="text" id="chutniPath" placeholder="/Users/you/Documents/Research" spellcheck="false" autocomplete="off">
+          <div class="folder-picker-field">
+            <input type="text" id="chutniPath" placeholder="Choose a folder…" spellcheck="false" autocomplete="off">
+            <button type="button" class="chutni-secondary" id="chutniBrowse">Browse…</button>
+          </div>
           <p class="chutni-note">Samosa reads these files to build a local index. It never moves, edits, or uploads them.</p>
+          <div class="chutni-budget-field">
+            <label for="chutniSummaryBudget">Summary input budget (approx. tokens per file)</label>
+            <input type="number" id="chutniSummaryBudget" min="128" max="16384" step="128" value="3000" inputmode="numeric">
+          </div>
+          <p class="chutni-note">This caps the leading content used to make each short summary, regardless of file type. Full searchable extraction is separate.</p>
           <div class="chutni-preflight" id="chutniPreflight" hidden></div>
           <div class="chutni-panel-actions">
             <button type="button" class="chutni-secondary" id="chutniAddCancel">Cancel</button>
@@ -807,7 +852,11 @@
         <form class="job-form" id="jobForm">
           <div class="job-field">
             <label for="jobFolder">Folder</label>
-            <input id="jobFolder" placeholder="/Users/you/Downloads" spellcheck="false" autocapitalize="off">
+            <div class="folder-picker-field">
+              <input id="jobFolder" placeholder="Choose a folder…" spellcheck="false" autocapitalize="off">
+              <button type="button" class="chutni-secondary" id="jobBrowse">Browse…</button>
+            </div>
+            <div class="job-memory-access" id="jobMemoryAccess"><strong>Jobs reads the folder directly.</strong> It does not use Chutni memory; it checks the current files on disk for this run.</div>
           </div>
           <div class="job-field">
             <label for="jobGoal">Task</label>
@@ -898,14 +947,14 @@
       <button class="close-settings" id="compactNow" type="button">Compact this conversation now</button>
       <small id="compactHelp">Compaction summarizes durable context, retains recent turns verbatim, and rebuilds the K/V snapshot under the same conversation.</small>
     </div>
-    <div class="field">
-      <label id="chooserFieldLabel">Folder access (preview)</label>
+    <div class="field" hidden>
+      <label id="chooserFieldLabel">Folder browser</label>
       <div class="chooser-trigger-actions">
         <button class="close-settings" id="openChooser" type="button" aria-haspopup="dialog">Browse…</button>
         <button class="close-settings" id="clearChooserSelection" type="button" hidden>Clear</button>
       </div>
       <div class="chooser-selected-path" id="chooserSelectedPath" hidden></div>
-      <small>Previews the folder picker Chutni will use to authorize a folder, drive, or this computer. Picking a folder here does not yet create any Chutni memory.</small>
+      <small>This shared folder browser is opened from Chutni and Jobs.</small>
     </div>
     <!-- Phase W (docs/TASKS_WEB_SEARCH.md W6). T3.2 removed the old "Internet
          source" card because it drove three routes that did not exist. This
@@ -1068,6 +1117,8 @@
         webConsent: $("webConsent"), webConsentYes: $("webConsentYes"), webConsentNo: $("webConsentNo"),
         webConsentNote: $("webConsentNote"),
         webToggle: $("webToggle"),
+        chatMemoryContext: $("chatMemoryContext"), chatMemoryTitle: $("chatMemoryTitle"),
+        chatMemoryDetail: $("chatMemoryDetail"), chatMemoryChange: $("chatMemoryChange"),
         kill: $("killButton"),
         modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
@@ -1399,7 +1450,7 @@
       // Switching or creating a conversation starts a fresh render window --
       // "show earlier" expansion belongs to the conversation you expanded,
       // not to the next one you open.
-      function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; }
+      function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; updateActiveMemoryContext(); }
       function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
       function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
       function resizePrompt() { els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.send.disabled=!els.prompt.value.trim()||generating; }
@@ -1438,8 +1489,7 @@
         const attachments = pendingAttachments.map(a => ({ id: a.id, name: a.name, kind: a.kind }));
         const attachmentIds = attachments.map(a => a.id);
         // Captured before clearAttachments() empties the composer below.
-        const webUrls = pendingWeb.filter(w => w.kind === "url").map(w => w.url);
-        const wantsWebSearch = pendingWeb.some(w => w.kind === "search");
+        const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
         const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
         chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
 
@@ -1476,22 +1526,11 @@
         // The gateway resolves these into image data URIs / extracted
         // document text server-side; the browser never builds either.
         if (attachmentIds.length) payload.attachment_ids = attachmentIds;
-        // Phase W (W5) / WK2. `web_urls` still means "read exactly these pages".
-        //
-        // `web` means "you may reach the web this turn, decide for yourself
-        // whether to" -- and once internet access has been granted, that is
-        // true of every turn, not only ones where the user first opened a menu.
-        // The consent card promises the model will look things up when a
-        // question needs current information; requiring a per-turn menu click
-        // made that promise false, and the model answered "I don't have
-        // real-time data" to questions it could have answered.
-        //
-        // The model still decides: on a question it can answer from its own
-        // knowledge it declines and the turn proceeds normally. With consent
-        // unset, offline, or search unconfigured, `web` is absent and the turn
-        // is byte-identical to a pre-W turn, which is W5's gate.
-        if (webUrls.length) payload.web_urls = webUrls;
-        if (wantsWebSearch || web.available) payload.web = true;
+        // Web access is controlled per turn by visible composer context.
+        // A pasted page reads only that page. `web:true` is sent only after the
+        // user explicitly adds the Web search chip; merely having a configured
+        // provider must never let the model initiate a search on its own.
+        applyPendingWebContext(payload, webContext);
         if (chat.directory_context) payload.directory_context = chat.directory_context;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         try {
@@ -1807,17 +1846,26 @@
       // --- T3.2 composer attachments (docs/TASKS_UI_CHUTNI.md sec5.8) -------
       // Capability gating is driven entirely by what the server reports, so
       // the UI can never present a working action for a route the packaged
-      // gateway does not serve. Directory stays disabled here on purpose and
-      // says why: the Chutni directory-context API still does not exist in the
-      // compiled gateway. Web page and Web search are live as of Phase W
+      // gateway does not serve. Directory points to the ready Chutni memories
+      // that the gateway can retrieve for a Chat turn. Web page and Web search are live as of Phase W
       // (docs/TASKS_WEB_SEARCH.md W6) and are gated on GET /v1/web/config, so
       // "search is configured" is the server's answer, never a guess.
       const MAX_ATTACHMENTS = 6;
+      // Kept as a count here so the composer capability block remains
+      // independent of Chutni's larger view model (and its DOM-fixture gate).
+      let readyChutniMemoryCount = 0;
       // Phase W: web context for the next turn, kept separate from
       // pendingAttachments because none of it is an uploaded blob -- there is
       // no server-side ID to issue, mark referenced, or delete. Entries are
       // {clientId, kind:"url"|"search", name, url}.
       let pendingWeb = [];
+      function applyPendingWebContext(payload, context) {
+        const webUrls = context.filter(w => w.kind === "url").map(w => w.url);
+        const wantsWebSearch = context.some(w => w.kind === "search");
+        if (webUrls.length) payload.web_urls = webUrls;
+        if (wantsWebSearch) payload.web = true;
+        return payload;
+      }
       function applyCapabilities() {
         const imageReady = !!backend.supports_images && !!backend.ready;
         setAttachItem(els.attachImage, els.attachImageReason, imageReady,
@@ -1831,22 +1879,25 @@
         // "not configured" -- one is a question, the other is a broken setup,
         // and telling a new user to edit config.json for the first would be
         // exactly the everyday-user failure this phase set out to remove.
+        const consentDenied = !!web.consent && web.consent !== "granted";
         const consentReason = web.consent === "unset"
           ? "Turn on internet access below to use this."
           : "Internet access is off — turn it on in Settings.";
         setAttachItem(els.attachWeb, els.attachWebReason, !!web.fetch_available,
           web.offline ? "Samosa is in offline mode."
-            : web.consent !== "granted" ? consentReason
+            : consentDenied ? consentReason
             : "Not available yet — this build has no web reader.",
           "Read one public page.");
         setAttachItem(els.attachWebSearch, els.attachWebSearchReason,
           !!web.search_configured && !!web.available,
           web.offline ? "Samosa is in offline mode."
-            : web.consent !== "granted" ? consentReason
+            : consentDenied ? consentReason
             : web.reason || "No search provider is configured in ~/.samosa/config.json.",
           web.provider ? `The model may search using ${web.provider}.` : "The model may search the web.");
-        setAttachItem(els.attachDirectory, els.attachDirectoryReason, false,
-          "Not available yet — Chutni folder memory isn't built.", "");
+        setAttachItem(els.attachDirectory, els.attachDirectoryReason, readyChutniMemoryCount > 0,
+          "Add and finish a folder memory in Chutni first.",
+          readyChutniMemoryCount === 1 ? "Choose your folder memory for this conversation."
+                                      : `Choose from ${readyChutniMemoryCount} folder memories.`);
         // A model switch can revoke image support mid-session; drop anything
         // the new backend cannot actually accept rather than sending it.
         if (!imageReady && pendingAttachments.some(a => a.kind === "image")) {
@@ -2072,6 +2123,7 @@
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
       const jobEls = {
         view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
+        browse: $("jobBrowse"), memoryAccess: $("jobMemoryAccess"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
         progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
         definition: $("jobDefinition"), previewExpanded: $("jobPreviewExpanded"),
@@ -2089,11 +2141,12 @@
       // T1.3 (docs/TASKS_UI_CHUTNI.md sec5.4): safe browser directory chooser.
       const chooserEls = {
         scrim: $("chooserScrim"), dialog: $("chooserDialog"), close: $("chooserClose"),
+        title: $("chooserTitle"),
         roots: $("chooserRoots"), path: $("chooserPath"), list: $("chooserList"),
         up: $("chooserUp"), select: $("chooserSelect"),
         openBtn: $("openChooser"), clearBtn: $("clearChooserSelection"), selectedPath: $("chooserSelectedPath"),
       };
-      const chooser = { roots: [], rootId: null, path: null, parent: null, entries: [], focusIndex: -1, opener: null };
+      const chooser = { roots: [], rootId: null, path: null, parent: null, entries: [], focusIndex: -1, opener: null, onSelect: null };
 
       // ========================================================================
       // T2.4 (docs/TASKS_UI_CHUTNI.md sec4.1-4.3): Name -> Welcome -> Model ->
@@ -2177,14 +2230,17 @@
       // the catalog entry plus (if any) its correlated install job and
       // whether a selection is currently running for it. Pure -- rendering
       // just reads this; a DOM-fixture test can assert on it with no DOM.
-      function modelCardState(model, job, selectionInFlight) {
+      function modelCardState(model, job, selectionInFlight, backendReady = true) {
         if (!model.compatible) return { kind: "incompatible", reason: model.compatibility_reason || "Not compatible with this machine." };
         if (job && ["queued", "downloading", "verifying", "installing"].includes(job.state)) return { kind: "downloading", job };
         if (job && job.state === "paused") return { kind: "paused", job };
         if (job && job.state === "failed") {
           return { kind: "failed", job, message: installErrorMessage(job.error?.code), retryable: installErrorRetryable(job.error?.code) };
         }
-        if (model.install_state === "ready") return { kind: model.active ? "active" : (selectionInFlight ? "activating" : "ready") };
+        if (model.install_state === "ready") {
+          if (model.active && !backendReady) return { kind: "activating" };
+          return { kind: model.active ? "active" : (selectionInFlight ? "activating" : "ready") };
+        }
         return { kind: "not_installed" };
       }
       // Pure: which action buttons a card should show for a given state. The
@@ -2234,13 +2290,45 @@
         if (!r.ok) throw new Error("setup_status_failed");
         return r.json();
       }
-      function buildModelCard(model, job, selectionInFlight) {
-        const state = modelCardState(model, job, selectionInFlight);
+      const MODEL_BRANDS = {
+        qwen: {
+          provider: "Qwen · Alibaba",
+          className: "qwen",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="8.5" fill="none" stroke="currentColor" stroke-width="3"/><path d="M19.5 20.2 26 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+        },
+        bonsai: {
+          provider: "PrismML",
+          className: "prism",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 25H4L16 3Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="m16 3 3.4 22M16 3 11.6 25" fill="none" stroke="currentColor" stroke-width="1.8" opacity=".8"/></svg>',
+        },
+        ornith: {
+          provider: "DeepReinforce",
+          className: "deepreinforce",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 21c6.5-1 10.4-4.6 14.4-13 2.5 2.4 5.7 6.5 7.6 12.5-6.2-1.7-10.2-.4-15.2 3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 22c5.4-.1 9.7 1.2 14.2 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".8"/></svg>',
+        },
+      };
+      function modelBrandFor(model) {
+        return MODEL_BRANDS[model.id] || {
+          provider: "Local model",
+          className: "qwen",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>',
+        };
+      }
+      function buildModelCard(model, job, selectionInFlight, backendReady = true) {
+        const state = modelCardState(model, job, selectionInFlight, backendReady);
         const card = document.createElement("div");
         card.className = "model-card" + (state.kind === "active" ? " active" : "");
         card.setAttribute("data-model-id", model.id);
 
         const head = document.createElement("div"); head.className = "model-card-head";
+        const identity = document.createElement("div"); identity.className = "model-card-identity";
+        const brandInfo = modelBrandFor(model);
+        const brand = document.createElement("div");
+        brand.className = "model-card-brand " + brandInfo.className;
+        brand.setAttribute("role", "img");
+        brand.setAttribute("aria-label", brandInfo.provider + " model mark");
+        brand.innerHTML = brandInfo.mark;
+        identity.appendChild(brand);
         const titleWrap = document.createElement("div");
         const title = document.createElement("div"); title.className = "model-card-title";
         const titleText = document.createElement("span"); titleText.textContent = model.label;
@@ -2254,9 +2342,12 @@
           title.appendChild(badge);
         }
         titleWrap.appendChild(title);
+        const provider = document.createElement("div"); provider.className = "model-card-provider"; provider.textContent = brandInfo.provider;
+        titleWrap.appendChild(provider);
         const desc = document.createElement("div"); desc.className = "model-card-desc"; desc.textContent = model.description || "";
         titleWrap.appendChild(desc);
-        head.appendChild(titleWrap);
+        identity.appendChild(titleWrap);
+        head.appendChild(identity);
         card.appendChild(head);
 
         const meta = document.createElement("div"); meta.className = "model-card-meta";
@@ -2331,9 +2422,10 @@
         setupEls.modelList.innerHTML = "";
         const activeInstallJobId = status?.active_install_job_id || null;
         const selectionInFlight = !!status?.active_selection_operation_id;
+        const backendReady = status?.active_model_ready !== false;
         for (const model of modelCatalog) {
           const job = installForModel(model.id, setupInstalls, activeInstallJobId);
-          setupEls.modelList.appendChild(buildModelCard(model, job, selectionInFlight));
+          setupEls.modelList.appendChild(buildModelCard(model, job, selectionInFlight, backendReady));
         }
         if (!modelCatalog.length) {
           const empty = document.createElement("p"); empty.className = "setup-caption"; empty.textContent = "No models are available in this build.";
@@ -2395,6 +2487,10 @@
         els.mode.textContent = els.thinking.options[els.thinking.selectedIndex].text;
         ensureChat(); render(); resizePrompt(); health();
         applyCapabilities();
+        // Load the lightweight scope registry in the background so an
+        // existing memory is named in Chat and available from the `+` menu
+        // without requiring a detour through the Chutni tab first.
+        refreshChutni();
         // T3.2 (sec4.4): personalize the empty state. The name is display-only
         // and is never inserted into a model prompt (sec4.1); a failed lookup
         // just leaves the generic heading.
@@ -2479,7 +2575,11 @@
         for (const [item, on] of [[navEls.chat, chat], [navEls.chutni, chutni], [navEls.jobs, jobs]]) {
           item.classList.toggle("active", on); item.setAttribute("aria-selected", String(on));
         }
-        if (jobs && !jobEls.folder.value) jobEls.folder.focus();
+        if (jobs) {
+          renderJobMemoryAccess();
+          if (!jobEls.folder.value) jobEls.folder.focus();
+        }
+        if (chat) updateActiveMemoryContext();
         if (chutni) refreshChutni(); else stopChutniPolling();
       }
 
@@ -2495,7 +2595,8 @@
         view: $("chutniView"), empty: $("chutniEmpty"), pane: $("chutniPane"),
         list: $("chutniList"), error: $("chutniError"), subhead: $("chutniSubhead"),
         add: $("chutniAdd"), addEmpty: $("chutniAddEmpty"),
-        addPanel: $("chutniAddPanel"), path: $("chutniPath"), preflight: $("chutniPreflight"),
+        addPanel: $("chutniAddPanel"), path: $("chutniPath"), browse: $("chutniBrowse"), preflight: $("chutniPreflight"),
+        summaryBudget: $("chutniSummaryBudget"),
         addNext: $("chutniAddNext"), addCancel: $("chutniAddCancel"),
         forgetPanel: $("chutniForgetPanel"), forgetWhat: $("chutniForgetWhat"),
         forgetConfirm: $("chutniForgetConfirm"), forgetCancel: $("chutniForgetCancel")
@@ -2504,6 +2605,42 @@
       let chutniPollTimer = null;
       let chutniPreflightId = null; // set once a preflight has been accepted
       let chutniForgetId = null;
+
+      function activeChutniScope() {
+        const id = activeChat()?.directory_context?.scope_id;
+        return id && Array.isArray(chutniScopes) ? chutniScopes.find(scope => scope.id === id) : null;
+      }
+
+      function updateActiveMemoryContext() {
+        const chat = activeChat();
+        const scopeId = chat?.directory_context?.scope_id;
+        if (!scopeId) {
+          els.chatMemoryContext.hidden = true;
+          els.prompt.placeholder = "Message your local model…";
+          return;
+        }
+        const scope = activeChutniScope();
+        const name = scope?.display_name || "folder memory";
+        els.chatMemoryTitle.textContent = `Asking with Chutni: ${name}`;
+        els.chatMemoryDetail.textContent = "Answers use this folder’s indexed snapshot—not unrestricted filesystem access.";
+        els.chatMemoryContext.hidden = false;
+        els.prompt.placeholder = `Ask about ${name}…`;
+      }
+
+      function renderJobMemoryAccess() {
+        if (!jobEls.memoryAccess) return;
+        const folder = (jobEls.folder.value || "").trim();
+        const scope = folder && Array.isArray(chutniScopes)
+          ? chutniScopes.find(item => item.canonical_root === folder && item.state === "ready")
+          : null;
+        jobEls.memoryAccess.innerHTML = "";
+        const strong = document.createElement("strong");
+        strong.textContent = scope ? "Chutni memory exists, but this Job does not query it. " : "Jobs does not use Chutni memory. ";
+        jobEls.memoryAccess.appendChild(strong);
+        jobEls.memoryAccess.appendChild(document.createTextNode(
+          "It reads the current files in the selected folder directly for this run."
+        ));
+      }
 
       const KB = 1024;
       function bytesLabel(n) {
@@ -2520,6 +2657,63 @@
         if (!iso) return null;
         const d = new Date(iso);
         return isNaN(d.getTime()) ? null : d.toLocaleString();
+      }
+      function chutniCoverageFacts(s) {
+        const facts = [];
+        if (CHUTNI_BUSY.has(s.state) || s.state === "paused_user") {
+          if (typeof s.scan_files_seen === "number")
+            facts.push(["Files scanned", `${s.scan_files_seen}`]);
+          if (typeof s.scan_sources_indexed === "number")
+            facts.push(["Files cataloged", `${s.scan_sources_indexed}`]);
+          if (typeof s.enrichment_files_done === "number" &&
+              typeof s.enrichment_files_total === "number" &&
+              s.enrichment_files_total > 0)
+            facts.push(["Reader pass", `${s.enrichment_files_done} of ${s.enrichment_files_total}`]);
+          return facts;
+        }
+        if (typeof s.files_indexed === "number") {
+          const seen = typeof s.regular_files_seen === "number" ? s.regular_files_seen : null;
+          facts.push(["Files found", seen === null ? `${s.files_indexed}` : `${s.files_indexed} of ${seen}`]);
+        }
+        if (typeof s.content_readable_files === "number")
+          facts.push(["Content-readable", `${s.content_readable_files}`]);
+        if (typeof s.metadata_only_files === "number")
+          facts.push(["Metadata only", `${s.metadata_only_files}`]);
+        if (typeof s.content_artifacts === "number")
+          facts.push(["Searchable content artifacts", `${s.content_artifacts}`]);
+        return facts;
+      }
+
+      function durationLabel(seconds) {
+        if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) return null;
+        const total = Math.floor(seconds);
+        if (total < 60) return `${total}s`;
+        const minutes = Math.floor(total / 60);
+        const rest = total % 60;
+        return minutes < 60 ? `${minutes}m ${rest}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+      }
+
+      function chutniMonitorFacts(s) {
+        if (!(s.progress_started_ms > 0) && !(s.evidence_generation > 0)) return [];
+        const facts = [];
+        const add = (label, value, show = true) => {
+          if (show && typeof value === "number" && isFinite(value))
+            facts.push([label, `${value}`]);
+        };
+        add("Plain-text files read", s.scan_text_artifacts);
+        add("Unchanged files reused", s.scan_unchanged, s.scan_unchanged > 0);
+        add("Metadata-only at scan", s.scan_metadata_artifacts);
+        add("PDF pages read", s.pdf_pages_read);
+        add("OCR outputs", s.ocr_outputs);
+        add("Image captions", s.image_captions);
+        add("Summaries", s.summaries_created);
+        const errors = (s.scan_errors || 0) + (s.enrichment_failures || 0);
+        add("Errors", errors, typeof s.scan_errors === "number" || typeof s.enrichment_failures === "number");
+        return facts;
+      }
+
+      function chutniActionPayload(scope) {
+        return JSON.stringify({ job_id: scope && scope.active_job_id || null });
       }
 
       function stopChutniPolling() {
@@ -2549,6 +2743,7 @@
             } catch (_) { return { ...entry, state: entry.state || "unknown", unreadable: true }; }
           }));
           chutniScopes = full;
+          readyChutniMemoryCount = full.filter(scope => scope.state === "ready").length;
           chutniEls.error.hidden = true;
         } catch (err) {
           // A library that cannot be read is its own state: say so and offer
@@ -2557,8 +2752,12 @@
           chutniEls.error.hidden = false;
           chutniEls.error.textContent = "Could not read your Chutni library from the local server. It may still be starting.";
           chutniScopes = null;
+          readyChutniMemoryCount = 0;
         }
         renderChutni();
+        updateActiveMemoryContext();
+        renderJobMemoryAccess();
+        applyCapabilities();
         scheduleChutniPoll();
       }
 
@@ -2632,12 +2831,15 @@
         const known = (done, total) => typeof done === "number" && typeof total === "number" && total > 0;
         const add = (label, done, total, active) => {
           if (!active && !known(done, total)) return;
-          rows.push({ label, done, total, determinate: known(done, total), active });
+          rows.push({ label, done, total, determinate: known(done, total), active,
+                      count: known(done, total) ? `${done} / ${total}` :
+                             (typeof done === "number" ? `${done}` : "") });
         };
         if (CHUTNI_BUSY.has(s.state)) {
-          add("Looking through files", s.files_indexed, s.regular_files_seen, phase === "inventory" || !phase);
-          add("Reading documents", s.files_indexed, s.regular_files_seen, phase === "extract");
-          add("Preparing text", s.chunks_indexed, s.chunks_total, phase === "tokenize");
+          add("Scanning files", s.scan_files_seen, null, phase === "scan" || !phase);
+          add("Reading file content", s.enrichment_files_done, s.enrichment_files_total, phase === "extract");
+          add("Indexing searchable content", s.chunks_indexed, s.chunks_total,
+              phase === "tokenize");
           add("Publishing", null, null, phase === "publish");
         }
         if (s.enhancement_state === "improving")
@@ -2683,16 +2885,12 @@
 
         // Facts, each omitted rather than guessed when the server did not send
         // it. A missing count is not a zero.
-        const facts = [];
-        if (typeof s.files_indexed === "number") {
-          const seen = typeof s.regular_files_seen === "number" ? s.regular_files_seen : null;
-          facts.push(["Files remembered", seen === null ? `${s.files_indexed}` : `${s.files_indexed} of ${seen}`]);
-        }
+        const facts = chutniCoverageFacts(s);
         if (typeof s.files_skipped === "number" && s.files_skipped > 0) facts.push(["Skipped", `${s.files_skipped}`]);
-        if (typeof s.chunks_indexed === "number") facts.push(["Passages", `${s.chunks_indexed}`]);
         const size = bytesLabel(s.index_bytes);
         if (size) facts.push(["Memory size", size]);
-        const built = whenLabel(s.last_successful_build_at);
+        const built = (s.evidence_generation || 0) > 0
+          ? whenLabel(s.last_successful_build_at) : null;
         if (built) facts.push(["Last built", built]);
         if (facts.length) {
           const ul = document.createElement("ul"); ul.className = "chutni-facts";
@@ -2704,6 +2902,73 @@
           }
           li.appendChild(ul);
         }
+
+        const monitorFacts = chutniMonitorFacts(s);
+        if (monitorFacts.length) {
+          const monitor = document.createElement("section");
+          monitor.className = "chutni-monitor";
+          const monitorHead = document.createElement("div");
+          monitorHead.className = "chutni-monitor-head";
+          const monitorTitle = document.createElement("strong");
+          monitorTitle.textContent = CHUTNI_BUSY.has(s.state) ? "Live activity" : "Build analytics";
+          const timing = document.createElement("span");
+          const timingParts = [];
+          const elapsed = durationLabel(s.elapsed_seconds);
+          if (elapsed) timingParts.push(elapsed);
+          if (typeof s.files_per_second === "number" && s.files_per_second > 0)
+            timingParts.push(`${s.files_per_second.toFixed(1)} files/s`);
+          timing.textContent = timingParts.join(" · ");
+          monitorHead.appendChild(monitorTitle); monitorHead.appendChild(timing);
+          monitor.appendChild(monitorHead);
+          const grid = document.createElement("dl"); grid.className = "chutni-monitor-grid";
+          for (const [label, value] of monitorFacts) {
+            const cell = document.createElement("div");
+            const dt = document.createElement("dt"); dt.textContent = label;
+            const dd = document.createElement("dd"); dd.textContent = value;
+            cell.appendChild(dt); cell.appendChild(dd); grid.appendChild(cell);
+          }
+          monitor.appendChild(grid);
+          if (s.current_file) {
+            const current = document.createElement("p"); current.className = "chutni-current";
+            current.textContent = `Now: ${s.current_file}`;
+            current.title = s.current_file;
+            monitor.appendChild(current);
+          }
+          li.appendChild(monitor);
+        }
+
+        const summarySetting = document.createElement("section");
+        summarySetting.className = "chutni-summary-setting";
+        const summaryRow = document.createElement("div");
+        summaryRow.className = "chutni-summary-setting-row";
+        const summaryLabel = document.createElement("label");
+        summaryLabel.textContent = "Summary input budget (approx. tokens per file)";
+        const summaryInput = document.createElement("input");
+        summaryInput.type = "number";
+        summaryInput.min = "128";
+        summaryInput.max = "16384";
+        summaryInput.step = "128";
+        summaryInput.inputMode = "numeric";
+        summaryInput.value = String(s.summary_token_budget || 3000);
+        summaryLabel.appendChild(summaryInput);
+        const summarySave = document.createElement("button");
+        summarySave.type = "button";
+        summarySave.className = "chutni-secondary";
+        summarySave.textContent = "Save budget";
+        const saveBudget = () =>
+          chutniSetSummaryBudget(s, Number(summaryInput.value), summaryInput, summarySave);
+        summarySave.onclick = saveBudget;
+        summaryInput.onkeydown = event => {
+          if (event.key === "Enter") { event.preventDefault(); saveBudget(); }
+        };
+        summaryRow.appendChild(summaryLabel);
+        summaryRow.appendChild(summarySave);
+        const summaryHelp = document.createElement("p");
+        summaryHelp.textContent =
+          "Used on the next Refresh. It limits summary input only; searchable content extraction remains separate.";
+        summarySetting.appendChild(summaryRow);
+        summarySetting.appendChild(summaryHelp);
+        li.appendChild(summarySetting);
 
         // Exclusions are shown because a user who cannot see why a file is
         // missing has no way to tell an exclusion from a bug.
@@ -2722,7 +2987,7 @@
           const wrap = document.createElement("div"); wrap.className = "chutni-phase";
           const label = document.createElement("span"); label.textContent = row.label;
           const count = document.createElement("span");
-          count.textContent = row.determinate ? `${row.done} / ${row.total}` : "";
+          count.textContent = row.count;
           const bar = document.createElement("div");
           bar.className = "chutni-phase-bar" + (row.determinate ? "" : " indeterminate");
           const fill = document.createElement("i");
@@ -2750,9 +3015,21 @@
         const chat = activeChat();
         const selectedHere = !!(chat && chat.directory_context &&
                                 chat.directory_context.scope_id === s.id);
+        if (s.state === "ready") {
+          const ready = document.createElement("p");
+          ready.className = "chutni-why";
+          ready.textContent = selectedHere
+            ? "This memory is active in the current conversation. Ask questions in Chat."
+            : "Memory is ready. Ask questions about these files in Chat.";
+          li.appendChild(ready);
+        }
         const actions = p.actions.slice();
-        if (s.state === "ready") actions.unshift(selectedHere ? "unuse" : "use");
-        const LABELS = { use: "Use in this chat", unuse: "Stop using in this chat",
+        if (s.state === "ready") {
+          actions.unshift("ask");
+          if (selectedHere) actions.splice(1, 0, "unuse");
+        }
+        const LABELS = { ask: selectedHere ? "Ask another question" : "Ask about this folder",
+                         unuse: "Remove from this chat",
                          build: "Refresh", resume: "Resume", pause: "Pause", cancel: "Cancel",
                          recheck: "Check again", retry: "Try again", forget: "Forget" };
         if (actions.length) {
@@ -2760,7 +3037,7 @@
           for (const a of actions) {
             const b = document.createElement("button");
             b.type = "button";
-            b.className = a === "use" ? "chutni-primary" : "chutni-secondary";
+            b.className = a === "ask" ? "chutni-primary" : "chutni-secondary";
             b.textContent = LABELS[a] || a;
             b.onclick = () => chutniAction(s, a);
             box.appendChild(b);
@@ -2770,27 +3047,74 @@
         return li;
       }
 
+      async function chutniSetSummaryBudget(scope, tokenBudget, input, button) {
+        if (!Number.isInteger(tokenBudget) || tokenBudget < 128 || tokenBudget > 16384) {
+          input.setCustomValidity("Enter a whole number from 128 to 16384.");
+          input.reportValidity();
+          return;
+        }
+        input.setCustomValidity("");
+        input.disabled = true;
+        button.disabled = true;
+        button.textContent = "Saving…";
+        try {
+          const response = await authFetch(
+            `/v1/chutni/scopes/${encodeURIComponent(scope.id)}/summary-budget`,
+            { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token_budget: tokenBudget }) });
+          const body = await response.json().catch(() => null);
+          if (!response.ok)
+            throw new Error((body && body.error && body.error.message) ||
+                            "The summary budget could not be saved.");
+          scope.summary_token_budget = tokenBudget;
+          chutniEls.error.hidden = true;
+          button.textContent = "Saved";
+          setTimeout(() => {
+            if (button.isConnected) button.textContent = "Save budget";
+          }, 1200);
+        } catch (err) {
+          chutniEls.error.hidden = false;
+          chutniEls.error.textContent = err.message || "The summary budget could not be saved.";
+          button.textContent = "Save budget";
+        } finally {
+          input.disabled = false;
+          button.disabled = false;
+        }
+      }
+
       async function chutniAction(scope, action) {
-        if (action === "use" || action === "unuse") {
+        if (action === "ask" || action === "unuse") {
           const chat = ensureChat();
-          chat.directory_context = action === "use" ? { scope_id: scope.id } : null;
+          chat.directory_context = action === "ask" ? { scope_id: scope.id } : null;
           chat.updated = Date.now();
           chat.updated_at = new Date().toISOString();
           saveState();
           renderChutni();
+          updateActiveMemoryContext();
+          if (action === "ask") {
+            showView("chat");
+            els.prompt.focus();
+          }
           return;
         }
         if (action === "forget") { chutniForgetId = scope.id; openChutniForget(scope); return; }
         if (action === "retry" || action === "recheck") { await refreshChutni(); return; }
+        const previousState = scope.state;
+        if (action === "pause" || action === "cancel") {
+          scope.state = action === "pause" ? "paused_user" : "canceling";
+          renderChutni();
+        }
         try {
           const r = await authFetch(`/v1/chutni/scopes/${encodeURIComponent(scope.id)}/${action}`,
-                                    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                                    { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: chutniActionPayload(scope) });
           if (!r.ok) {
             const detail = await r.json().catch(() => null);
             throw new Error((detail && detail.error && detail.error.message) || `${action} failed`);
           }
           chutniEls.error.hidden = true;
         } catch (err) {
+          scope.state = previousState;
           chutniEls.error.hidden = false;
           chutniEls.error.textContent = err.message || `Could not ${action} that folder.`;
         }
@@ -2815,6 +3139,8 @@
 
       function openChutniAdd() {
         chutniEls.path.value = "";
+        chutniEls.summaryBudget.value = "3000";
+        chutniEls.summaryBudget.setCustomValidity("");
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
         chutniPreflightId = null;
         chutniEls.addNext.textContent = "Check folder";
@@ -2828,6 +3154,15 @@
       async function chutniAddNext() {
         const path = (chutniEls.path.value || "").trim();
         if (!path) { chutniEls.path.focus(); return; }
+        const summaryTokenBudget = Number(chutniEls.summaryBudget.value);
+        if (!Number.isInteger(summaryTokenBudget) ||
+            summaryTokenBudget < 128 || summaryTokenBudget > 16384) {
+          chutniEls.summaryBudget.setCustomValidity(
+            "Enter a whole number from 128 to 16384.");
+          chutniEls.summaryBudget.reportValidity();
+          return;
+        }
+        chutniEls.summaryBudget.setCustomValidity("");
         if (!chutniPreflightId) {
           try {
             const r = await authFetch("/v1/chutni/preflight", {
@@ -2856,6 +3191,7 @@
             body: JSON.stringify({
               preflight_id: chutniPreflightId,
               display_name: baseName(path),
+              summary_token_budget: summaryTokenBudget,
               client_request_id: `scope-${Date.now()}`
             })
           });
@@ -3454,21 +3790,25 @@
       }
       async function chooserOpenPath(path) {
         const r = await authFetch(`/v1/fs/directories?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-        if (!r.ok) { chooserEls.list.innerHTML = ""; const err = document.createElement("div"); err.className = "chooser-empty"; err.textContent = "That folder can't be opened."; chooserEls.list.appendChild(err); return; }
+        if (!r.ok) { chooserEls.select.disabled = true; chooserEls.list.innerHTML = ""; const err = document.createElement("div"); err.className = "chooser-empty"; err.textContent = "That folder can't be opened."; chooserEls.list.appendChild(err); return; }
         const data = await r.json();
         chooser.path = data.path; chooser.rootId = data.chooser_root_id; chooser.parent = data.parent;
         chooser.entries = data.directories || []; chooser.focusIndex = chooser.entries.length ? 0 : -1;
         chooserRenderRoots(); chooserRenderPath(); chooserRenderList();
+        chooserEls.select.disabled = false;
         chooserEls.up.disabled = !chooser.parent;
       }
-      async function openChooser() {
+      async function openChooser(options = {}) {
         chooser.opener = document.activeElement;
+        chooser.onSelect = typeof options.onSelect === "function" ? options.onSelect : null;
+        if (chooserEls.title) chooserEls.title.textContent = options.title || "Choose a folder";
+        chooserEls.select.textContent = options.selectLabel || "Use this folder";
         chooserEls.scrim.hidden = false; chooserEls.dialog.hidden = false;
         chooserEls.scrim.classList.add("show"); chooserEls.dialog.classList.add("open");
         document.addEventListener("keydown", chooserKeydown, true);
         try {
           if (!chooser.roots.length) await chooserLoadRoots();
-          if (chooser.roots.length) await chooserOpenPath(chooser.path || chooser.roots[0].path);
+          if (chooser.roots.length) await chooserOpenPath(options.initialPath || chooser.path || chooser.roots[0].path);
         } catch { /* rendered as an empty list above; the dialog still opens so Cancel always works */ }
         chooserEls.list.focus();
       }
@@ -3480,8 +3820,11 @@
       }
       function chooserConfirmSelection() {
         if (!chooser.path) return;
-        chooserEls.selectedPath.textContent = chooser.path; chooserEls.selectedPath.hidden = false;
-        chooserEls.clearBtn.hidden = false;
+        if (chooser.onSelect) chooser.onSelect(chooser.path);
+        else {
+          chooserEls.selectedPath.textContent = chooser.path; chooserEls.selectedPath.hidden = false;
+          chooserEls.clearBtn.hidden = false;
+        }
         closeChooser();
       }
       function chooserClearSelection() { chooserEls.selectedPath.hidden = true; chooserEls.selectedPath.textContent = ""; chooserEls.clearBtn.hidden = true; }
@@ -3511,10 +3854,10 @@
       if (els.webConsentYes) els.webConsentYes.onclick = () => answerWebConsent(true);
       if (els.webConsentNo) els.webConsentNo.onclick = () => answerWebConsent(false);
       if (els.webToggle) els.webToggle.onclick = () => answerWebConsent(web.consent !== "granted");
-      // Directory is still rendered disabled by applyCapabilities() (no
-      // Chutni directory-context API exists), so it needs no click handler --
-      // a disabled button cannot be activated, and wiring a handler that
-      // silently did nothing would be worse.
+      els.attachDirectory.onclick = () => {
+        closeAttachMenu(true);
+        showView("chutni");
+      };
       els.imageInput.onchange = (e) => {
         const file = e.target.files[0];
         e.target.value = ""; // let the same file be picked again after removal
@@ -3537,12 +3880,27 @@
       if (migrationRecoveryRaw) showMigrationBanner();
       els.modelBackend.onchange=switchBackend;
       navEls.chat.onclick=()=>showView("chat"); navEls.chutni.onclick=()=>showView("chutni"); navEls.jobs.onclick=()=>showView("jobs");
+      els.chatMemoryChange.onclick=()=>showView("chutni");
       // T3.3 wiring.
       chutniEls.add.onclick = openChutniAdd;
       chutniEls.addEmpty.onclick = openChutniAdd;
       chutniEls.addCancel.onclick = closeChutniPanels;
       chutniEls.addNext.onclick = chutniAddNext;
+      chutniEls.browse.onclick = () => openChooser({
+        title: "Choose a folder for Chutni",
+        selectLabel: "Remember this folder",
+        initialPath: chutniEls.path.value.trim() || undefined,
+        onSelect: path => {
+          chutniEls.path.value = path;
+          chutniPreflightId = null;
+          chutniEls.addNext.textContent = "Check folder";
+          chutniEls.preflight.hidden = true;
+          chutniEls.addNext.focus();
+        }
+      });
       chutniEls.path.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); chutniAddNext(); } };
+      chutniEls.summaryBudget.oninput = () =>
+        chutniEls.summaryBudget.setCustomValidity("");
       // A new path invalidates an accepted preflight: the estimate on screen
       // describes the old folder, and building from it would scan something
       // the user never confirmed.
@@ -3552,6 +3910,17 @@
         chutniEls.addNext.textContent = "Check folder";
         chutniEls.preflight.hidden = true;
       };
+      jobEls.browse.onclick = () => openChooser({
+        title: "Choose a folder for this Job",
+        selectLabel: "Use this folder",
+        initialPath: jobEls.folder.value.trim() || undefined,
+        onSelect: path => {
+          jobEls.folder.value = path;
+          renderJobMemoryAccess();
+          jobEls.goal.focus();
+        }
+      });
+      jobEls.folder.oninput = renderJobMemoryAccess;
       chutniEls.forgetCancel.onclick = closeChutniPanels;
       chutniEls.forgetConfirm.onclick = async () => {
         const id = chutniForgetId;

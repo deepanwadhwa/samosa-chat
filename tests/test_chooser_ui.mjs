@@ -96,7 +96,7 @@ assert.ok(begin >= 0 && end > begin, "T1.3 chooser block must remain extractable
 
 function loadChooser({ authFetch }) {
   globalThis.chooserEls = freshEls();
-  globalThis.chooser = { roots: [], rootId: null, path: null, parent: null, entries: [], focusIndex: -1, opener: null };
+  globalThis.chooser = { roots: [], rootId: null, path: null, parent: null, entries: [], focusIndex: -1, opener: null, onSelect: null };
   globalThis.authFetch = authFetch;
   const fns = eval(`(() => {${app.slice(begin, end)}
     return { chooserFocusableEls, chooserKeydown, chooserMoveFocus, chooserActivateFocused,
@@ -236,6 +236,20 @@ function jsonResponse(body) { return { ok: true, json: async () => body }; }
   document.activeElement = focusable[0];
   fns.chooserKeydown({ key: "Tab", shiftKey: true, preventDefault() {} });
   assert.equal(globalThis.__lastFocused, focusable[focusable.length - 1], "Shift+Tab from the first element must wrap to the last");
+}
+
+// --- chooserConfirmSelection: reusable callers receive the chosen path ----
+{
+  const { fns, els, chooser } = loadChooser({ authFetch: async () => jsonResponse({}) });
+  let selected = null;
+  chooser.path = "/h/Research";
+  chooser.onSelect = path => { selected = path; };
+  els.dialog.hidden = false; els.scrim.hidden = false;
+  els.dialog.classList.add("open"); els.scrim.classList.add("show");
+  fns.chooserConfirmSelection();
+  assert.equal(selected, "/h/Research", "Chutni and Jobs callers must receive the browsed path");
+  assert.equal(els.selectedPath.textContent, "", "a reusable selection must not leak into the old Settings preview");
+  assert.equal(els.dialog.hidden, true);
 }
 
 process.stdout.write("chooser UI DOM fixtures: PASS\n");

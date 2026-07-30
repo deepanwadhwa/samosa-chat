@@ -48,6 +48,7 @@ SOURCE_FILES = [
     "thinking_budget.h",
     "samosa_http.h",
     "samosa_extract.c",
+    "samosa_ocr.c",
     # The compiled gateway and filesystem sidecar are the mandatory browser
     # control plane (docs/TASKS_UI_CHUTNI.md T1.0) -- every release includes
     # them unconditionally, not as an opt-in capability with a raw-Qwen

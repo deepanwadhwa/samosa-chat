@@ -77,6 +77,7 @@ function load() {
   globalThis.generating = false;
   globalThis.resizePrompt = () => {};
   globalThis.scrollBottom = () => {};
+  globalThis.renderWebActivity = () => {};
   globalThis.authFetch = async () => ({ ok: false });
   const fns = eval(`(() => {${block}
     return { renderMessages, appendMessageNode, welcomeHTML, escapeHTML,

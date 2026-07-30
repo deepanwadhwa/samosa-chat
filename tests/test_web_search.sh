@@ -481,7 +481,7 @@ printf '%s' "$S" | grep -q '"title":"Uncapped"' || fail "a corrupt usage file bl
 rm -f "$HOME_DIR/web-usage.json"
 
 # ===========================================================================
-# 4. The model-decided tool loop.
+# 4. Explicit per-turn web context.
 # ===========================================================================
 cat >"$HOME_DIR/config.json" <<JSON
 {"search":{"consent":"granted","provider":"brave","providers":{"brave":{"api_key":"$SECRET_KEY",
@@ -491,32 +491,28 @@ cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[{"title":"Careers at Example","url":"http://example.com/jobs","description":"Open roles."}]}}
 JSON
 
-# 4a. `web: true` -> planner picks open_url, evidence reaches the answering turn.
+# 4a. `web: true` means the user clicked Web search. The prompt itself is
+# searched exactly once; no model planner decides whether or what to search.
+: >"$FAKE_CURL_ARGV"
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
-              "messages":[{"role":"user","content":"web tool probe open"}]}')
-printf '%s' "$R" | grep -q 'saw web evidence' || fail "open_url evidence never reached the answering turn"
-printf '%s' "$R" | grep -q '"web_activity":"Reading http://example.com/jobs' || fail "no tool-activity event was streamed"
-printf '%s' "$R" | grep -q 'Read \\"Careers\\"' || fail "no completion event for the page read"
-# The decoy URL inside the <think> span must not have been fetched.
-if printf '%s' "$R" | grep -q 'decoy.example'; then fail "a URL inside a <think> span was acted on"; fi
-
-# 4b. `web: true` -> planner picks web_search, results reach the answering turn.
-R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
-     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
-              "messages":[{"role":"user","content":"web tool probe search"}]}')
+              "messages":[{"role":"user","content":"web tool probe explicit search"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "search evidence never reached the answering turn"
-printf '%s' "$R" | grep -q 'Searching the web for' || fail "no search activity event was streamed"
+printf '%s' "$R" | grep -q 'Searching the web for \\"web tool probe explicit search\\"' \
+  || fail "the selected Web search did not search the user's prompt"
+printf '%s' "$R" | grep -q 'Found 1 web result' || fail "no search completion event was streamed"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "1" ] \
+  || fail "one Web search click did not issue exactly one provider request"
 if printf '%s' "$R" | grep -q "$SECRET_KEY"; then fail "the API key reached the chat stream"; fi
 
-# 4c. `web_urls` -> read exactly what the user pasted, no planner involved.
+# 4b. `web_urls` -> read exactly what the user pasted, no planner involved.
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,
               "web_urls":["http://example.com/jobs"],
               "messages":[{"role":"user","content":"web tool probe pasted"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "a pasted web_urls page never reached the turn"
 
-# 4d. The gate: a turn that asks for neither is untouched.
+# 4c. The gate: a turn that asks for neither is untouched.
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,
               "messages":[{"role":"user","content":"web tool probe plain"}]}')
@@ -529,20 +525,7 @@ PLAIN=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Ty
 [ "$PLAIN" = '{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"compiled reply"}}]}' ] \
   || fail "a plain turn is no longer a byte-for-byte passthrough"
 
-# 4f. WK6: a repeated tool argument is refused rather than re-sent.
-# Regression for the defect the first real-model run exposed: Ornith 9B asked
-# for the same 403ing URL twice, spending its last tool call on it. The planner
-# here asks for the identical URL on every round; the page must be fetched
-# exactly once no matter how many times it is asked for.
-: >"$FAKE_CURL_ARGV"
-R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
-     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
-              "messages":[{"role":"user","content":"web tool probe repeat"}]}')
-[ "$(printf '%s' "$R" | grep -c 'Reading http://example.com/jobs')" = "1" ] \
-  || fail "a repeated open_url was fetched more than once"
-printf '%s' "$R" | grep -q 'saw web evidence' || fail "the first read of the repeated URL did not reach the turn"
-
-# 4e. WK2: an install that has not answered the question is a pre-W install.
+# 4d. An install that has not answered the consent question is a pre-W install.
 # `web: true` must not merely fail politely -- it must cost nothing at all: no
 # planner round trip, no transport call, and no added text in the reply. This
 # is W5's gate re-asserted for the state every new install now starts in.

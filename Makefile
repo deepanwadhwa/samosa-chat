@@ -200,8 +200,12 @@ samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
-chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh
+chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
 	sh tests/test_chutni_gateway.sh
+	sh tests/test_chutni_controls.sh
+
+detached-service-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_samosa_detached_service.sh
+	sh tests/test_samosa_detached_service.sh
 
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
@@ -288,7 +292,7 @@ omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm $(OMP_LDFLAGS)
 
-install: omp
+install: omp samosa-gateway samosa-jobsd samosa-fs samosa-ocr chutni-service
 	sh tools/install_local_dev.sh
 
 # E-X5 experiment build only — never shipped. Same as `omp` plus
@@ -359,6 +363,7 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	$(MAKE) test-chutni-db
 	$(MAKE) test-chutni
 	$(MAKE) chutni-gateway-test
+	$(MAKE) detached-service-test
 	$(MAKE) test-kimi-converter
 # T3.3 view logic. Skips with a message where node is unavailable rather than
 # passing silently -- the rendering itself cannot be verified headlessly.

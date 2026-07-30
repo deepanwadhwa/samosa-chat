@@ -122,7 +122,7 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/read_cache.h engine/durable_job.h"
+INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and
@@ -312,7 +312,10 @@ $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$S
 $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
   fail "staged filesystem sidecar compilation failed; live release was not changed"
-chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/chutni-mcp"
+$COMPILER -O3 -Wno-unused-function -std=c11 -I"$STAGE/engine" \
+  "$STAGE/engine/samosa_ocr.c" -o "$STAGE/bin/samosa-ocr" -lm ||
+  fail "staged OCR sidecar compilation failed; live release was not changed"
+chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/samosa-ocr" "$STAGE/bin/chutni-mcp"
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   # This is a control-plane smoke, not a model smoke (docs/TASKS_UI_CHUTNI.md

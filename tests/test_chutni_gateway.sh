@@ -9,11 +9,20 @@ trap 'test -z "$PID" || kill "$PID" 2>/dev/null || true; test -z "$PID" || wait 
 
 mkdir -p "$TMP/source"
 printf 'renewal date June; chutni memory probe evidence\n' >"$TMP/source/report.txt"
+i=0
+while [ "$i" -lt 80 ]; do
+  printf 'ordinary text padding before the bounded summary tail\n' >>"$TMP/source/report.txt"
+  i=$((i + 1))
+done
+printf 'TAIL_CONTENT_LEAK\n' >>"$TMP/source/report.txt"
 printf 'portable memory handoff\n' >"$TMP/source/notes.md"
+cp "$ROOT/tests/fixtures/documents/multipage_7pages.pdf" "$TMP/source/guide.pdf"
+cp "$ROOT/tools/testdata/ocr/tiny.png" "$TMP/source/scan.png"
 mkdir -p "$TMP/home/qwen-model"
 printf 'fixture\n' >"$TMP/home/qwen-model/experts.bin"
 printf '{}\n' >"$TMP/tokenizer.json"
 
+HOME="$TMP/home" \
 SAMOSA_HOME="$TMP/home" \
 CHUTNI_HOME="$TMP/chutni-home" \
 SAMOSA_PORT="$PORT" \
@@ -23,6 +32,9 @@ SAMOSA_QWEN_ENGINE="$ROOT/build/test_fake_openai_backend" \
 SAMOSA_QWEN_MODEL="$TMP/home/qwen-model" \
 SAMOSA_TOKENIZER="$TMP/tokenizer.json" \
 SAMOSA_CHUTNI_SERVICE="$ROOT/build/chutni-mcp" \
+SAMOSA_EXTRACT="$ROOT/build/samosa-extract" \
+SAMOSA_OCR="$ROOT/tests/fake_ocr_sidecar.sh" \
+SAMOSA_APP_VERSION="test-enrichment-1" \
 "$ROOT/build/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
 PID=$!
 
@@ -54,7 +66,7 @@ STORE=$(printf '%s' "$PF" | sed -n 's/.*"store_path":"\([^"]*\)".*/\1/p')
 
 CREATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/scopes" \
-  --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"display_name\":\"Research\"}")
+  --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"display_name\":\"Research\",\"summary_token_budget\":128}")
 SCOPE=$(printf '%s' "$CREATED" | sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
 JOB=$(printf '%s' "$CREATED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
 [ -n "$SCOPE" ] && [ -n "$JOB" ]
@@ -71,8 +83,21 @@ done
 [ -f "$STORE/manifest.json" ]
 [ -f "$STORE/catalog.sqlite" ]
 [ -f "$STORE/indexes/lexical.sqlite" ]
-printf '%s' "$STATUS" | grep -q '"files_indexed":2'
-printf '%s' "$STATUS" | grep -q '"chunks_indexed":2'
+printf '%s' "$STATUS" | grep -q '"files_indexed":4'
+printf '%s' "$STATUS" | grep -q '"summary_token_budget":128'
+printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
+printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
+printf '%s' "$STATUS" | grep -q '"content_artifacts":15'
+printf '%s' "$STATUS" | grep -q '"phase":"complete"'
+printf '%s' "$STATUS" | grep -q '"scan_files_seen":4'
+printf '%s' "$STATUS" | grep -q '"enrichment_files_total":4'
+printf '%s' "$STATUS" | grep -q '"enrichment_files_done":4'
+printf '%s' "$STATUS" | grep -q '"pdf_pages_read":7'
+printf '%s' "$STATUS" | grep -q '"ocr_outputs":1'
+printf '%s' "$STATUS" | grep -q '"image_captions":1'
+printf '%s' "$STATUS" | grep -q '"summaries_created":4'
+printf '%s' "$STATUS" | grep -q '"elapsed_seconds":'
+printf '%s' "$STATUS" | grep -q '"files_per_second":'
 printf '%s' "$STATUS" | grep -q "\"active_database\":\"$STORE\""
 
 EVENTS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/events?job_id=$JOB&after=0")
@@ -95,7 +120,38 @@ while [ "$i" -lt 300 ]; do
   i=$((i + 1))
 done
 [ "$i" -lt 300 ] || { echo "FAIL: unchanged Chutni refresh did not publish" >&2; exit 1; }
-printf '%s' "$STATUS" | grep -q '"chunks_indexed":2'
+printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
+printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
+
+# Samosa enrichment is committed into the portable protocol store, not a
+# private cache: PDF pages, image OCR, captions, and summaries are searchable
+# with their protocol artifact kinds and provenance.
+PDF_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+  "{\"store_path\":\"$STORE\",\"query\":\"synthetic fixture document\",\"limit\":20}")
+printf '%s' "$PDF_RESULT" | grep -q '"artifact_kind":"page_text"'
+OCR_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+  "{\"store_path\":\"$STORE\",\"query\":\"Poličar 2019\",\"limit\":20}")
+printf '%s' "$OCR_RESULT" | grep -q '"artifact_kind":"ocr_text"'
+CAPTION_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+  "{\"store_path\":\"$STORE\",\"query\":\"small repository OCR fixture\",\"limit\":20}")
+printf '%s' "$CAPTION_RESULT" | grep -q '"artifact_kind":"image_caption"'
+SUMMARY_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+  "{\"store_path\":\"$STORE\",\"query\":\"portable Chutni memory\",\"limit\":20}")
+printf '%s' "$SUMMARY_RESULT" | grep -q '"artifact_kind":"summary_short"'
+
+DB_URI="file:$STORE/catalog.sqlite?immutable=1"
+sqlite3 "$DB_URI" \
+  "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) JOIN producers p USING(producer_id) WHERE a.artifact_kind='page_text' AND a.status='active' AND p.name='Samosa document reader' AND p.app_name='Samosa' AND p.app_version='test-enrichment-1';" \
+  | grep -q '^7$'
+sqlite3 "$DB_URI" \
+  "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) JOIN producers p USING(producer_id) WHERE a.artifact_kind IN ('image_caption','summary_short') AND a.status='active' AND p.producer_kind='model' AND p.model_id='qwen3.6-35b-a3b' AND p.model_revision<>'' AND p.app_name='Samosa';" \
+  | grep -q '^5$'
+sqlite3 "$DB_URI" \
+  "SELECT count(*) FROM artifacts a JOIN sources s USING(source_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND json_extract(s.locator_json,'$.display_path') LIKE '%/guide.pdf' AND a.selector_json='{\"type\":\"pages\",\"start\":1,\"end\":3}' AND a.inline_text NOT LIKE 'ERROR:%';" \
+  | grep -q '^1$'
+sqlite3 "$DB_URI" \
+  "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND d.recipe_hash='samosa-summary-leading-content-v1' AND json_extract(d.parameters_json,'$.summary_input')='leading_content_window' AND json_extract(d.parameters_json,'$.token_budget')=128 AND json_extract(d.parameters_json,'$.token_estimator')='utf8_bytes_div_4_v1' AND json_extract(d.parameters_json,'$.max_input_bytes')=512 AND a.inline_text NOT LIKE 'ERROR:%';" \
+  | grep -q '^4$'
 
 RESULT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/query" \
@@ -111,9 +167,25 @@ CHAT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json'
   --data-binary "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"please find the chutni memory probe now\"}],\"directory_context\":{\"scope_id\":\"$SCOPE\"},\"stream\":false}")
 printf '%s' "$CHAT" | grep -q 'saw Chutni memory'
 
+# Inventory-shaped questions do not depend on the literal word "folder"
+# appearing inside a document. The selected scope's bounded catalog is
+# injected instead, so the model cannot falsely claim no folder is attached.
+OVERVIEW=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chat/completions" \
+  --data-binary "{\"model\":\"qwen3.6-35b-a3b\",\"seed\":424242,\"messages\":[{\"role\":\"user\",\"content\":\"this folder - what can you tell me about it?\"}],\"directory_context\":{\"scope_id\":\"$SCOPE\"},\"stream\":false}")
+printf '%s' "$OVERVIEW" | grep -q 'saw Research inventory'
+
+# A selected memory with no lexical hit is still explicit context. The model
+# receives an honest no-match status instead of silently falling back to
+# "I cannot access your filesystem."
+NO_MATCH=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chat/completions" \
+  --data-binary "{\"model\":\"qwen3.6-35b-a3b\",\"seed\":424243,\"messages\":[{\"role\":\"user\",\"content\":\"platypus\"}],\"directory_context\":{\"scope_id\":\"$SCOPE\"},\"stream\":false}")
+printf '%s' "$NO_MATCH" | grep -q 'saw honest no-match status'
+
 # A second host reads the exact store Samosa created; there is no migration or
 # Samosa-private catalog in the retrieval path.
-DIRECT=$(CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+DIRECT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"handoff\"}")
 printf '%s' "$DIRECT" | grep -q '"count":1'
 printf '%s' "$DIRECT" | grep -q 'notes.md'
@@ -121,7 +193,7 @@ printf '%s' "$DIRECT" | grep -q 'notes.md'
 # The generic service updates the store, and Samosa immediately reads the
 # other host's update.
 printf 'retention date September\n' >"$TMP/source/report.txt"
-CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_scan \
+HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_scan \
   "{\"store_path\":\"$STORE\",\"confirmed\":true,\"app_name\":\"handoff-test\",\"app_version\":\"1\"}" \
   >"$TMP/direct-scan.json"
 UPDATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
@@ -133,6 +205,17 @@ OLD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' 
   "http://127.0.0.1:$PORT/v1/chutni/query" \
   --data-binary "{\"query\":\"June\",\"directory_context\":{\"scope_id\":\"$SCOPE\"}}")
 printf '%s' "$OLD" | grep -q '"used":false'
+
+# A user can change the per-memory budget without rebuilding immediately.
+# The value is persisted in scope metadata and explicitly applies next time.
+BUDGET=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/summary-budget" \
+  --data-binary '{"token_budget":512}')
+printf '%s' "$BUDGET" | grep -q '"summary_token_budget":512'
+printf '%s' "$BUDGET" | grep -q '"applies":"next_refresh"'
+STATUS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
+  "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE")
+printf '%s' "$STATUS" | grep -q '"summary_token_budget":512'
 
 # Forgetting only detaches Samosa metadata. The portable store belongs to the
 # user and remains available to the other host.

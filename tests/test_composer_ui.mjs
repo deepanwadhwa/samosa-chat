@@ -97,6 +97,7 @@ globalThis.btoa = s => Buffer.from(s, "binary").toString("base64");
 globalThis.unescape = s => s.replace(/%([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
 
 const app = readFileSync(new URL("../assets/app.html", import.meta.url), "utf8");
+
 const begin = app.indexOf("      const MAX_ATTACHMENTS = 6;");
 const end = app.indexOf("      // --- Jobs (Models -> Tools -> Jobs)");
 assert.ok(begin >= 0 && end > begin, "T3.2 composer attachment block must remain extractable");
@@ -137,7 +138,7 @@ function loadComposer({ authFetch } = {}) {
   // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config reported.
   // Defaults to fully closed, matching the app's own initial value.
   globalThis.web = { offline: false, fetch_available: false, search_configured: false,
-                     provider: "", reason: "" };
+                     available: false, consent: "granted", provider: "", reason: "" };
   globalThis.pendingAttachments = [];
   globalThis.authFetch = authFetch || (async () => ({ ok: true, json: async () => ({}) }));
   globalThis.resizePrompt = () => {};
@@ -146,13 +147,31 @@ function loadComposer({ authFetch } = {}) {
     return { applyCapabilities, setAttachItem, openAttachMenu, closeAttachMenu,
              attachMenuKeydown, setAttachError, removeAttachment, renderAttachments,
              uploadAttachment, pickAttachment, clearAttachments,
-             addWebPage, addWebSearch,
+             addWebPage, addWebSearch, applyPendingWebContext,
              get pending() { return pendingAttachments; },
              set pending(v) { pendingAttachments = v; },
              get pendingWebContext() { return pendingWeb; },
-             set pendingWebContext(v) { pendingWeb = v; } };
+             set pendingWebContext(v) { pendingWeb = v; },
+             set readyMemoryCount(v) { readyChutniMemoryCount = v; } };
   })()`);
   return { fns, els };
+}
+
+// --- Phase W: the visible per-turn chip is the only web-search control ----
+{
+  const { fns } = loadComposer();
+  // A configured provider does not grant automatic per-turn use.
+  globalThis.web = { offline: false, fetch_available: true, search_configured: true,
+                     available: true, consent: "granted", provider: "brave", reason: "" };
+  assert.deepEqual(fns.applyPendingWebContext({ model: "test" }, []), { model: "test" });
+  assert.deepEqual(
+    fns.applyPendingWebContext({ model: "test" }, [{ kind: "search", url: null }]),
+    { model: "test", web: true },
+    "clicking Web search must explicitly request one search turn");
+  assert.deepEqual(
+    fns.applyPendingWebContext({ model: "test" }, [{ kind: "url", url: "https://example.com/a" }]),
+    { model: "test", web_urls: ["https://example.com/a"] },
+    "adding a page must not also enable Web search");
 }
 
 const uploadOk = id => async () => ({ ok: true, json: async () => ({ id, filename: "photo.png" }) });
@@ -160,9 +179,8 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
 
 // --- Capability gating: nothing is offered before the server confirms it ---
 // sec5.8: the UI "must not display a working action for a route absent from
-// the packaged gateway". Directory still has no backing API. Web page and
-// Web search now do (Phase W), but only when GET /v1/web/config says so --
-// the default state below is a gateway that has not answered yet.
+// the packaged gateway". Directory is backed by ready Chutni scopes. Web page
+// and Web search are gated by GET /v1/web/config; nothing starts optimistic.
 {
   const { fns, els } = loadComposer();
   fns.applyCapabilities();
@@ -170,19 +188,23 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   assert.equal(els.attachDocument.disabled, false, "a reported document reader must enable Document");
   assert.equal(els.attachWeb.disabled, true, "Web page must stay disabled until the server reports a web reader");
   assert.equal(els.attachWebSearch.disabled, true, "Web search must stay disabled until a provider is configured");
-  assert.equal(els.attachDirectory.disabled, true, "Directory has no backing route and must be disabled");
+  assert.equal(els.attachDirectory.disabled, true, "Directory must stay disabled until a Chutni memory is ready");
   // A disabled item still states why, and says so to assistive tech too.
   assert.match(els.attachWebReason.textContent, /no web reader/i);
   assert.match(els.attachDirectoryReason.textContent, /Chutni/i);
   assert.match(els.attachWeb.getAttribute("aria-label"), /Web page — .*web reader/i);
   assert.match(els.attachDirectory.getAttribute("aria-label"), /Directory — /);
+  fns.readyMemoryCount = 1;
+  fns.applyCapabilities();
+  assert.equal(els.attachDirectory.disabled, false, "a ready Chutni memory must make Directory available from Chat");
+  assert.match(els.attachDirectoryReason.textContent, /folder memory/i);
 }
 
 // --- Phase W: web items follow GET /v1/web/config, never optimism ---------
 {
   const { fns, els } = loadComposer();
   globalThis.web = { offline: false, fetch_available: true, search_configured: true,
-                     provider: "brave", reason: "" };
+                     available: true, consent: "granted", provider: "brave", reason: "" };
   fns.applyCapabilities();
   assert.equal(els.attachWeb.disabled, false, "a reported web reader must enable Web page");
   assert.equal(els.attachWebSearch.disabled, false, "a configured provider must enable Web search");
@@ -194,7 +216,7 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   // rather than a generic "unavailable".
   const { fns, els } = loadComposer();
   globalThis.web = { offline: false, fetch_available: true, search_configured: false,
-                     provider: "", reason: "no search provider is configured" };
+                     available: true, consent: "granted", provider: "", reason: "no search provider is configured" };
   fns.applyCapabilities();
   assert.equal(els.attachWeb.disabled, false, "reading a page needs no credentials");
   assert.equal(els.attachWebSearch.disabled, true, "no provider means no Web search");
@@ -204,7 +226,7 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   // Offline is a distinct reason from "not built", and closes both.
   const { fns, els } = loadComposer();
   globalThis.web = { offline: true, fetch_available: false, search_configured: false,
-                     provider: "", reason: "Samosa is in offline mode." };
+                     available: false, consent: "granted", provider: "", reason: "Samosa is in offline mode." };
   fns.applyCapabilities();
   assert.equal(els.attachWeb.disabled, true, "offline mode must disable Web page");
   assert.equal(els.attachWebSearch.disabled, true, "offline mode must disable Web search");
@@ -215,13 +237,13 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
 {
   const { fns } = loadComposer();
   globalThis.web = { offline: false, fetch_available: true, search_configured: true,
-                     provider: "brave", reason: "" };
+                     available: true, consent: "granted", provider: "brave", reason: "" };
   fns.applyCapabilities();
   fns.addWebPage("https://example.com/a");
   fns.addWebSearch();
   assert.equal(fns.pendingWebContext.length, 2, "both kinds of web context stage");
   globalThis.web = { offline: true, fetch_available: false, search_configured: false,
-                     provider: "", reason: "Samosa is in offline mode." };
+                     available: false, consent: "granted", provider: "", reason: "Samosa is in offline mode." };
   fns.applyCapabilities();
   assert.equal(fns.pendingWebContext.length, 0,
     "going offline must drop staged web context rather than send a turn that cannot honour it");
@@ -231,7 +253,7 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
 {
   const { fns } = loadComposer();
   globalThis.web = { offline: false, fetch_available: true, search_configured: true,
-                     provider: "brave", reason: "" };
+                     available: true, consent: "granted", provider: "brave", reason: "" };
   assert.equal(fns.addWebPage("ftp://example.com/x"), false, "a non-http scheme is refused");
   assert.equal(fns.addWebPage("example.com"), false, "a scheme-less address is refused");
   assert.equal(fns.pendingWebContext.length, 0, "nothing invalid was staged");

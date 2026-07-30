@@ -10,7 +10,8 @@
 #   samosa --max-tokens N "..."             override the safety ceiling
 #   samosa --context-tokens N "..."         set total context capacity (or auto)
 #   samosa --thinking-budget N "..."         cap internal reasoning before the answer
-#   samosa serve                            run the local app server in foreground
+#   samosa serve                            start the local app server in background
+#   samosa serve --foreground               run attached for debugging
 #   samosa serve --stop                     stop the local app server cleanly
 #   samosa app                              start the server and open the browser app
 #   samosa jobs <command> <job.json>         run structured local batch work
@@ -61,6 +62,14 @@ fi
 PORT="${SAMOSA_PORT:-8642}"
 PID_FILE="$HOME_DIR/server.pid"
 SERVER_LOG="$HOME_DIR/server.log"
+RUN_DIR="$HOME_DIR/run"
+LAUNCHD_PLIST="$RUN_DIR/com.samosa.app.$PORT.plist"
+if [ "$PORT" = 8642 ]; then
+  LAUNCH_LABEL="com.samosa.app"
+else
+  LAUNCH_LABEL="com.samosa.app.$PORT"
+fi
+LAUNCH_DOMAIN="gui/$(id -u)"
 CURL="${SAMOSA_CURL:-curl}"
 if [ "$(uname -s)" = "Darwin" ]; then
   OPEN="${SAMOSA_OPEN:-open}"
@@ -214,6 +223,75 @@ serve_foreground() {
     exec "$GATEWAY"
 }
 
+launchd_available() {
+  [ "${SAMOSA_DISABLE_LAUNCHD:-0}" != 1 ] &&
+    [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1
+}
+
+xml_escape() {
+  printf '%s' "$1" |
+    sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+        -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+write_launchd_plist() {
+  mkdir -p "$RUN_DIR"
+  x_label=$(xml_escape "$LAUNCH_LABEL")
+  x_gateway=$(xml_escape "$GATEWAY")
+  x_home=$(xml_escape "$HOME_DIR")
+  x_port=$(xml_escape "$PORT")
+  x_engine=$(xml_escape "$ENGINE")
+  x_model=$(xml_escape "$MODEL")
+  x_tokenizer=$(xml_escape "$TOKENIZER")
+  x_html=$(xml_escape "$APP_HTML")
+  x_logo=$(xml_escape "$APP_LOGO")
+  x_context=$(xml_escape "$CONTEXT_TOKENS")
+  x_version=$(xml_escape "$SAMOSA_VERSION")
+  x_chutni=$(xml_escape "$RELEASE_DIR/bin/chutni-mcp")
+  x_log=$(xml_escape "$SERVER_LOG")
+  cat >"$LAUNCHD_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$x_label</string>
+  <key>ProgramArguments</key>
+  <array><string>$x_gateway</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SAMOSA_HOME</key><string>$x_home</string>
+    <key>SAMOSA_PORT</key><string>$x_port</string>
+    <key>SAMOSA_QWEN_ENGINE</key><string>$x_engine</string>
+    <key>SAMOSA_QWEN_MODEL</key><string>$x_model</string>
+    <key>SAMOSA_TOKENIZER</key><string>$x_tokenizer</string>
+    <key>SAMOSA_APP_HTML</key><string>$x_html</string>
+    <key>SAMOSA_APP_LOGO</key><string>$x_logo</string>
+    <key>SAMOSA_CONTEXT_TOKENS</key><string>$x_context</string>
+    <key>SAMOSA_APP_VERSION</key><string>$x_version</string>
+    <key>SAMOSA_CHUTNI_SERVICE</key><string>$x_chutni</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>$x_log</string>
+  <key>StandardErrorPath</key><string>$x_log</string>
+</dict>
+</plist>
+EOF
+  chmod 600 "$LAUNCHD_PLIST"
+}
+
+start_server_launchd() {
+  write_launchd_plist
+  launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$LAUNCH_DOMAIN" "$LAUNCHD_PLIST" >/dev/null 2>&1 || {
+    echo "Samosa could not register its macOS background service; see $SERVER_LOG" >&2
+    return 1
+  }
+  return 0
+}
+
 start_server() {
   server_running && return 0
   pid=$(port_owner_pid)
@@ -232,19 +310,38 @@ start_server() {
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
     return 1
   fi
-  nohup env SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" \
-    SAMOSA_QWEN_MODEL="$MODEL" SAMOSA_TOKENIZER="$TOKENIZER" \
-    SAMOSA_APP_HTML="$APP_HTML" SAMOSA_APP_LOGO="$APP_LOGO" \
-    SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-    SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
-    SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
-    "$GATEWAY" >"$SERVER_LOG" 2>&1 &
-  pid=$!
-  printf '%s\n' "$pid" >"$PID_FILE"
+  if launchd_available; then
+    start_server_launchd || return 1
+    pid=
+  else
+    if command -v setsid >/dev/null 2>&1; then
+      nohup setsid env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+        SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+        SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+        SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+        SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
+        SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+        "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
+    else
+      nohup env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+        SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+        SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+        SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+        SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
+        SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+        "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
+    fi
+    pid=$!
+    printf '%s\n' "$pid" >"$PID_FILE"
+  fi
   i=0
   while [ "$i" -lt 240 ]; do
-    server_running && return 0
-    if ! kill -0 "$pid" 2>/dev/null; then
+    if server_running; then
+      owner=$(port_owner_pid)
+      [ -z "$owner" ] || printf '%s\n' "$owner" >"$PID_FILE"
+      return 0
+    fi
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
       echo "Samosa server failed to start; see $SERVER_LOG" >&2
       rm -f "$PID_FILE"
       return 1
@@ -257,6 +354,9 @@ start_server() {
 }
 
 stop_server() {
+  if launchd_available; then
+    launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
+  fi
   if server_running; then
     "$CURL" -fsS --max-time 5 -X POST "http://127.0.0.1:$PORT/v1/shutdown" >/dev/null || true
     i=0
@@ -390,6 +490,11 @@ if [ "${1:-}" = "serve" ]; then
     stop_server
     exit 0
   fi
+  FOREGROUND=0
+  if [ "${1:-}" = "--foreground" ]; then
+    FOREGROUND=1
+    shift
+  fi
   if [ "${1:-}" = "--context-tokens" ]; then
     shift
     [ "$#" = 1 ] && context_tokens_value "$1" || fail "--context-tokens requires auto or a positive integer"
@@ -397,7 +502,12 @@ if [ "${1:-}" = "serve" ]; then
     shift
   fi
   [ "$#" = 0 ] || usage
-  serve_foreground
+  if [ "$FOREGROUND" = 1 ]; then
+    serve_foreground
+  else
+    start_server
+    echo "Samosa server running independently at http://127.0.0.1:$PORT"
+  fi
   exit 0
 fi
 

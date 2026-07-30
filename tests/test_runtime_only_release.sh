@@ -53,6 +53,8 @@ grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the bundled Chutni service source"
+grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the OCR reader source"
 for name in $MODEL_ARTIFACT_NAMES; do
   grep -q "	$name$" "$REMOTE/release-manifest.tsv" &&
     fail "runtime-only manifest unexpectedly lists model artifact '$name'"

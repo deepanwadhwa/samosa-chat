@@ -385,6 +385,25 @@ static int handler(SamosaHttpServer *server, int fd,
         }
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Describe this image factually"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"caption\\\":\\\"A small repository OCR fixture containing printed text.\\\"}\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Summarize this file in two or three factual sentences")) {
+        if (strstr(request->body, "Page 7 of 7") ||
+            strstr(request->body, "TAIL_CONTENT_LEAK"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"summary\\\":\\\"ERROR: content beyond the summary budget leaked into the prompt.\\\"}\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"summary\\\":\\\"Repository fixture summary retained as portable Chutni memory.\\\"}\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Extract structured data"))
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -467,6 +486,27 @@ static int handler(SamosaHttpServer *server, int fd,
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw web evidence\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"missing web evidence\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"seed\":424242"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Selected folder memory inventory") &&
+            strstr(request->body, "Selected folder display name: Research") &&
+            strstr(request->body, "Chutni is the feature name, not the folder name") &&
+            strstr(request->body, "[File: notes.md]") &&
+            strstr(request->body, "[File: report.txt]")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw Research inventory\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing Chutni inventory\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "\"seed\":424243"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Chutni local memory status") &&
+            strstr(request->body, "no current indexed passage matched")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw honest no-match status\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing no-match status\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "chutni memory probe"))
         return samosa_http_response(fd, 200, "application/json",
