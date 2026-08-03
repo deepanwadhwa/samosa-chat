@@ -1168,7 +1168,7 @@ static QT qt_load(Model *m, const char *name, int O, int I) {
     t.I = I;
     t.qgroup = 0;
     
-    char qs_name[512];
+    char qs_name[1024];
     snprintf(qs_name, sizeof(qs_name), "%s.qs", nm);
     st_tensor *ts = st_find(&m->S, qs_name);
     

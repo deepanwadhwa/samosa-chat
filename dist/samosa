@@ -42,6 +42,7 @@ MODEL="$RELEASE_DIR/model"
 TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
 APP_HTML="$RELEASE_DIR/app.html"
 APP_LOGO="$RELEASE_DIR/samosa-chat.png"
+MODELS_CATALOG="$RELEASE_DIR/models.json"
 SESSION="$HOME_DIR/last_session.qws"
 
 # Version. Packaging replaces the empty assignment below with the real number
@@ -220,6 +221,7 @@ serve_foreground() {
     SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
     SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
     SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+    SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
     exec "$GATEWAY"
 }
 
@@ -248,6 +250,7 @@ write_launchd_plist() {
   x_context=$(xml_escape "$CONTEXT_TOKENS")
   x_version=$(xml_escape "$SAMOSA_VERSION")
   x_chutni=$(xml_escape "$RELEASE_DIR/bin/chutni-mcp")
+  x_models_catalog=$(xml_escape "$MODELS_CATALOG")
   x_log=$(xml_escape "$SERVER_LOG")
   cat >"$LAUNCHD_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -270,6 +273,7 @@ write_launchd_plist() {
     <key>SAMOSA_CONTEXT_TOKENS</key><string>$x_context</string>
     <key>SAMOSA_APP_VERSION</key><string>$x_version</string>
     <key>SAMOSA_CHUTNI_SERVICE</key><string>$x_chutni</string>
+    <key>SAMOSA_MODELS_CATALOG</key><string>$x_models_catalog</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

@@ -16,12 +16,12 @@ Samosa is a local model application and HTTP gateway. Models can be downloaded, 
 
 ## Features
 
+- Uses a local model application and HTTP gateway.
 - Starts with zero installed models.
-- Includes a first-run profile and model-download setup flow in the browser interface.
-- Provides a validated model catalog from the server.
-- Supports resumable, verified, and atomically activated model downloads.
-- Includes an internet-search feature that requires no API key.
-- Integrates portable Chutni folder memory with a native Gigatoken adapter.
+- Includes a browser interface for downloading models from a validated catalog.
+- Supports resumable and verified model downloads.
+- Provides an internet-search feature that does not require an API key.
+- Integrates Chutni folder memory via a native Gigatoken adapter for document indexing.
 
 ## Models
 

@@ -401,8 +401,10 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
     "http://127.0.0.1:$SMOKE_PORT/v1/setup/status" >/dev/null ||
     fail "staged setup status endpoint smoke failed; live release was not changed"
   curl -fsS --max-time 5 -H "X-Samosa-Token: $UI_TOKEN" \
-    "http://127.0.0.1:$SMOKE_PORT/v1/models/catalog" >/dev/null ||
+    "http://127.0.0.1:$SMOKE_PORT/v1/models/catalog" >/dev/null || {
+    curl -sS --max-time 5 -H "X-Samosa-Token: $UI_TOKEN" "http://127.0.0.1:$SMOKE_PORT/v1/models/catalog" >&2
     fail "staged model catalog endpoint smoke failed; live release was not changed"
+  }
 
   # Chat never requires a model to respond honestly: with none installed it
   # must return the structured 409 model_required error; with one already
