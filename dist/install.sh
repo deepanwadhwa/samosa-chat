@@ -29,7 +29,7 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   if [ "$OS" = "Darwin" ]; then
     [ "$ARCH" = "arm64" ] || fail "an Apple Silicon Mac (M1 or newer) is required"
     RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
-    [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
+    [ "$RAM_GB" -ge 16 ] || [ "${SAMOSA_IGNORE_RAM_CHECK:-0}" = 1 ] || fail "16 GB of RAM required (this Mac has ${RAM_GB} GB)"
     if ! command -v clang >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
       say "The Apple command-line tools are needed (one-time, free)."
       say "A dialog will pop up - click Install, then RE-RUN this installer."
@@ -52,7 +52,7 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
     fi
     RAM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
     RAM_GB=$(( RAM_KB / 1048576 ))
-    [ "$RAM_GB" -ge 16 ] || fail "16 GB of RAM required (this system has ${RAM_GB} GB)"
+    [ "$RAM_GB" -ge 16 ] || [ "${SAMOSA_IGNORE_RAM_CHECK:-0}" = 1 ] || fail "16 GB of RAM required (this system has ${RAM_GB} GB)"
     if ! command -v clang >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
       fail "a C compiler (clang or gcc) is required. Install build-essential or clang."
     fi

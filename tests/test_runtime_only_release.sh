@@ -81,7 +81,7 @@ serve_remote
 # for real (SAMOSA_INSTALL_TEST is not set) since there is no model on disk
 # anywhere the smoke path could touch, so nothing here needs a real 24 GB
 # model to be safe.
-SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
+SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="http://127.0.0.1:$SERVER_PORT" SAMOSA_HOME="$HOME_DIR" \
   sh "$ROOT/dist/install.sh" >"$TMP/install-1.log" 2>&1 ||
   { sed -n '1,200p' "$TMP/install-1.log" >&2; fail "clean runtime-only install failed"; }
@@ -146,7 +146,7 @@ printf '\n// t1.0 runtime-only upgrade test marker\n' >>"$TMP/repo-v2/src/samosa
 
 SERVER_PID=""
 serve_remote
-SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
+SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="http://127.0.0.1:$SERVER_PORT" SAMOSA_HOME="$HOME_DIR" \
   sh "$ROOT/dist/install.sh" >"$TMP/install-2.log" 2>&1 ||
   { sed -n '1,200p' "$TMP/install-2.log" >&2; fail "runtime-only upgrade install failed"; }
