@@ -76,10 +76,21 @@ function loadSetupFlowUi() {
   globalThis.backend = { id: "qwen" };
   globalThis.modelCatalog = [];
   const fns = eval(`(() => {${app.slice(begin, end)}
-    return { setupViewForNextStep, formatBytes, installForModel, installErrorMessage, installErrorRetryable,
+    return { setupViewForNextStep, setupViewForStatus, formatBytes, installForModel, installErrorMessage, installErrorRetryable,
       selectionErrorMessage, modelCardState, modelCardActions, modelCardStatusText, buildModelCard, renderModelCards };
   })()`);
   return { fns, byId: fakeElementsById };
+}
+
+// --- once Chat exists, transient model lifecycle states stay inside Chat/Settings ---
+{
+  const { fns } = loadSetupFlowUi();
+  assert.equal(fns.setupViewForStatus({ next_step: "download" }, true), "chat",
+    "a Settings download must not reopen first-run model setup");
+  assert.equal(fns.setupViewForStatus({ next_step: "model" }, true), "chat",
+    "a Settings switch failure must stay in Chat where its error can be handled");
+  assert.equal(fns.setupViewForStatus({ next_step: "download" }, false), "model",
+    "the same state still renders the model step during genuine first-run setup");
 }
 
 // --- setupViewForNextStep: collapses "download" into "model", passes the rest through ---
@@ -211,6 +222,31 @@ function loadSetupFlowUi() {
   assert.deepEqual(buttons.map(b => b.textContent), ["Use this model"]);
 }
 
+// --- selecting from Settings returns to a fresh chat; it never invokes the onboarding router ---
+{
+  fakeElementsById = {};
+  let newChatCalls = 0, healthCalls = 0;
+  globalThis.els = { settings: { classList: { contains: () => false } } };
+  globalThis.state = {};
+  globalThis.backend = { id: "qwen" };
+  globalThis.modelCatalog = [];
+  globalThis.newChat = () => { newChatCalls++; };
+  globalThis.health = async () => { healthCalls++; };
+  globalThis.authFetch = async (path) => {
+    assert.equal(path, "/v1/backends/select", "a completed Settings selection must not fetch setup/status again");
+    return { ok: true, json: async () => ({ accepted: true, job_id: "selection-1" }) };
+  };
+  const { runModelCardAction } = eval(`(() => {${app.slice(begin, end)}
+    chatBootstrapped = true;
+    return { runModelCardAction };
+  })()`);
+  const errorEl = { hidden: true, textContent: "" };
+  await runModelCardAction("select", { id: "ornith", version: "v1" }, null, errorEl);
+  assert.equal(errorEl.hidden, true);
+  assert.equal(newChatCalls, 1, "a successful Settings selection should close Settings into a fresh conversation");
+  assert.equal(healthCalls, 1, "the chat header should immediately refresh to Ready or Loading");
+}
+
 // --- renderModelCards: builds exactly one card per catalog entry, correlating jobs by model_id ---
 {
   fakeElementsById = {};
@@ -226,8 +262,9 @@ function loadSetupFlowUi() {
     setupInstalls = ${JSON.stringify(setupInstalls)};
     return { renderModelCards };
   })()`);
-  renderModelCards({ active_install_job_id: null, active_selection_operation_id: null });
   const modelList = fakeElementsById["modelList"];
+  const modelError = fakeElementsById["setupModelError"];
+  renderModelCards(modelList, modelError, { active_install_job_id: null, active_selection_operation_id: null });
   assert.equal(modelList.children.length, 2, "one card per catalog model");
   const bonsaiCard = modelList.children.find(c => c.attrs["data-model-id"] === "bonsai");
   assert.ok(bonsaiCard.querySelectorAll("button").some(b => b.textContent === "Pause"), "the correlated downloading job must be reflected on its model's card");

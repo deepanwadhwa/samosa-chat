@@ -19,10 +19,9 @@ the product.
   ([app.html:9-25](../assets/app.html#L9-L25)) is distinctive; almost every AI
   chat app is grey/indigo. The mascot, the name, the warmth — this is an
   identity, not a template. Keep the temperature; discipline the application.
-- **Honest microcopy.** "Running only on this computer"
-  ([:253](../assets/app.html#L253)), "responses stay on this Mac"
-  ([:282](../assets/app.html#L282)), "ready on this Mac", the settings copy
-  that admits longer ceilings cost time and SSD reads
+- **Honest microcopy.** The model catalog and status line describe the current
+  model without inventing a fixed catalog size or repeating where it runs. The
+  settings copy still admits that longer ceilings cost time and SSD reads
   ([:310](../assets/app.html#L310)). This is the project's evidence culture as
   interface copy. It is rare and it is the brand. Extend it; never let a
   redesign make the copy vaguer.
@@ -214,7 +213,7 @@ work gets the two-clock treatment (below), not a fake percentage.
 Left-aligned, 12px caption + 13px tabular metrics, hairline top border:
 
 ```
-● Ready on this Mac    Direct · 6.8 tok/s · 3.9 GB · natural close
+● Ready    Direct · 6.8 tok/s · 3.9 GB · natural close
 ```
 
 One line, stable columns, dot = the status component. During generation the

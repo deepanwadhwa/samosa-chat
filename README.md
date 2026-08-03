@@ -1,8 +1,8 @@
 <div align="center">
   <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
   <h1>Samosa Chat</h1>
-  <p><strong>Three local models. One private chat app.</strong></p>
-  <p>Qwen3.6 35B A3B &nbsp;·&nbsp; Bonsai 27B 1-bit &nbsp;·&nbsp; Ornith 1.0 9B</p>
+  <p><strong>Private models. One private chat app.</strong></p>
+  <p>Choose from the compatible models in Samosa's catalog.</p>
   <p>No cloud account &nbsp;·&nbsp; No telemetry &nbsp;·&nbsp; Hardware-aware context &nbsp;·&nbsp; Durable compaction</p>
 
   <p>
@@ -13,6 +13,15 @@
 </div>
 
 Samosa is a local model application and HTTP gateway. Models can be downloaded, verified, and loaded directly through the app interface or terminal commands.
+
+## Features
+
+- Starts with zero installed models.
+- Includes a first-run profile and model-download setup flow in the browser interface.
+- Provides a validated model catalog from the server.
+- Supports resumable, verified, and atomically activated model downloads.
+- Includes an internet-search feature that requires no API key.
+- Integrates portable Chutni folder memory with a native Gigatoken adapter.
 
 ## Models
 

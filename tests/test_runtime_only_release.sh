@@ -55,6 +55,10 @@ grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the bundled Chutni service source"
 grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the OCR reader source"
+grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the local voice runtime builder"
+grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the native Kokoro installer"
 for name in $MODEL_ARTIFACT_NAMES; do
   grep -q "	$name$" "$REMOTE/release-manifest.tsv" &&
     fail "runtime-only manifest unexpectedly lists model artifact '$name'"
@@ -109,6 +113,12 @@ RECORDED_CHUTNI_VERSION=$(sqlite3 \
 [ -x "$HOME_DIR/current/bin/qwen36b" ] || fail "engine binary missing after install"
 [ -f "$HOME_DIR/current/app.html" ] || fail "app shell missing after install"
 [ ! -e "$HOME_DIR/current/model" ] || fail "a model directory was created by a runtime-only install"
+[ -x "$HOME_DIR/current/bin/samosa-voice-runtime" ] ||
+  fail "runtime-only install did not stage the local voice runtime builder"
+[ -x "$HOME_DIR/current/bin/samosa-kokoro-runtime" ] ||
+  fail "runtime-only install did not stage the native Kokoro installer"
+[ ! -e "$HOME_DIR/current/bin/samosa-pocket-tts-runtime" ] ||
+  fail "runtime-only install staged the obsolete Python voice runtime"
 
 assert_no_model_requests
 stop_remote

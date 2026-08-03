@@ -47,6 +47,7 @@ SOURCE_FILES = [
     "repetition_guard.h",
     "thinking_budget.h",
     "samosa_http.h",
+    "samosa_kokoro.h",
     "samosa_extract.c",
     "samosa_ocr.c",
     # The compiled gateway and filesystem sidecar are the mandatory browser
@@ -184,6 +185,14 @@ def main() -> int:
 
     for src, dst in ((ROOT / "dist" / "install.sh", out / "install.sh"),
                      (ROOT / "dist" / "samosa", out / "samosa"),
+                     # Kept as a release runtime script rather than a bundled
+                     # binary: it fetches and verifies the pinned Whisper.cpp
+                     # source only after the user explicitly enables STT.
+                     (ROOT / "tools" / "samosa_voice_runtime.sh", out / "engine" / "samosa_voice_runtime.sh"),
+                     # Optional neural TTS is a separate opt-in native runtime;
+                     # its pinned C library and model are fetched only after
+                     # the user selects Download in Voice settings.
+                     (ROOT / "tools" / "samosa_kokoro_runtime.sh", out / "engine" / "samosa_kokoro_runtime.sh"),
                      (ROOT / "dist" / "MODEL_CARD.md", out / "README.md"),
                      (ROOT / "assets" / "app.html", out / "app.html"),
                      (ROOT / "assets" / "samosa-chat.png", out / "samosa-chat.png"),

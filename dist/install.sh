@@ -111,6 +111,8 @@ destination() { # destination <remote-path>
       printf '%s/model/%s\n' "$STAGE" "$1" ;;
     tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
     app.html|samosa-chat.png|models.json) printf '%s/%s\n' "$STAGE" "$1" ;;
+    engine/samosa_voice_runtime.sh) printf '%s/bin/samosa-voice-runtime\n' "$STAGE" ;;
+    engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
@@ -122,7 +124,7 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h"
+INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and
@@ -209,7 +211,7 @@ for relative in $INSTALL_FILES; do
 done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 # Downloads do not retain source file modes.
-chmod 755 "$STAGE/bin/samosa"
+chmod 755 "$STAGE/bin/samosa" "$STAGE/bin/samosa-voice-runtime" "$STAGE/bin/samosa-kokoro-runtime"
 
 say "Compiling the staged engine..."
 COMPILER=""
@@ -222,6 +224,7 @@ else
 fi
 
 OMP_FLAGS=""
+DL_FLAGS=""
 if [ "$(uname -s)" = "Darwin" ]; then
   for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
     if [ -f "$prefix/lib/libomp.dylib" ]; then
@@ -230,6 +233,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
   done
 else
+  DL_FLAGS="-ldl"
   # Linux OpenMP support check
   if echo "int main() {}" | $COMPILER -fopenmp -x c - -o /dev/null >/dev/null 2>&1; then
     OMP_FLAGS="-fopenmp"
@@ -311,14 +315,14 @@ fi
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
 $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" ||
+  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
 $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" ||
+  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||

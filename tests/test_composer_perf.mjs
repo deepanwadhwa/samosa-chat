@@ -36,7 +36,7 @@ class Element {
     this.children = [];
     // The renderer reads back .avatar/.bubble/.thinking-body/.response/
     // .error-note from markup it just set, so the fixture materializes those.
-    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note"]) {
+    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note", "generation-status", "generation-workmark"]) {
       if (v.includes(`class="${cls}`)) { const e = new Element("div"); e.className = cls; this.appendChild(e); }
     }
   }
@@ -79,8 +79,10 @@ function load() {
   globalThis.scrollBottom = () => {};
   globalThis.renderWebActivity = () => {};
   globalThis.authFetch = async () => ({ ok: false });
+  globalThis.voicePlaybackReady = () => false;
   const fns = eval(`(() => {${block}
     return { renderMessages, appendMessageNode, welcomeHTML, escapeHTML,
+             generationStatusHTML, renderAssistantResponse,
              get renderLimit() { return renderLimit; },
              set renderLimit(v) { renderLimit = v; },
              RENDER_WINDOW };
@@ -105,6 +107,36 @@ function timeRender(fns, els, messages) {
   fns.renderMessages();
   const t1 = process.hrtime.bigint();
   return { ms: Number(t1 - t0) / 1e6, nodes: els.messages.children.length };
+}
+
+// --- Waiting for the first token feels active without a terminal cursor ---
+{
+  const { fns } = load();
+  const response = new Element("div");
+  fns.renderAssistantResponse(response, { streaming: true, content: "" });
+  assert.match(response.innerHTML, /class="generation-status"/,
+    "a pending assistant turn should show the live generation status");
+  assert.match(response.innerHTML, /Working through it/,
+    "the waiting state should have a readable label");
+  assert.match(response.innerHTML, /generation-workmark/,
+    "the waiting state should use the active-work mark");
+  assert.doesNotMatch(response.innerHTML, /typing/,
+    "the retired terminal cursor class must not return");
+  const originalStatus = response.querySelector(".generation-status");
+  fns.renderAssistantResponse(response, { streaming: true, content: "", reasoning: "A later SSE update" });
+  assert.equal(response.querySelector(".generation-status"), originalStatus,
+    "pre-token SSE updates must not recreate and restart the working mark");
+
+  fns.renderAssistantResponse(response, { streaming: true, content: "The first token" });
+  assert.doesNotMatch(response.innerHTML, /generation-status/,
+    "real response text becomes the progress signal as soon as it arrives");
+  assert.match(response.innerHTML, /The first token/);
+  assert.doesNotMatch(app, /\.typing::after|@keyframes\s+blink/,
+    "the old blinking pipe CSS must remain removed");
+  assert.doesNotMatch(app, /generation-sweep|background-clip|drop-shadow/,
+    "the rejected text-shimmer implementation must remain removed");
+  assert.match(app, /@keyframes work-tile-a/,
+    "the active-work mark should rearrange its tiles instead of animating text");
 }
 
 // --- 1. A 1,000-message conversation renders a bounded number of nodes ----
@@ -163,7 +195,12 @@ function timeRender(fns, els, messages) {
   assert.ok(!html.includes("<img src=x onerror"), "a profile name must never reach the empty state as markup");
   assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"), "it should appear escaped instead");
   globalThis.profileName = "Deepan";
-  assert.ok(fns.welcomeHTML().includes("Welcome, Deepan"), "a normal name personalizes the heading");
+  const personalized = fns.welcomeHTML();
+  assert.ok(personalized.includes("Welcome, Deepan"), "a normal name personalizes the heading");
+  assert.ok(!personalized.includes(globalThis.backend.label),
+    "the welcome copy must not bake the active model into its prose");
+  assert.ok(personalized.includes("Your conversations are stored on this computer."),
+    "the local-storage promise should remain clear without naming a model");
   globalThis.profileName = "";
   assert.ok(fns.welcomeHTML().includes("Your model. Your machine."), "no name falls back to the generic heading");
 }

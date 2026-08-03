@@ -5,6 +5,7 @@
   "models": [
     {
       "id": "qwen",
+      "family": "chat",
       "version": "groupwise-symmetric-q4-v1",
       "preferred_for_backend": true,
       "label": "Qwen3.6 35B A3B",
@@ -95,6 +96,7 @@
     },
     {
       "id": "bonsai",
+      "family": "chat",
       "version": "f10afb355f104535e3e3e98cf7ab7795c72bd292",
       "preferred_for_backend": true,
       "label": "Bonsai 27B 1-bit",
@@ -143,6 +145,7 @@
     },
     {
       "id": "ornith",
+      "family": "chat",
       "version": "3296bc7a404871a72ac3f1903f561459c09b5c17",
       "preferred_for_backend": true,
       "label": "Ornith 1.0 9B",
@@ -176,6 +179,47 @@
           "file_mode": "0600",
           "bytes": 5629108704,
           "sha256": "5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106"
+        }
+      ]
+    },
+    {
+      "id": "voice-stt-whisper-base-en",
+      "family": "voice",
+      "version": "whisper.cpp-base.en-2026-07",
+      "preferred_for_backend": true,
+      "label": "Whisper Base English",
+      "description": "Private on-device speech recognition for hands-free Samosa. Best balance of accuracy and memory on a 16 GB Mac.",
+      "capabilities": ["speech_to_text", "english"],
+      "backend_kind": "whisper_cpp",
+      "supported_platforms": [
+        { "os": "macos", "architecture": "arm64" },
+        { "os": "linux", "architecture": "x86_64" },
+        { "os": "linux", "architecture": "arm64" }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 536870912,
+      "launch_profile_id": "whisper_cpp_base_en",
+      "runtime_dependencies": [
+        {
+          "package_id": "whisper-cli",
+          "version": "v1.9.1",
+          "source": "built_locally"
+        }
+      ],
+      "license": {
+        "name": "MIT",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp"
+      },
+      "artifacts": [
+        {
+          "name": "ggml-base.en.bin",
+          "role": "speech_to_text_weights",
+          "required": true,
+          "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+          "install_path": "voice/stt-whisper-base-en/ggml-base.en.bin",
+          "file_mode": "0600",
+          "bytes": 147964211,
+          "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"
         }
       ]
     }

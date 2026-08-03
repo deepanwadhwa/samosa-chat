@@ -23,11 +23,17 @@ grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/read_cache.h' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/samosa_kokoro.h' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv"
 
 SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="file://$REMOTE" SAMOSA_HOME="$HOME_DIR" \
   sh "$ROOT/dist/install.sh" >/dev/null
+[ -x "$HOME_DIR/current/bin/samosa-voice-runtime" ] || { echo "missing staged local voice runtime builder" >&2; exit 1; }
+[ -x "$HOME_DIR/current/bin/samosa-kokoro-runtime" ] || { echo "missing staged native Kokoro installer" >&2; exit 1; }
+[ ! -e "$HOME_DIR/current/bin/samosa-pocket-tts-runtime" ] || { echo "obsolete Python voice runtime was staged" >&2; exit 1; }
 
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]

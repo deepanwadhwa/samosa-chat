@@ -1,7 +1,7 @@
 # Install Samosa
 
 Samosa's source install is model-less: it installs the app, gateway, and Qwen
-engine first, then lets you choose any of the three models from the app or
+engine first, then lets you choose any compatible model from the app or
 terminal.
 
 ## Requirements

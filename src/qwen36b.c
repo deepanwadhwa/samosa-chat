@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <math.h>
 #include <time.h>
 #include <errno.h>
@@ -5597,6 +5598,19 @@ static int run_samosa_serve(Model *model,const char *snapshot,
     SamosaServeContext context={.model=model,.tokenizer_path=tokenizer_path,
         .snapshot=snapshot,.auto_compact=1,.compact_threshold_percent=80,
         .started=now_s(),.port=port};
+    /* The compiled gateway persists these Advanced settings and injects them
+     * before launch.  Reading them here keeps compaction policy durable across
+     * backend restarts instead of silently resetting to on/80 every time. */
+    const char *automatic=getenv("SAMOSA_AUTO_COMPACT");
+    if(automatic&&*automatic)
+        context.auto_compact=strcmp(automatic,"0")&&strcasecmp(automatic,"false")&&
+                             strcasecmp(automatic,"no");
+    const char *threshold=getenv("SAMOSA_COMPACT_THRESHOLD");
+    if(threshold&&*threshold){
+        char *end=NULL;long value=strtol(threshold,&end,10);
+        if(end&&!*end&&value>=50&&value<=90)
+            context.compact_threshold_percent=(int)value;
+    }
     atomic_init(&context.cancel,0);pthread_mutex_init(&context.stats_mu,NULL);
     pthread_mutex_init(&context.interactive_mu,NULL);
     serve_scheduler_init(&context.scheduler,max_queue);tok_load(&context.tokenizer,tokenizer_path);

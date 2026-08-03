@@ -7,63 +7,63 @@
   <meta name="samosa-ui-token" content="__SAMOSA_UI_TOKEN__">
   <title>Samosa Chat</title>
   <style>
-    /* Design tokens per docs/UI_DESIGN.md sec2.2 (T3.1). Warm flat surfaces,
-       hairline structure, one accent, semantic status colors. Legacy
-       --paper-2/--panel/--brand/--muted names are gone: every rule below was
-       migrated to the roles they map to (--inset/--surface/--accent/--ink-2). */
+    /* Samosa's visual system: an editorial instrument, warm and unmistakably local. */
     :root {
-      /* surfaces */
-      --paper:    #faf7f2;
-      --surface:  #ffffff;
-      --inset:    #f1ece3;
-      --line:     rgba(60, 42, 28, .12);
-      --line-strong: rgba(60, 42, 28, .22);
-
-      /* ink */
-      --ink:      #221a13;
-      --ink-2:    #6f6459;
-      --ink-3:    #9a8d81;
-
-      /* the one accent */
-      --accent:       #b3501e;
-      --accent-ink:   #fff6ef;
-      --accent-soft:  rgba(179, 80, 30, .10);
-
-      /* semantic status -- used only for status, never decoration */
-      --ok:      #3d8f5f;
-      --warn:    #b07d2c;
-      --danger:  #b0392e;
-
-      /* elevation: exactly two levels. level 0 = none; cards get --line. */
-      --shadow-overlay: 0 8px 30px rgba(34, 22, 12, .16);
+      color-scheme: light;
+      --paper:    #f3efe6;
+      --surface:  #fffdf8;
+      --inset:    #e9e3d8;
+      --line:     rgba(42, 34, 27, .14);
+      --line-strong: rgba(42, 34, 27, .32);
+      --ink:      #211d19;
+      --ink-2:    #675f56;
+      --ink-3:    #6b6259;
+      --accent:       #b94012;
+      --accent-ink:   #ffffff;
+      --accent-soft:  rgba(185, 64, 18, .11);
+      --ok:      #24775f;
+      --warn:    #8a5808;
+      --danger:  #bd3a36;
+      --highlight: #f4c95d;
+      --sidebar: #1c1916;
+      --sidebar-raised: #29241f;
+      --sidebar-ink: #fff7e9;
+      --sidebar-muted: #aaa096;
+      --shadow-overlay: 0 28px 90px rgba(30, 24, 19, .24);
 
       /* radius scale: three values, no exceptions */
-      --r-sm: 6px;
-      --r-md: 10px;
-      --r-lg: 16px;
+      --r-sm: 8px;
+      --r-md: 14px;
+      --r-lg: 22px;
 
       /* type */
-      --font-ui:   -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      --font-ui:   "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
       --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
     }
 
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --paper: #141210; --surface: #1d1a17; --inset: #29241f;
+      --line: rgba(255, 244, 229, .13); --line-strong: rgba(255, 244, 229, .28);
+      --ink: #f8f1e7; --ink-2: #b6aa9d; --ink-3: #968c81;
+      --accent: #ff9b63; --accent-ink: #21120b; --accent-soft: rgba(255, 155, 99, .16);
+      --ok: #60c7a5; --warn: #e0a849; --danger: #ff766f;
+      --highlight: #e5b849; --sidebar: #0b0a09; --sidebar-raised: #1a1714;
+      --sidebar-ink: #fff6e8; --sidebar-muted: #9d9389;
+      --shadow-overlay: 0 28px 90px rgba(0, 0, 0, .54);
+    }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --paper:    #161210;
-        --surface:  #1e1915;
-        --inset:    #241d18;
-        --line:     rgba(255, 235, 220, .12);
-        --line-strong: rgba(255, 235, 220, .22);
-        --ink:      #f4ece3;
-        --ink-2:    #b7aaa0;
-        --ink-3:    #8a7d72;
-        --accent:       #e08a52;
-        --accent-ink:   #241812;
-        --accent-soft:  rgba(224, 138, 82, .14);
-        --ok:      #5cb37f;
-        --warn:    #d1a256;
-        --danger:  #e2695c;
-        --shadow-overlay: 0 24px 70px rgba(0, 0, 0, .4);
+      html[data-theme="system"] {
+        color-scheme: dark;
+        --paper: #141210; --surface: #1d1a17; --inset: #29241f;
+        --line: rgba(255, 244, 229, .13); --line-strong: rgba(255, 244, 229, .28);
+        --ink: #f8f1e7; --ink-2: #b6aa9d; --ink-3: #968c81;
+        --accent: #ff9b63; --accent-ink: #21120b; --accent-soft: rgba(255, 155, 99, .16);
+        --ok: #60c7a5; --warn: #e0a849; --danger: #ff766f;
+        --highlight: #e5b849; --sidebar: #0b0a09; --sidebar-raised: #1a1714;
+        --sidebar-ink: #fff6e8; --sidebar-muted: #9d9389;
+        --shadow-overlay: 0 28px 90px rgba(0, 0, 0, .54);
       }
     }
 
@@ -208,30 +208,108 @@
     .thinking { margin-bottom: 11px; border: 1px solid var(--line); border-radius: var(--r-md); color: var(--ink-2); background: var(--inset); }
     .thinking summary { cursor: pointer; padding: 8px 11px; font-size: 12px; font-weight: 600; }
     .thinking-body { max-height: 260px; overflow: auto; padding: 0 11px 10px; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
-    .typing::after { content: ""; display: inline-block; width: 6px; height: 15px; margin-left: 3px; vertical-align: -2px; background: var(--accent); animation: blink .9s infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
+    .generation-status {
+      display: inline-flex; align-items: center; gap: 10px; min-height: 28px;
+      color: var(--ink-2); font: 600 13px/1.5 var(--font-ui); letter-spacing: .005em;
+    }
+    .generation-workmark {
+      position: relative; flex: none; width: 22px; height: 22px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+      border-radius: 7px; background: var(--accent-soft);
+    }
+    .generation-workmark span {
+      position: absolute; left: 4px; top: 4px; width: 6px; height: 6px;
+      border-radius: 2px; background: var(--accent); will-change: transform;
+    }
+    .generation-workmark span:nth-child(1) { animation: work-tile-a 2.35s cubic-bezier(.55, 0, .25, 1) infinite; }
+    .generation-workmark span:nth-child(2) { transform: translate3d(8px, 0, 0); animation: work-tile-b 2.35s cubic-bezier(.55, 0, .25, 1) infinite; }
+    .generation-workmark span:nth-child(3) { transform: translate3d(0, 8px, 0); animation: work-tile-c 2.35s cubic-bezier(.55, 0, .25, 1) infinite; }
+    @keyframes work-tile-a {
+      0%, 32% { transform: translate3d(0, 0, 0); }
+      42%, 100% { transform: translate3d(0, 8px, 0); }
+    }
+    @keyframes work-tile-b {
+      0%, 54% { transform: translate3d(8px, 0, 0); }
+      64%, 100% { transform: translate3d(0, 0, 0); }
+    }
+    @keyframes work-tile-c {
+      0%, 10% { transform: translate3d(0, 8px, 0); }
+      20%, 76% { transform: translate3d(8px, 8px, 0); }
+      86%, 100% { transform: translate3d(8px, 0, 0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .generation-workmark span { animation: none !important; }
+    }
+    @media (forced-colors: active) {
+      .generation-status { color: CanvasText; }
+      .generation-workmark { border-color: CanvasText; background: Canvas; }
+      .generation-workmark span { background: CanvasText; animation: none !important; }
+    }
     .error-note { color: var(--danger); font-size: 12px; margin-top: 8px; }
 
-    .composer-wrap { flex: 0 0 auto; padding: 9px max(18px, calc((100% - 860px) / 2)) 8px; background: var(--paper); }
+    .composer-wrap { flex: 0 0 auto; padding: 12px max(18px, calc((100% - 860px) / 2)) 14px; background: var(--paper); }
     .composer {
-      display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 10px;
-      padding: 10px; border: 1px solid var(--line); border-radius: var(--r-lg);
+      display: grid; grid-template-columns: 44px minmax(0, 1fr) auto 42px 62px; align-items: center; gap: 7px;
+      min-height: 76px; padding: 7px 8px 7px 10px; border: 1px solid var(--line); border-radius: 30px;
       background: var(--surface); transition: border-color .15s ease, box-shadow .15s ease;
     }
-    .composer:focus-within { border-color: var(--line-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
-    textarea { width: 100%; min-height: 28px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 5px 0; color: var(--ink); background: transparent; line-height: 1.45; margin-left: 4px; }
+    .composer:focus-within { border-color: var(--line-strong); box-shadow: 0 0 0 2px var(--accent-soft); }
+    textarea { grid-column: 2; width: 100%; min-width: 0; box-sizing: border-box; min-height: 54px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 14px 4px; color: var(--ink); background: transparent; font-size: 16px; line-height: 1.45; margin: 0; }
     textarea::placeholder { color: var(--ink-2); }
-    .attach-btn { width: 42px; height: 42px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink-2); cursor: pointer; transition: color .15s ease, background .15s ease; display: grid; place-items: center; }
-    .attach-btn svg { width: 19px; height: 19px; }
-    .attach-btn:hover { color: var(--ink); background: var(--accent-soft); }
-    .send, .stop { width: 42px; height: 42px; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); }
-    .send svg, .stop svg { width: 18px; height: 18px; }
-    .send:hover { background: color-mix(in srgb, var(--accent) 94%, black); }
+    .attach-btn { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; transition: color .15s ease, background .15s ease; display: grid; place-items: center; }
+    .attach-btn svg { width: 25px; height: 25px; stroke-width: 1.45; }
+    .attach-btn:hover { background: var(--accent-soft); color: var(--accent); }
+    .composer-thinking { grid-column: 3; width: auto; min-width: 76px; height: 42px; appearance: none; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); cursor: pointer; font: 500 14px var(--font-ui); padding: 0 24px 0 8px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 12px) 18px, calc(100% - 7px) 18px; background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }
+    .composer-thinking:hover, .composer-thinking:focus { background-color: var(--accent-soft); color: var(--ink); outline: 0; }
+    .voice-mic { grid-column: 4; width: 42px; height: 42px; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; display: grid; place-items: center; transition: color .15s ease, background .15s ease; }
+    .voice-mic svg { width: 23px; height: 23px; }
+    .voice-mic:hover { background: var(--accent-soft); color: var(--accent); }
+    .voice-mic:disabled { opacity: .38; cursor: default; }
+    .send, .stop { grid-column: 5; width: 62px; height: 62px; border-radius: 50%; display: none; place-items: center; color: var(--paper); background: var(--ink); }
+    .send svg, .stop svg { width: 21px; height: 21px; }
+    .composer.has-text .send { display: grid; }
+    .send:hover { background: color-mix(in srgb, var(--ink) 88%, var(--accent)); }
     .send:disabled { opacity: .35; cursor: default; }
-    .stop { display: none; background: var(--danger); }
+    .stop { background: var(--danger); }
     .generating .send { display: none; } .generating .stop { display: grid; }
 
-    .composer-hint { padding-top: 8px; text-align: center; color: var(--ink-2); font-size: 12px; }
+    .voice-trigger { grid-column: 5; width: 62px; height: 62px; border: 0; border-radius: 50%; background: var(--ink); color: var(--paper); cursor: pointer; display: grid; place-items: center; transition: color .15s ease, background .15s ease, transform .15s ease; }
+    .voice-trigger:hover { background: color-mix(in srgb, var(--ink) 88%, var(--accent)); transform: scale(1.025); }
+    .voice-trigger.listening { color: var(--accent-ink); background: var(--accent); }
+    .voice-trigger svg { width: 31px; height: 31px; }
+    .voice-trigger:disabled { opacity: .38; cursor: default; transform: none; }
+    .composer.has-text .voice-trigger, .generating .voice-trigger { display: none; }
+
+    .voice-stage { position: absolute; inset: 68px 0 0; z-index: 6; display: grid; grid-template-rows: auto 1fr; padding: 20px 24px 28px; background: var(--paper); }
+    .voice-stage[hidden] { display: none; }
+    .voice-stage-bar { display: flex; align-items: center; justify-content: space-between; width: min(820px, 100%); margin: 0 auto; }
+    .voice-stage-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+    .voice-stage-name::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
+    .voice-stage-main { display: grid; align-content: center; justify-items: center; gap: 18px; padding-bottom: 4vh; }
+    .voice-canvas { width: min(660px, 94vw); height: min(520px, 59vh); }
+    .voice-stage-copy { max-width: 560px; text-align: center; }
+    .voice-stage-copy strong { display: block; font-size: 24px; font-weight: 700; letter-spacing: -.035em; }
+    .voice-stage-copy span { display: block; margin-top: 7px; color: var(--ink-2); font-size: 15px; }
+    .voice-stage-cancel { border: 0; border-radius: 999px; background: var(--surface); color: var(--ink-2); padding: 8px 12px; cursor: pointer; font-size: 13px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+    .voice-stage-cancel:hover { color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, var(--line)); }
+
+    @media (max-width: 640px) {
+      .composer-wrap { padding: 9px 10px 12px; }
+      .composer { grid-template-columns: 38px minmax(0, 1fr) auto 38px 52px; min-height: 66px; gap: 4px; padding: 7px; border-radius: 26px; }
+      textarea { min-height: 48px; padding: 12px 2px; font-size: 16px; }
+      .attach-btn, .voice-mic { width: 38px; height: 38px; }
+      .attach-btn svg { width: 22px; height: 22px; }
+      .voice-mic svg { width: 20px; height: 20px; }
+      .composer-thinking { min-width: 59px; padding-left: 5px; padding-right: 19px; font-size: 12px; background-position: calc(100% - 10px) 18px, calc(100% - 5px) 18px; }
+      .voice-trigger, .send, .stop { width: 52px; height: 52px; }
+      .voice-trigger svg { width: 26px; height: 26px; }
+      .voice-stage { padding: 17px 16px 22px; }
+      .voice-canvas { width: min(520px, 96vw); height: min(460px, 54vh); }
+      .voice-stage-main { padding-bottom: 3vh; }
+      .voice-stage-copy strong { font-size: 22px; }
+    }
+
+    .composer-hint { display: none; }
     .chat-memory-context {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       margin-bottom: 8px; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
@@ -245,17 +323,42 @@
        warning, and styling it as a warning would push people to decline
        something the app works better with. */
     /* Web tool activity: always visible, never folded into Thinking. */
-    .web-activity { display: grid; gap: 3px; margin-bottom: 8px; }
+    .web-activity { display: grid; gap: 10px; margin: 0 0 12px; padding: 2px 0 4px; }
     .web-activity[hidden] { display: none; }
+    .web-steps { display: grid; gap: 4px; }
+    .web-steps[hidden], .web-sources[hidden] { display: none; }
     .web-step { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: start;
       font-size: 12px; color: var(--ink-2); line-height: 1.45; }
     .web-step-mark { color: var(--ink-3); }
     .web-step.active { color: var(--ink); }
     .web-step.active .web-step-mark { color: var(--accent); }
+    .web-step.failed, .web-step.failed .web-step-mark { color: var(--danger); }
     @media (prefers-reduced-motion: no-preference) {
       .web-step.active .web-step-mark { animation: web-pulse 1.1s ease-in-out infinite; }
     }
     @keyframes web-pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+    .web-sources { display: grid; gap: 6px; }
+    .web-sources-head { display: flex; align-items: center; justify-content: space-between; color: var(--ink-3); font: 650 10px/1.3 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .web-source-list { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; padding-right: 3px; overscroll-behavior: contain; }
+    .web-source {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
+      min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px;
+      background: color-mix(in srgb, var(--inset) 58%, transparent); color: var(--ink); text-decoration: none;
+    }
+    a.web-source[href] { transition: border-color .15s ease, background .15s ease; }
+    a.web-source[href]:hover { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); background: var(--accent-soft); }
+    a.web-source[href]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .web-source-copy { min-width: 0; }
+    .web-source-title { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 700; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+    .web-source-url { overflow: hidden; margin-top: 2px; color: var(--ink-3); font: 500 10px/1.35 var(--font-mono); direction: ltr; text-overflow: ellipsis; unicode-bidi: plaintext; white-space: nowrap; }
+    .web-source-state { align-self: start; color: var(--ink-3); font: 650 9px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+    .web-source[data-state="checking"] .web-source-state { color: var(--accent); }
+    .web-source[data-state="failed"] { opacity: .62; }
+    .web-source[data-state="failed"] .web-source-state { color: var(--danger); }
+    @media (prefers-reduced-motion: no-preference) {
+      .web-source.is-new { animation: web-source-in .22s ease-out both; }
+    }
+    @keyframes web-source-in { from { opacity: 0; transform: translateY(3px); } }
     .web-consent { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
       flex-wrap: wrap; margin-bottom: 9px; padding: 11px 13px; border: 1px solid var(--line);
       border-radius: var(--r-md); background: var(--inset); }
@@ -336,30 +439,50 @@
     }
 
     .settings {
-      position: fixed; inset: 0 0 0 auto; width: min(390px, 100%); z-index: 30;
-      transform: translateX(102%); transition: transform .18s ease-out;
-      border-left: 1px solid var(--line); background: var(--paper); box-shadow: var(--shadow-overlay); padding: 23px;
-      overflow-y: auto;
+      position: fixed; inset: 0; z-index: 30; display: none;
+      background: var(--paper); overflow-y: auto;
     }
-    .settings.open { transform: translateX(0); }
-    .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 27px; }
-    .settings h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
-    .close-settings { border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; padding: 7px 10px; cursor: pointer; }
+    .settings.open { display: block; }
+    .preferences-frame { width: min(1024px, 100%); min-height: 100%; margin: 0 auto; padding: 34px 28px 56px; }
+    .settings-head { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-bottom: 27px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
+    .settings-eyebrow { margin: 0 0 3px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+    .settings h2 { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.035em; }
+    .close-settings { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); padding: 8px 14px; cursor: pointer; font-weight: 600; }
+    .close-settings:hover { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+    .preferences-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 42px; align-items: start; }
+    .preferences-nav { display: grid; gap: 4px; position: sticky; top: 28px; }
+    .preferences-nav button { border: 0; border-radius: 9px; background: transparent; color: var(--ink-2); padding: 9px 11px; text-align: left; cursor: pointer; font-size: 14px; font-weight: 550; }
+    .preferences-nav button:hover { background: var(--accent-soft); color: var(--ink); }
+    .preferences-nav button.active { background: var(--accent-soft); color: var(--accent); }
+    .preferences-pane[hidden] { display: none; }
+    .preferences-pane > h3 { margin: 0 0 6px; font-size: 21px; letter-spacing: -.025em; }
+    .preferences-lead { margin: 0 0 22px; color: var(--ink-2); font-size: 14px; }
+    .preferences-card { margin: 0 0 16px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .preferences-card > h4 { margin: 0 0 16px; font-size: 15px; letter-spacing: -.01em; }
     .field { margin: 0 0 18px; }
+    .field:last-child { margin-bottom: 0; }
     .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }
     .field small { display: block; color: var(--ink-2); margin-top: 7px; font-size: 12px; line-height: 1.45; }
     .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 10px 11px; outline: none; }
-    .local-card { margin-top: 28px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--inset); color: var(--ink-2); font-size: 12px; }
+    .local-card { margin: 0 0 16px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink-2); font-size: 13px; }
     .local-card strong { color: var(--ink); }
     /* T3.2: the .web-* rules that stood here styled the Settings
        "Internet source" card, removed with the feature's dead frontend. */
-    .troubleshoot-card { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .troubleshoot-card { margin: 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .troubleshoot-card label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }
     .troubleshoot-card p { margin: 0 0 12px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
     .kill-button { border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); color: var(--danger); background: transparent; border-radius: var(--r-md); padding: 8px 14px; cursor: pointer; font-weight: 500; }
     .kill-button:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
-    .scrim { display: none; position: fixed; inset: 0; z-index: 20; background: rgba(20, 12, 8, .28); }
-    .scrim.show { display: block; }
+    .scrim { display: none; }
+
+    @media (max-width: 720px) {
+      .preferences-frame { padding: 22px 16px 42px; }
+      .settings-head { margin-bottom: 20px; padding-bottom: 20px; }
+      .settings h2 { font-size: 26px; }
+      .preferences-layout { display: block; }
+      .preferences-nav { position: static; display: flex; overflow-x: auto; margin: 0 -16px 22px; padding: 0 16px; }
+      .preferences-nav button { white-space: nowrap; }
+    }
 
     /* T1.3 directory chooser (docs/TASKS_UI_CHUTNI.md sec5.4) */
     .chooser-scrim { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(20, 12, 8, .32); }
@@ -608,11 +731,10 @@
     .model-card.active { border-color: var(--accent); }
     .model-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
     .model-card-identity { display: flex; align-items: flex-start; gap: 13px; min-width: 0; }
-    .model-card-brand { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 13px; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
+    /* Model identity is quiet utility chrome, not a second brand system.
+       Flat marks also avoid the rainbow-gradient AI-app shorthand. */
+    .model-card-brand { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: var(--r-md); color: var(--accent); background: var(--accent-soft); }
     .model-card-brand svg { width: 31px; height: 31px; display: block; }
-    .model-card-brand.qwen { background: linear-gradient(145deg, #f59a42, #c94c1e); }
-    .model-card-brand.prism { background: linear-gradient(145deg, #5f6bea, #b447c7); }
-    .model-card-brand.deepreinforce { background: linear-gradient(145deg, #31966a, #176c60); }
     .model-card-provider { margin-top: 4px; color: var(--ink-3); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
     .model-card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .model-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; letter-spacing: .02em; }
@@ -635,10 +757,538 @@
     .model-card-actions button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: var(--r-sm); padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
     .model-card-actions button.primary { border: 0; background: var(--accent); color: var(--accent-ink); }
     .model-card-actions button:disabled { opacity: .5; cursor: default; }
+
+    .voice-setting { display: grid; gap: 8px; }
+    .voice-setting > label { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 500; }
+    .voice-setting input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+    .voice-actions { display: flex; gap: 8px; align-items: center; }
+    .voice-actions select { flex: 1; min-width: 0; }
+    .message-speak { display: inline-flex; align-items: center; gap: 5px; margin: 9px 0 0; padding: 4px 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+    .message-speak:hover { background: var(--accent-soft); color: var(--accent); }
+    .message-speak svg { width: 15px; height: 15px; }
+    .message-speak[hidden] { display: none; }
+    .voice-mode-intro { margin: 0 0 10px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+    .voice-model-list { display: grid; gap: 10px; }
+    .voice-model-card { padding: 13px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+    .voice-model-card.ready { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+    .voice-model-card-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .voice-model-card strong { display: block; font-size: 13px; font-weight: 600; }
+    .voice-model-card p { margin: 4px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.45; }
+    .voice-model-card-status { margin-top: 9px; color: var(--ink-2); font-size: 12px; }
+    .voice-model-card-status.ready { color: var(--ok); }
+    .voice-model-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .voice-model-card-actions button { border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink); padding: 7px 10px; cursor: pointer; font: 600 12px var(--font-ui); }
+    .voice-model-card-actions button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
     @media (max-width: 640px) {
       .setup { padding: 6vh 16px 20px; }
       .setup-actions { flex-direction: column-reverse; }
       .setup-actions .setup-secondary { width: 100%; }
+    }
+
+    /* ------------------------------------------------------------------
+       2026 visual rebuild — one language across setup, chat, tools, and
+       settings. Warm editorial typography meets an honest local instrument.
+       ------------------------------------------------------------------ */
+    ::selection { background: var(--highlight); color: #21170d; }
+    html { background: var(--sidebar); }
+    body {
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.58;
+      letter-spacing: -.008em;
+    }
+    body:has(#setup[hidden]):has(#shell[hidden])::before {
+      content: "Samosa";
+      position: fixed; inset: 0; z-index: 100;
+      display: grid; place-items: center;
+      background: var(--sidebar); color: var(--sidebar-ink);
+      font: italic 600 clamp(34px, 6vw, 64px)/1 var(--font-display);
+      letter-spacing: -.045em;
+      animation: boot-breathe 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes boot-breathe { to { color: var(--highlight); } }
+    button, input, select, textarea { letter-spacing: -.008em; }
+    button { -webkit-tap-highlight-color: transparent; }
+    input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--ink);
+    }
+    input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:hover { border-color: var(--line-strong); }
+    input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
+    * { scrollbar-color: var(--ink-3) transparent; }
+
+    .shell { grid-template-columns: 264px minmax(0, 1fr); background: var(--paper); }
+    .sidebar {
+      padding: 20px 14px 14px;
+      border-right: 0;
+      background: var(--sidebar);
+      color: var(--sidebar-ink);
+    }
+    .brand { min-height: 58px; gap: 11px; padding: 0 8px 18px; }
+    .brand img {
+      width: 38px; height: 38px; padding: 4px;
+      border-radius: 12px; background: var(--highlight);
+      box-shadow: inset 0 0 0 1px rgba(33, 23, 13, .12);
+    }
+    .brand-name {
+      color: var(--sidebar-ink);
+      font: italic 600 21px/1 var(--font-display);
+      letter-spacing: -.035em;
+    }
+    .brand-sub {
+      margin-top: 6px; color: var(--sidebar-muted);
+      font: 600 11px/1 var(--font-mono);
+      letter-spacing: .11em; text-transform: uppercase;
+    }
+    .nav { gap: 4px; padding: 14px 0 18px; margin: 0 0 16px; border-color: rgba(255,255,255,.09); }
+    .nav-item {
+      min-height: 42px; padding: 10px 11px;
+      border-radius: 11px; color: var(--sidebar-muted);
+      font-size: 13px; font-weight: 600;
+    }
+    .nav-item svg { width: 18px; height: 18px; }
+    .nav-item:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .nav-item.active {
+      background: var(--sidebar-ink); color: var(--sidebar);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .new-chat {
+      justify-content: flex-start; min-height: 44px; margin: 0 0 18px; padding: 11px 13px;
+      border-radius: 12px; background: var(--accent); color: var(--accent-ink);
+      box-shadow: none;
+    }
+    .new-chat:hover { background: color-mix(in srgb, var(--accent) 88%, #6f210c); }
+    .section-label {
+      padding: 5px 9px 8px; color: var(--sidebar-muted);
+      font: 600 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
+    }
+    .chat-list { margin: 0 -2px; }
+    .chat-item { margin: 1px 0; padding: 9px 8px 9px 11px; border: 0; border-radius: 10px; color: var(--sidebar-muted); }
+    .chat-item:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .chat-item.active { border: 0; background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .chat-title { font-size: 12.5px; }
+    .chat-delete { color: var(--sidebar-muted); }
+    .chat-item:focus-within .chat-delete, .chat-delete:focus-visible { opacity: 1; }
+    .side-footer { gap: 10px; padding: 14px 8px 1px; border-color: rgba(255,255,255,.09); color: var(--sidebar-muted); font-size: 10.5px; }
+    .sidebar-status span:last-child { color: var(--sidebar-ink); }
+    .privacy::before { width: 6px; height: 6px; box-shadow: 0 0 0 3px rgba(96,199,165,.12); }
+
+    .main { background: var(--paper); }
+    .topbar {
+      min-height: 72px; padding: 13px 24px;
+      border-bottom-color: var(--line);
+      background: color-mix(in srgb, var(--paper) 91%, transparent);
+      backdrop-filter: blur(16px) saturate(1.2);
+    }
+    .conversation-name { font-size: 14px; font-weight: 700; letter-spacing: -.018em; }
+    .model-line { margin-top: 3px; font: 500 11px/1.4 var(--font-mono); letter-spacing: .005em; }
+    .status-dot { width: 6px; height: 6px; margin-right: 6px; }
+    .top-actions { gap: 6px; }
+    .icon-button, .menu-button {
+      border: 0; border-radius: 11px; background: var(--inset); padding: 9px;
+      color: var(--ink-2);
+    }
+    .icon-button:hover, .menu-button:hover { background: var(--ink); color: var(--paper); }
+    .shell[data-view="chutni"] .model-line, .shell[data-view="jobs"] .model-line { display: none; }
+    .shell[data-view="chutni"] .conversation-name, .shell[data-view="jobs"] .conversation-name {
+      font: 600 20px/1 var(--font-display); letter-spacing: -.025em;
+    }
+
+    .messages { padding: 38px max(24px, calc((100% - 880px) / 2)) 30px; }
+    .welcome {
+      position: relative; max-width: 860px; margin: clamp(46px, 8vh, 96px) auto 0;
+      padding: 0 4px 34px; text-align: left;
+      animation: welcome-in .45s cubic-bezier(.22,.8,.25,1) both;
+    }
+    @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } }
+    .welcome-kicker {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding-top: 13px; border-top: 2px solid var(--ink);
+      color: var(--ink-2); font: 600 11px/1 var(--font-mono);
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .welcome-kicker span:last-child { color: var(--ok); }
+    .welcome-copy { position: relative; min-height: 154px; padding: 35px 128px 30px 0; }
+    .welcome img {
+      position: absolute; top: 31px; right: 7px;
+      width: 104px; height: 104px; padding: 9px;
+      border: 1px solid var(--line); border-radius: 24px;
+      background: var(--surface); transform: rotate(2.5deg);
+      box-shadow: 8px 8px 0 var(--highlight);
+    }
+    .welcome h1 {
+      max-width: 670px; margin: 0 0 14px;
+      font: 600 clamp(43px, 5.7vw, 66px)/.98 var(--font-display);
+      letter-spacing: -.055em;
+    }
+    .welcome p { max-width: 610px; margin: 0; color: var(--ink-2); font-size: 16px; line-height: 1.55; }
+    .prompt-label {
+      margin: 10px 0 12px; color: var(--ink-2);
+      font: 600 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
+    }
+    .prompts { counter-reset: prompt; gap: 10px; margin: 0; max-width: none; }
+    .prompt-chip {
+      counter-increment: prompt; position: relative; min-height: 88px;
+      padding: 16px 52px 15px 52px; overflow: hidden;
+      border: 1px solid var(--line); border-radius: var(--r-md);
+      background: var(--surface); color: var(--ink); text-align: left;
+      font-size: 14px; font-weight: 600; line-height: 1.35;
+      transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+    .prompt-chip::before {
+      content: "0" counter(prompt); position: absolute; left: 16px; top: 17px;
+      color: var(--accent); font: 700 11px/1 var(--font-mono); letter-spacing: .04em;
+    }
+    .prompt-chip::after {
+      content: "↗"; position: absolute; right: 17px; top: 14px;
+      color: var(--ink-3); font-size: 18px; font-weight: 400;
+    }
+    .prompt-chip:hover {
+      border-color: var(--ink); background: var(--ink); color: var(--paper);
+      transform: translateX(3px);
+    }
+    .prompt-chip:hover::after, .prompt-chip:hover::before { color: var(--highlight); }
+
+    .message { gap: 14px; max-width: 880px; margin-bottom: 28px; }
+    .avatar {
+      width: 32px; height: 32px; margin-top: 1px;
+      border-radius: 10px; background: var(--accent); color: var(--accent-ink);
+      font: 700 12px/1 var(--font-display);
+    }
+    .bubble { max-width: min(748px, 87%); border-radius: 18px; padding: 14px 17px; }
+    .assistant .bubble { padding: 3px 0 4px; border: 0; background: transparent; }
+    .user .bubble {
+      border: 1px solid color-mix(in srgb, var(--ink) 84%, transparent);
+      border-bottom-right-radius: 5px; background: var(--ink); color: var(--paper);
+      box-shadow: 5px 5px 0 var(--highlight);
+    }
+    .response { font-size: 15.5px; line-height: 1.72; }
+    .response h1, .response h2, .response h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.03em; }
+    .response h1 { font-size: 1.65em; } .response h2 { font-size: 1.38em; }
+    .response pre { padding: 18px; border-color: var(--line); border-radius: 14px; background: var(--sidebar); color: var(--sidebar-ink); }
+    .response code { background: var(--inset); }
+    .response pre code { background: transparent; }
+    .thinking { border: 0; border-radius: 12px; background: var(--inset); }
+    .thinking summary { padding: 9px 12px; font: 600 10.5px/1.4 var(--font-mono); letter-spacing: .03em; text-transform: uppercase; }
+    .thinking-body { padding: 0 12px 12px; font-family: var(--font-mono); }
+    .message-speak { margin-top: 12px; color: var(--ink-3); font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+    .jump-latest { right: 26px; bottom: 137px; border: 0; border-radius: 12px; background: var(--ink); color: var(--paper); box-shadow: var(--shadow-overlay); }
+
+    .composer-wrap { padding: 11px max(20px, calc((100% - 900px) / 2)) 13px; background: var(--paper); }
+    .composer {
+      grid-template-columns: 42px minmax(0, 1fr) auto 40px 54px; gap: 6px;
+      min-height: 68px; padding: 6px 7px 6px 9px;
+      border: 1px solid var(--line-strong); border-radius: 22px;
+      background: var(--surface);
+      box-shadow: 0 10px 30px rgba(34, 28, 22, .08);
+    }
+    .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), 0 12px 34px rgba(34,28,22,.1); }
+    #prompt {
+      grid-column: 2; min-height: 48px; max-height: 180px; padding: 12px 5px;
+      border: 0; background: transparent; font-size: 15px; line-height: 1.5;
+    }
+    .attach-btn { width: 40px; height: 40px; border-radius: 12px; background: var(--inset); }
+    .attach-btn svg { width: 21px; height: 21px; }
+    .composer-thinking { height: 38px; min-width: 70px; border-radius: 10px; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: .03em; }
+    .voice-mic { width: 40px; height: 40px; border-radius: 12px; }
+    .send, .stop, .voice-trigger {
+      width: 54px; height: 54px; border-radius: 17px;
+      background: var(--accent); color: var(--accent-ink);
+    }
+    .send:hover, .voice-trigger:hover { background: color-mix(in srgb, var(--accent) 86%, #711f09); transform: none; }
+    .voice-trigger svg { width: 27px; height: 27px; }
+    .stop { background: var(--danger); color: #fff; }
+    .chat-memory-context, .web-consent {
+      margin-bottom: 9px; padding: 12px 14px; border-radius: 14px;
+      border-color: var(--line); background: var(--surface);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .attach-menu { bottom: calc(100% + 10px); min-width: 286px; padding: 7px; border-radius: 18px; }
+    .attach-item { padding: 10px 11px; border-radius: 11px; }
+    .attach-chip { border-radius: 10px; background: var(--inset); }
+
+    .telemetry {
+      min-height: 34px; justify-content: flex-start; gap: 8px 22px;
+      padding: 8px max(20px, calc((100% - 900px) / 2));
+      border: 0; background: var(--sidebar); color: var(--sidebar-muted);
+      font: 500 11px/1.4 var(--font-mono); letter-spacing: .015em;
+    }
+    .telemetry::before { content: "LOCAL"; color: var(--ok); font-weight: 700; letter-spacing: .1em; }
+    .telemetry strong { color: var(--sidebar-ink); font-weight: 600; }
+
+    .voice-stage {
+      inset: 72px 0 0; padding: 24px 28px 32px;
+      overflow: hidden; isolation: isolate;
+      background: radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 52%), var(--paper);
+    }
+    .voice-stage-main { align-content: end; padding-bottom: clamp(42px, 8vh, 92px); }
+    .voice-canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
+    .voice-stage-bar, .voice-stage-copy { position: relative; z-index: 1; }
+    .voice-stage-name { font: 600 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+    .voice-stage-copy { padding: 18px 24px; border: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-radius: 18px; background: color-mix(in srgb, var(--paper) 82%, transparent); backdrop-filter: blur(14px); box-shadow: 0 18px 54px color-mix(in srgb, var(--ink) 8%, transparent); }
+    .voice-stage-copy strong { font: 600 38px/1.05 var(--font-display); letter-spacing: -.04em; }
+
+    /* Chutni and Jobs use the same page grammar as Chat. */
+    .chutni-view, .jobs-view { padding: 48px max(24px, calc((100% - 900px) / 2)) 58px; background: var(--paper); }
+    .chutni-pane, .chutni-panel { max-width: 900px; }
+    .chutni-head, .jobs-head { align-items: flex-end; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+    .chutni-head h1, .jobs-head h1 {
+      font: 600 clamp(36px, 5vw, 48px)/.95 var(--font-display);
+      letter-spacing: -.045em;
+    }
+    .chutni-head p, .jobs-head p { margin-bottom: 2px; font: 600 10px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+    .chutni-empty {
+      max-width: 540px; padding: 40px; border: 1px solid var(--line);
+      border-radius: var(--r-lg); background: var(--surface); text-align: left;
+      box-shadow: 10px 10px 0 var(--highlight);
+    }
+    .chutni-empty svg { width: 39px; height: 39px; margin-bottom: 24px; color: var(--accent); }
+    .chutni-empty h2 { font: 600 30px/1.05 var(--font-display); letter-spacing: -.035em; }
+    .chutni-empty p { font-size: 14px; line-height: 1.65; }
+    .chutni-primary, .job-run, .setup-primary, .chooser-select, .web-consent-yes {
+      min-height: 42px; border: 0; border-radius: 11px;
+      background: var(--accent); color: var(--accent-ink);
+      font-weight: 700; box-shadow: none;
+    }
+    .chutni-primary:hover, .job-run:hover, .setup-primary:hover, .chooser-select:hover, .web-consent-yes:hover { background: color-mix(in srgb, var(--accent) 86%, #711f09); }
+    .chutni-secondary, .setup-secondary, .chooser-close, .chooser-up {
+      min-height: 40px; border-color: var(--line); border-radius: 11px;
+      background: var(--surface); color: var(--ink); font-weight: 600;
+    }
+    .chutni-card, .job-form, .job-review {
+      border: 1px solid var(--line); border-radius: 18px; background: var(--surface);
+    }
+    .chutni-card { padding: 19px; }
+    .chutni-list { gap: 14px; }
+    .chutni-name { font-size: 15px; font-weight: 700; }
+    .chutni-path, .chutni-current { font-family: var(--font-mono); }
+    .chutni-chip { border-radius: 8px; font: 600 11px/1.4 var(--font-mono); letter-spacing: .03em; text-transform: uppercase; }
+    .chutni-chip.ok { border-color: transparent; background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+    .chutni-chip.warn { border-color: color-mix(in srgb, var(--warn) 38%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); }
+    .chutni-monitor { padding: 14px; border-radius: 12px; background: var(--inset); }
+    .chutni-monitor-grid dt { font: 600 11px/1.3 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+    .chutni-monitor-grid dd { font-size: 14px; }
+    .chutni-panel { padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .chutni-panel h2 { font: 600 28px/1.1 var(--font-display); letter-spacing: -.03em; }
+    .chutni-panel input[type="text"], .chutni-panel input[type="number"] { min-height: 44px; border-radius: 11px; background: var(--paper); }
+
+    .jobs-view { max-width: none; }
+    .job-form { gap: 16px; margin-bottom: 18px; padding: 22px; }
+    .job-form label, .job-section-label { font: 600 11px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .job-form input:not([type="checkbox"]), .job-form textarea {
+      grid-column: auto; min-height: 44px; border-radius: 11px; background: var(--paper);
+    }
+    .job-form #jobGoal { min-height: 108px; padding: 15px; background: var(--surface); }
+    .job-memory-access { padding: 12px 14px; border: 0; border-radius: 11px; background: var(--inset); box-shadow: inset 3px 0 0 var(--highlight); }
+    .job-advanced { margin: 0 0 24px; border-color: var(--line); }
+    .job-advanced > summary { padding: 13px 2px; font: 600 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .job-tools { border: 0; border-radius: 0; background: transparent; padding: 8px 0 18px; }
+    .job-activity { border-top: 2px solid var(--ink); }
+    .job-line { padding: 12px 3px; }
+    .job-line .dot { color: var(--accent); }
+    .job-line.step-done .dot { color: var(--ok); }
+    .job-result { border: 0; border-radius: 14px; background: var(--surface); box-shadow: inset 4px 0 0 var(--accent); }
+    .job-review { overflow: hidden; }
+    .job-bar { bottom: 12px; padding: 14px 16px; border-radius: 16px; background: var(--sidebar); color: var(--sidebar-ink); box-shadow: var(--shadow-overlay); }
+    .job-bar .txt { color: var(--sidebar-ink); }
+
+    /* Settings is now a material layer of the same app, with the same dark
+       rail and paper work surface instead of a second, unrelated page. */
+    .settings {
+      inset: 0; padding: 24px; overflow: hidden;
+      background: rgba(18, 14, 11, .64); backdrop-filter: blur(14px) saturate(.8);
+    }
+    .settings.open { display: grid; place-items: center; }
+    .preferences-frame {
+      display: grid; grid-template-rows: auto minmax(0, 1fr);
+      width: min(1080px, 100%); height: min(860px, calc(100dvh - 48px)); min-height: 0;
+      margin: 0; padding: 0; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.1); border-radius: 24px;
+      background: var(--surface); box-shadow: var(--shadow-overlay);
+      animation: settings-in .24s cubic-bezier(.2,.75,.25,1) both;
+    }
+    @keyframes settings-in { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+    .settings-head {
+      margin: 0; padding: 22px 26px; border-color: rgba(255,255,255,.09);
+      background: var(--sidebar); color: var(--sidebar-ink);
+    }
+    .settings-eyebrow { margin-bottom: 6px; color: var(--highlight); font: 700 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+    .settings h2 { color: var(--sidebar-ink); font: italic 600 34px/1 var(--font-display); letter-spacing: -.04em; }
+    .settings-head .close-settings { border-color: rgba(255,255,255,.15); background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .settings-head .close-settings:hover { border-color: var(--highlight); background: var(--highlight); color: #21170d; }
+    .preferences-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 0; min-height: 0; overflow: hidden; align-items: stretch; }
+    .preferences-nav {
+      position: static; align-content: start; gap: 5px; padding: 26px 14px;
+      border-top: 1px solid rgba(255,255,255,.06); background: var(--sidebar);
+    }
+    .preferences-nav button { min-height: 42px; padding: 10px 12px; border-radius: 11px; color: var(--sidebar-muted); font-size: 13px; font-weight: 600; }
+    .preferences-nav button:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .preferences-nav button.active { background: var(--accent); color: var(--accent-ink); }
+    .preferences-content { min-height: 0; overflow-y: auto; padding: 38px 42px 48px; background: var(--paper); }
+    .preferences-pane > h3 { margin: 0 0 6px; font: 600 38px/1 var(--font-display); letter-spacing: -.045em; }
+    .preferences-lead { margin-bottom: 26px; max-width: 580px; font-size: 14px; }
+    .preferences-pane[data-settings-pane-content="general"]:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .preferences-pane[data-settings-pane-content="general"] > h3,
+    .preferences-pane[data-settings-pane-content="general"] > .preferences-lead { grid-column: 1 / -1; }
+    .preferences-pane[data-settings-pane-content="advanced"]:not([hidden]) {
+      display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); gap: 14px;
+    }
+    .preferences-pane[data-settings-pane-content="advanced"] > h3,
+    .preferences-pane[data-settings-pane-content="advanced"] > .preferences-lead,
+    .runtime-apply-bar { grid-column: 1 / -1; }
+    .preferences-card, .local-card, .troubleshoot-card {
+      margin: 0 0 14px; padding: 20px; border: 1px solid var(--line);
+      border-radius: 16px; background: var(--surface); box-shadow: none;
+    }
+    .preferences-pane[data-settings-pane-content="general"] .preferences-card { margin: 0; }
+    .preferences-card > h4 { margin-bottom: 18px; font: 600 20px/1.1 var(--font-display); letter-spacing: -.025em; }
+    .field { margin-bottom: 20px; }
+    .field label { margin-bottom: 7px; font: 600 11px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+    .field label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 9px; font: 600 13px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
+    .field select, .field input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; padding: 10px 12px; border-radius: 11px; background: var(--paper); }
+    .field input[type="checkbox"] { width: 17px; height: 17px; }
+    .field select:disabled, .field input:disabled { cursor: not-allowed; opacity: .58; }
+    .field .close-settings, .voice-actions .close-settings {
+      margin-top: 8px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface); color: var(--ink); padding: 8px 12px;
+    }
+    .local-card { color: var(--ink-2); line-height: 1.6; }
+    .runtime-card { position: relative; min-width: 0; }
+    .runtime-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .runtime-card-head h4 { margin: 0; }
+    .runtime-effective {
+      flex: none; padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--inset); color: var(--ink-2); font: 700 10px/1 var(--font-mono);
+      letter-spacing: .035em; white-space: nowrap;
+    }
+    .runtime-managed { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+    .runtime-managed::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--highlight); box-shadow: 0 0 0 3px color-mix(in srgb, var(--highlight) 20%, transparent); }
+    .runtime-apply-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 22px;
+      margin-top: 2px; padding: 17px 18px; border-radius: 15px;
+      background: var(--sidebar); color: var(--sidebar-ink); box-shadow: var(--shadow-soft);
+    }
+    .runtime-apply-copy { display: grid; gap: 4px; min-width: 0; }
+    .runtime-apply-copy strong { font: 600 15px/1.25 var(--font-ui); }
+    .runtime-status { color: var(--sidebar-muted); font-size: 12px; line-height: 1.45; }
+    .runtime-status.error { color: #ffb5a8; }
+    .runtime-status.success { color: #b9e5cc; }
+    .runtime-apply {
+      flex: none; min-height: 42px; padding: 10px 16px; border: 1px solid var(--accent);
+      border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-weight: 700;
+    }
+    .runtime-apply:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+    .runtime-apply:disabled { cursor: not-allowed; opacity: .48; }
+    .troubleshoot-card { border-color: color-mix(in srgb, var(--danger) 24%, var(--line)); }
+    .kill-button { min-height: 40px; border-radius: 10px; }
+    .model-card { padding: 18px; border-radius: 15px; background: var(--surface); }
+    .model-card.active { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+    .model-card-brand { border-radius: 13px; background: var(--highlight); color: #35230d; }
+    .model-card-provider, .model-badge, .model-progress-text { font-family: var(--font-mono); }
+    .voice-model-card { padding: 16px; border-radius: 14px; }
+    .model-card-actions button.primary, .voice-model-card-actions button.primary {
+      min-height: 40px; border-color: var(--accent); border-radius: 10px;
+      background: var(--accent); color: var(--accent-ink);
+    }
+
+    /* Dialogs and recovery affordances share the settings material language. */
+    .scrim.show { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(15,12,10,.58); backdrop-filter: blur(4px); }
+    .chooser-scrim.show { background: rgba(15,12,10,.64); backdrop-filter: blur(8px); }
+    .chooser-dialog { width: min(560px, calc(100vw - 32px)); border-radius: 20px; background: var(--surface); }
+    .chooser-head { padding: 18px 20px; border-color: rgba(255,255,255,.09); background: var(--sidebar); color: var(--sidebar-ink); }
+    .chooser-head h2 { font: 600 22px/1.05 var(--font-display); letter-spacing: -.025em; }
+    .chooser-head .chooser-close { border-color: rgba(255,255,255,.15); background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .chooser-root-chip { border-radius: 9px; background: var(--paper); }
+    .chooser-root-chip.current { border-color: var(--accent); background: var(--accent-soft); }
+    .chooser-path { padding: 10px 12px; border-radius: 10px; background: var(--inset); }
+    .chooser-list { border-radius: 12px; background: var(--paper); }
+    .chooser-row { padding: 11px 13px; }
+    .chooser-row.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+    .migration-banner { border-radius: 15px; background: var(--sidebar); color: var(--sidebar-ink); }
+    #migrationReset { border-color: color-mix(in srgb, var(--danger) 55%, transparent); color: var(--danger); }
+
+    /* Crisp split-screen onboarding; model selection expands without changing
+       the visual world the user enters after setup. */
+    .setup {
+      place-items: start center; align-items: safe center; padding: 36px;
+      background: linear-gradient(90deg, var(--sidebar) 0 28%, var(--paper) 28%);
+    }
+    .setup-card {
+      width: min(920px, 100%); padding: 44px 48px 42px;
+      border: 1px solid var(--line); border-radius: 26px;
+      background: var(--surface); box-shadow: var(--shadow-overlay);
+      text-align: center;
+    }
+    .setup-mark { width: 66px; height: 66px; margin-bottom: 26px; padding: 7px; border-radius: 18px; background: var(--highlight); transform: rotate(-2deg); }
+    #setupViewName, #setupViewWelcome { max-width: 560px; margin: 0 auto; }
+    .setup-view h1 { margin-bottom: 24px; font: 600 clamp(38px, 5vw, 52px)/1 var(--font-display); letter-spacing: -.045em; }
+    .setup-view input:not([type="checkbox"]) { min-height: 50px; border-radius: 12px; font-size: 16px; }
+    .setup-primary, .setup-secondary { min-height: 48px; border-radius: 12px; }
+    .setup-caption { font-family: var(--font-mono); font-size: 11px; letter-spacing: .02em; }
+    .setup-points { counter-reset: point; display: grid; gap: 9px; margin-bottom: 26px; padding: 0; list-style: none; }
+    .setup-points li { counter-increment: point; position: relative; padding: 13px 14px 13px 48px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+    .setup-points li::before { content: "0" counter(point); position: absolute; left: 15px; top: 16px; color: var(--accent); font: 700 11px/1 var(--font-mono); }
+    .setup-status-banner { padding: 12px 14px; border-radius: 11px; box-shadow: inset 3px 0 0 var(--warn); }
+    .model-list { gap: 12px; }
+    .setup .model-card { text-align: left; }
+
+    @media (max-width: 900px) {
+      .settings { padding: 14px; }
+      .preferences-frame { height: calc(100dvh - 28px); }
+      .preferences-layout { grid-template-columns: 190px minmax(0, 1fr); }
+      .preferences-content { padding: 32px 28px 42px; }
+      .welcome h1 { font-size: clamp(40px, 7vw, 58px); }
+    }
+    @media (max-width: 760px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { width: min(310px, 88vw); box-shadow: var(--shadow-overlay); }
+      .topbar { min-height: 64px; padding: 10px 13px; }
+      .voice-stage { inset: 64px 0 0; }
+      .messages { padding: 26px 16px 20px; }
+      .welcome { margin-top: 24px; }
+      .welcome-copy { padding-right: 100px; }
+      .welcome img { width: 82px; height: 82px; }
+      .chutni-view, .jobs-view { padding: 32px 17px 42px; }
+      .settings { padding: 0; background: var(--paper); }
+      .preferences-frame { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+      .preferences-layout { display: block; overflow-y: auto; }
+      .preferences-nav { position: sticky; top: 0; z-index: 2; display: flex; overflow-x: auto; padding: 10px 14px; }
+      .preferences-nav button { flex: none; min-height: 38px; white-space: nowrap; }
+      .preferences-content { overflow: visible; padding: 28px 18px 38px; }
+    }
+    @media (max-width: 640px) {
+      .welcome-kicker span:last-child { display: none; }
+      .welcome-copy { min-height: 0; padding: 26px 0 22px; }
+      .welcome img { position: static; width: 66px; height: 66px; margin: 0 0 24px; box-shadow: 5px 5px 0 var(--highlight); }
+      .welcome h1 { font-size: clamp(38px, 12vw, 50px); }
+      .welcome p { font-size: 14px; }
+      .prompts { grid-template-columns: 1fr; }
+      .prompt-chip { min-height: 72px; }
+      .composer-wrap { padding: 8px 8px 10px; }
+      .composer { grid-template-columns: 36px minmax(0, 1fr) auto 36px 48px; min-height: 62px; border-radius: 19px; }
+      .attach-btn, .voice-mic { width: 36px; height: 36px; }
+      .send, .stop, .voice-trigger { width: 48px; height: 48px; border-radius: 15px; }
+      .telemetry { justify-content: center; padding: 8px 10px; gap: 7px 13px; }
+      .telemetry span:nth-of-type(n+4) { display: none; }
+      .preferences-pane[data-settings-pane-content="general"]:not([hidden]) { grid-template-columns: 1fr; }
+      .preferences-pane[data-settings-pane-content="general"] > h3,
+      .preferences-pane[data-settings-pane-content="general"] > .preferences-lead { grid-column: auto; }
+      .preferences-pane[data-settings-pane-content="advanced"]:not([hidden]) { grid-template-columns: 1fr; }
+      .preferences-pane[data-settings-pane-content="advanced"] > h3,
+      .preferences-pane[data-settings-pane-content="advanced"] > .preferences-lead,
+      .runtime-apply-bar { grid-column: auto; }
+      .runtime-apply-bar { align-items: stretch; flex-direction: column; }
+      .runtime-apply { width: 100%; }
+      .settings-head { padding: 18px; }
+      .settings h2 { font-size: 29px; }
+      .setup { padding: 14px; background: var(--paper); }
+      .setup-card { padding: 30px 20px; border-radius: 20px; }
+      .setup-view h1 { font-size: 38px; }
+      .model-card-head { display: grid; }
+      .folder-picker-field { grid-template-columns: 1fr; }
+      .folder-picker-field button { width: 100%; }
+      .chutni-head, .jobs-head { align-items: flex-start; }
     }
   </style>
 </head>
@@ -686,11 +1336,11 @@
     </div>
   </main>
 
-  <div class="shell" id="shell" hidden>
+  <div class="shell" id="shell" data-view="chat" hidden>
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <img src="/assets/samosa-chat.png" alt="">
-        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Three local models · private by design</div></div>
+        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Private by design</div></div>
       </div>
       <nav class="nav" role="tablist" aria-label="Sections">
         <button class="nav-item active" id="navChat" role="tab" aria-selected="true"><svg aria-hidden="true"><use href="#icon-chat"></use></svg>Chat</button>
@@ -719,6 +1369,10 @@
 
       <section class="messages" id="messages" aria-live="polite"></section>
       <button class="jump-latest" id="jumpLatest" type="button" hidden><svg aria-hidden="true"><use href="#icon-arrow-down"></use></svg>Latest</button>
+      <section class="voice-stage" id="voiceStage" aria-live="polite" hidden>
+        <div class="voice-stage-bar"><span class="voice-stage-name">Voice conversation</span><button class="voice-stage-cancel" id="voiceStageCancel" type="button">End</button></div>
+        <div class="voice-stage-main"><canvas class="voice-canvas" id="voiceCanvas" aria-hidden="true"></canvas><div class="voice-stage-copy"><strong id="voiceStageTitle">Listening</strong><span id="voiceStageDetail">Just pause when you’re finished.</span></div></div>
+      </section>
 
       <div class="composer-wrap">
         <div class="chat-memory-context" id="chatMemoryContext" hidden>
@@ -777,11 +1431,14 @@
             <div class="attach-chips" id="attachChips"></div>
             <button class="attach-btn" id="attachBtn" type="button" aria-label="Add context" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
             <textarea id="prompt" rows="1" placeholder="Message your local model…" aria-label="Message"></textarea>
+            <select class="composer-thinking" id="composerThinking" aria-label="Thinking profile"><option value="off">Fast</option><option value="general">High</option><option value="code">Deep</option></select>
+            <button class="voice-mic" id="voiceMic" type="button" aria-label="Start voice conversation" title="Start a hands-free voice conversation" disabled><svg aria-hidden="true"><use href="#icon-mic"></use></svg></button>
+            <button class="voice-trigger" id="voiceToggle" type="button" aria-label="Start voice conversation" title="Start a hands-free voice conversation" disabled><svg aria-hidden="true"><use href="#icon-voice-wave"></use></svg></button>
             <button class="send" id="send" type="submit" aria-label="Send"><svg aria-hidden="true"><use href="#icon-arrow-up"></use></svg></button>
             <button class="stop" id="stop" type="button" aria-label="Stop generation"><svg aria-hidden="true"><use href="#icon-stop"></use></svg></button>
           </form>
         </div>
-        <div class="composer-hint">Enter to send · Shift+Enter for a new line · responses stay on this Mac</div>
+        <div class="composer-hint">Enter to send · Shift+Enter for a new line</div>
       </div>
 
       <!-- T3.3 (docs/TASKS_UI_CHUTNI.md): the Chutni library and scope views.
@@ -847,7 +1504,7 @@
       <section class="jobs-view" id="jobsView" hidden>
         <div class="jobs-head">
           <h1>Jobs</h1>
-          <p>Runs locally on this Mac</p>
+          <p>Run work in the background</p>
         </div>
         <form class="job-form" id="jobForm">
           <div class="job-field">
@@ -912,67 +1569,57 @@
   </div>
 
   <div class="scrim" id="scrim"></div>
-  <aside class="settings" id="settings" aria-hidden="true">
-    <div class="settings-head"><h2>Generation settings</h2><button class="close-settings" id="closeSettings" aria-label="Close settings">Done</button></div>
-    <div class="field">
-      <label for="modelBackend">Model</label>
-      <select id="modelBackend"><option value="" disabled selected>Loading models…</option></select>
-      <small id="modelHelp">Switching unloads the current model, loads the other one, and starts a new conversation.</small>
-    </div>
-    <div class="field">
-      <label for="thinking">Thinking profile</label>
-      <select id="thinking"><option value="off">Direct</option><option value="general">General thinking</option><option value="code">Precise code / WebDev</option></select>
-      <small>General and code modes spend extra tokens reasoning before the visible answer. Direct is fastest.</small>
-    </div>
-    <div class="field">
-      <label for="maxTokens">Maximum generated tokens</label>
-      <select id="maxTokens"><option value="1024">1,024</option><option value="2048" selected>2,048</option><option value="4096">4,096</option><option value="8192">8,192</option></select>
-      <small>The model normally stops earlier. Longer ceilings can take substantially more time and SSD reads.</small>
-    </div>
-    <div class="field">
-      <label for="seed">Seed (optional)</label>
-      <input id="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Random">
-      <small>Use the same non-negative seed to reproduce a sampling path.</small>
-    </div>
-    <div class="field">
-      <label for="contextTokens">Total context capacity</label>
-      <select id="contextTokens"><option value="auto">Auto (recommended)</option><option value="24576">24,576 tokens</option><option value="65536">65,536 tokens</option><option value="131072">131,072 tokens</option><option value="262144">262,144 tokens</option><option value="custom">Custom…</option></select>
-      <input id="contextCustom" inputmode="numeric" pattern="[0-9]*" placeholder="Custom token limit" hidden>
-      <button class="close-settings" id="applyContext" type="button">Apply context settings</button>
-      <small id="contextHelp">History, thinking, and the answer share this total. The server checks memory before every request.</small>
-    </div>
-    <div class="field">
-      <label><input id="autoCompact" type="checkbox" checked> Auto-compact conversations</label>
-      <select id="compactThreshold" aria-label="Auto-compaction threshold"><option value="70">At 70% projected use</option><option value="75">At 75% projected use</option><option value="80" selected>At 80% projected use</option><option value="85">At 85% projected use</option><option value="90">At 90% projected use</option></select>
-      <button class="close-settings" id="compactNow" type="button">Compact this conversation now</button>
-      <small id="compactHelp">Compaction summarizes durable context, retains recent turns verbatim, and rebuilds the K/V snapshot under the same conversation.</small>
-    </div>
-    <div class="field" hidden>
-      <label id="chooserFieldLabel">Folder browser</label>
-      <div class="chooser-trigger-actions">
-        <button class="close-settings" id="openChooser" type="button" aria-haspopup="dialog">Browse…</button>
-        <button class="close-settings" id="clearChooserSelection" type="button" hidden>Clear</button>
+  <aside class="settings" id="settings" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
+    <div class="preferences-frame">
+      <div class="settings-head"><div><p class="settings-eyebrow">Samosa</p><h2 id="settingsTitle">Settings</h2></div><button class="close-settings" id="closeSettings" aria-label="Return to chat">Done</button></div>
+      <div class="preferences-layout">
+        <nav class="preferences-nav" aria-label="Settings sections">
+          <button type="button" class="active" data-settings-pane="general">General</button>
+          <button type="button" data-settings-pane="models">Models</button>
+          <button type="button" data-settings-pane="advanced">Advanced</button>
+          <button type="button" data-settings-pane="voice">Voice</button>
+          <button type="button" data-settings-pane="privacy">Privacy</button>
+        </nav>
+        <div class="preferences-content">
+          <section class="preferences-pane" data-settings-pane-content="general">
+            <h3>General</h3><p class="preferences-lead">Keep Samosa quiet, focused, and tailored to how you work.</p>
+            <div class="preferences-card"><h4>Appearance</h4><div class="field"><label for="appearance">Theme</label><select id="appearance"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select><small>Light is the default. System follows your Mac.</small></div></div>
+            <div class="preferences-card"><h4>Responses</h4><div class="field"><label for="thinking">Thinking profile</label><select id="thinking"><option value="off">Direct</option><option value="general">General thinking</option><option value="code">Precise code / WebDev</option></select><small>Direct is fastest. Thinking modes use extra tokens before the visible answer.</small></div><div class="field"><label for="maxTokens">Maximum response length</label><select id="maxTokens"><option value="1024">1,024 tokens</option><option value="2048" selected>2,048 tokens</option><option value="4096">4,096 tokens</option><option value="8192">8,192 tokens</option></select></div><div class="field"><label for="seed">Seed <span style="font-weight:400;color:var(--ink-2)">(optional)</span></label><input id="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Random"></div></div>
+          </section>
+          <section class="preferences-pane" data-settings-pane-content="models" hidden>
+            <h3>Models</h3><p class="preferences-lead">Downloads verify before they activate.</p>
+            <div class="preferences-card"><h4 id="settingsModelLabel">Local models</h4><div class="setup-error" id="settingsModelError" role="alert" hidden></div><div class="model-list" id="settingsModelList" aria-live="polite"></div><small id="modelHelp">Switching starts a new conversation.</small></div>
+          </section>
+          <section class="preferences-pane" data-settings-pane-content="advanced" hidden>
+            <h3>Advanced</h3><p class="preferences-lead">Tune how much of your Mac the active model can use. Samosa keeps the choices here tied to the model that is actually running.</p>
+            <div class="preferences-card runtime-card">
+              <div class="runtime-card-head"><h4>Performance</h4><span class="runtime-effective" id="cpuEffective">Checking…</span></div>
+              <div class="field"><label for="cpuThreads">CPU cores</label><select id="cpuThreads" aria-describedby="cpuThreadsHelp" disabled><option>Loading model limits…</option></select><small id="cpuThreadsHelp">Auto leaves room for the rest of your Mac.</small></div>
+            </div>
+            <div class="preferences-card runtime-card">
+              <div class="runtime-card-head"><h4>Conversation memory</h4><span class="runtime-effective" id="contextEffective">Checking…</span></div>
+              <div class="field"><label for="contextTokens">Context window</label><select id="contextTokens" aria-describedby="contextHelp" disabled><option value="auto">Auto (recommended)</option><option value="custom">Custom…</option></select><input id="contextCustom" inputmode="numeric" pattern="[0-9]*" placeholder="Custom token limit" aria-label="Custom context window in tokens" hidden disabled><small id="contextHelp">History, thinking, and the answer share this total.</small></div>
+              <div class="field"><label><input id="autoCompact" type="checkbox" checked disabled> Compact conversations automatically</label><select id="compactThreshold" aria-label="Auto-compaction threshold" disabled><option value="70">At 70% projected use</option><option value="75">At 75% projected use</option><option value="80" selected>At 80% projected use</option><option value="85">At 85% projected use</option><option value="90">At 90% projected use</option></select><button class="close-settings" id="compactNow" type="button" disabled>Compact this conversation</button><small id="compactHelp">Checking whether this model supports compaction…</small></div>
+            </div>
+            <div class="runtime-apply-bar">
+              <div class="runtime-apply-copy"><strong id="runtimeApplyTitle">Active model settings</strong><span class="runtime-status" id="runtimeSettingsStatus" role="status" aria-live="polite">Loading settings from this Mac…</span></div>
+              <button class="runtime-apply" id="runtimeApply" type="button" disabled>Apply &amp; restart model</button>
+            </div>
+          </section>
+          <section class="preferences-pane" data-settings-pane-content="voice" hidden>
+            <h3>Voice</h3><p class="preferences-lead">Talk naturally. Speech recognition, chat, and spoken replies run locally.</p>
+            <div class="preferences-card" id="handsfreeSettings"><h4>Voice conversation</h4><p class="voice-mode-intro">Download once to add Voice to Chat. Speak naturally; after you pause, Samosa understands, answers aloud, and listens again automatically until you end the conversation.</p><div class="setup-error" id="voiceModelError" role="alert" hidden></div><div class="voice-model-list" id="voiceModelList" aria-live="polite"></div></div>
+            <div class="preferences-card voice-setting" id="voiceSettings"><h4>Spoken replies</h4><div class="field"><input id="voiceEnabled" type="checkbox" hidden><p class="voice-mode-intro">Text chats stay silent. Use Listen beneath a reply when you want it read aloud; Voice conversations speak automatically.</p><div class="voice-actions"><select id="voiceSelect" aria-label="Voice" disabled><option>Loading installed voices…</option></select><button class="close-settings" id="voicePreview" type="button" disabled>Preview</button></div><small id="voiceHelp">Uses a voice installed by your browser or macOS.</small></div></div>
+          </section>
+          <section class="preferences-pane" data-settings-pane-content="privacy" hidden>
+            <h3>Privacy</h3><p class="preferences-lead">Samosa is local-first. You decide when anything leaves your Mac.</p>
+            <div class="local-card"><strong>Web access</strong><br><span id="webStatus">Checking…</span><br><button type="button" class="web-toggle" id="webToggle" hidden>Turn internet access on</button></div>
+            <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. With internet access on, only your search text and requested pages leave this Mac.</div>
+            <div class="field" hidden><label id="chooserFieldLabel">Folder browser</label><div class="chooser-trigger-actions"><button class="close-settings" id="openChooser" type="button" aria-haspopup="dialog">Browse…</button><button class="close-settings" id="clearChooserSelection" type="button" hidden>Clear</button></div><div class="chooser-selected-path" id="chooserSelectedPath" hidden></div></div>
+            <div class="troubleshoot-card"><label>Troubleshooting</label><p>If Samosa stops responding, stop the local server and helper processes. Anything generating will be interrupted.</p><button class="kill-button" id="killButton" aria-label="Kill local server and models">Stop local processes</button></div>
+          </section>
+        </div>
       </div>
-      <div class="chooser-selected-path" id="chooserSelectedPath" hidden></div>
-      <small>This shared folder browser is opened from Chutni and Jobs.</small>
-    </div>
-    <!-- Phase W (docs/TASKS_WEB_SEARCH.md W6). T3.2 removed the old "Internet
-         source" card because it drove three routes that did not exist. This
-         replacement is deliberately read-only: web access is chosen per turn
-         from the composer's `+` menu, and the credential lives in
-         ~/.samosa/config.json, which is the only place it is ever written or
-         read. This card states what the server reports and never displays,
-         echoes, or accepts a key. -->
-    <div class="local-card"><strong>Web access</strong><br><span id="webStatus">Checking…</span>
-      <br><button type="button" class="web-toggle" id="webToggle" hidden>Turn internet access on</button></div>
-    <div class="local-card"><strong>Local model connection</strong><br>The model server, chat history, and app stay on <code>127.0.0.1</code>. The model itself never leaves this Mac. With internet access on, a search sends only the search text to the provider below, and pages are fetched by this Mac; with it off, nothing goes out at all.</div>
-    <!-- T3.1 (docs/TASKS_UI_CHUTNI.md sec4.4): process termination does not
-         belong in the primary header -- it lives in this clearly labeled
-         Troubleshooting surface instead. -->
-    <div class="troubleshoot-card">
-      <label>Troubleshooting</label>
-      <p>If Samosa stops responding, you can stop the local server, model backend, and any job/model helper processes. Anything generating will be interrupted.</p>
-      <button class="kill-button" id="killButton" aria-label="Kill local server and models">Kill local processes</button>
     </div>
   </aside>
 
@@ -1010,6 +1657,18 @@
       <circle cx="8" cy="6" r="1.7" fill="currentColor" stroke="none"/>
       <circle cx="13.5" cy="10" r="1.7" fill="currentColor" stroke="none"/>
       <circle cx="6" cy="14" r="1.7" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="icon-speaker" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 8.2h3.2l4-3.1v9.8l-4-3.1H4z"/>
+      <path d="M14 7.4c.8.7 1.2 1.6 1.2 2.6s-.4 1.9-1.2 2.6"/>
+      <path d="M16.1 5.4C17.5 6.6 18 8.2 18 10s-.5 3.4-1.9 4.6"/>
+    </symbol>
+    <symbol id="icon-mic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="7" y="3" width="6" height="10" rx="3"/>
+      <path d="M4.5 10.5a5.5 5.5 0 0 0 11 0M10 16v2.2M7.5 18.2h5"/>
+    </symbol>
+    <symbol id="icon-voice-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M5 9v6M9.5 5v14M14.5 7v10M19 10v4"/>
     </symbol>
     <symbol id="icon-chat" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
       <path d="M3.5 5A1.5 1.5 0 0 1 5 3.5h10A1.5 1.5 0 0 1 16.5 5v6.2A1.5 1.5 0 0 1 15 12.7H8.4l-3.4 2.8v-2.8H5A1.5 1.5 0 0 1 3.5 11.2z"/>
@@ -1104,8 +1763,11 @@
         composer: $("composer"), send: $("send"), stop: $("stop"), name: $("conversationName"),
         status: $("modelStatus"), dot: $("statusDot"), settings: $("settings"), scrim: $("scrim"),
         sideDot: $("sidebarStatusDot"), sideStatus: $("sidebarStatusText"),
-        thinking: $("thinking"), maxTokens: $("maxTokens"), seed: $("seed"), contextTokens: $("contextTokens"), contextCustom: $("contextCustom"), applyContext: $("applyContext"), mode: $("modeValue"),
+        appearance: $("appearance"), thinking: $("thinking"), composerThinking: $("composerThinking"), maxTokens: $("maxTokens"), seed: $("seed"), mode: $("modeValue"),
+        cpuThreads: $("cpuThreads"), cpuThreadsHelp: $("cpuThreadsHelp"), cpuEffective: $("cpuEffective"),
+        contextTokens: $("contextTokens"), contextCustom: $("contextCustom"), contextEffective: $("contextEffective"),
         autoCompact: $("autoCompact"), compactThreshold: $("compactThreshold"), compactNow: $("compactNow"), compactHelp: $("compactHelp"),
+        runtimeApply: $("runtimeApply"), runtimeApplyTitle: $("runtimeApplyTitle"), runtimeSettingsStatus: $("runtimeSettingsStatus"),
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
         imageInput: $("imageInput"), documentInput: $("documentInput"), attachBtn: $("attachBtn"),
         attachMenu: $("attachMenu"), attachChips: $("attachChips"), attachError: $("attachError"),
@@ -1120,7 +1782,10 @@
         chatMemoryContext: $("chatMemoryContext"), chatMemoryTitle: $("chatMemoryTitle"),
         chatMemoryDetail: $("chatMemoryDetail"), chatMemoryChange: $("chatMemoryChange"),
         kill: $("killButton"),
-        modelBackend: $("modelBackend"), modelHelp: $("modelHelp"),
+        settingsModelList: $("settingsModelList"), settingsModelError: $("settingsModelError"), modelHelp: $("modelHelp"),
+        voiceSettings: $("voiceSettings"), voiceEnabled: $("voiceEnabled"), voiceSelect: $("voiceSelect"), voicePreview: $("voicePreview"), voiceHelp: $("voiceHelp"),
+        voiceToggle: $("voiceToggle"), voiceMic: $("voiceMic"), voiceStage: $("voiceStage"), voiceCanvas: $("voiceCanvas"), voiceStageTitle: $("voiceStageTitle"), voiceStageDetail: $("voiceStageDetail"), voiceStageCancel: $("voiceStageCancel"),
+        voiceModelList: $("voiceModelList"), voiceModelError: $("voiceModelError"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
         mismatchFork: $("mismatchFork"), mismatchCancel: $("mismatchCancel"),
         migrationBanner: $("migrationBanner"), migrationExport: $("migrationExport"), migrationReset: $("migrationReset")
@@ -1159,14 +1824,35 @@
       // labels, and availability -- comes from GET /v1/models/catalog, not
       // a hardcoded <option> list. modelCatalog holds the last fetch.
       let modelCatalog = [];
-      let healthInitialized = false;
+      let installedVoices = [];
+      let voiceCatalog = [];
+      let voiceStatus = { stt_ready: false, stt_runtime_ready: false, stt_model_downloaded: false, runtime_preparing: false, transcribing: false, tts_neural_ready: false, tts_preparing: false };
+      let handsfreeCapture = null;
+      let handsfreeInFlight = false;
+      let voiceConversationActive = false;
+      let voiceConversationGreeted = false;
+      let voiceGreetingContext = "";
+      let voiceStream = null;
+      let voiceParticleFrame = 0;
+      let voiceParticleLastPaint = 0;
+      let voiceDispersion = 0;
+      let voiceParticles = [];
+      let voiceVisualMode = "idle";
 
       function makeId() {
         const raw = self.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
         return `chat-${raw.replace(/[^a-zA-Z0-9_-]/g, "-")}`.slice(0, 64);
       }
       function defaultSettings() {
-        return { thinking: "off", maxTokens: "2048", seed: "", contextTokens: "auto", contextCustom: "", contextConfigured: false, autoCompact: true, compactThreshold: "80" };
+        return { appearance: "light", thinking: "off", maxTokens: "2048", seed: "", voiceEnabled: false, voiceURI: "" };
+      }
+      function normalizeLocalSettings(raw) {
+        const settings = defaultSettings();
+        if (!raw || typeof raw !== "object") return settings;
+        for (const key of Object.keys(settings)) {
+          if (Object.prototype.hasOwnProperty.call(raw, key)) settings[key] = raw[key];
+        }
+        return settings;
       }
       function freshState() { return { currentId: null, chats: [], settings: defaultSettings() }; }
       // Every pre-T1.4 conversation predates the model-binding concept
@@ -1198,12 +1884,15 @@
           if (!c || typeof c.id !== "string" || !Array.isArray(c.messages)) continue;
           chats.push(migrateLegacyChat(c));
         }
-        return { ok: true, state: { currentId: parsed.currentId ?? null, chats, settings: parsed.settings || defaultSettings() } };
+        return { ok: true, state: { currentId: parsed.currentId ?? null, chats, settings: normalizeLocalSettings(parsed.settings) } };
       }
       function loadState() {
         try {
           const existing = JSON.parse(localStorage.getItem(STORAGE_KEY));
-          if (existing && Array.isArray(existing.chats)) return existing;
+          if (existing && Array.isArray(existing.chats)) {
+            existing.settings = normalizeLocalSettings(existing.settings);
+            return existing;
+          }
         } catch (_) {}
         let v1Raw = null;
         try { v1Raw = localStorage.getItem(STORAGE_KEY_V1); } catch (_) {}
@@ -1223,7 +1912,7 @@
       }
       function saveState() {
         state.currentId = currentId;
-        state.settings = { thinking: els.thinking.value, maxTokens: els.maxTokens.value, seed: els.seed.value.trim(), contextTokens: els.contextTokens.value, contextCustom: els.contextCustom.value.trim(), contextConfigured: !!state.settings?.contextConfigured, autoCompact: els.autoCompact.checked, compactThreshold: els.compactThreshold.value };
+        state.settings = { appearance: els.appearance?.value || "light", thinking: els.thinking.value, maxTokens: els.maxTokens.value, seed: els.seed.value.trim(), voiceEnabled: !!els.voiceEnabled?.checked, voiceURI: els.voiceSelect?.value || "" };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }
       function activeChat() { return state.chats.find(c => c.id === currentId) || null; }
@@ -1297,7 +1986,9 @@
       }
       function newChat() {
         if (generating) return;
-        currentId = null; ensureChat(); render(); closePanels(); els.prompt.focus();
+        currentId = null; ensureChat(); render();
+        if (typeof showView === "function") showView("chat");
+        closePanels(); els.prompt.focus();
       }
       function deleteChat(id) {
         if (generating && id === currentId) return;
@@ -1311,7 +2002,9 @@
         if (generating) return;
         const chat = state.chats.find(c => c.id === id);
         if (chat && chatNeedsExplicitAction(chat, backend)) { openMismatchDialog(chat); return; }
-        currentId = id; saveState(); render(); closePanels();
+        currentId = id; saveState(); render();
+        if (typeof showView === "function") showView("chat");
+        closePanels();
       }
       function titleFor(text) { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > 42 ? clean.slice(0, 42) + "…" : clean || "New conversation"; }
       function escapeHTML(text) { return String(text).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
@@ -1336,12 +2029,26 @@
         blocks.forEach((block, i) => { out = out.replace(`@@CODE${i}@@`, block); });
         return out;
       }
+      const GENERATION_LABEL = "Working through it";
+      function generationStatusHTML() {
+        return `<span class="generation-status"><span class="generation-workmark" aria-hidden="true"><span></span><span></span><span></span></span><span>${GENERATION_LABEL}</span></span>`;
+      }
+      function renderAssistantResponse(node, msg) {
+        const waiting = !!msg.streaming && !String(msg.content || "").trim() && !msg.error;
+        // Reasoning and web events can update this row many times before the
+        // first answer token. Preserve the mark instead of restarting it.
+        if (waiting) {
+          if (!node.querySelector(".generation-status")) node.innerHTML = generationStatusHTML();
+          return;
+        }
+        node.innerHTML = markdown(msg.content || "");
+      }
       // T3.2 (sec4.4): the empty state greets the user by name when the
       // profile has one. escapeHTML() is mandatory here -- a name is
       // arbitrary user input and is never interpolated as markup (sec4.1).
       function welcomeHTML() {
         const heading = profileName ? `Welcome, ${escapeHTML(profileName)}` : "Your model. Your machine.";
-        return `<div class="welcome"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>${heading}</h1><p>Ask ${escapeHTML(backend.label)} anything. The model and your conversation stay on this computer.</p><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising<br>about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday<br>with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful<br>Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through<br>a logic puzzle</button></div></div>`;
+        return `<div class="welcome"><div class="welcome-kicker"><span>Local intelligence</span><span>Private by default</span></div><div class="welcome-copy"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>${heading}</h1><p>Think something through, make a plan, or get unstuck. Your conversations are stored on this computer.</p></div><div class="prompt-label">Four ways to begin</div><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through a logic puzzle</button></div></div>`;
       }
       // A document attachment (and an image whose bytes could not be loaded)
       // renders as a named chip. Built with textContent throughout -- a
@@ -1411,10 +2118,18 @@
       function appendMessageNode(msg) {
         const row = document.createElement("article"); row.className = `message ${msg.role}`; row.dataset.messageId = msg.id;
         if (msg.role === "assistant") {
-          row.innerHTML = `<div class="avatar">S</div><div class="bubble"><div class="web-activity" ${msg.activity ? "" : "hidden"}></div><details class="thinking" ${msg.streaming && msg.reasoning ? "open" : ""} ${msg.reasoning ? "" : "hidden"}><summary>Thinking</summary><div class="thinking-body"></div></details><div class="response${msg.streaming ? " typing" : ""}"></div><div class="error-note" hidden></div></div>`;
+          row.innerHTML = `<div class="avatar">S</div><div class="bubble"><div class="web-activity" ${msg.activity ? "" : "hidden"}></div><details class="thinking" ${msg.streaming && msg.reasoning ? "open" : ""} ${msg.reasoning ? "" : "hidden"}><summary>Thinking</summary><div class="thinking-body"></div></details><div class="response"></div><div class="error-note" hidden></div></div>`;
+          if (msg.streaming && !String(msg.content || "").trim()) row.setAttribute("aria-busy", "true");
           row.querySelector(".thinking-body").textContent = msg.reasoning || "";
           renderWebActivity(row, msg);
-          row.querySelector(".response").innerHTML = markdown(msg.content || "");
+          renderAssistantResponse(row.querySelector(".response"), msg);
+          const speak = document.createElement("button");
+          speak.type = "button"; speak.className = "message-speak";
+          speak.setAttribute("aria-label", "Read this reply aloud");
+          speak.innerHTML = '<svg aria-hidden="true"><use href="#icon-speaker"></use></svg><span>Listen</span>';
+          speak.hidden = !voicePlaybackReady() || !msg.content;
+          speak.onclick = () => speakReply(msg.content);
+          row.querySelector(".bubble").appendChild(speak);
           if (msg.error) { const e=row.querySelector(".error-note"); e.hidden=false; e.textContent=msg.error; }
         } else {
           row.innerHTML = `<div class="bubble"></div>`;
@@ -1453,8 +2168,187 @@
       function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; updateActiveMemoryContext(); }
       function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
       function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
-      function resizePrompt() { els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.send.disabled=!els.prompt.value.trim()||generating; }
-      function setGenerating(value) { generating=value; document.body.classList.toggle("generating",value); els.prompt.disabled=value; els.send.disabled=value||!els.prompt.value.trim(); }
+      function resizePrompt() { const hasText=!!els.prompt.value.trim(); els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.composer.classList.toggle("has-text",hasText); els.send.disabled=!hasText||generating; }
+      function setGenerating(value) { generating=value; document.body.classList.toggle("generating",value); els.prompt.disabled=value; els.send.disabled=value||!els.prompt.value.trim(); if (typeof updateVoiceAvailability === "function") updateVoiceAvailability(); if (typeof updateRuntimeControlAvailability === "function") updateRuntimeControlAvailability(); }
+
+      // TTS uses the browser's installed speech engine (macOS supplies many
+      // downloadable voices). It is deliberately opt-in: no answer starts
+      // speaking without a clear Settings choice, and no text is sent away.
+      function voiceSupported() { return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window; }
+      function voiceText(text) {
+        const node = document.createElement("div"); node.innerHTML = markdown(text || "");
+        // Keep words and numbers intact, but remove whole emoji clusters
+        // before they reach a speech engine. In particular, this handles
+        // skin-tone/ZWJ variants, flags, and keycap emoji rather than leaving
+        // a modifier behind for a system voice to describe.
+        const emoji = /(?:[#*0-9]\uFE0F?\u20E3)|(?:\p{Regional_Indicator}{2})|(?:\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
+        return (node.textContent || "").replace(emoji, "").replace(/[\uFE0F\u200D]/g, "")
+          .replace(/[*_`~]+/g, "").replace(/\s+/g, " ").trim();
+      }
+      function selectedVoice() { return installedVoices.find(v => v.voiceURI === els.voiceSelect.value) || null; }
+      function neuralTtsReady() { return !!voiceStatus.tts_neural_ready; }
+      function voicePlaybackReady() { return neuralTtsReady() || (voiceSupported() && installedVoices.length > 0); }
+      let activeVoiceAudio = null;
+      let voicePlaybackContext = null;
+      let activeVoiceSource = null;
+      async function unlockVoicePlayback() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) throw new Error("This browser cannot play local neural audio.");
+        if (!voicePlaybackContext || voicePlaybackContext.state === "closed") voicePlaybackContext = new AudioContextClass();
+        if (voicePlaybackContext.state === "suspended") await voicePlaybackContext.resume();
+        return voicePlaybackContext;
+      }
+      function stopVoicePlayback() {
+        window.speechSynthesis?.cancel?.();
+        if (activeVoiceAudio) { activeVoiceAudio.pause(); activeVoiceAudio = null; }
+        if (activeVoiceSource) {
+          try { activeVoiceSource.stop(); activeVoiceSource.disconnect(); } catch (_) {}
+          activeVoiceSource = null;
+        }
+      }
+      async function prepareKokoroReply(spoken) {
+        const selected = els.voiceSelect.value || "kokoro:bella";
+        const voice = selected.startsWith("kokoro:") ? selected.slice("kokoro:".length) : "bella";
+        const response = await authFetch("/v1/voice/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: spoken, voice }) });
+        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message || "The local neural voice could not create audio."); }
+        const context = await unlockVoicePlayback();
+        const buffer = await context.decodeAudioData(await response.arrayBuffer());
+        return { context, buffer };
+      }
+      async function playKokoroReply(audio) {
+        await new Promise((resolve, reject) => {
+          const source = audio.context.createBufferSource(); activeVoiceSource = source;
+          source.buffer = audio.buffer; source.connect(audio.context.destination);
+          source.onended = () => { if (activeVoiceSource === source) activeVoiceSource = null; resolve(); };
+          try { source.start(); } catch (error) { if (activeVoiceSource === source) activeVoiceSource = null; reject(error); }
+        });
+      }
+      async function speakKokoroReply(spoken) {
+        await playKokoroReply(await prepareKokoroReply(spoken));
+      }
+      function speakReply(text) {
+        if (!voicePlaybackReady()) return Promise.resolve();
+        const spoken = voiceText(text); if (!spoken) return Promise.resolve();
+        stopVoicePlayback();
+        if (neuralTtsReady()) return speakKokoroReply(spoken);
+        const utterance = new SpeechSynthesisUtterance(spoken);
+        const voice = selectedVoice(); if (voice) utterance.voice = voice;
+        return new Promise(resolve => {
+          utterance.onend = utterance.onerror = () => resolve();
+          window.speechSynthesis.speak(utterance);
+        });
+      }
+      function startVoiceStream(run) { voiceStream = { run, buffer: "", chain: Promise.resolve(), synthesis: Promise.resolve() }; }
+      function queueVoicePhrase(run, phrase) {
+        const state = voiceStream, clean = voiceText(phrase);
+        if (!state || state.run !== run || !clean) return;
+        state.spoke = true;
+        if (neuralTtsReady()) {
+          /* Synthesis for the following phrase begins while this one is being
+             spoken. That removes the dead air caused by serial fetch → play →
+             fetch cycles without ever overlapping two audible phrases. */
+          const prepared = state.synthesis = state.synthesis.catch(() => null).then(async () => {
+            if (!voiceStream || voiceStream.run !== run) return null;
+            return prepareKokoroReply(clean);
+          });
+          state.chain = state.chain.then(async () => {
+            const audio = await prepared;
+            if (!audio || !voiceStream || voiceStream.run !== run) return;
+            setVoiceStage("speaking", "Speaking", "Samosa is replying as the answer arrives.");
+            await playKokoroReply(audio);
+          }).catch(error => {
+            if (voiceStream && voiceStream.run === run) {
+              voiceConversationActive = false;
+              setVoiceStage("idle", "Voice playback failed", error?.message || "Samosa could not play that local reply.");
+            }
+          });
+          return;
+        }
+        state.chain = state.chain.then(async () => {
+          if (!voiceStream || voiceStream.run !== run) return;
+          setVoiceStage("speaking", "Speaking", "Samosa is replying as the answer arrives.");
+          await speakReply(clean);
+        }).catch(error => {
+          if (voiceStream && voiceStream.run === run) {
+            voiceConversationActive = false;
+            setVoiceStage("idle", "Voice playback failed", error?.message || "Samosa could not play that local reply.");
+          }
+        });
+      }
+      function appendVoiceStream(run, text, flush = false) {
+        const state = voiceStream;
+        if (!state || state.run !== run) return;
+        if (text) state.buffer += text;
+        let match;
+        while ((match = state.buffer.match(/^\s*([\s\S]*?[.!?](?:["')\]]*)?)(?=\s|$)/))) {
+          state.buffer = state.buffer.slice(match[0].length);
+          queueVoicePhrase(run, match[1]);
+        }
+        /* Do not wait for a long first sentence. Once a phrase is intelligible
+           on its own, begin preparing it while more model text arrives. */
+        const target = state.spoke ? 130 : 72;
+        while (state.buffer.length >= target) {
+          const windowEnd = Math.min(state.buffer.length, state.spoke ? 190 : 112);
+          const head = state.buffer.slice(0, windowEnd);
+          let cut = Math.max(head.lastIndexOf(","), head.lastIndexOf(";"), head.lastIndexOf(":"));
+          if (cut < target - 24) cut = Math.max(head.lastIndexOf(" "), head.lastIndexOf("\n"));
+          if (cut < target - 24) break;
+          const phrase = state.buffer.slice(0, cut); state.buffer = state.buffer.slice(cut + 1);
+          queueVoicePhrase(run, phrase);
+        }
+        if (flush && state.buffer.trim()) { queueVoicePhrase(run, state.buffer); state.buffer = ""; }
+      }
+      async function finishVoiceStream(run, fallbackText) {
+        const state = voiceStream;
+        if (!state || state.run !== run) return;
+        appendVoiceStream(run, "", true);
+        if (!state.buffer && fallbackText && !state.spoke) queueVoicePhrase(run, fallbackText);
+        await state.chain;
+        if (voiceStream && voiceStream.run === run) voiceStream = null;
+      }
+      function refreshVoices() {
+        if (neuralTtsReady()) {
+          els.voiceSettings.hidden = false;
+          els.voiceSelect.textContent = "";
+          const wanted = state.settings?.voiceURI || els.voiceSelect.value || "kokoro:bella";
+          const kokoroVoices = [
+            ["bella", "Bella — warm American English"], ["nicole", "Nicole — calm American English"],
+            ["sarah", "Sarah — bright American English"], ["adam", "Adam — steady American English"],
+            ["michael", "Michael — clear American English"], ["emma", "Emma — British English"],
+          ];
+          for (const [id, label] of kokoroVoices) {
+            const option = document.createElement("option"); option.value = `kokoro:${id}`; option.textContent = label;
+            els.voiceSelect.appendChild(option);
+          }
+          els.voiceSelect.value = kokoroVoices.some(([id]) => `kokoro:${id}` === wanted) ? wanted : "kokoro:bella";
+          els.voiceSelect.disabled = false; els.voicePreview.disabled = false;
+          els.voiceHelp.textContent = "Kokoro runs locally in Samosa's native engine. No Python, pip, or cloud voice service.";
+          if (typeof updateVoiceAvailability === "function") updateVoiceAvailability();
+          return;
+        }
+        if (!voiceSupported()) { els.voiceSettings.hidden = true; return; }
+        els.voiceSettings.hidden = false;
+        installedVoices = window.speechSynthesis.getVoices();
+        const wanted = state.settings?.voiceURI || els.voiceSelect.value;
+        els.voiceSelect.textContent = "";
+        if (!installedVoices.length) {
+          const option = document.createElement("option"); option.textContent = "No installed voices found"; option.value = "";
+          els.voiceSelect.appendChild(option); els.voiceSelect.disabled = true; els.voicePreview.disabled = true;
+          els.voiceHelp.textContent = "No browser or macOS voices are available yet.";
+          if (typeof updateVoiceAvailability === "function") updateVoiceAvailability();
+          return;
+        }
+        for (const voice of installedVoices) {
+          const option = document.createElement("option"); option.value = voice.voiceURI;
+          option.textContent = `${voice.name} — ${voice.lang}${voice.default ? " (default)" : ""}`;
+          els.voiceSelect.appendChild(option);
+        }
+        const exists = installedVoices.some(v => v.voiceURI === wanted);
+        els.voiceSelect.value = exists ? wanted : (installedVoices.find(v => v.default)?.voiceURI || installedVoices[0].voiceURI);
+        els.voiceSelect.disabled = false; els.voicePreview.disabled = false;
+        els.voiceHelp.textContent = "Uses a voice installed by your browser or macOS.";
+        if (typeof updateVoiceAvailability === "function") updateVoiceAvailability();
+      }
 
       async function sendPrompt(text) {
         if (generating || !text.trim()) return;
@@ -1490,12 +2384,15 @@
         const attachmentIds = attachments.map(a => a.id);
         // Captured before clearAttachments() empties the composer below.
         const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
-        const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true};
+        const researching = webContext.some(w => w.kind === "search");
+        const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
+          activity:"",sources:[]};
         chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
 
         els.prompt.value=""; clearAttachments(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
         if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
         activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
+        if (researching && sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", "I’m checking a few focused sources, then I’ll help you make sense of them.");
 
         // The model has no way to know today's date or who it is talking to
         // unless it is told. Without this it answered "what is my name?" with
@@ -1509,17 +2406,29 @@
         const sysBits = [`Today is ${new Date().toLocaleDateString(undefined,
           {weekday:"long", year:"numeric", month:"long", day:"numeric"})}.`];
         if (profileName) sysBits.push(`You are talking to ${profileName}.`);
+        if (sendPrompt.voiceRun && voiceGreetingContext) {
+          sysBits.push(`You have already greeted the user by saying: "${voiceGreetingContext}". Treat this first voice message as their response to that greeting.`);
+          voiceGreetingContext = "";
+        }
         const systemMessage = {role:"system", content:sysBits.join(" ")};
 
+        const history=chat.messages.filter(m=>m!==assistant&&!m.error)
+          .map(m=>({role:m.role,content:m.content||""}));
         let payload;
         if (backend.id !== "qwen") {
-          const history=chat.messages.filter(m=>m!==assistant&&!m.error).map(m=>({role:m.role,content:m.content||""}));
           history.unshift(systemMessage);
           payload={model:backend.model,messages:history,stream:true,max_tokens:Number(els.maxTokens.value),
             conversation_id:chat.id,model_id:chat.model_id,model_version:chat.model_version,
             chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
         } else {
-          payload={model:backend.model,messages:[systemMessage,{role:"user",content:user.content}],conversation_id:chat.id,
+          // Qwen's native server intentionally consumes only the first system
+          // message and last user message. On Web-search turns, include a tiny
+          // recent transcript window anyway: the gateway's local query planner
+          // uses it to resolve "above"/"that one", while generation remains
+          // byte-for-byte the same last-user continuation. Plain turns keep the
+          // old minimal payload and its zero added work.
+          const qwenHistory=researching ? history.slice(-5) : [{role:"user",content:user.content}];
+          payload={model:backend.model,messages:[systemMessage,...qwenHistory],conversation_id:chat.id,
             model_id:chat.model_id,model_version:chat.model_version,
             stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
         }
@@ -1547,19 +2456,364 @@
         } catch (error) {
           assistant.error=error.message||String(error);
         } finally {
-          assistant.streaming=false; chat.updated=Date.now(); activeAssistant=null; setGenerating(false); saveState(); updateAssistantNode(assistant); renderList(); health(); els.prompt.focus();
+          assistant.streaming=false; chat.updated=Date.now(); activeAssistant=null; setGenerating(false); saveState(); updateAssistantNode(assistant); renderList(); health();
+          // Typed chat is always silent. The visible Listen control remains
+          // available on each completed reply; automatic playback belongs
+          // only to an active Voice conversation.
+          els.prompt.focus();
         }
+        return assistant;
+      }
+
+      // Voice conversation is a continuous local chain:
+      // microphone -> 16 kHz WAV -> localhost Whisper.cpp -> selected chat
+      // backend -> the browser's installed speech voice. The browser never
+      // uploads microphone bytes and the gateway removes its temporary WAV as
+      // soon as Whisper has returned text.
+      function browserTtsReady() { return voicePlaybackReady(); }
+      function updateVoiceAvailability() {
+        const ready = !!voiceStatus.stt_ready && browserTtsReady() && !!backend.ready && !generating;
+        const controls = [els.voiceToggle, els.voiceMic].filter(Boolean);
+        for (const control of controls) {
+          control.disabled = !ready || handsfreeInFlight || voiceConversationActive;
+          control.setAttribute("aria-label", voiceConversationActive ? "Voice conversation is active" : "Start voice conversation");
+          control.title = ready ? "Start a hands-free voice conversation" : "Download speech models in Settings to use voice";
+        }
+      }
+      async function refreshVoiceStatus(renderVoiceCards = false) {
+        try {
+          const r = await authFetch("/v1/voice/status", { cache: "no-store" });
+          if (!r.ok) throw new Error("voice_status_failed");
+          voiceStatus = { ...voiceStatus, ...await r.json() };
+        } catch (_) {
+          voiceStatus = { ...voiceStatus, stt_ready: false };
+        }
+        refreshVoices();
+        updateVoiceAvailability();
+        if (renderVoiceCards && els.settings.classList.contains("open")) renderVoiceModelCards();
+      }
+      function setVoiceStage(mode, title, detail) {
+        voiceVisualMode = mode;
+        els.voiceStageTitle.textContent = title;
+        els.voiceStageDetail.textContent = detail;
+        els.voiceStage.hidden = false;
+        if (!voiceParticleFrame) renderVoiceParticles();
+      }
+      function hideVoiceStage() {
+        els.voiceStage.hidden = true;
+        voiceVisualMode = "idle";
+        if (voiceParticleFrame) { cancelAnimationFrame(voiceParticleFrame); voiceParticleFrame = 0; }
+        voiceParticleLastPaint = 0;
+      }
+      function makeVoiceParticles(count) {
+        const particles = [];
+        for (let i = 0; i < count; i++) {
+          // Every point has two homes: a quiet, loosely hand-shaped samosa and
+          // a stable place in the full field. Voice energy moves between them.
+          const depth = Math.pow(Math.random(), .78);
+          const halfWidth = .012 + depth * .19;
+          const targetX = .5 + (Math.random() * 2 - 1) * halfWidth;
+          const targetY = .19 + depth * .47 + Math.sin(depth * Math.PI) * .012;
+          const scatterX = .018 + Math.random() * .964;
+          const scatterY = .025 + Math.random() * .95;
+          particles.push({ x: scatterX, y: scatterY, targetX, targetY, scatterX, scatterY, phase: Math.random() * Math.PI * 2, size: .7 + Math.random() * 1.3, tone: Math.random() });
+        }
+        return particles;
+      }
+      function voiceAudioLevel() {
+        const analyser = handsfreeCapture?.analyser;
+        if (!analyser) return voiceVisualMode === "speaking" ? .22 : 0;
+        const samples = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += Math.abs(sample - 128) / 128;
+        return Math.min(1, (sum / samples.length) * 4.2);
+      }
+      function renderVoiceParticles(now = performance.now()) {
+        if (els.voiceStage.hidden) { voiceParticleFrame = 0; return; }
+        // 30 fps is fluid for this motion and leaves more GPU time for local inference.
+        if (voiceParticleLastPaint && now - voiceParticleLastPaint < 1000 / 30) {
+          voiceParticleFrame = requestAnimationFrame(renderVoiceParticles);
+          return;
+        }
+        voiceParticleLastPaint = now;
+        const canvas = els.voiceCanvas, rect = canvas.getBoundingClientRect();
+        const ratio = Math.min(1.5, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.round(rect.width * ratio)), height = Math.max(1, Math.round(rect.height * ratio));
+        if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { voiceParticleFrame = 0; return; }
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        const particleCount = Math.max(440, Math.min(680, Math.round(rect.width * rect.height / 1500)));
+        if (voiceParticles.length !== particleCount) voiceParticles = makeVoiceParticles(particleCount);
+        const level = voiceAudioLevel();
+        const visualLevel = voiceVisualMode === "listening" ? level : voiceVisualMode === "speaking" ? .28 + Math.sin(now * .004) * .08 : .035;
+        const targetDispersion = voiceVisualMode === "listening" ? Math.min(1, level * 4.6) : voiceVisualMode === "speaking" ? .88 + Math.sin(now * .0032) * .08 : 0;
+        const dispersionEase = targetDispersion > voiceDispersion ? .13 : .028;
+        voiceDispersion += (targetDispersion - voiceDispersion) * dispersionEase;
+        const styles = getComputedStyle(document.documentElement);
+        const accent = styles.getPropertyValue("--accent").trim() || "#b94012";
+        const highlight = styles.getPropertyValue("--highlight").trim() || "#f4c95d";
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const p of voiceParticles) {
+          const baseX = p.targetX + (p.scatterX - p.targetX) * voiceDispersion;
+          const baseY = p.targetY + (p.scatterY - p.targetY) * voiceDispersion;
+          const sway = Math.sin(now * .0017 + p.phase) * (.002 + voiceDispersion * (.009 + visualLevel * .016));
+          const lift = Math.cos(now * .0021 + p.phase * 1.7) * (.0015 + voiceDispersion * (.006 + visualLevel * .012));
+          const tx = baseX + sway, ty = baseY + lift;
+          p.x += (tx - p.x) * (.038 + visualLevel * .045);
+          p.y += (ty - p.y) * (.038 + visualLevel * .045);
+          const pulse = (Math.sin(now * .004 + p.phase) + 1) * .06;
+          const color = p.tone > .82 ? highlight : accent;
+          if (p.tone > .55) {
+            ctx.globalAlpha = .045 + visualLevel * .08;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(p.x * rect.width, p.y * rect.height, (p.size + visualLevel) * 3.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = .28 + visualLevel * .42 + pulse;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(p.x * rect.width, p.y * rect.height, p.size + visualLevel * 1.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        voiceParticleFrame = requestAnimationFrame(renderVoiceParticles);
+      }
+      function concatenateVoiceChunks(chunks) {
+        const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const output = new Float32Array(length); let at = 0;
+        for (const chunk of chunks) { output.set(chunk, at); at += chunk.length; }
+        return output;
+      }
+      function encodeVoiceWav(chunks, sourceRate) {
+        const input = concatenateVoiceChunks(chunks);
+        const targetRate = 16000, ratio = sourceRate / targetRate;
+        const outputLength = Math.floor(input.length / ratio);
+        const output = new Int16Array(outputLength);
+        for (let i = 0; i < outputLength; i++) {
+          const from = Math.floor(i * ratio), until = Math.min(input.length, Math.floor((i + 1) * ratio));
+          let total = 0, count = 0;
+          for (let j = from; j < until; j++) { total += input[j]; count++; }
+          const sample = Math.max(-1, Math.min(1, count ? total / count : 0));
+          output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        }
+        const buffer = new ArrayBuffer(44 + output.byteLength), view = new DataView(buffer);
+        const write = (at, text) => { for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i)); };
+        write(0, "RIFF"); view.setUint32(4, 36 + output.byteLength, true); write(8, "WAVE"); write(12, "fmt ");
+        view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, targetRate, true);
+        view.setUint32(28, targetRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, output.byteLength, true);
+        new Int16Array(buffer, 44).set(output);
+        return buffer;
+      }
+      function releaseHandsfreeCapture(capture) {
+        if (!capture) return;
+        if (capture.limitTimer) clearTimeout(capture.limitTimer);
+        for (const track of capture.stream?.getTracks?.() || []) { track.onended = null; track.stop(); }
+        try { capture.source?.disconnect(); capture.analyser?.disconnect(); capture.processor?.disconnect(); capture.mute?.disconnect(); } catch (_) {}
+        capture.context?.close?.().catch?.(() => {});
+      }
+      function voiceFrameLevel(samples) {
+        let power = 0;
+        for (const sample of samples) power += sample * sample;
+        return Math.min(1, Math.sqrt(power / Math.max(1, samples.length)) * 7);
+      }
+      function blankVoiceTranscript(text) {
+        const normalized = String(text || "").trim().toLowerCase().replace(/[\[\]()<>_\-\s]/g, "");
+        return !normalized || ["blankaudio", "silence", "nospeech", "nospeechdetected", "inaudible", "noise", "music"].includes(normalized);
+      }
+      async function startHandsfree({ greet = !voiceConversationGreeted } = {}) {
+        if (handsfreeCapture || handsfreeInFlight) return;
+        if (!voiceStatus.stt_ready || !browserTtsReady() || !backend.ready) return;
+        if (!navigator.mediaDevices?.getUserMedia || !(window.AudioContext || window.webkitAudioContext)) {
+          voiceConversationActive = false;
+          setVoiceStage("idle", "Microphone unavailable", "Use a current browser that permits microphone capture on localhost.");
+          return;
+        }
+        voiceConversationActive = true;
+        updateVoiceAvailability();
+        stopVoicePlayback();
+        // This runs directly from the Voice button gesture. Keeping the
+        // context alive means the reply can play after transcription and a
+        // long model stream without being rejected as browser autoplay.
+        try { await unlockVoicePlayback(); } catch (_) {}
+        if (greet) {
+          const greeting = "Hi. What can I help you with?";
+          voiceConversationGreeted = true; voiceGreetingContext = greeting;
+          setVoiceStage("speaking", "Voice conversation", greeting);
+          try { await speakReply(greeting); } catch (_) {}
+          if (!voiceConversationActive) return;
+        }
+        const capture = { requesting: true, chunks: [], sourceRate: 48000, stream: null, context: null, source: null, analyser: null, processor: null, mute: null, limitTimer: null, speechStartedAt: 0, lastSpeechAt: 0, speechFrames: 0, autoStopPending: false };
+        handsfreeCapture = capture;
+        els.voiceToggle.classList.add("listening"); els.voiceMic.classList.add("listening"); updateVoiceAvailability();
+        setVoiceStage("listening", "Listening", "Speak naturally. I’ll respond when you pause.");
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+          if (handsfreeCapture !== capture) { for (const track of stream.getTracks()) track.stop(); return; }
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          const context = new AudioContextClass();
+          const source = context.createMediaStreamSource(stream), analyser = context.createAnalyser(), processor = context.createScriptProcessor(4096, 1, 1), mute = context.createGain();
+          mute.gain.value = 0;
+          capture.requesting = false; capture.stream = stream; capture.context = context; capture.source = source; capture.analyser = analyser; capture.processor = processor; capture.mute = mute; capture.sourceRate = context.sampleRate;
+          analyser.fftSize = 256;
+          processor.onaudioprocess = event => {
+            const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+            const now = performance.now(), level = voiceFrameLevel(chunk);
+            if (level > .035) {
+              capture.speechFrames++;
+              if (!capture.speechStartedAt && capture.speechFrames >= 2) {
+                capture.speechStartedAt = now;
+                /* No silent lead-in is retained. Waiting for the first words is
+                   unlimited and does not create a growing blank recording. */
+                capture.limitTimer = setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 115000);
+              }
+              if (capture.speechStartedAt) capture.chunks.push(chunk);
+              capture.lastSpeechAt = now;
+            } else {
+              capture.speechFrames = 0;
+              if (capture.speechStartedAt) {
+                capture.chunks.push(chunk);
+                if (!capture.autoStopPending && now - capture.speechStartedAt > 350 && now - capture.lastSpeechAt > 1050) {
+                  capture.autoStopPending = true;
+                  setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 0);
+                }
+              }
+            }
+          };
+          source.connect(analyser); analyser.connect(processor); processor.connect(mute); mute.connect(context.destination);
+          for (const track of stream.getTracks()) track.onended = () => { if (handsfreeCapture === capture) { voiceConversationActive = false; stopHandsfree(false); } };
+        } catch (error) {
+          if (handsfreeCapture === capture) {
+            handsfreeCapture = null; voiceConversationActive = false; voiceConversationGreeted = false; els.voiceToggle.classList.remove("listening"); els.voiceMic.classList.remove("listening"); updateVoiceAvailability();
+            setVoiceStage("idle", "Microphone permission is needed", error?.message || "Allow microphone access, then try again.");
+          }
+        }
+      }
+      async function stopHandsfree(send) {
+        const capture = handsfreeCapture;
+        if (!capture) return;
+        handsfreeCapture = null; els.voiceToggle.classList.remove("listening"); els.voiceMic.classList.remove("listening"); updateVoiceAvailability();
+        releaseHandsfreeCapture(capture);
+        if (!send || capture.requesting) { if (!voiceConversationActive) voiceConversationGreeted = false; hideVoiceStage(); return; }
+        const wav = encodeVoiceWav(capture.chunks, capture.sourceRate);
+        if (wav.byteLength <= 44 || !capture.speechStartedAt) { if (voiceConversationActive) startHandsfree({ greet: false }); return; }
+        handsfreeInFlight = true; updateVoiceAvailability();
+        const run = Symbol("voice-run"), controller = new AbortController();
+        let completed = false;
+        stopHandsfree.activeRun = run; stopHandsfree.abort = controller;
+        setVoiceStage("transcribing", "Understanding", "Whisper is processing your words locally.");
+        try {
+          const r = await authFetch("/v1/voice/transcriptions", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav, signal: controller.signal });
+          const result = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(result?.error?.message || "Local speech recognition could not transcribe that recording.");
+          const text = (result?.text || "").trim();
+          if (blankVoiceTranscript(text)) { completed = true; setVoiceStage("listening", "Listening", "I’m here — take your time."); return; }
+          if (stopHandsfree.activeRun !== run) return;
+          els.prompt.value = text; resizePrompt();
+          setVoiceStage("thinking", "Thinking", "Your selected local model is preparing a response.");
+          // Start a queue before the model begins streaming. consumeEvent()
+          // adds complete phrases to it, so the first spoken sentence needn't
+          // wait for the full model response.
+          startVoiceStream(run);
+          sendPrompt.voiceRun = run;
+          const assistant = await sendPrompt(text);
+          if (stopHandsfree.activeRun !== run) return;
+          if (!assistant || assistant.error) throw new Error(assistant?.error || "The local model could not answer that voice message.");
+          await finishVoiceStream(run, assistant.content);
+          completed = true;
+        } catch (error) {
+          if (stopHandsfree.activeRun === run && error?.name !== "AbortError") { voiceConversationActive = false; setVoiceStage("idle", "Voice conversation stopped", error?.message || "Start Voice again to try once more."); }
+        } finally {
+          if (sendPrompt.voiceRun === run) sendPrompt.voiceRun = null;
+          if (stopHandsfree.activeRun === run) {
+            stopHandsfree.activeRun = null; stopHandsfree.abort = null; handsfreeInFlight = false; updateVoiceAvailability();
+            if (completed && voiceConversationActive) {
+              setVoiceStage("listening", "Listening", "Speak naturally. I’ll respond when you pause.");
+              setTimeout(() => { if (voiceConversationActive && !handsfreeCapture && !handsfreeInFlight) startHandsfree({ greet: false }); }, 180);
+            }
+          }
+        }
+      }
+      function cancelHandsfree() {
+        voiceConversationActive = false;
+        voiceConversationGreeted = false;
+        voiceGreetingContext = "";
+        if (handsfreeCapture) { stopHandsfree(false); return; }
+        if (stopHandsfree.abort) stopHandsfree.abort.abort();
+        stopHandsfree.activeRun = null; handsfreeInFlight = false;
+        voiceStream = null;
+        stopVoicePlayback();
+        if (generating) cancel();
+        updateVoiceAvailability(); hideVoiceStage();
+      }
+      function privateWebHostname(hostname) {
+        const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+        if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+        if (host.includes(":")) {
+          return host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) ||
+            host.startsWith("::ffff:") || host.startsWith("64:ff9b:") || host.startsWith("2002:");
+        }
+        const parts = host.split(".");
+        if (parts.length !== 4 || parts.some(part => !/^\d+$/.test(part) || Number(part) > 255)) return false;
+        const [a, b, c] = parts.map(Number);
+        return a === 0 || a === 10 || a === 127 || a >= 224 ||
+          (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
+          (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 0 && c === 0) ||
+          (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19));
+      }
+      function normaliseWebSource(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const value = String(raw.url || "").trim();
+        if (!value || value.length > 2048 || /[\u0000-\u001f\u007f]/.test(value)) return null;
+        let url;
+        try { url = new URL(value); } catch (_) { return null; }
+        if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname ||
+            url.username || url.password || url.port || privateWebHostname(url.hostname)) return null;
+        url.hash = "";
+        const kind = raw.kind === "page" ? "page" : "search_result";
+        const states = new Set(["checking", "found", "read", "failed"]);
+        const state = states.has(raw.state) ? raw.state : (kind === "page" ? "checking" : "found");
+        return {
+          id: String(raw.id || url.href).slice(0, 2048),
+          title: String(raw.title || "").trim().slice(0, 300),
+          url: url.href,
+          kind,
+          state
+        };
+      }
+      function mergeWebSource(message, raw) {
+        const source = normaliseWebSource(raw);
+        if (!source) return false;
+        if (!Array.isArray(message.sources)) message.sources = [];
+        const existing = message.sources.find(item => item.id === source.id ||
+          (item.kind === source.kind && item.url === source.url));
+        if (existing) {
+          existing.url = source.url; existing.kind = source.kind; existing.state = source.state;
+          if (source.title) existing.title = source.title;
+        } else message.sources.push(source);
+        return true;
       }
       function consumeEvent(raw, assistant) {
         if (raw === "[DONE]") return;
         let event; try { event=JSON.parse(raw); } catch (_) { return; }
         const choice=event.choices?.[0], delta=choice?.delta||{};
-        if (delta.reasoning||delta.reasoning_content) assistant.reasoning+=delta.reasoning||delta.reasoning_content;
+        if (delta.reasoning||delta.reasoning_content) {
+          assistant.reasoning+=delta.reasoning||delta.reasoning_content;
+          if (sendPrompt.voiceRun) setVoiceStage("thinking", "Thinking", "I’m working through your question.");
+        }
         // What Samosa is *doing* (searching, fetching), kept separate from what
         // the model is thinking. It is the only sign of life on a turn that can
         // run for minutes, so it must never be folded away.
-        if (delta.web_activity) assistant.activity=(assistant.activity||"")+delta.web_activity;
-        if (delta.content) assistant.content+=delta.content;
+        if (delta.web_activity) {
+          assistant.activity=(assistant.activity||"")+delta.web_activity;
+          if (sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", delta.web_activity.trim() || "I’m checking a few sources.");
+        }
+        if (delta.web_source) mergeWebSource(assistant, delta.web_source);
+        if (delta.content) { assistant.content+=delta.content; if (sendPrompt.voiceRun) appendVoiceStream(sendPrompt.voiceRun, delta.content); }
         if (choice?.finish_reason) {
           const meta=event.samosa||{};
           const tokensPerSecond=meta.tokens_per_second||event.timings?.predicted_per_second;
@@ -1578,26 +2832,83 @@
         const box = row.querySelector(".web-activity");
         if (!box) return;
         const steps = (msg.activity || "").split("\n").map(t => t.trim()).filter(Boolean);
-        box.hidden = steps.length === 0;
-        box.textContent = "";
-        steps.forEach((text, i) => {
-          const line = document.createElement("div");
-          line.className = "web-step" + (msg.streaming && i === steps.length - 1 ? " active" : " done");
-          const mark = document.createElement("span");
-          mark.className = "web-step-mark";
-          mark.textContent = (msg.streaming && i === steps.length - 1) ? "·" : "✓";
-          const label = document.createElement("span");
-          label.textContent = text;
-          line.appendChild(mark); line.appendChild(label);
-          box.appendChild(line);
-        });
+        const sources = (Array.isArray(msg.sources) ? msg.sources : []).map(normaliseWebSource).filter(Boolean);
+        box.hidden = steps.length === 0 && sources.length === 0;
+        let stepsBox = box.querySelector(".web-steps");
+        if (!stepsBox) { stepsBox = document.createElement("div"); stepsBox.className = "web-steps"; box.appendChild(stepsBox); }
+        const signature = `${msg.streaming ? 1 : 0}:${steps.join("\n")}`;
+        if (stepsBox.dataset.signature !== signature) {
+          stepsBox.dataset.signature = signature;
+          stepsBox.textContent = "";
+          steps.forEach((text, i) => {
+            const line = document.createElement("div");
+            const active = msg.streaming && i === steps.length - 1;
+            const failed = /could not|couldn’t|failed|offline|not configured|not read|unavailable/i.test(text);
+            line.className = "web-step" + (active ? " active" : failed ? " failed" : " done");
+            const mark = document.createElement("span");
+            mark.className = "web-step-mark";
+            mark.textContent = active ? "·" : failed ? "!" : "✓";
+            const label = document.createElement("span"); label.textContent = text;
+            line.appendChild(mark); line.appendChild(label); stepsBox.appendChild(line);
+          });
+        }
+        stepsBox.hidden = steps.length === 0;
+
+        let sourcesBox = box.querySelector(".web-sources");
+        if (!sourcesBox) {
+          sourcesBox = document.createElement("section"); sourcesBox.className = "web-sources";
+          sourcesBox.setAttribute("aria-label", "Web sources"); sourcesBox.setAttribute("aria-live", "off");
+          const head = document.createElement("div"); head.className = "web-sources-head";
+          const heading = document.createElement("span"); heading.textContent = "Sources in view";
+          const count = document.createElement("span"); count.className = "web-sources-count";
+          head.appendChild(heading); head.appendChild(count);
+          const list = document.createElement("div"); list.className = "web-source-list";
+          sourcesBox.appendChild(head); sourcesBox.appendChild(list); box.appendChild(sourcesBox);
+        }
+        sourcesBox.hidden = sources.length === 0;
+        const count = sourcesBox.querySelector(".web-sources-count");
+        if (count) count.textContent = String(sources.length);
+        const list = sourcesBox.querySelector(".web-source-list");
+        for (const source of sources) {
+          let item = Array.from(list.children).find(child => child.dataset.sourceId === source.id);
+          if (!item) {
+            item = document.createElement("a"); item.className = "web-source is-new"; item.dataset.sourceId = source.id;
+            const copy = document.createElement("span"); copy.className = "web-source-copy";
+            const title = document.createElement("span"); title.className = "web-source-title";
+            const address = document.createElement("bdi"); address.className = "web-source-url";
+            copy.appendChild(title); copy.appendChild(address);
+            const state = document.createElement("span"); state.className = "web-source-state";
+            item.appendChild(copy); item.appendChild(state); list.appendChild(item);
+          }
+          const parsed = new URL(source.url);
+          const title = source.title || parsed.hostname;
+          item.dataset.state = source.state;
+          item.querySelector(".web-source-title").textContent = title;
+          item.querySelector(".web-source-url").textContent = source.url;
+          item.querySelector(".web-source-state").textContent =
+            source.state === "checking" ? "Checking" : source.state === "read" ? "Read" :
+            source.state === "failed" ? "Failed" : "Found";
+          const clickable = source.kind === "search_result" || source.state === "read";
+          if (clickable) {
+            item.href = source.url; item.target = "_blank";
+            item.rel = "noopener noreferrer external"; item.referrerPolicy = "no-referrer";
+            item.setAttribute("aria-label", `${title}, ${parsed.hostname}, opens in a new tab`);
+          } else {
+            item.removeAttribute("href"); item.removeAttribute("target"); item.removeAttribute("rel");
+            item.removeAttribute("referrerpolicy"); item.removeAttribute("aria-label");
+          }
+        }
       }
       function updateAssistantNode(msg) {
         const row=els.messages.querySelector(`[data-message-id="${CSS.escape(msg.id)}"]`); if(!row)return;
         const thinking=row.querySelector(".thinking"), response=row.querySelector(".response"), error=row.querySelector(".error-note");
         thinking.hidden=!msg.reasoning; thinking.querySelector(".thinking-body").textContent=msg.reasoning||"";
         renderWebActivity(row, msg);
-        response.innerHTML=markdown(msg.content||""); response.classList.toggle("typing",!!msg.streaming);
+        renderAssistantResponse(response, msg);
+        if (msg.streaming && !String(msg.content || "").trim() && !msg.error) row.setAttribute("aria-busy", "true");
+        else row.removeAttribute("aria-busy");
+        const speak = row.querySelector(".message-speak");
+        if (speak) speak.hidden = !voicePlaybackReady() || !msg.content;
         error.hidden=!msg.error; error.textContent=msg.error||"";
       }
       async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
@@ -1734,83 +3045,362 @@
           const previousBackend=backend.id;
           if(h.gateway) {
             backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready};
-            els.modelBackend.value=h.backend;
             // T3.2: the `+` button itself stays enabled -- it opens a menu
             // that explains, per item, what is and isn't available. Disabling
             // the whole button would hide those reasons entirely.
             applyCapabilities();
             els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating locally`:h.ready?`${h.label} ready on this Mac`:`Loading ${h.label}…`;
+            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:`Loading ${h.label}…`;
           } else {
             backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true};
             applyCapabilities();
-            els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating locally":"Qwen3.6 ready on this Mac";
+            els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating":"Qwen3.6 ready";
           }
           els.sideDot.className=els.dot.className; els.sideStatus.textContent=backend.label;
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
           if(h.context_limit_tokens){const effective=h.context_limit_tokens.toLocaleString(), model=(h.model_context_limit_tokens||h.context_limit_tokens).toLocaleString(); els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${h.context_limit_mode||"configured"} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;}
-          if(h.compaction)els.compactHelp.textContent=`Auto-compaction is ${h.compaction.auto?"on":"off"} at ${h.compaction.threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
-          if(!healthInitialized||previousBackend!==backend.id) {
-            const limit=String(h.context_limit_tokens||"");
-            if((h.context_limit_mode||"").includes("auto"))els.contextTokens.value="auto";
-            else if([...els.contextTokens.options].some(option=>option.value===limit))els.contextTokens.value=limit;
-            else {els.contextTokens.value="custom";els.contextCustom.value=limit;}
-            if(h.compaction){els.autoCompact.checked=!!h.compaction.auto;els.compactThreshold.value=String(h.compaction.threshold_percent);}
-            syncContextCustom();saveState();healthInitialized=true;
-          }
-          refreshModels();
-        } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; els.sideDot.className="status-dot offline"; els.sideStatus.textContent="Unavailable"; }
+          // Runtime controls are hydrated from the gateway-owned settings API,
+          // never inferred from optional health fields. The old inference path
+          // turned a missing context_limit_tokens into a blank "Custom" value.
+          if(previousBackend!==backend.id) refreshRuntimeSettings({force:true});
+          updateVoiceAvailability();
+        } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; els.sideDot.className="status-dot offline"; els.sideStatus.textContent="Unavailable"; updateVoiceAvailability(); }
       }
-      function modelIsSelectable(model) { return !!model.compatible && model.install_state === "ready"; }
-      function modelOptionLabel(model) {
-        if (modelIsSelectable(model)) return model.label;
-        if (!model.compatible) return `${model.label} (not compatible with this Mac)`;
-        return `${model.label} (not installed)`;
-      }
-      // Rebuilds <select id="modelBackend"> from the last /v1/models/catalog
-      // fetch. The catalog, not this function, owns which models exist and
-      // their labels/availability (T2.1 acceptance: no authoritative
-      // hardcoded model list in the frontend) -- this only renders it and
-      // disables options that aren't currently selectable.
-      function renderModelOptions() {
-        const current = els.modelBackend.value;
-        els.modelBackend.innerHTML = "";
-        for (const model of modelCatalog) {
-          const option = document.createElement("option");
-          option.value = model.id;
-          option.textContent = modelOptionLabel(model);
-          option.disabled = !modelIsSelectable(model);
-          els.modelBackend.appendChild(option);
-        }
-        const known = value => [...els.modelBackend.options].some(o => o.value === value);
-        if (known(current)) els.modelBackend.value = current;
-        else if (known(backend.id)) els.modelBackend.value = backend.id;
-      }
-      async function refreshModels() {
+      // Settings' "Models" section reuses the exact same catalog/install/select
+      // pipeline the first-run setup screen uses (modelCatalog, setupInstalls,
+      // renderModelCards, runModelCardAction) -- a returning user who wants to
+      // add or switch models gets the same Download/Pause/Resume/Cancel/Retry/Use
+      // cards, not a second, weaker implementation. Only called while Settings
+      // is open (see openSettings/startSettingsPolling below), so it doesn't add
+      // an unconditional catalog fetch to the ordinary 5s health() tick.
+      async function refreshSettingsModels() {
+        const activeSettingsControl = typeof document !== "undefined" ? document.activeElement : null;
+        const settingsFocusKey = els.settings?.contains?.(activeSettingsControl)
+          ? (activeSettingsControl.getAttribute?.("data-settings-focus-key") || "") : "";
+        let status = null;
+        try { status = await fetchSetupStatus(); } catch (_) {}
         try {
-          const r=await authFetch("/v1/models/catalog",{cache:"no-store"}); if(!r.ok)return;
-          const data=await r.json();
-          modelCatalog=data.models||[];
-          renderModelOptions();
-        } catch (_) {}
+          const [catalogResp, installsResp] = await Promise.all([
+            authFetch("/v1/models/catalog", { cache: "no-store" }),
+            authFetch("/v1/models/installs", { cache: "no-store" }),
+          ]);
+          if (!catalogResp.ok) throw new Error("catalog_failed");
+          const allModels = (await catalogResp.json()).models || [];
+          modelCatalog = allModels.filter(model => model.family !== "voice" && model.backend_kind !== "whisper_cpp");
+          if (typeof voiceCatalog !== "undefined") voiceCatalog = allModels.filter(model => model.family === "voice" || model.backend_kind === "whisper_cpp");
+          setupInstalls = installsResp.ok ? (await installsResp.json()).jobs || [] : [];
+        } catch (_) {
+          els.settingsModelError.textContent = "Couldn't load the model list. Check your connection and try again.";
+          els.settingsModelError.hidden = false;
+          return;
+        }
+        els.settingsModelError.hidden = true;
+        renderModelCards(els.settingsModelList, els.settingsModelError, status);
+        // Kept as a guarded extension so this exact Settings orchestration
+        // remains independently fixture-testable without loading the audio UI.
+        if (typeof refreshVoiceStatus === "function") await refreshVoiceStatus(false);
+        if (typeof renderVoiceModelCards === "function") renderVoiceModelCards();
+        if (settingsFocusKey && els.settings?.querySelectorAll) {
+          const restoreFocus = () => {
+            const controls = Array.from(els.settings.querySelectorAll("[data-settings-focus-key]"));
+            const replacement = controls.find(control => control.getAttribute("data-settings-focus-key") === settingsFocusKey);
+            if (replacement && !replacement.disabled) replacement.focus();
+            else document.querySelector("[data-settings-pane].active")?.focus();
+          };
+          if (typeof requestAnimationFrame === "function") requestAnimationFrame(restoreFocus); else restoreFocus();
+        }
+      }
+      async function prepareVoiceRuntimeAndInstall(model) {
+        els.voiceModelError.hidden = true;
+        try {
+          const r = await authFetch("/v1/voice/runtime", { method: "POST" });
+          const result = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(result?.error?.message || "Could not prepare local speech recognition.");
+          await refreshVoiceStatus(false);
+          if (!voiceStatus.stt_model_downloaded) await runModelCardAction("install", model, null, els.voiceModelError);
+        } catch (error) {
+          els.voiceModelError.textContent = error.message || String(error);
+          els.voiceModelError.hidden = false;
+        }
+        await refreshSettingsModels();
+      }
+      async function prepareKokoroTts() {
+        els.voiceModelError.hidden = true;
+        try {
+          const r = await authFetch("/v1/voice/tts/runtime", { method: "POST" });
+          const result = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(result?.error?.message || "Could not download the local neural voice.");
+          await refreshVoiceStatus(false);
+        } catch (error) {
+          els.voiceModelError.textContent = error.message || String(error);
+          els.voiceModelError.hidden = false;
+        }
+        await refreshSettingsModels();
+      }
+      function voiceCardButton(actions, label, primary, handler, focusKey = "") {
+        const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+        if (primary) button.className = "primary";
+        if (focusKey) button.setAttribute("data-settings-focus-key", focusKey);
+        button.onclick = async () => { button.disabled = true; await handler(); };
+        actions.appendChild(button);
+      }
+      function renderVoiceModelCards() {
+        const list = els.voiceModelList;
+        if (!list) return;
+        list.textContent = "";
+        const stt = voiceCatalog.find(model => model.id === "voice-stt-whisper-base-en");
+        if (stt) {
+          const job = installForModel(stt.id, setupInstalls, null);
+          const card = document.createElement("div"); card.className = "voice-model-card" + (voiceStatus.stt_ready ? " ready" : "");
+          const head = document.createElement("div"); head.className = "voice-model-card-head";
+          const copy = document.createElement("div");
+          const title = document.createElement("strong"); title.textContent = stt.label;
+          const detail = document.createElement("p"); detail.textContent = stt.description || "Private, local speech recognition for hands-free Samosa.";
+          copy.appendChild(title); copy.appendChild(detail); head.appendChild(copy); card.appendChild(head);
+          const status = document.createElement("div"); status.className = "voice-model-card-status";
+          const actions = document.createElement("div"); actions.className = "voice-model-card-actions";
+          if (voiceStatus.stt_ready) {
+            status.classList.add("ready"); status.textContent = "Ready — the microphone is available in Chat.";
+          } else if (!stt.compatible) {
+            status.textContent = stt.compatibility_reason || "Speech recognition is not compatible with this machine.";
+          } else if (voiceStatus.runtime_preparing) {
+            status.textContent = "Setting up voice…";
+          } else if (job && ["queued", "downloading", "verifying", "installing", "paused", "failed"].includes(job.state)) {
+            const state = modelCardState(stt, job, false, true);
+            status.textContent = state.kind === "failed" ? state.message : state.kind === "paused" ? "Download paused." : `${job.current_artifact || "Downloading Whisper"} · ${formatBytes(job.completed_bytes || 0)} / ${formatBytes(job.total_bytes || 0)}`;
+            for (const action of modelCardActions(state)) voiceCardButton(actions, action.label, action.primary, () => runModelCardAction(action.action, stt, job, els.voiceModelError), `voice-stt:${action.action}`);
+          } else if (!voiceStatus.stt_runtime_ready) {
+            status.textContent = "Whisper Base English · 141 MB.";
+            voiceCardButton(actions, "Download", true, () => prepareVoiceRuntimeAndInstall(stt), "voice-stt:download-runtime");
+          } else {
+            status.textContent = "Whisper Base English · 141 MB.";
+            voiceCardButton(actions, "Download", true, () => runModelCardAction("install", stt, null, els.voiceModelError), "voice-stt:install");
+          }
+          card.appendChild(status); if (actions.children.length) card.appendChild(actions); list.appendChild(card);
+        }
+        const tts = document.createElement("div"); tts.className = "voice-model-card" + (neuralTtsReady() ? " ready" : "");
+        const ttsTitle = document.createElement("strong"); ttsTitle.textContent = "Kokoro-82M";
+        const ttsDetail = document.createElement("p"); ttsDetail.textContent = "A natural local neural voice with six curated English voices. It runs directly in Samosa's native C engine and replaces the browser voice for spoken replies.";
+        const ttsStatus = document.createElement("div"); ttsStatus.className = "voice-model-card-status" + (neuralTtsReady() ? " ready" : "");
+        const ttsActions = document.createElement("div"); ttsActions.className = "voice-model-card-actions";
+        if (neuralTtsReady()) {
+          ttsStatus.textContent = "Ready — Kokoro runs locally in Samosa's native engine.";
+        } else if (voiceStatus.tts_preparing) {
+          ttsStatus.textContent = "Downloading the local neural voice…";
+        } else {
+          ttsStatus.textContent = "103 MB int8 model · native runtime · downloads once · no Python or cloud speech service.";
+          voiceCardButton(ttsActions, "Download", true, prepareKokoroTts, "voice-tts:download");
+        }
+        tts.appendChild(ttsTitle); tts.appendChild(ttsDetail); tts.appendChild(ttsStatus); if (ttsActions.children.length) tts.appendChild(ttsActions); list.appendChild(tts);
+        if (!stt) {
+          const notice = document.createElement("p"); notice.className = "voice-model-card-status"; notice.textContent = "This release has no speech-recognition model listed."; list.prepend(notice);
+        }
+      }
+      let settingsPollTimer = null;
+      function stopSettingsPolling() { if (settingsPollTimer) { clearInterval(settingsPollTimer); settingsPollTimer = null; } }
+      function startSettingsPolling() { stopSettingsPolling(); settingsPollTimer = setInterval(refreshSettingsModels, 1500); }
+
+      // --- Advanced runtime settings BEGIN ---------------------------------
+      // Inference settings belong to the gateway, not localStorage. A browser
+      // tab may close before a model starts, and two tabs must never race to
+      // "restore" different launch arguments from their own saved UI state.
+      let runtimeSettings = null;
+      let runtimeSettingsDirty = false;
+      let runtimeSettingsApplying = false;
+      let runtimeSettingsRequest = 0;
+
+      function runtimeOption(select, value, label) {
+        const option = document.createElement("option");
+        option.value = String(value); option.textContent = label;
+        select.appendChild(option);
+      }
+      function positiveRuntimeInteger(value) {
+        const number = Number(value);
+        return Number.isInteger(number) && number > 0 ? number : null;
+      }
+      function runtimeSourceCopy(source) {
+        if (source === "environment") return "an environment override";
+        if (source === "auto") return "Samosa's automatic hardware profile";
+        if (source === "configured" || source === "user") return "your saved setting";
+        return source ? String(source).replace(/[_-]+/g, " ") : "the active model";
       }
       function contextValue() { return els.contextTokens.value === "custom" ? els.contextCustom.value.trim() : els.contextTokens.value; }
-      function syncContextCustom() { els.contextCustom.hidden=els.contextTokens.value!=="custom"; }
-      async function applyContextSetting(silent=false) {
-        const value=contextValue();
-        if (value!=="auto"&&!/^[1-9][0-9]*$/.test(value)) { els.contextHelp.textContent="Enter a positive whole-token limit, or choose Auto."; return false; }
-        els.applyContext.disabled=true;
+      function syncContextCustom() {
+        const custom = els.contextTokens.value === "custom";
+        els.contextCustom.hidden = !custom;
+        els.contextCustom.disabled = !custom || runtimeSettingsApplying || !!runtimeSettings?.context?.locked;
+      }
+      function updateRuntimeControlAvailability() {
+        const cpu = runtimeSettings?.cpu_threads;
+        const context = runtimeSettings?.context;
+        const compaction = runtimeSettings?.compaction;
+        const ready = !!(cpu && context && compaction);
+        const busy = runtimeSettingsApplying;
+        els.cpuThreads.disabled = !ready || busy || !!cpu?.locked;
+        els.contextTokens.disabled = !ready || busy || !!context?.locked;
+        els.autoCompact.disabled = !ready || busy || !compaction?.supported;
+        els.compactThreshold.disabled = !ready || busy || !compaction?.supported || !els.autoCompact.checked;
+        els.compactNow.disabled = !ready || busy || generating || !compaction?.supported || !compaction?.manual_supported;
+        syncContextCustom();
+        const hasEditableControl = ready && (!cpu.locked || !context.locked || compaction.supported);
+        els.runtimeApply.disabled = busy || !runtimeSettingsDirty || !hasEditableControl;
+      }
+      function renderRuntimeSettings(settings) {
+        const cpu = settings.cpu_threads || {};
+        const context = settings.context || {};
+        const compaction = settings.compaction || {};
+        const cpuMaximum = positiveRuntimeInteger(cpu.maximum) || 1;
+        const cpuEffective = positiveRuntimeInteger(cpu.effective);
+        const cpuRequested = cpu.requested === "auto" ? "auto" : positiveRuntimeInteger(cpu.requested);
+        els.cpuThreads.textContent = "";
+        runtimeOption(els.cpuThreads, "auto", "Auto (recommended)");
+        for (let cores = 1; cores <= cpuMaximum; cores++) runtimeOption(els.cpuThreads, cores, `${cores} ${cores === 1 ? "core" : "cores"}`);
+        els.cpuThreads.value = cpuRequested ? String(cpuRequested) : "auto";
+        els.cpuEffective.textContent = cpuEffective ? `${cpuEffective} ${cpuEffective === 1 ? "core" : "cores"} active` : "Auto sizing";
+        els.cpuThreadsHelp.className = cpu.locked ? "runtime-managed" : "";
+        els.cpuThreadsHelp.textContent = cpu.locked
+          ? `Managed by ${runtimeSourceCopy(cpu.source)}; change it there to unlock this control.`
+          : cpuEffective
+            ? `Currently using ${cpuEffective} of up to ${cpuMaximum} performance ${cpuMaximum === 1 ? "core" : "cores"}. Auto leaves room for the rest of your Mac.`
+            : `Choose how many performance cores this model may use. Auto leaves room for the rest of your Mac.`;
+
+        const contextMaximum = positiveRuntimeInteger(context.maximum);
+        const contextEffective = positiveRuntimeInteger(context.effective);
+        const contextRequested = context.requested === "auto" ? "auto" : positiveRuntimeInteger(context.requested);
+        const commonContextPresets = [2048, 4096, 8192, 16384, 24576, 32768, 65536, 131072, 262144];
+        const contextPresets = new Set(commonContextPresets.filter(value => !contextMaximum || value <= contextMaximum));
+        if (contextRequested) contextPresets.add(contextRequested);
+        els.contextTokens.textContent = "";
+        runtimeOption(els.contextTokens, "auto", "Auto (recommended)");
+        for (const tokens of [...contextPresets].sort((a, b) => a - b)) runtimeOption(els.contextTokens, tokens, `${tokens.toLocaleString()} tokens`);
+        runtimeOption(els.contextTokens, "custom", "Custom…");
+        els.contextTokens.value = contextRequested ? String(contextRequested) : "auto";
+        els.contextCustom.value = "";
+        els.contextEffective.textContent = contextEffective ? `${contextEffective.toLocaleString()} tokens active` : "Auto sizing";
+        els.contextHelp.className = context.locked ? "runtime-managed" : "";
+        els.contextHelp.textContent = context.locked
+          ? `Managed by ${runtimeSourceCopy(context.source)}; the active window is ${contextEffective ? contextEffective.toLocaleString() : "automatically sized"} tokens.`
+          : `${contextEffective ? `${contextEffective.toLocaleString()} tokens active` : "The runtime will choose a safe window"}${contextMaximum ? ` · ${contextMaximum.toLocaleString()} maximum` : ""}. History, thinking, and the answer share it.`;
+
+        els.autoCompact.checked = compaction.auto !== false;
+        const threshold = Number.isInteger(Number(compaction.threshold_percent)) ? String(compaction.threshold_percent) : "80";
+        if (![...els.compactThreshold.options].some(option => option.value === threshold)) runtimeOption(els.compactThreshold, threshold, `At ${threshold}% projected use`);
+        els.compactThreshold.value = threshold;
+        if (compaction.supported) {
+          els.compactHelp.className = "";
+          els.compactHelp.textContent = compaction.manual_supported
+            ? "Compaction keeps durable context and recent turns while making room."
+            : "Automatic compaction is available; manual compaction is not supported by this model runtime.";
+        } else {
+          els.compactHelp.className = "runtime-managed";
+          els.compactHelp.textContent = compaction.reason || "This model runtime does not support conversation compaction.";
+        }
+
+        els.runtimeApplyTitle.textContent = `${settings.label || settings.backend || "Active model"} settings`;
+        els.runtimeApply.textContent = settings.apply_requires_restart === false ? "Apply changes" : "Apply & restart model";
+        els.runtimeSettingsStatus.className = "runtime-status";
+        els.runtimeSettingsStatus.textContent = cpu.locked || context.locked
+          ? "Some values are managed outside Samosa. Other changes can still be applied here."
+          : "These settings are saved on this Mac and follow the active model.";
+        updateRuntimeControlAvailability();
+      }
+      function markRuntimeSettingsDirty() {
+        if (!runtimeSettings || runtimeSettingsApplying) return;
+        runtimeSettingsDirty = true;
+        els.runtimeSettingsStatus.className = "runtime-status";
+        els.runtimeSettingsStatus.textContent = runtimeSettings.apply_requires_restart === false
+          ? "Changes are ready to apply."
+          : "Changes are ready. Applying them will restart the active model.";
+        updateRuntimeControlAvailability();
+      }
+      async function refreshRuntimeSettings({force = false} = {}) {
+        const request = ++runtimeSettingsRequest;
+        if (!runtimeSettings && !runtimeSettingsDirty) {
+          els.runtimeSettingsStatus.className = "runtime-status";
+          els.runtimeSettingsStatus.textContent = "Loading settings from this Mac…";
+        }
         try {
-          const r=await authFetch("/v1/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context_tokens:value,auto_compact:els.autoCompact.checked,compact_threshold_percent:Number(els.compactThreshold.value)})});
-          const result=await r.json(); if(!r.ok)throw new Error(result.error?.message||"Could not change the context setting.");
-          state.settings.contextConfigured=true; saveState();
-          const effective=Number(result.context_limit_tokens||0), model=Number(result.model_context_limit_tokens||0);
-          if(effective) { els.context.textContent=`${effective.toLocaleString()} tokens`; els.contextHelp.textContent=`${result.context_limit_mode} total context: ${effective.toLocaleString()} tokens (model maximum ${model.toLocaleString()}). History, thinking, and the answer share it.`; }
-          else els.contextHelp.textContent="The runtime is fitting the largest context this hardware can safely hold.";
-          els.compactHelp.textContent=`Auto-compaction is ${result.auto_compact?"on":"off"} at ${result.compact_threshold_percent}% projected use. Manual compaction keeps this chat and its visible messages.`;
+          const response = await authFetch("/v1/runtime/settings", {cache:"no-store"});
+          const result = await response.json().catch(() => null);
+          if (!response.ok || !result) throw new Error(result?.error?.message || "Could not load the active model settings.");
+          if (request !== runtimeSettingsRequest) return null;
+          const backendChanged = !!runtimeSettings && runtimeSettings.backend !== result.backend;
+          runtimeSettings = result;
+          if (force || backendChanged || !runtimeSettingsDirty) {
+            runtimeSettingsDirty = false;
+            renderRuntimeSettings(result);
+          }
+          return result;
+        } catch (error) {
+          if (request !== runtimeSettingsRequest) return null;
+          // A forced refresh accompanies Settings-open and backend changes.
+          // If it fails, an older model's limits must not remain actionable.
+          if (force) { runtimeSettings = null; runtimeSettingsDirty = false; }
+          els.runtimeSettingsStatus.className = "runtime-status error";
+          els.runtimeSettingsStatus.textContent = error.message || String(error);
+          updateRuntimeControlAvailability();
+          return null;
+        }
+      }
+      async function applyRuntimeSettings() {
+        if (!runtimeSettings || runtimeSettingsApplying || !runtimeSettingsDirty) return false;
+        const cpuValue = els.cpuThreads.value;
+        const cpuThreads = cpuValue === "auto" ? "auto" : positiveRuntimeInteger(cpuValue);
+        const contextRaw = contextValue();
+        const contextTokens = contextRaw === "auto" ? "auto" : positiveRuntimeInteger(contextRaw);
+        const cpuMaximum = positiveRuntimeInteger(runtimeSettings.cpu_threads?.maximum);
+        const contextMaximum = positiveRuntimeInteger(runtimeSettings.context?.maximum);
+        if (!cpuThreads || (cpuThreads !== "auto" && cpuMaximum && cpuThreads > cpuMaximum)) {
+          els.runtimeSettingsStatus.className = "runtime-status error";
+          els.runtimeSettingsStatus.textContent = `Choose Auto or a CPU value from 1 to ${cpuMaximum || "the available maximum"}.`;
+          return false;
+        }
+        if (!contextTokens || (contextTokens !== "auto" && (contextTokens < 2 || (contextMaximum && contextTokens > contextMaximum)))) {
+          els.runtimeSettingsStatus.className = "runtime-status error";
+          els.runtimeSettingsStatus.textContent = contextTokens && contextTokens !== "auto" && contextTokens >= 2 && contextMaximum
+            ? `The context window cannot exceed ${contextMaximum.toLocaleString()} tokens for this model.`
+            : "Enter a whole-token context window of 2 or more, or choose Auto.";
+          return false;
+        }
+        const compaction = runtimeSettings.compaction || {};
+        const threshold = positiveRuntimeInteger(els.compactThreshold.value) || positiveRuntimeInteger(compaction.threshold_percent) || 80;
+        const payload = {
+          cpu_threads: runtimeSettings.cpu_threads?.locked ? runtimeSettings.cpu_threads.requested : cpuThreads,
+          context_tokens: runtimeSettings.context?.locked ? runtimeSettings.context.requested : contextTokens,
+          auto_compact: compaction.supported ? els.autoCompact.checked : !!compaction.auto,
+          compact_threshold_percent: compaction.supported ? threshold : (positiveRuntimeInteger(compaction.threshold_percent) || 80),
+        };
+        runtimeSettingsApplying = true;
+        ++runtimeSettingsRequest; // invalidate any slower GET that started before this Apply
+        els.runtimeSettingsStatus.className = "runtime-status";
+        els.runtimeSettingsStatus.textContent = runtimeSettings.apply_requires_restart === false
+          ? "Saving the active model settings…"
+          : "Saving settings and restarting the active model…";
+        updateRuntimeControlAvailability();
+        try {
+          const response = await authFetch("/v1/runtime/settings", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+          const result = await response.json().catch(() => null);
+          if (!response.ok || !result) throw new Error(result?.error?.message || "Could not apply the active model settings.");
+          runtimeSettings = result;
+          runtimeSettingsDirty = false;
+          runtimeSettingsApplying = false;
+          renderRuntimeSettings(result);
+          els.runtimeSettingsStatus.className = "runtime-status success";
+          els.runtimeSettingsStatus.textContent = result.loading
+            ? `${result.label || result.backend || "The model"} is restarting with the new settings…`
+            : result.restarted
+              ? `${result.label || result.backend || "The model"} restarted with the new settings.`
+              : "The active model settings were applied.";
+          updateRuntimeControlAvailability();
+          health();
           return true;
-        } catch(error) { if(!silent)els.contextHelp.textContent=error.message||String(error); return false; }
-        finally { els.applyContext.disabled=false; }
+        } catch (error) {
+          runtimeSettingsApplying = false;
+          els.runtimeSettingsStatus.className = "runtime-status error";
+          els.runtimeSettingsStatus.textContent = error.message || String(error);
+          updateRuntimeControlAvailability();
+          return false;
+        }
       }
       async function compactNow() {
         if(generating)return;
@@ -1823,26 +3413,9 @@
           els.compactHelp.textContent=`Compacted ${result.before_tokens.toLocaleString()} → ${result.after_tokens.toLocaleString()} tokens; retained ${result.retained_recent_tokens.toLocaleString()} recent tokens verbatim.`;
           els.closure.textContent="Compacted";health();
         } catch(error){els.compactHelp.textContent=error.message||String(error);els.closure.textContent="Compaction failed";}
-        finally{setGenerating(false);els.compactNow.disabled=false;els.prompt.focus();}
+        finally{setGenerating(false);updateRuntimeControlAvailability();els.prompt.focus();}
       }
-      async function switchBackend() {
-        const requested=els.modelBackend.value;
-        if(requested===backend.id)return;
-        if(generating){els.modelBackend.value=backend.id;return;}
-        const previous=backend.id;
-        els.modelBackend.disabled=true; els.status.textContent="Switching local models…"; els.dot.className="status-dot"; els.sideDot.className="status-dot"; els.sideStatus.textContent="Switching…";
-        try {
-          const r=await fetch("/v1/backends/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:requested})});
-          if(!r.ok){const j=await r.json();throw new Error(j.error?.message||"Model switch failed");}
-          backend={...backend,id:requested,ready:false};
-          healthInitialized=false;
-          currentId=null; ensureChat(); render();
-          await health();
-        } catch(error) {
-          els.modelBackend.value=previous;
-          alert(error.message||String(error));
-        } finally {els.modelBackend.disabled=false;}
-      }
+      // --- Advanced runtime settings END -----------------------------------
       // --- T3.2 composer attachments (docs/TASKS_UI_CHUTNI.md sec5.8) -------
       // Capability gating is driven entirely by what the server reports, so
       // the UI can never present a working action for a route the packaged
@@ -2178,6 +3751,13 @@
         if (nextStep === "name" || nextStep === "welcome" || nextStep === "chat") return nextStep;
         return "model";
       }
+      // First-run setup is allowed to choose the app's top-level surface only
+      // until Chat has bootstrapped. Model downloads and switches reuse these
+      // cards from Settings, but their transient "download"/"starting" status
+      // must never send a returning user back into onboarding.
+      function setupViewForStatus(status, alreadyInChat) {
+        return alreadyInChat ? "chat" : setupViewForNextStep(status?.next_step);
+      }
       function formatBytes(n) {
         const bytes = Number(n) || 0;
         if (bytes <= 0) return "0 B";
@@ -2230,7 +3810,7 @@
       // the catalog entry plus (if any) its correlated install job and
       // whether a selection is currently running for it. Pure -- rendering
       // just reads this; a DOM-fixture test can assert on it with no DOM.
-      function modelCardState(model, job, selectionInFlight, backendReady = true) {
+      function modelCardState(model, job, selectionInFlight, backendReady = true, selectionModelId = "") {
         if (!model.compatible) return { kind: "incompatible", reason: model.compatibility_reason || "Not compatible with this machine." };
         if (job && ["queued", "downloading", "verifying", "installing"].includes(job.state)) return { kind: "downloading", job };
         if (job && job.state === "paused") return { kind: "paused", job };
@@ -2239,7 +3819,7 @@
         }
         if (model.install_state === "ready") {
           if (model.active && !backendReady) return { kind: "activating" };
-          return { kind: model.active ? "active" : (selectionInFlight ? "activating" : "ready") };
+          return { kind: model.active ? "active" : (selectionInFlight && (!selectionModelId || model.id === selectionModelId) ? "activating" : "ready") };
         }
         return { kind: "not_installed" };
       }
@@ -2264,7 +3844,7 @@
       function modelCardStatusText(state) {
         switch (state.kind) {
           case "failed": return state.message;
-          case "active": return "Ready on this Mac";
+          case "active": return "Ready";
           case "activating": return "Starting…";
           case "paused": return "Paused";
           default: return "";
@@ -2314,8 +3894,8 @@
           mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>',
         };
       }
-      function buildModelCard(model, job, selectionInFlight, backendReady = true) {
-        const state = modelCardState(model, job, selectionInFlight, backendReady);
+      function buildModelCard(model, job, selectionInFlight, backendReady, errorEl, selectionModelId) {
+        const state = modelCardState(model, job, selectionInFlight, backendReady, selectionModelId);
         const card = document.createElement("div");
         card.className = "model-card" + (state.kind === "active" ? " active" : "");
         card.setAttribute("data-model-id", model.id);
@@ -2411,25 +3991,27 @@
           const button = document.createElement("button");
           button.type = "button";
           button.textContent = spec.label;
+          button.setAttribute("data-settings-focus-key", `model:${model.id}:${spec.action}`);
           if (spec.primary) button.className = "primary";
-          button.onclick = async () => { button.disabled = true; await runModelCardAction(spec.action, model, state.job); };
+          button.onclick = async () => { button.disabled = true; await runModelCardAction(spec.action, model, state.job, errorEl); };
           actionsWrap.appendChild(button);
         }
         card.appendChild(actionsWrap);
         return card;
       }
-      function renderModelCards(status) {
-        setupEls.modelList.innerHTML = "";
+      function renderModelCards(container, errorEl, status) {
+        container.innerHTML = "";
         const activeInstallJobId = status?.active_install_job_id || null;
         const selectionInFlight = !!status?.active_selection_operation_id;
+        const selectionModelId = status?.selected_model_id || "";
         const backendReady = status?.active_model_ready !== false;
         for (const model of modelCatalog) {
           const job = installForModel(model.id, setupInstalls, activeInstallJobId);
-          setupEls.modelList.appendChild(buildModelCard(model, job, selectionInFlight, backendReady));
+          container.appendChild(buildModelCard(model, job, selectionInFlight, backendReady, errorEl, selectionModelId));
         }
         if (!modelCatalog.length) {
           const empty = document.createElement("p"); empty.className = "setup-caption"; empty.textContent = "No models are available in this build.";
-          setupEls.modelList.appendChild(empty);
+          container.appendChild(empty);
         }
       }
       async function refreshSetupModel(status) {
@@ -2439,7 +4021,9 @@
             authFetch("/v1/models/installs", { cache: "no-store" }),
           ]);
           if (!catalogResp.ok) throw new Error("catalog_failed");
-          modelCatalog = (await catalogResp.json()).models || [];
+          const allModels = (await catalogResp.json()).models || [];
+          modelCatalog = allModels.filter(model => model.family !== "voice" && model.backend_kind !== "whisper_cpp");
+          if (typeof voiceCatalog !== "undefined") voiceCatalog = allModels.filter(model => model.family === "voice" || model.backend_kind === "whisper_cpp");
           setupInstalls = installsResp.ok ? (await installsResp.json()).jobs || [] : [];
         } catch (_) {
           setupEls.modelError.textContent = "Couldn't load the model list. Check your connection and try again.";
@@ -2447,31 +4031,48 @@
           return;
         }
         setupEls.modelError.hidden = true;
-        renderModelCards(status);
+        renderModelCards(setupEls.modelList, setupEls.modelError, status);
       }
-      async function runModelCardAction(action, model, job) {
-        setupEls.modelError.hidden = true;
+      async function runModelCardAction(action, model, job, errorEl) {
+        errorEl = errorEl || setupEls.modelError;
+        errorEl.hidden = true;
+        let returnToChatAfterSelection = false;
         try {
+          const requireSuccess = async (response, fallback) => {
+            if (response.ok) return response;
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error?.message || fallback);
+          };
           if (action === "install") {
             const r = await authFetch("/v1/models/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: model.id, version: model.version }) });
-            if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || "Could not start the download."); }
+            await requireSuccess(r, "Could not start the download.");
           } else if (action === "pause") {
-            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/pause`, { method: "POST" });
+            await requireSuccess(await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/pause`, { method: "POST" }), "Could not pause the download.");
           } else if (action === "resume") {
-            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/resume`, { method: "POST" });
+            await requireSuccess(await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/resume`, { method: "POST" }), "Could not resume the download.");
           } else if (action === "cancel") {
-            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST" });
+            await requireSuccess(await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST" }), "Could not cancel the download.");
           } else if (action === "retry") {
-            await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/retry`, { method: "POST" });
+            await requireSuccess(await authFetch(`/v1/models/installs/${encodeURIComponent(job.job_id)}/retry`, { method: "POST" }), "Could not retry the download.");
           } else if (action === "select") {
             const r = await authFetch("/v1/backends/select", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backend: model.id, model_version: model.version }) });
-            if (!r.ok) { const j = await r.json(); throw new Error(j.error?.message || selectionErrorMessage(j.error?.code)); }
+            if (!r.ok) { const j = await r.json().catch(() => null); throw new Error(j?.error?.message || selectionErrorMessage(j?.error?.code)); }
+            returnToChatAfterSelection = chatBootstrapped;
           }
         } catch (error) {
-          setupEls.modelError.textContent = error.message || String(error);
-          setupEls.modelError.hidden = false;
+          errorEl.textContent = error.message || String(error);
+          errorEl.hidden = false;
         }
-        await refreshSetup();
+        // A Settings selection is a route back to a fresh conversation. The
+        // chat header reports Loading until the backend is ready; onboarding
+        // is strictly a first-run surface and must not reappear here.
+        if (returnToChatAfterSelection) {
+          newChat();
+          await health();
+        } else {
+          await refreshSetup();
+        }
+        if (els.settings.classList.contains("open")) await refreshSettingsModels();
       }
       function stopSetupPolling() { if (setupPollTimer) { clearInterval(setupPollTimer); setupPollTimer = null; } }
       function startSetupPolling() { stopSetupPolling(); setupPollTimer = setInterval(refreshSetup, 1500); }
@@ -2498,7 +4099,6 @@
           .then(r => (r.ok ? r.json() : null))
           .then(p => { if (p && p.name) { profileName = p.name; renderMessages(); } })
           .catch(() => {});
-        if (state.settings?.contextConfigured) applyContextSetting(true);
         setInterval(health, 5000);
         els.prompt.focus();
       }
@@ -2518,7 +4118,7 @@
           setupShowBanner("Couldn't reach the local Samosa server. Check that it's running and try again.", true);
           return;
         }
-        const view = setupViewForNextStep(status.next_step);
+        const view = setupViewForStatus(status, chatBootstrapped);
         if (view === "chat") { enterChat(); return; }
         setupEls.root.hidden = false; setupEls.shell.hidden = true;
         setupShowBanner("");
@@ -2568,9 +4168,11 @@
 
       function showView(name) {
         const jobs = name === "jobs", chutni = name === "chutni", chat = !jobs && !chutni;
+        $("shell").dataset.view = jobs ? "jobs" : (chutni ? "chutni" : "chat");
+        els.name.textContent = jobs ? "Jobs" : (chutni ? "Chutni" : (activeChat()?.title || "New conversation"));
         jobEls.view.hidden = !jobs;
         navEls.chutniView.hidden = !chutni;
-        for (const el of [els.messages, els.jump, jobEls.composer, jobEls.telemetry])
+        for (const el of [els.messages, els.jump, jobEls.composer])
           if (el) el.style.display = chat ? "" : "none";
         for (const [item, on] of [[navEls.chat, chat], [navEls.chutni, chutni], [navEls.jobs, jobs]]) {
           item.classList.toggle("active", on); item.setAttribute("aria-selected", String(on));
@@ -3835,8 +5437,49 @@
       }
       function chooserClearSelection() { chooserEls.selectedPath.hidden = true; chooserEls.selectedPath.textContent = ""; chooserEls.clearBtn.hidden = true; }
 
-      function openSettings() { els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false"); els.scrim.classList.add("show"); }
-      function closePanels() { els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true"); els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); saveState(); }
+      function selectSettingsPane(name) {
+        const selected = ["general", "models", "advanced", "voice", "privacy"].includes(name) ? name : "general";
+        document.querySelectorAll("[data-settings-pane-content]").forEach(pane => { pane.hidden = pane.dataset.settingsPaneContent !== selected; });
+        document.querySelectorAll("[data-settings-pane]").forEach(button => { const active = button.dataset.settingsPane === selected; button.classList.toggle("active", active); button.setAttribute("aria-current", active ? "page" : "false"); });
+        if (selected === "advanced" && !runtimeSettings) refreshRuntimeSettings();
+      }
+      function applyAppearance(value) {
+        const theme = ["light", "dark", "system"].includes(value) ? value : "light";
+        document.documentElement.dataset.theme = theme;
+        if (els.appearance) els.appearance.value = theme;
+      }
+      let settingsReturnFocus = null;
+      function settingsFocusableControls() {
+        return Array.from(els.settings.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+          .filter(control => !control.hidden && control.getClientRects().length > 0);
+      }
+      function settingsKeydown(event) {
+        if (!els.settings.classList.contains("open")) return;
+        if (event.key === "Escape") { event.preventDefault(); closePanels(); return; }
+        if (event.key !== "Tab") return;
+        const controls = settingsFocusableControls();
+        if (!controls.length) return;
+        const first = controls[0], last = controls[controls.length - 1], active = document.activeElement;
+        if (event.shiftKey && (active === first || !els.settings.contains(active))) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+      }
+      function openSettings() {
+        settingsReturnFocus = document.activeElement;
+        els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false");
+        $("shell").inert = true;
+        selectSettingsPane("general"); refreshSettingsModels(); refreshRuntimeSettings({force:true}); startSettingsPolling();
+        requestAnimationFrame(() => $("closeSettings").focus());
+      }
+      function closePanels() {
+        const settingsWasOpen = els.settings.classList.contains("open");
+        els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true");
+        $("shell").inert = false;
+        els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); stopSettingsPolling(); saveState();
+        if (settingsWasOpen && settingsReturnFocus?.focus) {
+          const focusTarget = settingsReturnFocus; settingsReturnFocus = null;
+          requestAnimationFrame(() => focusTarget.focus());
+        }
+      }
       
       // T3.2 composer `+` menu wiring. The button toggles the menu; each item
       // either opens its file picker or is disabled with a stated reason.
@@ -3877,6 +5520,8 @@
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
       $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
+      els.settings.addEventListener("keydown", settingsKeydown);
+      document.querySelectorAll("[data-settings-pane]").forEach(button => { button.onclick = () => selectSettingsPane(button.dataset.settingsPane); });
       chooserEls.openBtn.onclick=openChooser; chooserEls.close.onclick=closeChooser; chooserEls.scrim.onclick=closeChooser;
       chooserEls.up.onclick=()=>{ if (chooser.parent) chooserOpenPath(chooser.parent); };
       chooserEls.select.onclick=chooserConfirmSelection; chooserEls.clearBtn.onclick=chooserClearSelection;
@@ -3884,7 +5529,6 @@
       document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!els.mismatchDialog.hidden){e.preventDefault();closeMismatchDialog();}});
       els.migrationExport.onclick=exportMigrationRecovery; els.migrationReset.onclick=resetMigrationRecovery;
       if (migrationRecoveryRaw) showMigrationBanner();
-      els.modelBackend.onchange=switchBackend;
       navEls.chat.onclick=()=>showView("chat"); navEls.chutni.onclick=()=>showView("chutni"); navEls.jobs.onclick=()=>showView("jobs");
       els.chatMemoryChange.onclick=()=>showView("chutni");
       // T3.3 wiring.
@@ -3958,14 +5602,31 @@
       jobEls.previewDef.onclick=previewDefinitionJob;
       jobEls.runDef.onclick=runDefinitionJob;
       els.composer.onsubmit=e=>{e.preventDefault();sendPrompt(els.prompt.value)};
+      els.voiceToggle.onclick = () => startHandsfree();
+      els.voiceMic.onclick = () => startHandsfree();
+      els.voiceStageCancel.onclick = cancelHandsfree;
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
       els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
       els.prompt.oninput=resizePrompt; els.prompt.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.composer.requestSubmit()}};
-      for(const control of [els.thinking,els.maxTokens,els.seed]) control.onchange=()=>{saveState();els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text};
-      els.contextTokens.onchange=()=>{syncContextCustom();saveState()}; els.autoCompact.onchange=()=>{saveState();applyContextSetting()};els.compactThreshold.onchange=()=>{saveState();applyContextSetting()};els.applyContext.onclick=()=>applyContextSetting();els.compactNow.onclick=compactNow;
+      for(const control of [els.thinking,els.maxTokens,els.seed]) control.onchange=()=>{saveState();els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text; if (els.composerThinking) els.composerThinking.value=els.thinking.value};
+      els.composerThinking.onchange=()=>{els.thinking.value=els.composerThinking.value; saveState(); els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text};
+      els.appearance.value=state.settings?.appearance||"light"; applyAppearance(els.appearance.value); els.appearance.onchange=()=>{applyAppearance(els.appearance.value);saveState()};
+      els.cpuThreads.onchange=markRuntimeSettingsDirty;
+      els.contextTokens.onchange=()=>{syncContextCustom();markRuntimeSettingsDirty()};
+      els.contextCustom.oninput=markRuntimeSettingsDirty;
+      els.autoCompact.onchange=()=>{markRuntimeSettingsDirty();updateRuntimeControlAvailability()};
+      els.compactThreshold.onchange=markRuntimeSettingsDirty;
+      els.runtimeApply.onclick=applyRuntimeSettings;
+      els.compactNow.onclick=compactNow;
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
-      els.contextTokens.value=state.settings?.contextTokens||"auto"; els.contextCustom.value=state.settings?.contextCustom||""; syncContextCustom();
-      els.autoCompact.checked=state.settings?.autoCompact!==false;els.compactThreshold.value=state.settings?.compactThreshold||"80";
+      els.composerThinking.value=els.thinking.value;
+      syncContextCustom(); updateRuntimeControlAvailability();
+      els.voiceEnabled.checked=!!state.settings?.voiceEnabled;
+      els.voiceEnabled.onchange=saveState; els.voiceSelect.onchange=saveState;
+      els.voicePreview.onclick=()=>speakReply("This is Samosa speaking with the selected voice.");
+      refreshVoices(); if (voiceSupported()) window.speechSynthesis.onvoiceschanged=refreshVoices;
+      refreshVoiceStatus();
+      resizePrompt();
       els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text;
       // T2.4: the chat shell only ever bootstraps (ensureChat/render/health/
       // capabilities/profile, all inside enterChat()) once GET /v1/setup/status

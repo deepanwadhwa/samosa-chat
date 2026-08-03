@@ -1,142 +1,111 @@
-/* T2.1 (docs/TASKS_UI_CHUTNI.md sec5.3) DOM fixture coverage for the
- * catalog-driven model <select>. The production app is a dependency-free
- * static page (no browser test runner in this repo), so this evaluates the
- * exact shipped source block against a tiny hand-rolled DOM fixture instead
- * of introducing a real-browser dependency -- same pattern as
- * tests/test_chooser_ui.mjs. It cannot replace a real Safari/Chrome/Firefox
- * click-through. What it proves: the <option> list is rebuilt from whatever
- * GET /v1/models/catalog returns (ids, labels, compatibility, install
- * state), not from a hardcoded list baked into app.html. */
+/* T2.1/Settings-models DOM fixture coverage for refreshSettingsModels(), the
+ * function that lets a returning user (past first-run setup) reach the same
+ * catalog-driven Download/Pause/Resume/Cancel/Retry/Use cards from Settings
+ * that setupEls.modelList already offered during onboarding. The production
+ * app is a dependency-free static page (no browser test runner in this
+ * repo), so this evaluates the exact shipped source block against a tiny
+ * hand-rolled fixture instead of introducing a real-browser dependency --
+ * same pattern as tests/test_chooser_ui.mjs and tests/test_setup_flow_ui.mjs.
+ * It cannot replace a real Safari/Chrome/Firefox click-through.
+ *
+ * What it proves: the fetch orchestration (setup/status, then catalog +
+ * installs in parallel), the module-scope modelCatalog/setupInstalls
+ * assignment, the settingsModelError show/hide, and the exact container/
+ * errorEl/status arguments handed to renderModelCards -- not
+ * renderModelCards' own rendering, which tests/test_setup_flow_ui.mjs
+ * already covers directly and this file deliberately does not re-test.
+ *
+ * This file previously covered the catalog-driven <select id="modelBackend">
+ * (modelIsSelectable/modelOptionLabel/renderModelOptions/refreshModels).
+ * That dropdown-only UI is gone -- a not-installed model in Settings now
+ * gets the same card-based Download action the setup flow always had,
+ * closing the "no way to add a model after onboarding" gap. */
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
-class Element {
-  constructor(tag = "div") {
-    this.tagName = tag.toLowerCase();
-    this.children = [];
-    this.value = "";
-    this.disabled = false;
-    this.selected = false;
-    this.textContent = "";
-    this.attrs = {};
-  }
-  appendChild(child) { this.children.push(child); return child; }
-  setAttribute(name, value) { this.attrs[name] = String(value); }
-  getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; }
-  get innerHTML() { return this._innerHTML || ""; }
-  set innerHTML(value) { this._innerHTML = value; this.children = []; }
-}
-
-// Mimics real <select> value semantics closely enough for this test: the
-// setter selects whichever option matches, or leaves nothing selected (and
-// therefore value === "") if no option matches -- it does not retain
-// whatever was previously selected.
-class SelectElement extends Element {
-  constructor() { super("select"); }
-  get options() { return this.children; }
-  get value() {
-    const picked = this.children.find(o => o.selected);
-    return picked ? picked.value : "";
-  }
-  set value(v) {
-    for (const o of this.children) o.selected = (o.value === v);
-  }
-}
-
-globalThis.document = {
-  createElement: tag => new Element(tag),
-};
-
 const app = readFileSync(new URL("../assets/app.html", import.meta.url), "utf8");
-const begin = app.indexOf("      function modelIsSelectable");
-const end = app.indexOf("      function contextValue");
-assert.ok(begin >= 0 && end > begin, "T2.1 model-catalog block must remain extractable");
+const begin = app.indexOf("      async function refreshSettingsModels() {");
+const end = app.indexOf("      function contextValue() {");
+assert.ok(begin >= 0 && end > begin, "the refreshSettingsModels block must remain extractable");
 
-function loadModelCatalogUi({ authFetch, activeBackend }) {
-  globalThis.els = { modelBackend: new SelectElement() };
-  globalThis.backend = activeBackend || { id: "qwen" };
+function loadSettingsModelsUi({ fetchSetupStatus, authFetch }) {
+  globalThis.els = {
+    settingsModelList: { tag: "settingsModelList" },
+    settingsModelError: { hidden: true, textContent: "" },
+  };
   globalThis.modelCatalog = [];
+  globalThis.setupInstalls = [];
+  globalThis.fetchSetupStatus = fetchSetupStatus;
   globalThis.authFetch = authFetch;
+  const renderCalls = [];
+  globalThis.renderModelCards = (container, errorEl, status) => { renderCalls.push({ container, errorEl, status }); };
   const fns = eval(`(() => {${app.slice(begin, end)}
-    return { modelIsSelectable, modelOptionLabel, renderModelOptions, refreshModels };
+    return { refreshSettingsModels };
   })()`);
-  return { fns, els: globalThis.els };
+  return { fns, els: globalThis.els, renderCalls };
 }
 
 function jsonResponse(body, ok = true) { return { ok, json: async () => body }; }
 
 const READY_QWEN = { id: "qwen", label: "Qwen3.6 35B A3B", compatible: true, install_state: "ready" };
 const NOT_INSTALLED_BONSAI = { id: "bonsai", label: "Bonsai 27B 1-bit", compatible: true, install_state: "not_installed" };
-const INCOMPATIBLE_ORNITH = { id: "ornith", label: "Ornith 1.0 9B", compatible: false, install_state: "unavailable" };
+const STATUS = { active_install_job_id: null, active_selection_operation_id: null, active_model_ready: true };
 
-// --- modelIsSelectable / modelOptionLabel: pure per-model classification --
+// --- happy path: setup/status, then catalog + installs, then a single render call ---
 {
-  const { fns } = loadModelCatalogUi({ authFetch: async () => jsonResponse({}) });
-  assert.equal(fns.modelIsSelectable(READY_QWEN), true);
-  assert.equal(fns.modelOptionLabel(READY_QWEN), "Qwen3.6 35B A3B", "a ready, compatible model's label is unchanged");
-  assert.equal(fns.modelIsSelectable(NOT_INSTALLED_BONSAI), false);
-  assert.equal(fns.modelOptionLabel(NOT_INSTALLED_BONSAI), "Bonsai 27B 1-bit (not installed)");
-  assert.equal(fns.modelIsSelectable(INCOMPATIBLE_ORNITH), false);
-  assert.equal(fns.modelOptionLabel(INCOMPATIBLE_ORNITH), "Ornith 1.0 9B (not compatible with this Mac)");
-}
-
-// --- renderModelOptions: builds one <option> per catalog entry, no hardcoded list ---
-{
-  const { fns, els } = loadModelCatalogUi({ authFetch: async () => jsonResponse({}) });
-  globalThis.modelCatalog = [READY_QWEN, NOT_INSTALLED_BONSAI, INCOMPATIBLE_ORNITH];
-  fns.renderModelOptions();
-  assert.equal(els.modelBackend.options.length, 3, "the select must have exactly the catalog's models, nothing baked in");
-  const [qwenOpt, bonsaiOpt, ornithOpt] = els.modelBackend.options;
-  assert.equal(qwenOpt.value, "qwen"); assert.equal(qwenOpt.disabled, false);
-  assert.equal(bonsaiOpt.value, "bonsai"); assert.equal(bonsaiOpt.disabled, true, "not_installed must not be selectable");
-  assert.equal(bonsaiOpt.textContent, "Bonsai 27B 1-bit (not installed)");
-  assert.equal(ornithOpt.value, "ornith"); assert.equal(ornithOpt.disabled, true, "incompatible must not be selectable");
-  assert.equal(els.modelBackend.value, "qwen", "falls back to the active backend id when nothing was already selected");
-}
-
-// --- renderModelOptions: preserves the current selection across a rebuild --
-{
-  const { fns, els } = loadModelCatalogUi({ authFetch: async () => jsonResponse({}), activeBackend: { id: "qwen" } });
-  globalThis.modelCatalog = [READY_QWEN, NOT_INSTALLED_BONSAI];
-  fns.renderModelOptions();
-  els.modelBackend.value = "bonsai"; // simulate an explicit prior selection unrelated to backend.id
-  globalThis.modelCatalog = [READY_QWEN, { ...NOT_INSTALLED_BONSAI, install_state: "ready" }];
-  fns.renderModelOptions();
-  assert.equal(els.modelBackend.value, "bonsai", "a still-present selection must survive a catalog refresh");
-}
-
-// --- renderModelOptions: falls back to backend.id if the prior selection vanished ---
-{
-  const { fns, els } = loadModelCatalogUi({ authFetch: async () => jsonResponse({}), activeBackend: { id: "ornith" } });
-  globalThis.modelCatalog = [READY_QWEN, NOT_INSTALLED_BONSAI];
-  fns.renderModelOptions();
-  els.modelBackend.value = "bonsai";
-  globalThis.modelCatalog = [READY_QWEN, { ...INCOMPATIBLE_ORNITH, install_state: "ready", compatible: true }]; // bonsai dropped from the catalog entirely
-  fns.renderModelOptions();
-  assert.equal(els.modelBackend.value, "ornith", "must fall back to the active backend id, not silently keep a stale selection");
-}
-
-// --- refreshModels: fetches the real catalog endpoint with the session token, not /v1/backends ---
-{
-  let requestedPath = null, requestedOpts = null;
-  const { fns, els } = loadModelCatalogUi({
-    authFetch: async (path, opts) => { requestedPath = path; requestedOpts = opts; return jsonResponse({ models: [READY_QWEN, NOT_INSTALLED_BONSAI] }); },
-    activeBackend: { id: "qwen" },
+  const requested = [];
+  const { fns, els, renderCalls } = loadSettingsModelsUi({
+    fetchSetupStatus: async () => STATUS,
+    authFetch: async (path, opts) => {
+      requested.push(path);
+      if (path === "/v1/models/catalog") return jsonResponse({ models: [READY_QWEN, NOT_INSTALLED_BONSAI] });
+      if (path === "/v1/models/installs") return jsonResponse({ jobs: [{ job_id: "j1", model_id: "bonsai" }] });
+      throw new Error(`unexpected path ${path}`);
+    },
   });
-  await fns.refreshModels();
-  assert.equal(requestedPath, "/v1/models/catalog", "T2.1: the model list must come from the trusted catalog endpoint");
-  assert.deepEqual(requestedOpts, { cache: "no-store" });
-  assert.equal(els.modelBackend.options.length, 2);
-  assert.equal(els.modelBackend.options[0].textContent, "Qwen3.6 35B A3B");
+  await fns.refreshSettingsModels();
+  assert.deepEqual(requested.sort(), ["/v1/models/catalog", "/v1/models/installs"]);
+  assert.deepEqual(globalThis.modelCatalog, [READY_QWEN, NOT_INSTALLED_BONSAI], "T2.1: the model list must come from the trusted catalog endpoint, not a hardcoded list");
+  assert.deepEqual(globalThis.setupInstalls, [{ job_id: "j1", model_id: "bonsai" }]);
+  assert.equal(els.settingsModelError.hidden, true);
+  assert.equal(renderCalls.length, 1);
+  assert.equal(renderCalls[0].container, els.settingsModelList, "must render into the Settings container, not the setup-flow one");
+  assert.equal(renderCalls[0].errorEl, els.settingsModelError);
+  assert.deepEqual(renderCalls[0].status, STATUS, "must pass live setup/status through so a not-installed model in Settings can still show install/selection progress");
 }
 
-// --- refreshModels: a failed fetch leaves the existing options alone ------
+// --- a failed catalog fetch shows an error and never calls renderModelCards ---
 {
-  const { fns, els } = loadModelCatalogUi({ authFetch: async () => jsonResponse({}, false), activeBackend: { id: "qwen" } });
-  globalThis.modelCatalog = [READY_QWEN];
-  fns.renderModelOptions();
-  await fns.refreshModels();
-  assert.equal(els.modelBackend.options.length, 1, "a non-ok response must not clear or corrupt the current select");
+  const { fns, els, renderCalls } = loadSettingsModelsUi({
+    fetchSetupStatus: async () => STATUS,
+    authFetch: async (path) => (path === "/v1/models/catalog" ? jsonResponse({}, false) : jsonResponse({ jobs: [] })),
+  });
+  await fns.refreshSettingsModels();
+  assert.equal(els.settingsModelError.hidden, false);
+  assert.match(els.settingsModelError.textContent, /couldn't load/i);
+  assert.equal(renderCalls.length, 0, "a failed catalog fetch must not render a stale or empty card list silently");
 }
 
-process.stdout.write("model catalog UI DOM fixtures: PASS\n");
+// --- setup/status failing must not abort the catalog refresh (Settings works even if that call fails) ---
+{
+  const { fns, renderCalls } = loadSettingsModelsUi({
+    fetchSetupStatus: async () => { throw new Error("network down"); },
+    authFetch: async (path) => (path === "/v1/models/catalog" ? jsonResponse({ models: [READY_QWEN] }) : jsonResponse({ jobs: [] })),
+  });
+  await fns.refreshSettingsModels();
+  assert.equal(renderCalls.length, 1, "a setup/status failure is non-fatal -- the model list still renders");
+  assert.equal(renderCalls[0].status, null, "status is null, not a stale or fabricated value, when setup/status could not be read");
+}
+
+// --- an unavailable installs list degrades to no jobs, not a fatal error ---
+{
+  const { fns, renderCalls } = loadSettingsModelsUi({
+    fetchSetupStatus: async () => STATUS,
+    authFetch: async (path) => (path === "/v1/models/catalog" ? jsonResponse({ models: [READY_QWEN] }) : jsonResponse({}, false)),
+  });
+  await fns.refreshSettingsModels();
+  assert.deepEqual(globalThis.setupInstalls, [], "installs endpoint failing must not block rendering the catalog itself");
+  assert.equal(renderCalls.length, 1);
+}
+
+process.stdout.write("settings model catalog UI DOM fixtures: PASS\n");

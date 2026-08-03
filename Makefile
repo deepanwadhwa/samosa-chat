@@ -19,6 +19,11 @@ else
   OMP_CFLAGS := -fopenmp
   OMP_LDFLAGS :=
 endif
+ifeq ($(UNAME_S),Darwin)
+  DL_LDFLAGS :=
+else
+  DL_LDFLAGS := -ldl
+endif
 NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
 ENGINE_HEADERS := $(wildcard src/*.h)
 PDFIUM_DIR ?=
@@ -115,9 +120,12 @@ test-chutni: samosa-fs tests/test_chutni_inventory.sh
 # Bonsai/Ornith artifact bytes and SHA-256 hashes), validates it before
 # trusting any of it, and layers live compatible/install_state/active
 # detection on top using the gateway's existing per-backend fields. The
-# frontend half of T2.1 (assets/app.html's model <select>, rebuilt from this
-# endpoint instead of a hardcoded option list) has its own DOM-fixture
-# coverage in tests/test_model_catalog_ui.mjs, same pattern as
+# frontend originally rendered this into a plain model <select> that could
+# only switch between already-installed backends; Settings now reuses the
+# setup flow's own catalog-driven model cards (Download/Pause/Resume/Cancel/
+# Retry/Use) via refreshSettingsModels(), closing the "no way to add a model
+# after onboarding" gap without a second, weaker implementation. Its own
+# DOM-fixture coverage is in tests/test_model_catalog_ui.mjs, same pattern as
 # tests/test_chooser_ui.mjs. T2.2: POST /v1/models/install and friends
 # implement real resumable, verified, atomically-activated downloads against
 # tests/fake_model_download_server.c (T0.1), covering every documented
@@ -143,6 +151,19 @@ test-model-manager: samosa-gateway test_fake_openai_backend fake_model_download_
 	sh tests/test_model_selection.sh
 	sh tests/test_setup_flow.sh
 	node tests/test_setup_flow_ui.mjs
+
+# Browser-native, local TTS settings and reply playback. No local test server
+# is needed: the DOM fixture supplies the Web Speech API surface.
+test-voice-ui: tests/test_voice_ui.mjs assets/app.html
+	node tests/test_voice_ui.mjs
+
+test-kokoro-native: samosa-gateway tests/test_kokoro_native_gateway.sh tests/fake_kokoro_native.c src/samosa_kokoro.h
+	sh tests/test_kokoro_native_gateway.sh
+
+# Local hands-free voice: actual token-gated WAV validation and Whisper CLI
+# invocation through the compiled gateway, plus the browser UI fixture.
+test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-kokoro-native
+	sh tests/test_voice_gateway.sh
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
 # faster on a first read (reads are cached forever after). stb_image is compiled
@@ -197,7 +218,7 @@ r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_
 samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
-	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway
+	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
 chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
@@ -220,6 +241,12 @@ test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o $(BUILD_DIR)/test_fake_openai_backend
 
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_runtime_settings.c -o $(BUILD_DIR)/test_runtime_settings
+	$(BUILD_DIR)/test_runtime_settings
+
 # fake_model_download_server: deterministic stand-in for the trusted model
 # catalog's artifact host (docs/TASKS_UI_CHUTNI.md T0.1/T2.2). Ordinary tests
 # must never fetch a real multi-gigabyte model artifact.
@@ -241,7 +268,7 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # and the fail-closed-by-default /v1/ dispatcher gate (any new v1 route not
 # on the closed legacy-exemption list requires a valid session token before
 # route matching, so it can't ship unauthenticated by omission).
-test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs
+test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs tests/test_web_activity_ui.mjs
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
@@ -253,8 +280,9 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	sh tests/test_v1_fail_closed_default.sh
 	node tests/test_composer_ui.mjs
 	node tests/test_composer_perf.mjs
+	node tests/test_web_activity_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh
+compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \

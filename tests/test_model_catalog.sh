@@ -70,7 +70,7 @@ d = json.load(open('$TMP/r2.json'))
 assert d['schema_version'] == 1
 assert d['runtime_abi'] == 'samosa-model-runtime-v1'
 ids = sorted(m['id'] for m in d['models'])
-assert ids == ['bonsai', 'ornith', 'qwen'], ids
+assert ids == ['bonsai', 'ornith', 'qwen', 'voice-stt-whisper-base-en'], ids
 by_id = {m['id']: m for m in d['models']}
 # Nothing is installed in this sandboxed \$HOME_DIR -- every model must
 # report not_installed, never a false 'ready'.
@@ -86,6 +86,13 @@ for mid, m in by_id.items():
 assert by_id['qwen']['active'] is True
 assert by_id['bonsai']['active'] is False
 assert by_id['ornith']['active'] is False
+voice = by_id['voice-stt-whisper-base-en']
+assert voice['family'] == 'voice'
+assert voice['backend_kind'] == 'whisper_cpp'
+assert voice['active'] is False
+assert voice['install_state'] == 'not_installed'
+assert voice['download_bytes'] == 147964211
+assert voice['artifacts'][0]['sha256'] == 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002'
 # Spot-check the real, independently-verified Qwen artifact facts (bytes
 # and sha256 cross-checked against the actual hard-linked model and a
 # prior real release manifest -- see docs/regressions/ui-chutni/t2.1-evidence.md).

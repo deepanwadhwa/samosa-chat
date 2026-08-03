@@ -27,8 +27,12 @@ HOME_DIR="$TMP/home"
 # 19020-19021). PORT+1 is this run's backend port.
 PORT=19030
 GW_PID=""
+LIVE_PID=""
 
 cleanup() {
+  rm -f "${FAKE_CURL_BLOCK_AFTER_FIRST:-/nonexistent}"
+  [ -z "$LIVE_PID" ] || kill "$LIVE_PID" 2>/dev/null || true
+  [ -z "$LIVE_PID" ] || wait "$LIVE_PID" 2>/dev/null || true
   [ -z "$GW_PID" ] || kill "$GW_PID" 2>/dev/null || true
   [ -z "$GW_PID" ] || wait "$GW_PID" 2>/dev/null || true
   curl -sS -m 2 -X POST "http://127.0.0.1:$((PORT + 1))/shutdown" >/dev/null 2>&1 || true
@@ -72,6 +76,14 @@ body=$(value data-binary)
 case "$body" in
   @*) cat "${body#@}" >>"$FAKE_CURL_BODY" ;;
 esac
+if [ -n "${FAKE_CURL_BLOCK_AFTER_FIRST:-}" ] && [ -f "$FAKE_CURL_BLOCK_AFTER_FIRST" ]; then
+  count=0
+  [ ! -f "$FAKE_CURL_CALL_COUNT" ] || count=$(cat "$FAKE_CURL_CALL_COUNT")
+  count=$((count + 1)); printf '%s\n' "$count" >"$FAKE_CURL_CALL_COUNT"
+  if [ "$count" -gt 1 ]; then
+    while [ -f "$FAKE_CURL_BLOCK_AFTER_FIRST" ]; do sleep 0.05; done
+  fi
+fi
 [ -z "$head" ] || printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n' >"$head"
 [ -z "$out" ] || cat "$FAKE_CURL_RESPONSE" >"$out"
 printf '200'
@@ -82,6 +94,8 @@ export FAKE_CURL_CONFIG="$TMP/curl/config.txt"
 export FAKE_CURL_MODE="$TMP/curl/mode.txt"
 export FAKE_CURL_BODY="$TMP/curl/body.txt"
 export FAKE_CURL_RESPONSE="$TMP/curl/response.json"
+export FAKE_CURL_BLOCK_AFTER_FIRST="$TMP/curl/block-after-first"
+export FAKE_CURL_CALL_COUNT="$TMP/curl/call-count"
 : >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"; : >"$FAKE_CURL_MODE"; : >"$FAKE_CURL_BODY"
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[
@@ -491,19 +505,113 @@ cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[{"title":"Careers at Example","url":"http://example.com/jobs","description":"Open roles."}]}}
 JSON
 
-# 4a. `web: true` means the user clicked Web search. The prompt itself is
-# searched exactly once; no model planner decides whether or what to search.
+# 4a. `web: true` means the user explicitly asked Samosa to research. It plans
+# several focused searches locally; neither the entire message nor its obvious
+# personal details ever reach the search provider.
 : >"$FAKE_CURL_ARGV"
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
-              "messages":[{"role":"user","content":"web tool probe explicit search"}]}')
+              "messages":[{"role":"user","content":"My name is Ada Lovelace, my email is ada@example.com, and my phone is 555-0123. web tool probe explicit search"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "search evidence never reached the answering turn"
-printf '%s' "$R" | grep -q 'Searching the web for \\"web tool probe explicit search\\"' \
-  || fail "the selected Web search did not search the user's prompt"
-printf '%s' "$R" | grep -q 'Found 1 web result' || fail "no search completion event was streamed"
-[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "1" ] \
-  || fail "one Web search click did not issue exactly one provider request"
+printf '%s' "$R" | grep -q 'Working out what needs checking' || fail "the user was not told research had begun"
+printf '%s' "$R" | grep -q 'Looking up 1 of 3' || fail "focused search progress was not streamed"
+printf '%s' "$R" | grep -q '"web_source"' || fail "search result links were not streamed to the UI"
+printf '%s' "$R" | grep -q '"title":"Careers at Example"' || fail "the streamed source omitted its title"
+printf '%s' "$R" | grep -q '"url":"http://example.com/jobs"' || fail "the streamed source omitted its URL"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "3" ] \
+  || fail "one research request did not issue three focused searches"
+grep -q 'museum%20exhibitions%20New%20York' "$FAKE_CURL_CONFIG" || fail "first planned query was not sent"
+grep -q 'New%20York%20museum%20events%20this%20week' "$FAKE_CURL_CONFIG" || fail "second planned query was not sent"
+grep -q 'New%20York%20museum%20visitor%20guide' "$FAKE_CURL_CONFIG" || fail "third planned query was not sent"
+if grep -Eqi 'Ada|Lovelace|ada@example\.com|555-0123|web tool probe explicit search' "$FAKE_CURL_CONFIG"; then
+  fail "a raw message or personal detail reached the search provider"
+fi
 if printf '%s' "$R" | grep -q "$SECRET_KEY"; then fail "the API key reached the chat stream"; fi
+
+# A referential follow-up must be planned from the recent exchange, not from
+# the literal words "accuracy of the above". The fixture returns two queries
+# only when it sees the prior assistant claim; otherwise it returns a known-bad
+# meta-query, making context loss deterministic rather than subjective.
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[
+                {"role":"user","content":"web tool probe contextual: What changed in recent SQLite releases?"},
+                {"role":"assistant","content":"WAL2 is now the default journal mode in SQLite 3.49, which is the latest stable release."},
+                {"role":"user","content":"Check the accuracy of the above and give me the latest."}]}')
+printf '%s' "$R" | grep -q 'saw web evidence' || fail "contextual search evidence never reached the answer"
+printf '%s' "$R" | grep -q 'Looking up 1 of 2' || fail "a two-query plan did not report its first query"
+printf '%s' "$R" | grep -q 'Looking up 2 of 2' || fail "a two-query plan did not report its second query"
+if printf '%s' "$R" | grep -q 'Looking up 3 of'; then fail "a two-query plan was padded to three"; fi
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "2" ] \
+  || fail "the contextual two-query plan did not issue exactly two searches"
+grep -q 'SQLite%203.49%20release%20notes' "$FAKE_CURL_CONFIG" \
+  || fail "the prior assistant subject was missing from the first query"
+grep -q 'SQLite%20current%20stable%20release' "$FAKE_CURL_CONFIG" \
+  || fail "the prior assistant subject was missing from the second query"
+if grep -Eqi 'check(%20| )+(the%20|the )?accuracy|accuracy(%20| )+of(%20| )+the(%20| )+above' "$FAKE_CURL_CONFIG"; then
+  fail "the referential instruction itself reached the search provider"
+fi
+
+# If the local model fails to return JSON, the safety fallback must search the
+# prior assistant claim itself—not the generic follow-up or a padded variant.
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[
+                {"role":"user","content":"web tool probe fallback: Tell me about the Acme Zephyr 7."},
+                {"role":"assistant","content":"Acme Zephyr 7 uses sodium ion batteries and launched in 2026."},
+                {"role":"user","content":"check accuracy above information provide latest thanks"}]}')
+printf '%s' "$R" | grep -q 'saw web evidence' || fail "claim fallback evidence never reached the answer"
+printf '%s' "$R" | grep -q 'Looking up 1 of 1' || fail "a failed plan did not fall back to one claim query"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "1" ] \
+  || fail "a failed planner did not issue exactly one fallback search"
+grep -q 'Acme%20Zephyr%207%20uses%20sodium%20ion%20batteries%20and%20launched%20in%202026' "$FAKE_CURL_CONFIG" \
+  || fail "the fallback query was not derived from the prior assistant claim"
+if grep -Eqi 'check(%20| )+accuracy|provide(%20| )+latest' "$FAKE_CURL_CONFIG"; then
+  fail "the generic follow-up reached the provider through the fallback"
+fi
+
+# Dynamic planning can legitimately choose zero searches. A valid empty plan
+# is authoritative and must not be back-filled with mechanical variants.
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"Rewrite this sentence for clarity; no public facts are needed."}]}')
+printf '%s' "$R" | grep -q 'No useful public lookup was needed' \
+  || fail "a valid no-search decision was not reported"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "0" ] \
+  || fail "a valid empty query plan still contacted the provider"
+if printf '%s' "$R" | grep -q '"web_source"'; then fail "a no-search decision emitted a source"; fi
+
+# Even a syntactically valid planner reply cannot send an unresolved, meta-only
+# query. This guard is mechanical and does not rely on the model behaving.
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"check accuracy above information provide latest thanks"}]}')
+printf '%s' "$R" | grep -q 'nothing vague was sent to the web' \
+  || fail "a rejected meta-only query was not explained"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "0" ] \
+  || fail "a meta-only query reached the provider"
+
+# The first search-result link must reach the browser while later research is
+# still running, not as a replayed preamble after every provider call ends.
+rm -f "$FAKE_CURL_CALL_COUNT"; : >"$FAKE_CURL_BLOCK_AFTER_FIRST"
+LIVE_OUT="$TMP/live-web-stream.txt"
+auth -N -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+  --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+           "messages":[{"role":"user","content":"web tool probe live links"}]}' >"$LIVE_OUT" &
+LIVE_PID=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  grep -q '"web_source"' "$LIVE_OUT" 2>/dev/null && break
+  sleep 0.05; i=$((i + 1))
+done
+grep -q '"web_source"' "$LIVE_OUT" || fail "a source link did not stream before research finished"
+kill -0 "$LIVE_PID" 2>/dev/null || fail "the research turn finished before its source link became visible"
+rm -f "$FAKE_CURL_BLOCK_AFTER_FIRST"
+wait "$LIVE_PID"; LIVE_PID=""
 
 # 4b. `web_urls` -> read exactly what the user pasted, no planner involved.
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
@@ -511,6 +619,9 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
               "web_urls":["http://example.com/jobs"],
               "messages":[{"role":"user","content":"web tool probe pasted"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "a pasted web_urls page never reached the turn"
+printf '%s' "$R" | grep -q '"state":"checking"' || fail "a pasted page did not report that it was being checked"
+printf '%s' "$R" | grep -q '"state":"read"' || fail "a successful pasted page was not marked read"
+printf '%s' "$R" | grep -q '"title":"Careers"' || fail "the fetched page link omitted its extracted title"
 
 # 4c. The gate: a turn that asks for neither is untouched.
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
@@ -518,6 +629,7 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
               "messages":[{"role":"user","content":"web tool probe plain"}]}')
 printf '%s' "$R" | grep -q 'missing web evidence' || fail "a non-web turn was given web evidence"
 if printf '%s' "$R" | grep -q '"web_activity"'; then fail "a non-web turn emitted web activity events"; fi
+if printf '%s' "$R" | grep -q '"web_source"'; then fail "a non-web turn emitted web source events"; fi
 # Byte-identical to a pre-W turn: same body, no SSE preamble, no added fields.
 PLAIN=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,

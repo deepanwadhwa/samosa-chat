@@ -69,6 +69,11 @@ start_gateway() { # start_gateway [extra_env...] -- extra_env entries override t
     curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null | grep -q '"ready":true' && break
     sleep 0.05; i=$((i + 1))
   done
+  if [ "$i" -ge 100 ] || ! kill -0 "$GW_PID" 2>/dev/null; then
+    echo "FAIL: gateway did not reach a ready state"
+    sed -n '1,120p' "$TMP/stderr.log"
+    exit 1
+  fi
   TOKEN=$(cat "$HOME_DIR/run/ui-token")
 }
 stop_gateway() {
@@ -148,7 +153,7 @@ echo "reconnect mid-switch via GET /v1/models/selection/active: PASS"
 #        production grace period (a second switch arriving just as the
 #        first clears) is exercised implicitly by every other scenario in
 #        this file that switches, waits for ready, and switches again. ---
-start_gateway SAMOSA_FAKE_HEALTH_DELAY_MS=2000 SAMOSA_TEST_SELECTION_BUSY_WAIT_MS=0
+start_gateway SAMOSA_FAKE_HEALTH_DELAY_MS=800 SAMOSA_TEST_SELECTION_BUSY_WAIT_MS=0
 RESP=$(select_backend bonsai)
 JOB_ID=$(field "$RESP" job_id)
 STATUS=$(curl -sS -o "$TMP/busy.json" -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/backends/select" -d '{"backend":"qwen"}')
@@ -174,6 +179,21 @@ H=$(healthz)
 [ "$(cat "$HOME_DIR/model-backend")" = "qwen" ] || { echo "FAIL: model-backend file must never have been rewritten to bonsai"; exit 1; }
 stop_gateway
 echo "readiness timeout -> failed, restores the prior working backend: PASS"
+
+# --- 5b. Accepted-but-wedged health endpoint: accepting TCP and then never
+#         answering HTTP must not trap the watchdog (and UI) on Starting.
+#         The per-probe socket deadline lets the overall readiness timeout win. ---
+start_gateway SAMOSA_TEST_SELECTION_READY_TIMEOUT_MS=300 SAMOSA_FAKE_BONSAI_HEALTH_DELAY_MS=2000
+START_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+RESP=$(select_backend bonsai)
+JOB_ID=$(field "$RESP" job_id)
+FINAL=$(wait_terminal "$JOB_ID")
+END_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+[ "$(field "$FINAL" state)" = "failed" ] || { echo "FAIL: wedged health endpoint should fail, got $(field "$FINAL" state)"; echo "$FINAL"; exit 1; }
+printf '%s' "$FINAL" | grep -q '"code": *"readiness_timeout"' || { echo "FAIL: expected readiness_timeout for wedged health endpoint"; echo "$FINAL"; exit 1; }
+[ "$((END_MS - START_MS))" -lt 4000 ] || { echo "FAIL: a wedged health response must not leave selection stuck"; exit 1; }
+stop_gateway
+echo "wedged health response is bounded and reaches readiness_timeout: PASS"
 
 # --- 6. Immediate child crash: the target process exits before ever
 #        answering a probe. Distinguished from a timeout (fails fast, not

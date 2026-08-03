@@ -49,7 +49,9 @@ static int handler(SamosaHttpServer *server, int fd,
            file to force a fingerprint mismatch) before the switch's
            watchdog ever observes a successful probe. Zero by default --
            nothing but a test sets this. */
-        const char *delay = getenv("SAMOSA_FAKE_HEALTH_DELAY_MS");
+        const char *delay = !strcmp(request->path, "/health")
+            ? getenv("SAMOSA_FAKE_BONSAI_HEALTH_DELAY_MS") : NULL;
+        if (!delay || !*delay) delay = getenv("SAMOSA_FAKE_HEALTH_DELAY_MS");
         if (delay && *delay) sleep_ms(atol(delay));
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
     }
@@ -434,6 +436,49 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
+    }
+    /* Explicit Web research plans a dynamic number of focused queries locally
+       before any public request. The contextual case only succeeds when the
+       gateway supplied the prior assistant answer; without it the fixture
+       deliberately echoes the useless referential instruction. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Plan public-web research for this chat turn")) {
+        if (!strstr(request->body, "\"chat_template_kwargs\":{\"enable_thinking\":false}") ||
+            !strstr(request->body, "\"response_format\":{\"type\":\"json_object\"}"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"queries\\\":[\\\"planner reasoning controls missing\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "Acme Zephyr 7 uses sodium ion batteries"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"not json\"}}]}", NULL);
+        if (strstr(request->body, "WAL2 is now the default journal mode"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"queries\\\":[\\\"SQLite 3.49 release notes\\\","
+                "\\\"SQLite current stable release\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "accuracy of the above"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"queries\\\":[\\\"check the accuracy of the above latest\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "Rewrite this sentence for clarity no public facts are needed"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"queries\\\":[]}\"}}]}", NULL);
+        if (strstr(request->body, "check accuracy above information provide latest thanks"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"queries\\\":[\\\"check accuracy above information provide latest thanks\\\"]}\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"queries\\\":[\\\"museum exhibitions New York\\\","
+            "\\\"New York museum events this week\\\","
+            "\\\"New York museum visitor guide\\\"]}\"}}]}", NULL);
     }
     /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
        Planner rounds are recognised by their system prompt; the second round

@@ -2241,14 +2241,24 @@ own tree API), validation that rejects malformed/unsafe/untrusted catalog
 data before serving any of it, live compatibility/install-state detection,
 shared-runtime-dependency gating, and live capability degradation when an
 optional artifact (Bonsai's vision projector) is missing. **Frontend gap
-closed:** `assets/app.html`'s model `<select>` is now rebuilt at runtime
-from this endpoint (`renderModelOptions()`/`refreshModels()`) instead of a
-hardcoded `<option>` list — the acceptance item "the frontend contains no
-authoritative hardcoded model availability" is met, covered by
-`tests/test_model_catalog_ui.mjs` (`make test-model-manager`), same
-DOM-fixture pattern as `tests/test_chooser_ui.mjs`. Model-switching
-mechanics themselves (`/v1/backends/select`) are unchanged — that safety
-work is T2.3, still open. Deliberately deferred, not forgotten: content-hash
+closed:** `assets/app.html`'s model `<select>` was rebuilt at runtime from
+this endpoint instead of a hardcoded `<option>` list — the acceptance item
+"the frontend contains no authoritative hardcoded model availability" was
+met. **Superseded, undocumented gap found and closed later:** that `<select>`
+only ever let a user switch between already-installed backends, disabled
+with no explanation otherwise — a returning user past onboarding had no way
+to download a second model at all, since the setup flow's real
+Download/Pause/Resume/Cancel/Retry cards (`buildModelCard`/`renderModelCards`,
+built for T2.4) were never reachable again after Model→Chat. Settings now
+calls the same `renderModelCards`/`runModelCardAction` pipeline via a new
+`refreshSettingsModels()`, so a not-installed model in Settings gets a real
+Download action instead of a disabled option; `modelIsSelectable`/
+`modelOptionLabel`/`renderModelOptions`/`refreshModels`/`switchBackend` are
+deleted, not left dead. Covered by `tests/test_model_catalog_ui.mjs`
+(`make test-model-manager`), same DOM-fixture pattern as
+`tests/test_chooser_ui.mjs`. Model-switching mechanics themselves
+(`/v1/backends/select`) are unchanged — that safety work is T2.3, done
+separately below. Deliberately deferred, not forgotten: content-hash
 ("Deep verify") corruption detection (byte-size check only),
 `minimum_ram_bytes` (no measured lower bound exists), and Qwen's
 `prompt_template_sha256` (left empty rather than fabricated; real parity

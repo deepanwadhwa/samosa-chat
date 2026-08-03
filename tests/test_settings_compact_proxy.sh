@@ -35,6 +35,7 @@ printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 printf 'experts-fixture\n' >"$HOME_DIR/qwen-model/experts.bin"
 printf 'tokenizer-fixture\n' >"$TMP/tokenizer.json"
+printf '%s\n' '{"offline":false,"search":{"provider":"fixture","providers":{"fixture":{"api_key":"keep-me"}}},"unrelated":{"keep":true}}' >"$HOME_DIR/config.json"
 
 SAMOSA_HOME="$HOME_DIR" \
 SAMOSA_PORT="$PORT" \
@@ -58,6 +59,8 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT
 [ "$STATUS" = "401" ] || { echo "FAIL: /v1/settings with no token should be 401, got $STATUS"; exit 1; }
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/v1/compact" -d '{}')
 [ "$STATUS" = "401" ] || { echo "FAIL: /v1/compact with no token should be 401, got $STATUS"; exit 1; }
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/runtime/settings")
+[ "$STATUS" = "401" ] || { echo "FAIL: runtime settings with no token should be 401, got $STATUS"; exit 1; }
 
 # --- 2. With a valid token, reaches the real backend's own /v1/settings ---
 RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/settings" \
@@ -72,5 +75,34 @@ printf '%s' "$RESP" | grep -q '"before_tokens":1000' || { echo "FAIL: expected t
 # --- 4. GET is not accepted (both are POST-only, matching qwen36b.c's own routes) ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/settings")
 [ "$STATUS" != "200" ] || { echo "FAIL: GET /v1/settings should not succeed"; exit 1; }
+
+# --- 5. Advanced runtime settings are server-owned, validated, and durable ---
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/runtime/settings")
+printf '%s' "$RESP" | grep -q '"backend":"qwen"' || { echo "FAIL: runtime settings omitted backend: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"requested":"auto"' || { echo "FAIL: runtime settings omitted Auto defaults: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"supported":true' || { echo "FAIL: Qwen compaction should be reported supported: $RESP"; exit 1; }
+
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" \
+  -X PATCH "http://127.0.0.1:$PORT/v1/runtime/settings" -H 'Content-Type: application/json' \
+  -d '{"cpu_threads":99999}')
+[ "$STATUS" = "400" ] || { echo "FAIL: out-of-range thread count should be 400, got $STATUS"; exit 1; }
+
+RESP_FILE="$TMP/runtime-response.json"
+STATUS=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" \
+  -X PATCH "http://127.0.0.1:$PORT/v1/runtime/settings" -H 'Content-Type: application/json' \
+  -d '{"cpu_threads":1,"context_tokens":4096,"auto_compact":false,"compact_threshold_percent":75}')
+[ "$STATUS" = "202" ] || { echo "FAIL: applying runtime settings should restart with 202, got $STATUS: $(cat "$RESP_FILE")"; exit 1; }
+grep -q '"restarted":true' "$RESP_FILE" || { echo "FAIL: runtime response did not report restart"; exit 1; }
+i=0
+while [ "$i" -lt 100 ]; do
+  curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null | grep -q '"ready":true' && break
+  sleep 0.05; i=$((i + 1))
+done
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/runtime/settings")
+printf '%s' "$RESP" | grep -q '"requested":1,"effective":1' || { echo "FAIL: thread setting did not persist: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"requested":4096,"effective":4096' || { echo "FAIL: context setting did not persist: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"auto":false,"threshold_percent":75' || { echo "FAIL: compaction setting did not persist: $RESP"; exit 1; }
+grep -q '"api_key":"keep-me"' "$HOME_DIR/config.json" || { echo "FAIL: runtime save dropped the Web provider secret"; exit 1; }
+grep -q '"unrelated":{"keep":true}' "$HOME_DIR/config.json" || { echo "FAIL: runtime save dropped an unrelated config key"; exit 1; }
 
 echo "test_settings_compact_proxy.sh: PASS"
