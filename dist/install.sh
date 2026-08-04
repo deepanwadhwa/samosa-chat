@@ -255,7 +255,7 @@ CHUTNI_VERSION=$(cat "$STAGE/engine/chutni/VERSION" 2>/dev/null | tr -d ' \n')
 [ -n "$CHUTNI_VERSION" ] ||
   fail "staged Chutni release is missing VERSION; live release was not changed"
 
-$COMPILER -std=gnu99 -O2 -pthread \
+$COMPILER -std=gnu99 -D_GNU_SOURCE -O2 -pthread \
   -I"$STAGE/engine/chutni/include" -I"$STAGE/engine/chutni/src" \
   -I"$STAGE/engine/chutni/third_party/blake3" -I"$STAGE/engine/sqlite" \
   -DCHUTNI_VERSION="\"$CHUTNI_VERSION\"" \
