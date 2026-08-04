@@ -51,7 +51,14 @@ jobs:
       - name: Test inside Debian bookworm container (Debian validation)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace debian:bookworm-slim sh -c "
-            apt-get update && apt-get install -y make gcc libomp-dev curl python3 file &&
-            make test
-          "
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            debian:bookworm-slim \
+            sh -ec '
+              apt-get update
+              apt-get install -y make gcc libomp-dev curl python3 file nodejs sqlite3
+              export BUILD_DIR=build-debian
+              rm -rf "$BUILD_DIR"
+              make test
+            '

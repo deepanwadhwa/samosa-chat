@@ -41,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-gateway test_fake_openai_backend >/dev/null 2>&1 || true
+make samosa-gateway test_fake_openai_backend
 
 mkdir -p "$HOME_DIR/qwen-model"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
