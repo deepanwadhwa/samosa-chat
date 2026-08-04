@@ -22,6 +22,12 @@ mkdir -p "$TMP/home/qwen-model"
 printf 'fixture\n' >"$TMP/home/qwen-model/experts.bin"
 printf '{}\n' >"$TMP/tokenizer.json"
 
+SAMOSA_EXTRACT="$ROOT/build/samosa-extract"
+if [ ! -f "$SAMOSA_EXTRACT" ] || [ ! -x "$SAMOSA_EXTRACT" ]; then
+  echo "test_chutni_gateway.sh: SKIPPED (no samosa-extract build on this machine)"
+  exit 0
+fi
+
 HOME="$TMP/home" \
 SAMOSA_HOME="$TMP/home" \
 CHUTNI_HOME="$TMP/chutni-home" \
@@ -32,7 +38,7 @@ SAMOSA_QWEN_ENGINE="$ROOT/build/test_fake_openai_backend" \
 SAMOSA_QWEN_MODEL="$TMP/home/qwen-model" \
 SAMOSA_TOKENIZER="$TMP/tokenizer.json" \
 SAMOSA_CHUTNI_SERVICE="$ROOT/build/chutni-mcp" \
-SAMOSA_EXTRACT="$ROOT/build/samosa-extract" \
+SAMOSA_EXTRACT="$SAMOSA_EXTRACT" \
 SAMOSA_OCR="$ROOT/tests/fake_ocr_sidecar.sh" \
 SAMOSA_APP_VERSION="test-enrichment-1" \
 "$ROOT/build/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
