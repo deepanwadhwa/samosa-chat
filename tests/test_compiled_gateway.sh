@@ -5,8 +5,10 @@ GATEWAY=${SAMOSA_COMPILED_GATEWAY:-./samosa-gateway}
 JOBSD=${SAMOSA_COMPILED_JOBSD:-./samosa-jobsd}
 BACKEND=${SAMOSA_FAKE_BACKEND:-./test_fake_openai_backend}
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-FS_SIDECAR=${SAMOSA_FS:-"$ROOT/build/samosa-fs"}
-EXTRACTOR=${SAMOSA_EXTRACT:-"$ROOT/build/samosa-extract"}
+BUILD_DIR=${BUILD_DIR:-build}
+FS_SIDECAR=${SAMOSA_FS:-"$ROOT/$BUILD_DIR/samosa-fs"}
+EXTRACTOR=${SAMOSA_EXTRACT:-"$ROOT/$BUILD_DIR/samosa-extract"}
+OCR=${SAMOSA_OCR:-"$ROOT/$BUILD_DIR/samosa-ocr"}
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-compiled-gateway.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=18977
@@ -56,7 +58,7 @@ printf "Grocery list: milk, eggs, bread.\n" >"$TMP/sweep-files/grocery_list.txt"
 printf "Wallpaper gallery index.\n" >"$TMP/sweep-files/wallpaper_gallery.txt"
 # A real PNG header (1x1 pixel) so samosa-fs detects it as image/png. The
 # gateway's doc.read will fail (no OCR pack) → parked with ocr_unavailable.
-/bin/cp "$ROOT/assets/samosa-chat.png" "$TMP/sweep-files/scan_unknown.png"
+printf '\211PNG\r\n\032\n' >"$TMP/sweep-files/scan_unknown.png"
 # Phase-B checkpoint fixture: one more readable file than the per-run skim
 # budget.  The Continue request must add only the final row, not reread 300.
 /bin/mkdir "$TMP/checkpoint-files"
@@ -245,10 +247,10 @@ printf '%s' "$resumed" | /usr/bin/grep -q '"type":"done"'
 # instead of re-triaging the already durable first 16 rows.
 kill_main_for_crash() {
   crash_backend=$(/bin/cat "$TMP/fake-backend.pid" 2>/dev/null || true)
-  /bin/kill -KILL "$PID" 2>/dev/null || true
+  kill -KILL "$PID" 2>/dev/null || true
   wait "$PID" 2>/dev/null || true
   PID=""
-  [ -z "$crash_backend" ] || /bin/kill -KILL "$crash_backend" 2>/dev/null || true
+  [ -z "$crash_backend" ] || kill -KILL "$crash_backend" 2>/dev/null || true
   /bin/sleep 0.05
 }
 /usr/bin/curl -sS -N -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
@@ -258,7 +260,17 @@ kill_main_for_crash() {
 TRIAGE_CRASH_CURL=$!
 i=0
 while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-triage-delay" ]; do
-  /bin/kill -0 "$TRIAGE_CRASH_CURL" 2>/dev/null || { /bin/cat "$TMP/triage-crash.sse" >&2; exit 1; }
+  kill -0 "$PID" 2>/dev/null || {
+    echo "GATEWAY DIED!" >&2
+    /bin/cat "$TMP/gateway.log" >&2
+    exit 1
+  }
+  kill -0 "$TRIAGE_CRASH_CURL" 2>/dev/null || {
+    echo "CURL DIED! Gateway log follows:" >&2
+    /bin/cat "$TMP/gateway.log" >&2
+    /bin/cat "$TMP/triage-crash.sse" >&2
+    exit 1
+  }
   /bin/sleep 0.02; i=$((i + 1))
 done
 [ -f "$TMP/fake-triage-first" ]
@@ -285,7 +297,7 @@ printf '%s' "$triage_resume" | /usr/bin/grep -q '"type":"triage_progress"'
 VERIFY_CRASH_CURL=$!
 i=0
 while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-verify-delay" ]; do
-  /bin/kill -0 "$VERIFY_CRASH_CURL" 2>/dev/null || { /bin/cat "$TMP/verify-crash.sse" >&2; exit 1; }
+  kill -0 "$VERIFY_CRASH_CURL" 2>/dev/null || { /bin/cat "$TMP/verify-crash.sse" >&2; exit 1; }
   /bin/sleep 0.02; i=$((i + 1))
 done
 [ -f "$TMP/fake-verify-delay" ]
@@ -372,8 +384,16 @@ printf '%s' "$sweep" | /usr/bin/grep -q 'Miso annual checkup'
 printf '%s' "$sweep" | /usr/bin/grep -q 'titli_vaccination_2023.txt'
 printf '%s' "$sweep" | /usr/bin/grep -q 'Titli rabies booster'
 # Unreadable with error code.
-printf '%s' "$sweep" | /usr/bin/grep -q 'scan_unknown.png'
-printf '%s' "$sweep" | /usr/bin/grep -q 'ocr_unavailable'
+printf '%s' "$sweep" | /usr/bin/grep -q 'scan_unknown.png' || {
+  echo "FAIL: unknown PNG was not present in the result as expected" >&2
+  echo "$sweep" >&2
+  exit 1
+}
+printf '%s' "$sweep" | /usr/bin/grep -q 'ocr_unavailable' || {
+  echo "FAIL: unknown PNG was not parked as ocr_unavailable as expected" >&2
+  echo "$sweep" >&2
+  exit 1
+}
 printf '%s' "$sweep" | /usr/bin/grep -q '"type":"done"'
 # Clutter exclusion: junk files must not be in matches.
 SWEEP_JOB=$(printf '%s' "$sweep" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
@@ -461,7 +481,7 @@ i=0
 while [ "$i" -lt 100 ]; do
   status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status" 2>/dev/null || true)
   printf '%s' "$status" | /usr/bin/grep -q '"inference_busy":true' && break
-  /bin/kill -0 "$INTERLOCK_CURL" 2>/dev/null || { /bin/cat "$TMP/interlock.sse" >&2; exit 1; }
+  kill -0 "$INTERLOCK_CURL" 2>/dev/null || { /bin/cat "$TMP/interlock.sse" >&2; exit 1; }
   /bin/sleep 0.02
   i=$((i + 1))
 done
@@ -475,7 +495,7 @@ i=0
 while [ "$i" -lt 100 ]; do
   status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status" 2>/dev/null || true)
   printf '%s' "$status" | /usr/bin/grep -q '"interactive_active":true' && break
-  /bin/kill -0 "$CHAT_CURL" 2>/dev/null || { /bin/cat "$TMP/interactive-chat.out" >&2; exit 1; }
+  kill -0 "$CHAT_CURL" 2>/dev/null || { /bin/cat "$TMP/interactive-chat.out" >&2; exit 1; }
   /bin/sleep 0.02
   i=$((i + 1))
 done
@@ -745,7 +765,7 @@ while [ "$i" -lt 100 ] && [ ! -s "$TMP/slow-sidecar.pid" ]; do /bin/sleep 0.02; 
 SIDE_PID=$(/bin/cat "$TMP/slow-sidecar.pid")
 /usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/kill" >/dev/null
 wait "$SLOW_CURL" 2>/dev/null || true
-if /bin/kill -0 "$SIDE_PID" 2>/dev/null; then
+if kill -0 "$SIDE_PID" 2>/dev/null; then
   echo "kill route left a Jobs sidecar running" >&2
   exit 1
 fi

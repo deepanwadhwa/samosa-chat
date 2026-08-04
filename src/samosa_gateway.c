@@ -13298,6 +13298,7 @@ static int load_config(Gateway *g) {
 }
 
 int main(int argc, char **argv) {
+    signal(SIGPIPE, SIG_IGN);
     Gateway gateway;
     if (!load_config(&gateway)) {
         fprintf(stderr, "samosa-gateway: invalid configuration\n"); return 2;

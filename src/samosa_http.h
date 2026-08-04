@@ -329,7 +329,12 @@ static void samosa_http_server_stop(SamosaHttpServer *server) {
 static int samosa_http_server_run(SamosaHttpServer *server) {
     while (!atomic_load(&server->stopping)) {
         int fd=accept(server->listener,NULL,NULL);
-        if(fd<0){ if(errno==EINTR)continue; if(atomic_load(&server->stopping))break; return 0; }
+        if(fd<0){
+            if(errno==EINTR)continue;
+            if(atomic_load(&server->stopping))break;
+            fprintf(stderr, "samosa_http_server_run: accept failed: %s\n", strerror(errno)); fflush(stderr);
+            return 0;
+        }
         SamosaHttpConnection *connection=malloc(sizeof(*connection));
         if(!connection){ close(fd); continue; }
         connection->server=server; connection->fd=fd;
