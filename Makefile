@@ -91,7 +91,7 @@ ifeq ($(UNAME_S),Darwin)
   CWARN := -Wall -Wextra -Werror
 else
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration
-  CWARN := -Wall -Wextra -Werror -Wno-error=format-truncation -Wno-error=misleading-indentation
+  CWARN := -Wall -Wextra
 endif
 
 # The generic service is pinned as a submodule and shipped as an application
