@@ -87,7 +87,7 @@ samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3
 	$(CC) $(CHUTNI_OPT) $(CWARN) -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
 
 ifeq ($(UNAME_S),Darwin)
-  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration
+  CHUTNI_OPT := -O2 -Wno-error=implicit-function-declaration
   CWARN := -Wall -Wextra -Werror
 else
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration
