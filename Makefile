@@ -84,7 +84,7 @@ test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c s
 
 samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
+	$(CC) $(CHUTNI_OPT) $(CWARN) -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
 
 ifeq ($(UNAME_S),Darwin)
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration

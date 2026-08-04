@@ -22,7 +22,7 @@
 #include "json.h"
 #include "tok.h"
 #include "sqlite/sqlite3.h"
-
+#include <sys/wait.h>
 #define SCHEMA_VERSION 2
 #define CHUNKER_FINGERPRINT "chutni-chunker-v1-600-800"
 #define DEFAULT_MAX_FILE_BYTES (256ULL * 1024ULL * 1024ULL)
@@ -561,11 +561,13 @@ static int bind_file(sqlite3 *db, const char *file_id, const char *rel, const st
     const char *sql="INSERT OR REPLACE INTO files(file_id,relative_path,stable_identity,path_bytes,display_path,size_bytes,mtime_ns,content_sha256,media_type,status,skip_reason,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
     if(sqlite3_prepare_v2(db,sql,-1,&q,NULL)!=SQLITE_OK)return 0;
     ok=bind_text(q,1,file_id)&&bind_text(q,2,rel)&&bind_text(q,3,"" )&&sqlite3_bind_blob(q,4,raw_path,(int)raw_len,SQLITE_TRANSIENT)==SQLITE_OK&&bind_text(q,5,rel)&&sqlite3_bind_int64(q,6,(sqlite3_int64)st->st_size)==SQLITE_OK&&sqlite3_bind_int64(q,7,mtime_ns(st))==SQLITE_OK&&bind_text(q,8,hash?hash:"")&&bind_text(q,9,media?media:"")&&bind_text(q,10,status?status:"")&&bind_text(q,11,reason?reason:"")&&sqlite3_bind_int(q,12,generation)==SQLITE_OK;
-    if(ok)ok=sqlite3_step(q)==SQLITE_DONE;sqlite3_finalize(q);
+    if(ok)ok=sqlite3_step(q)==SQLITE_DONE;
+    sqlite3_finalize(q);
     if(!ok)return 0;
     if(sqlite3_prepare_v2(db,"INSERT OR REPLACE INTO manifest(file_id,path_bytes,stable_identity,size_bytes,mtime_ns,content_sha256,media_type,status,skip_reason,generation) VALUES(?,?,?,?,?,?,?,?,?,?)",-1,&q,NULL)!=SQLITE_OK)return 0;
     ok=bind_text(q,1,file_id)&&sqlite3_bind_blob(q,2,raw_path,(int)raw_len,SQLITE_TRANSIENT)==SQLITE_OK&&bind_text(q,3,"")&&sqlite3_bind_int64(q,4,st->st_size)==SQLITE_OK&&sqlite3_bind_int64(q,5,mtime_ns(st))==SQLITE_OK&&bind_text(q,6,hash?hash:"")&&bind_text(q,7,media?media:"")&&bind_text(q,8,status?status:"")&&bind_text(q,9,reason?reason:"")&&sqlite3_bind_int(q,10,generation)==SQLITE_OK;
-    if(ok)ok=sqlite3_step(q)==SQLITE_DONE;sqlite3_finalize(q);return ok;
+    if(ok)ok=sqlite3_step(q)==SQLITE_DONE;
+    sqlite3_finalize(q);return ok;
 }
 
 static int inventory_dir(sqlite3 *db, const Scope *s, const char *abs, const char *rel, int generation, BuildCounts *counts) {
@@ -608,7 +610,9 @@ static void content_fingerprints(const char *media, const char *parser_fp, const
 static int insert_content(sqlite3 *db, const char *hash, const char *text, size_t len,
                           const char *parser_fp, const char *ocr_fp) {
     sqlite3_stmt *q=NULL; int ok=sqlite3_prepare_v2(db,"INSERT OR IGNORE INTO contents(content_sha256,extraction_ref,parser_fingerprint,ocr_fingerprint,extracted_text,text_bytes) VALUES(?,?,?,?,?,?)",-1,&q,NULL)==SQLITE_OK;
-    if(ok)ok=bind_text(q,1,hash)&&bind_text(q,2,hash)&&bind_text(q,3,parser_fp)&&bind_text(q,4,ocr_fp)&&bind_text(q,5,text)&&sqlite3_bind_int64(q,6,(sqlite3_int64)len)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE; if(!ok)fprintf(stderr,"chutni: content insert: %s\n",sqlite3_errmsg(db));sqlite3_finalize(q);return ok;
+    if(ok)ok=bind_text(q,1,hash)&&bind_text(q,2,hash)&&bind_text(q,3,parser_fp)&&bind_text(q,4,ocr_fp)&&bind_text(q,5,text)&&sqlite3_bind_int64(q,6,(sqlite3_int64)len)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE;
+    if(!ok)fprintf(stderr,"chutni: content insert: %s\n",sqlite3_errmsg(db));
+    sqlite3_finalize(q);return ok;
 }
 
 /* T4.3 extraction cache, part 3: the read the schema was always missing.
@@ -671,7 +675,9 @@ static int insert_chunk(sqlite3 *db, const char *chunk_id, const char *file_id, 
                         const char *text, size_t start, size_t end, int tokens, int generation,
                         const char *tokenizer_fingerprint) {
     sqlite3_stmt *q=NULL; int ok=sqlite3_prepare_v2(db,"INSERT INTO chunks(chunk_id,file_id,ordinal,relative_path,title,page,section,start_offset,end_offset,text,token_count,tokenizer_fingerprint,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",-1,&q,NULL)==SQLITE_OK;
-    if(ok)ok=bind_text(q,1,chunk_id)&&bind_text(q,2,file_id)&&sqlite3_bind_int(q,3,ordinal)==SQLITE_OK&&bind_text(q,4,rel)&&bind_text(q,5,"")&&sqlite3_bind_null(q,6)==SQLITE_OK&&sqlite3_bind_null(q,7)==SQLITE_OK&&sqlite3_bind_int64(q,8,(sqlite3_int64)start)==SQLITE_OK&&sqlite3_bind_int64(q,9,(sqlite3_int64)end)==SQLITE_OK&&bind_text(q,10,text)&&sqlite3_bind_int(q,11,tokens)==SQLITE_OK&&bind_text(q,12,tokenizer_fingerprint)&&sqlite3_bind_int(q,13,generation)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE; if(!ok)fprintf(stderr,"chutni: chunk insert: %s\n",sqlite3_errmsg(db));sqlite3_finalize(q);if(!ok)return 0;
+    if(ok)ok=bind_text(q,1,chunk_id)&&bind_text(q,2,file_id)&&sqlite3_bind_int(q,3,ordinal)==SQLITE_OK&&bind_text(q,4,rel)&&bind_text(q,5,"")&&sqlite3_bind_null(q,6)==SQLITE_OK&&sqlite3_bind_null(q,7)==SQLITE_OK&&sqlite3_bind_int64(q,8,(sqlite3_int64)start)==SQLITE_OK&&sqlite3_bind_int64(q,9,(sqlite3_int64)end)==SQLITE_OK&&bind_text(q,10,text)&&sqlite3_bind_int(q,11,tokens)==SQLITE_OK&&bind_text(q,12,tokenizer_fingerprint)&&sqlite3_bind_int(q,13,generation)==SQLITE_OK&&sqlite3_step(q)==SQLITE_DONE;
+    if(!ok)fprintf(stderr,"chutni: chunk insert: %s\n",sqlite3_errmsg(db));
+    sqlite3_finalize(q);if(!ok)return 0;
     if(sqlite3_prepare_v2(db,"INSERT INTO chunks_fts(rowid,chunk_id,relative_path,title,text) SELECT rowid,chunk_id,relative_path,title,text FROM chunks WHERE chunk_id=?",-1,&q,NULL)!=SQLITE_OK){fprintf(stderr,"chutni: fts prepare: %s\n",sqlite3_errmsg(db));return 0;}ok=bind_text(q,1,chunk_id)&&sqlite3_step(q)==SQLITE_DONE;if(!ok)fprintf(stderr,"chutni: fts insert: %s\n",sqlite3_errmsg(db));sqlite3_finalize(q);return ok;
 }
 

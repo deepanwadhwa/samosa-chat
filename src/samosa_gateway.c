@@ -12715,7 +12715,8 @@ static int chutni_scope_events(Gateway *g, int fd, const char *scope_id, const S
     int first = 1; char *save = NULL;
     for (char *line = strtok_r(raw, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
         long seq = -1; sscanf(line, "{\"seq\":%ld", &seq); if (after >= 0 && seq <= after) continue;
-        if (!first) text_add(&out, ","); first = 0; text_add(&out, line);
+        if (!first) text_add(&out, ",");
+        first = 0; text_add(&out, line);
     }
     text_add(&out, "]}"); int sent = samosa_http_response(fd, 200, "application/json", out.data, NULL); free(out.data); free(raw); return sent;
 }
