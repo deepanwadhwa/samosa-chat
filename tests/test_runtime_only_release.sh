@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+set -eux
 
 # T1.0 (docs/TASKS_UI_CHUTNI.md): a runtime-only release must install and
 # boot the full browser control plane -- gateway, engine, app shell -- while
@@ -68,8 +68,16 @@ done
 LEGACY_MODEL_DIR="$HOME_DIR/model"
 mkdir -p "$LEGACY_MODEL_DIR"
 printf 'legacy-experts-content\n' >"$LEGACY_MODEL_DIR/experts.bin"
-LEGACY_INODE_BEFORE=$(stat -f '%i' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%i' "$LEGACY_MODEL_DIR/experts.bin")
-LEGACY_MTIME_BEFORE=$(stat -f '%m' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%Y' "$LEGACY_MODEL_DIR/experts.bin")
+if [ "$(uname -s)" = "Darwin" ]; then
+  get_inode() { stat -f '%i' "$1"; }
+  get_mtime() { stat -f '%m' "$1"; }
+else
+  get_inode() { stat -c '%i' "$1"; }
+  get_mtime() { stat -c '%Y' "$1"; }
+fi
+
+LEGACY_INODE_BEFORE=$(get_inode "$LEGACY_MODEL_DIR/experts.bin")
+LEGACY_MTIME_BEFORE=$(get_mtime "$LEGACY_MODEL_DIR/experts.bin")
 LEGACY_SHA_BEFORE=$(shasum -a 256 "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null | awk '{print $1}')
 [ -n "$LEGACY_SHA_BEFORE" ] || LEGACY_SHA_BEFORE=$(sha256sum "$LEGACY_MODEL_DIR/experts.bin" | awk '{print $1}')
 
@@ -125,9 +133,9 @@ stop_remote
 
 # --- Legacy model must be completely untouched by the clean install ---------
 [ -f "$LEGACY_MODEL_DIR/experts.bin" ] || fail "legacy model file vanished after install"
-[ "$(stat -f '%i' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%i' "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_INODE_BEFORE" ] ||
+[ "$(get_inode "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_INODE_BEFORE" ] ||
   fail "legacy model inode changed after install"
-[ "$(stat -f '%m' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%Y' "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_MTIME_BEFORE" ] ||
+[ "$(get_mtime "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_MTIME_BEFORE" ] ||
   fail "legacy model mtime changed after install"
 
 # --- doctor must not report failure merely because no model is installed ----
@@ -158,9 +166,9 @@ stop_remote
   fail "upgrade did not produce a second retained release"
 
 [ -f "$LEGACY_MODEL_DIR/experts.bin" ] || fail "legacy model file vanished after upgrade"
-[ "$(stat -f '%i' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%i' "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_INODE_BEFORE" ] ||
+[ "$(get_inode "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_INODE_BEFORE" ] ||
   fail "legacy model inode changed after upgrade"
-[ "$(stat -f '%m' "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null || stat -c '%Y' "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_MTIME_BEFORE" ] ||
+[ "$(get_mtime "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_MTIME_BEFORE" ] ||
   fail "legacy model mtime changed after upgrade"
 LEGACY_SHA_AFTER=$(shasum -a 256 "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null | awk '{print $1}')
 [ -n "$LEGACY_SHA_AFTER" ] || LEGACY_SHA_AFTER=$(sha256sum "$LEGACY_MODEL_DIR/experts.bin" | awk '{print $1}')
