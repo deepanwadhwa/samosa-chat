@@ -90,8 +90,9 @@ ifeq ($(UNAME_S),Darwin)
   CHUTNI_OPT := -O2 -Wno-error=implicit-function-declaration
   CWARN := -Wall -Wextra -Werror
 else
-  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration
-  CWARN := -Wall -Wextra
+  LINUX_WARNING_FLAGS := -Werror -Wno-error=format-truncation
+  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration $(LINUX_WARNING_FLAGS)
+  CWARN := -Wall -Wextra $(LINUX_WARNING_FLAGS)
 endif
 
 # The generic service is pinned as a submodule and shipped as an application

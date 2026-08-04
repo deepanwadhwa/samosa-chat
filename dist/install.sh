@@ -225,6 +225,7 @@ fi
 
 OMP_FLAGS=""
 DL_FLAGS=""
+LINUX_WARNING_FLAGS="-Werror"
 if [ "$(uname -s)" = "Darwin" ]; then
   for prefix in /opt/homebrew/opt/libomp /usr/local/opt/libomp; do
     if [ -f "$prefix/lib/libomp.dylib" ]; then
@@ -234,6 +235,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   done
 else
   DL_FLAGS="-ldl"
+  LINUX_WARNING_FLAGS="-Werror -Wno-error=format-truncation"
   # Linux OpenMP support check
   if echo "int main() {}" | $COMPILER -fopenmp -x c - -o /dev/null >/dev/null 2>&1; then
     OMP_FLAGS="-fopenmp"
@@ -290,7 +292,7 @@ if [ "$DOCUMENTS_ENABLED" = 1 ]; then
   else
     EXTRACT_RPATH='$ORIGIN/../lib'
   fi
-  $COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -I"$PDFIUM_ROOT/include" \
+  $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -I"$PDFIUM_ROOT/include" \
     "$STAGE/engine/samosa_extract.c" "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" \
     -Wl,-rpath,"$EXTRACT_RPATH" -o "$STAGE/bin/samosa-extract" ||
     fail "staged document extractor compilation failed; live release was not changed"
@@ -314,17 +316,17 @@ fi
 
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
-$COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
   "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
-$COMPILER -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
   "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
-$COMPILER -O2 -Wall -Wextra -Werror -std=c11 \
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
   fail "staged filesystem sidecar compilation failed; live release was not changed"
 $COMPILER -O3 -Wno-unused-function -std=c11 -I"$STAGE/engine" \
