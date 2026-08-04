@@ -86,13 +86,19 @@ samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
 
+ifeq ($(UNAME_S),Darwin)
+  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration
+else
+  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration
+endif
+
 # The generic service is pinned as a submodule and shipped as an application
 # runtime component. Samosa calls its public JSON tool surface; it does not
 # compile or maintain a private Chutni storage implementation.
 .PHONY: chutni-service
 chutni-service:
 	@test -f "$(CHUTNI_DIR)/Makefile" || { echo "missing Chutni submodule; run: git submodule update --init" >&2; exit 2; }
-	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="-O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration" "$(CHUTNI_BUILD)/chutni-mcp"
+	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="$(CHUTNI_OPT)" "$(CHUTNI_BUILD)/chutni-mcp"
 	@mkdir -p $(BUILD_DIR)
 	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
 
