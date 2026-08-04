@@ -1,6 +1,14 @@
+#if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
+#endif
+
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
+#endif
+
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 
 /* Deterministic fake remote artifact host for T0.1/T2.2 (docs/TASKS_UI_CHUTNI.md).
    Ordinary tests must never fetch a multi-gigabyte model artifact or exercise a
@@ -158,7 +166,10 @@ int main(int argc, char **argv) {
         int pidfd = open(pid_file, O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if (pidfd >= 0) {
             char text[32]; int n = snprintf(text, sizeof(text), "%ld\n", (long)getpid());
-            if (n > 0) (void)write(pidfd, text, (size_t)n);
+            if (n > 0) {
+                ssize_t written = write(pidfd, text, (size_t)n);
+                (void)written;
+            }
             close(pidfd);
         }
     }

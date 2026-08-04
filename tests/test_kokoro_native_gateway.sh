@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "test_kokoro_native_gateway.sh: SKIP (macOS dylib contract test)" >&2
+  exit 0
+fi
+
 # End-to-end contract for the native neural voice boundary. The gateway is
 # given a C dylib, not a process or interpreter: it must load the documented
 # Sherpa C symbols, pass Kokoro's paths/speaker ID, and respond with PCM WAV.
@@ -49,8 +54,8 @@ TOKEN=$(cat "$HOME_DIR/run/ui-token")
 
 STATUS=$(curl -sS -o "$TMP/status.json" -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/voice/status")
 [ "$STATUS" = 200 ] || { cat "$TMP/status.json"; exit 1; }
-rg -q '"tts_neural_ready":true' "$TMP/status.json"
-rg -q '"tts_engine":"kokoro_native"' "$TMP/status.json"
+grep -q '"tts_neural_ready":true' "$TMP/status.json"
+grep -q '"tts_engine":"kokoro_native"' "$TMP/status.json"
 
 STATUS=$(curl -sS -o "$TMP/speech.wav" -w '%{http_code}' -X POST \
   -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \

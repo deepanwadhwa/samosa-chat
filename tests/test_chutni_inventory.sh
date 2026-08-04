@@ -19,7 +19,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-fs >/dev/null 2>&1 || true
+make samosa-fs
 sh "$GEN" build "$ROOT"
 
 OUT="$TMP/inventory.ndjson"
@@ -30,8 +30,16 @@ DUP_COUNT=$(grep -c '"rel_path":"duplicate/' "$OUT")
 [ "$DUP_COUNT" = 2 ] || { echo "FAIL: expected 2 duplicate-content file records, got $DUP_COUNT"; cat "$OUT"; exit 1; }
 
 # --- the unreadable nested directory is counted, not fatal ---
-grep -q '"rel_path":"unreadable/blocked","reason":"permission_denied"' "$OUT" \
-  || { echo "FAIL: missing permission_denied skip for unreadable/blocked"; cat "$OUT"; exit 1; }
+if [ "$(id -u)" != 0 ]; then
+  grep -q '"rel_path":"unreadable/blocked","reason":"permission_denied"' "$OUT" \
+    || {
+      echo "FAIL: missing permission_denied skip for unreadable/blocked"
+      cat "$OUT"
+      exit 1
+    }
+else
+  echo "test_chutni_inventory.sh: SKIP permission-denied assertion as root" >&2
+fi
 # ...and the scan continued past it: files alongside it are still present.
 grep -q '"rel_path":"plain/report.md"' "$OUT" || { echo "FAIL: scan did not continue past the unreadable dir"; exit 1; }
 

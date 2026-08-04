@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "test_chutni_controls.sh: FAIL: $1" >&2
+  exit 1
+}
+
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=${TMPDIR:-/tmp}/samosa-chutni-controls.$$
 PORT=$((21000 + $$ % 2000))
@@ -36,22 +41,22 @@ while [ "$i" -lt 100 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ "$i" -lt 100 ] || { sed -n '1,120p' "$TMP/gateway.log" >&2; exit 1; }
+[ "$i" -lt 100 ] || { cat "$TMP/gateway.log" >&2; fail "gateway never became ready"; }
 TOKEN=$(curl -fsS "http://127.0.0.1:$PORT/" |
   sed -n 's/.*name="samosa-ui-token" content="\([^"]*\)".*/\1/p')
-[ -n "$TOKEN" ]
+[ -n "$TOKEN" ] || fail "failed to get token"
 
 PREFLIGHT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/preflight" \
   --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/source\"}]}")
 PREFLIGHT_ID=$(printf '%s' "$PREFLIGHT" | sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
-[ -n "$PREFLIGHT_ID" ]
+[ -n "$PREFLIGHT_ID" ] || fail "failed to get preflight id"
 CREATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes" \
   --data-binary "{\"preflight_id\":\"$PREFLIGHT_ID\",\"display_name\":\"Control fixture\"}")
 SCOPE=$(printf '%s' "$CREATED" | sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
 JOB=$(printf '%s' "$CREATED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
-[ -n "$SCOPE" ] && [ -n "$JOB" ]
+[ -n "$SCOPE" ] && [ -n "$JOB" ] || fail "scope ID missing from create response"
 
 i=0
 while [ "$i" -lt 100 ]; do
@@ -61,11 +66,11 @@ while [ "$i" -lt 100 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ "$i" -lt 100 ]
-printf '%s' "$STATUS" | grep -q "\"active_job_id\":\"$JOB\""
-printf '%s' "$STATUS" | grep -q '"phase":"scan"'
-printf '%s' "$STATUS" | grep -q '"elapsed_seconds":'
-printf '%s' "$STATUS" | grep -q '"files_per_second":'
+[ "$i" -lt 100 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "scope never reached scan phase"; }
+printf '%s' "$STATUS" | grep -q "\"active_job_id\":\"$JOB\"" || fail "missing active_job_id"
+printf '%s' "$STATUS" | grep -q '"phase":"scan"' || fail "missing phase:scan"
+printf '%s' "$STATUS" | grep -q '"elapsed_seconds":' || fail "missing elapsed_seconds"
+printf '%s' "$STATUS" | grep -q '"files_per_second":' || fail "missing files_per_second"
 
 PAUSED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/pause" \
@@ -94,7 +99,7 @@ while [ "$i" -lt 100 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ "$i" -lt 100 ]
+[ "$i" -lt 100 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "scope never reached building state"; }
 
 CANCELED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/cancel" \

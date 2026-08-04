@@ -262,8 +262,15 @@ static int mkdir_parents(const char *path) {
 }
 
 static int path_join_local(char *out, size_t cap, const char *a, const char *b) {
-    int n = snprintf(out, cap, "%s/%s", a, b);
-    return n >= 0 && (size_t)n < cap;
+    char tmp[PATH_MAX];
+
+    if (!out || !a || !b || cap == 0) return 0;
+
+    int n = snprintf(tmp, sizeof(tmp), "%s/%s", a, b);
+    if (n < 0 || (size_t)n >= sizeof(tmp) || (size_t)n >= cap) return 0;
+
+    memcpy(out, tmp, (size_t)n + 1);
+    return 1;
 }
 
 static int fsync_parent(const char *path) {

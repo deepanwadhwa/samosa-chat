@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "test_chutni_gateway.sh: FAIL: $1" >&2
+  exit 1
+}
+
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-chutni-gateway.XXXXXX")
 PORT=19277
@@ -63,19 +68,19 @@ PF=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -
   "http://127.0.0.1:$PORT/v1/chutni/preflight" \
   --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/source\"}]}")
 PREFLIGHT=$(printf '%s' "$PF" | sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
-[ -n "$PREFLIGHT" ]
+[ -n "$PREFLIGHT" ] || fail "missing preflight_id"
 printf '%s' "$PF" | grep -q '"action":"create_store"'
 printf '%s' "$PF" | grep -q '"store_path":'
 printf '%s' "$PF" | grep -q '\.chutni'
 STORE=$(printf '%s' "$PF" | sed -n 's/.*"store_path":"\([^"]*\)".*/\1/p')
-[ -n "$STORE" ]
+[ -n "$STORE" ] || fail "missing store_path"
 
 CREATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/scopes" \
   --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"display_name\":\"Research\",\"summary_token_budget\":128}")
 SCOPE=$(printf '%s' "$CREATED" | sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
 JOB=$(printf '%s' "$CREATED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
-[ -n "$SCOPE" ] && [ -n "$JOB" ]
+[ -n "$SCOPE" ] && [ -n "$JOB" ] || fail "scope ID missing from create response"
 
 i=0
 while [ "$i" -lt 300 ]; do
@@ -84,7 +89,7 @@ while [ "$i" -lt 300 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ "$i" -lt 300 ] || { echo "FAIL: Chutni build did not publish" >&2; sed -n '1,160p' "$TMP/gateway.log" >&2; exit 1; }
+[ "$i" -lt 300 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "scope never reached ready state"; }
 
 [ -f "$STORE/manifest.json" ]
 [ -f "$STORE/catalog.sqlite" ]
@@ -116,7 +121,7 @@ REFRESHED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/
   "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/refresh" \
   --data-binary '{}')
 REFRESH_JOB=$(printf '%s' "$REFRESHED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
-[ -n "$REFRESH_JOB" ]
+[ -n "$REFRESH_JOB" ] || fail "missing refresh job ID"
 i=0
 while [ "$i" -lt 300 ]; do
   STATUS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE")
@@ -125,7 +130,7 @@ while [ "$i" -lt 300 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ "$i" -lt 300 ] || { echo "FAIL: unchanged Chutni refresh did not publish" >&2; exit 1; }
+[ "$i" -lt 300 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "unchanged Chutni refresh did not publish"; }
 printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
 printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
 
@@ -174,7 +179,7 @@ printf '%s' "$RESULT" | grep -q '"freshness":"current"'
 # test of Samosa's filter and not of whether the scanner wrote them.
 METADATA_COUNT=$(sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts WHERE artifact_kind='file_metadata' AND status='active';")
-test "$METADATA_COUNT" -gt 0
+test "$METADATA_COUNT" -gt 0 || fail "missing metadata"
 METADATA_PROBE=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/query" \
   --data-binary "{\"query\":\"size_bytes depth\",\"directory_context\":{\"scope_id\":\"$SCOPE\"}}")

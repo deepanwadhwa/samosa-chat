@@ -101,15 +101,22 @@ PY
 # ===========================================================================
 # 2. Permission loss -- the scope directory becomes unwritable mid-lifecycle.
 # ===========================================================================
-chmod 500 "$STATE/scopes/s"
-if "$DB_BIN" scope-build "$STATE" s "$TOKENIZER" >/dev/null 2>&1; then
-  chmod 700 "$STATE/scopes/s"; fail "a build must not report success when it cannot write"
+if [ "$(id -u)" = 0 ]; then
+  echo "test_chutni_recovery.sh: SKIP permission-loss case when running as root" >&2
+else
+  chmod 500 "$STATE/scopes/s"
+  if "$DB_BIN" scope-build "$STATE" s "$TOKENIZER" >/dev/null 2>&1; then
+    chmod 700 "$STATE/scopes/s"
+    fail "a build must not report success when it cannot write"
+  fi
+  chmod 700 "$STATE/scopes/s"
+  assert_survived "permission loss" 2
+  "$DB_BIN" scope-build "$STATE" s "$TOKENIZER" >/dev/null 2>&1 \
+    || fail "retry after permission loss failed"
+  [ "$(active_gen s)" = "3" ] || fail "retry should publish generation 3"
+  [ "$(chunk_count s)" = "$BASE_CHUNKS" ] \
+    || fail "retry after permission loss duplicated rows"
 fi
-chmod 700 "$STATE/scopes/s"
-assert_survived "permission loss" 2
-"$DB_BIN" scope-build "$STATE" s "$TOKENIZER" >/dev/null 2>&1 || fail "retry after permission loss failed"
-[ "$(active_gen s)" = "3" ] || fail "retry should publish generation 3"
-[ "$(chunk_count s)" = "$BASE_CHUNKS" ] || fail "retry after permission loss duplicated rows"
 
 # ===========================================================================
 # 3. SIGKILL landed mid-build.
