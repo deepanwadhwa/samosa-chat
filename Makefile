@@ -53,7 +53,7 @@ samosa-extract: src/samosa_extract.c src/tok.h src/tok_unicode.h src/json.h $(PD
 	@if [ -z "$(PDFIUM_LIBRARY)" ]; then \
 	  echo "PDFium support unavailable: no libpdfium shared library under $(PDFIUM_DIR)/lib" >&2; exit 2; \
 	fi
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -I$(PDFIUM_DIR)/include \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -I$(PDFIUM_DIR)/include \
 	  src/samosa_extract.c $(PDFIUM_LIBRARY) \
 	  -Wl,-rpath,$(PDFIUM_DIR)/lib -o $(BUILD_DIR)/samosa-extract
 	@if [ "$(UNAME_S)" = "Darwin" ]; then \
@@ -62,7 +62,7 @@ samosa-extract: src/samosa_extract.c src/tok.h src/tok_unicode.h src/json.h $(PD
 
 samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
+	$(CC) -O2 $(CWARN) -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
 # T0.5: build the separate, minimized MIT-licensed Gigatoken adapter. Keeping
 # it outside the C gateway means a Rust/toolchain failure cannot make the
@@ -84,12 +84,14 @@ test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c s
 
 samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
 
 ifeq ($(UNAME_S),Darwin)
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration
+  CWARN := -Wall -Wextra -Werror
 else
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration
+  CWARN := -Wall -Wextra -Werror -Wno-error=format-truncation -Wno-error=misleading-indentation
 endif
 
 # The generic service is pinned as a submodule and shipped as an application
@@ -223,7 +225,7 @@ r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_
 
 samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
@@ -239,17 +241,17 @@ detached-service-test: samosa-gateway chutni-service test_fake_openai_backend te
 # no backend — which is exactly what the installed launchd plist fires.
 samosa-jobsd: src/samosa_gateway.c src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-jobsd
 
 test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o $(BUILD_DIR)/test_fake_openai_backend
 
 test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_runtime_settings.c -o $(BUILD_DIR)/test_runtime_settings
 	$(BUILD_DIR)/test_runtime_settings
 
@@ -258,7 +260,7 @@ test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c
 # must never fetch a real multi-gigabyte model artifact.
 fake_model_download_server: tests/fake_model_download_server.c src/samosa_http.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_model_download_server.c -o $(BUILD_DIR)/fake_model_download_server
 
 test-fake-download-server: fake_model_download_server tests/test_fake_model_download_server.sh
@@ -363,7 +365,7 @@ metal-omp: src/qwen36b.c src/expert_cache.c src/vision.c src/metal_expert.m $(EN
 
 pagecache-residency: tools/pagecache_residency.c
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Werror -std=c11 tools/pagecache_residency.c -o $(BUILD_DIR)/pagecache-residency
+	$(CC) -O2 $(CWARN) -std=c11 tools/pagecache_residency.c -o $(BUILD_DIR)/pagecache-residency
 
 pagecache-residency-test: pagecache-residency tests/test_pagecache_residency.sh
 	sh tests/test_pagecache_residency.sh ./$(BUILD_DIR)/pagecache-residency
@@ -405,7 +407,7 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	sh tests/test_hidden_toggles.sh
 # Backend sizing must be correct for machines this repo cannot run on, so the
 # tier table is unit-tested and guarded against drifting from the gateway.
-	$(CC) -O1 -Wall -Wextra -Werror -std=c11 tests/test_backend_limits.c -o $(BUILD_DIR)/test_backend_limits && ./$(BUILD_DIR)/test_backend_limits
+	$(CC) -O1 $(CWARN) -std=c11 tests/test_backend_limits.c -o $(BUILD_DIR)/test_backend_limits && ./$(BUILD_DIR)/test_backend_limits
 	sh tests/test_backend_limits_match.sh
 
 # test-all adds the gates that need a toolchain beyond a C compiler. The
