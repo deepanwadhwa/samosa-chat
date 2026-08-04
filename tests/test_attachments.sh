@@ -71,7 +71,7 @@ HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
 field() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$2'))"; }
 
 # --- fixtures ---
-printf '\x89PNG\r\n\x1a\n' >"$TMP/probe.png"
+printf '\211PNG\r\n\032\n' >"$TMP/probe.png"
 printf 'not-a-real-png-body-but-sniffing-only-checks-the-magic-header' >>"$TMP/probe.png"
 printf 'plain text, not an image or a pdf' >"$TMP/probe.txt"
 
@@ -125,7 +125,7 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X 
 [ "$STATUS" = "409" ] || { echo "FAIL: deleting a referenced attachment should be 409, got $STATUS"; exit 1; }
 
 # --- 10. An attachment never sent in a chat turn can be deleted freely ---
-printf '\x89PNG\r\n\x1a\n' >"$TMP/probe2.png"
+printf '\211PNG\r\n\032\n' >"$TMP/probe2.png"
 printf 'second-unused-attachment' >>"$TMP/probe2.png"
 RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe2.png")
 UNUSED_ID=$(field "$RESP" id)
