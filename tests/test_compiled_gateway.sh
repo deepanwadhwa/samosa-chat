@@ -56,7 +56,7 @@ printf "Grocery list: milk, eggs, bread.\n" >"$TMP/sweep-files/grocery_list.txt"
 printf "Wallpaper gallery index.\n" >"$TMP/sweep-files/wallpaper_gallery.txt"
 # A real PNG header (1x1 pixel) so samosa-fs detects it as image/png. The
 # gateway's doc.read will fail (no OCR pack) → parked with ocr_unavailable.
-printf '\x89PNG\r\n\x1a\n' >"$TMP/sweep-files/scan_unknown.png"
+/bin/cp "$ROOT/assets/samosa-chat.png" "$TMP/sweep-files/scan_unknown.png"
 # Phase-B checkpoint fixture: one more readable file than the per-run skim
 # budget.  The Continue request must add only the final row, not reread 300.
 /bin/mkdir "$TMP/checkpoint-files"
