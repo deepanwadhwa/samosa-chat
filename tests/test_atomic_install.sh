@@ -34,7 +34,8 @@ install_release
 first=$(readlink "$HOME_DIR/current")
 [ -n "$first" ]
 [ -x "$HOME_DIR/bin/samosa" ]
-SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor | grep -q 'LEGACY whole-row q4'
+SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor > "$TMP/doctor_q4.log"
+grep -q 'LEGACY whole-row q4' "$TMP/doctor_q4.log"
 
 printf 'experts-v2\n' >"$SNAP/experts.bin"
 printf '%s\n' '{"expert_quantization":{"format":"groupwise-symmetric-q4-v1","group_size":32,"down_bits":4},"experts":{}}' >"$SNAP/manifest.json"
@@ -45,7 +46,8 @@ ln -s releases/interrupted "$HOME_DIR/.current.next"
 install_release
 second=$(readlink "$HOME_DIR/current")
 [ "$first" != "$second" ]
-SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor | grep -q 'groupwise q4 (group 32)'
+SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor > "$TMP/doctor_gqa.log"
+grep -q 'groupwise q4 (group 32)' "$TMP/doctor_gqa.log"
 [ "$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' | wc -l | tr -d ' ')" = 2 ]
 
 # Corrupt a remote payload without updating its signed-by-TLS release

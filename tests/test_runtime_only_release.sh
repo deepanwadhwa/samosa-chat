@@ -139,7 +139,8 @@ stop_remote
   fail "legacy model mtime changed after install"
 
 # --- doctor must not report failure merely because no model is installed ----
-SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor | grep -q 'none installed yet' ||
+SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor > "$TMP/doctor.log"
+grep -q 'none installed yet' "$TMP/doctor.log" ||
   fail "doctor did not report the model-free state as informational"
 SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor >/dev/null ||
   fail "doctor exited non-zero on a valid model-free runtime install"
