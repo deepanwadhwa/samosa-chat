@@ -92,7 +92,7 @@ samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3
 .PHONY: chutni-service
 chutni-service:
 	@test -f "$(CHUTNI_DIR)/Makefile" || { echo "missing Chutni submodule; run: git submodule update --init" >&2; exit 2; }
-	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" "$(CHUTNI_BUILD)/chutni-mcp"
+	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="-O2 -D_GNU_SOURCE -Wno-error=format-truncation -Wno-error=implicit-function-declaration" "$(CHUTNI_BUILD)/chutni-mcp"
 	@mkdir -p $(BUILD_DIR)
 	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
 
