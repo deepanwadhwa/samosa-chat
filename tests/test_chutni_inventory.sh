@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 # T0.2 (docs/TASKS_UI_CHUTNI.md): samosa-fs chutni-inventory/chutni-hash must
 # stream instead of materializing+sorting the whole tree, preserve duplicate
 # content as separate path records, keep scanning past an unreadable
@@ -30,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-fs
+
 sh "$GEN" build "$ROOT"
 
 OUT="$TMP/inventory.ndjson"

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 GATEWAY=${SAMOSA_COMPILED_GATEWAY:-./samosa-gateway}
 JOBSD=${SAMOSA_COMPILED_JOBSD:-./samosa-jobsd}
 BACKEND=${SAMOSA_FAKE_BACKEND:-./test_fake_openai_backend}
@@ -203,14 +208,14 @@ if printf '%s' "$find" | /usr/bin/grep -q 'samosa_tool'; then
   exit 1
 fi
 FIND_JOB=$(printf '%s' "$find" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
-[ -n "$FIND_JOB" ]
+[ -n "$FIND_JOB" ] || fail "expected non-empty value"
 # Durable state persisted: Phase A verdicts, the loop conversation, the result.
-[ -f "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl" ]
-[ -f "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl" ]
-[ -f "$HOME_DIR/jobs/$FIND_JOB/classify.jsonl" ]
-[ -f "$HOME_DIR/jobs/$FIND_JOB/convo.json" ]
-[ -f "$HOME_DIR/jobs/$FIND_JOB/result.json" ]
-[ -f "$HOME_DIR/jobs/$FIND_JOB/events.jsonl" ]
+[ -f "$HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/verdicts.jsonl"
+[ -f "$HOME_DIR/jobs/$FIND_JOB/skim.jsonl" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/skim.jsonl"
+[ -f "$HOME_DIR/jobs/$FIND_JOB/classify.jsonl" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/classify.jsonl"
+[ -f "$HOME_DIR/jobs/$FIND_JOB/convo.json" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/convo.json"
+[ -f "$HOME_DIR/jobs/$FIND_JOB/result.json" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/result.json"
+[ -f "$HOME_DIR/jobs/$FIND_JOB/events.jsonl" ] || fail "expected file $HOME_DIR/jobs/$FIND_JOB/events.jsonl"
 /usr/bin/grep -q '"type":"triage_progress"' "$HOME_DIR/jobs/$FIND_JOB/events.jsonl"
 /usr/bin/grep -q '"type":"result"' "$HOME_DIR/jobs/$FIND_JOB/events.jsonl"
 /usr/bin/grep -q '"verdict":' "$HOME_DIR/jobs/$FIND_JOB/classify.jsonl"
@@ -232,7 +237,7 @@ paused=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
 printf '%s' "$paused" | /usr/bin/grep -q '"type":"await_user"'
 printf '%s' "$paused" | /usr/bin/grep -q 'Which receipt'
 JOB_ID=$(printf '%s' "$paused" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
-[ -n "$JOB_ID" ]
+[ -n "$JOB_ID" ] || fail "expected non-empty value"
 resumed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/answer" \
   -H 'Content-Type: application/json' \
   --data-binary "{\"job_id\":\"$JOB_ID\",\"answer\":\"the cafe one\"}")
@@ -273,8 +278,8 @@ while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-triage-delay" ]; do
   }
   /bin/sleep 0.02; i=$((i + 1))
 done
-[ -f "$TMP/fake-triage-first" ]
-[ -f "$TMP/fake-triage-delay" ]
+[ -f "$TMP/fake-triage-first" ] || fail "expected file $TMP/fake-triage-first"
+[ -f "$TMP/fake-triage-delay" ] || fail "expected file $TMP/fake-triage-delay"
 TRIAGE_JOB=$(/bin/ls -dt "$HOME_DIR"/jobs/job-* | /usr/bin/head -1 | /usr/bin/xargs /usr/bin/basename)
 [ "$(/usr/bin/grep -c '"rel_path":' "$HOME_DIR/jobs/$TRIAGE_JOB/verdicts.jsonl")" = 16 ]
 kill_main_for_crash
@@ -300,7 +305,7 @@ while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-verify-delay" ]; do
   kill -0 "$VERIFY_CRASH_CURL" 2>/dev/null || { /bin/cat "$TMP/verify-crash.sse" >&2; exit 1; }
   /bin/sleep 0.02; i=$((i + 1))
 done
-[ -f "$TMP/fake-verify-delay" ]
+[ -f "$TMP/fake-verify-delay" ] || fail "expected file $TMP/fake-verify-delay"
 VERIFY_JOB=$(/bin/ls -dt "$HOME_DIR"/jobs/job-* | /usr/bin/head -1 | /usr/bin/xargs /usr/bin/basename)
 /usr/bin/grep -q 'durable crash probe content' "$HOME_DIR/jobs/$VERIFY_JOB/convo.json"
 kill_main_for_crash
@@ -349,7 +354,7 @@ if printf '%s' "$edu" | /usr/bin/grep -qi 'what is your'; then
 fi
 # Confidence assigned (not binary), no hard drops.
 EDU_JOB=$(printf '%s' "$edu" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
-[ -n "$EDU_JOB" ]
+[ -n "$EDU_JOB" ] || fail "expected non-empty value"
 /usr/bin/grep -q '"confidence":' "$HOME_DIR/jobs/$EDU_JOB/verdicts.jsonl"
 if /usr/bin/grep -q '"verdict":"no"' "$HOME_DIR/jobs/$EDU_JOB/verdicts.jsonl"; then
   echo "education triage still hard-drops files" >&2
@@ -397,8 +402,8 @@ printf '%s' "$sweep" | /usr/bin/grep -q 'ocr_unavailable' || {
 printf '%s' "$sweep" | /usr/bin/grep -q '"type":"done"'
 # Clutter exclusion: junk files must not be in matches.
 SWEEP_JOB=$(printf '%s' "$sweep" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
-[ -n "$SWEEP_JOB" ]
-[ -f "$HOME_DIR/jobs/$SWEEP_JOB/result.json" ]
+[ -n "$SWEEP_JOB" ] || fail "expected non-empty value"
+[ -f "$HOME_DIR/jobs/$SWEEP_JOB/result.json" ] || fail "expected file $HOME_DIR/jobs/$SWEEP_JOB/result.json"
 # Junk files must not appear in the matches array of result.json.
 # The fake backend's finish payload has exactly {miso_vet_checkup, titli_vaccination_2023}
 # in matches — verify the gateway accepted it and no extra paths leaked.
@@ -432,7 +437,7 @@ printf '%s' "$checkpoint" | /usr/bin/grep -q '"type":"await_continue"'
 printf '%s' "$checkpoint" | /usr/bin/grep -q '"skimmed":300'
 printf '%s' "$checkpoint" | /usr/bin/grep -q '"remaining":1'
 CHECKPOINT_JOB=$(printf '%s' "$checkpoint" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
-[ -n "$CHECKPOINT_JOB" ]
+[ -n "$CHECKPOINT_JOB" ] || fail "expected non-empty value"
 [ "$(/usr/bin/grep -c '"path":' "$HOME_DIR/jobs/$CHECKPOINT_JOB/skim.jsonl")" = 300 ]
 checkpoint_resume=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/continue" \
   -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$CHECKPOINT_JOB\"}")
@@ -457,7 +462,7 @@ definition="{\"job\":{\"job_id\":\"native-definition\",\"input\":{\"folder\":\"$
 preview=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/preview" \
   -H 'Content-Type: application/json' --data-binary "$definition")
 printf '%s' "$preview" | /usr/bin/grep -q '"sample_count":1'
-[ -f "$TMP/definition-out/preview/output.jsonl" ]
+[ -f "$TMP/definition-out/preview/output.jsonl" ] || fail "expected file $TMP/definition-out/preview/output.jsonl"
 [ ! -f "$TMP/definition-out/output.jsonl" ]
 expanded=$(printf '%s' "$definition" | /usr/bin/sed 's/}$/,"expanded":true}/')
 preview3=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/preview" \
@@ -469,7 +474,7 @@ printf '%s' "$run" | /usr/bin/grep -q '"type":"item_complete"'
 printf '%s' "$run" | /usr/bin/grep -q '"model_call_seconds":'
 printf '%s' "$run" | /usr/bin/grep -q '"active_inference_seconds":'
 printf '%s' "$run" | /usr/bin/grep -q '"type":"done"'
-[ -f "$TMP/definition-out/output.jsonl" ]
+[ -f "$TMP/definition-out/output.jsonl" ] || fail "expected file $TMP/definition-out/output.jsonl"
 /usr/bin/grep -q '"merchant":"Cafe"' "$TMP/definition-out/output.jsonl"
 
 interlock_definition="{\"job\":{\"job_id\":\"native-definition-interlock\",\"input\":{\"folder\":\"$TMP/interlock-files\"},\"instruction\":\"Interlock definition probe.\",\"resources\":{\"pause_when_user_active\":true},\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-interlock-out\"}}}"
@@ -587,12 +592,12 @@ MOVE_JOB="move-native"
 applied=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
   -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$MOVE_JOB\"}")
 printf '%s' "$applied" | /usr/bin/grep -q '"applied":1'
-[ -f "$TMP/files/Archive/cat-medical-note.txt" ]
+[ -f "$TMP/files/Archive/cat-medical-note.txt" ] || fail "expected file $TMP/files/Archive/cat-medical-note.txt"
 [ ! -f "$TMP/files/cat-medical-note.txt" ]
 undone=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/undo" \
   -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$MOVE_JOB\"}")
 printf '%s' "$undone" | /usr/bin/grep -q '"undone":1'
-[ -f "$TMP/files/cat-medical-note.txt" ]
+[ -f "$TMP/files/cat-medical-note.txt" ] || fail "expected file $TMP/files/cat-medical-note.txt"
 
 # --- Native background scheduler: arm, idempotency, window/battery policy, jobsd binary ---
 /bin/mkdir "$TMP/sched"
@@ -605,8 +610,8 @@ armed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/schedule/arm"
   -H 'Content-Type: application/json' --data-binary "$SCHED_JOB")
 printf '%s' "$armed" | /usr/bin/grep -q '"ok":true'
 printf '%s' "$armed" | /usr/bin/grep -q '"job_id":"nightly-report"'
-[ -f "$HOME_DIR/jobs/nightly-report/schedule.json" ]
-[ -f "$HOME_DIR/jobs/nightly-report/job.json" ]
+[ -f "$HOME_DIR/jobs/nightly-report/schedule.json" ] || fail "expected file $HOME_DIR/jobs/nightly-report/schedule.json"
+[ -f "$HOME_DIR/jobs/nightly-report/job.json" ] || fail "expected file $HOME_DIR/jobs/nightly-report/job.json"
 
 # Re-arming the identical definition is idempotent (no rejection).
 armed_again=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/schedule/arm" \
@@ -676,7 +681,7 @@ printf '%s' "$missed" | /usr/bin/grep -q '"job_id":"missed-run","action":"run","
 # --- launchd lifecycle (dry-run, temp LaunchAgents dir) ---
 /usr/bin/curl -fsS "http://127.0.0.1:$PORT/v1/jobs/launchd/status" | /usr/bin/grep -q '"installed":false'
 /usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/launchd/install" | /usr/bin/grep -q '"ok":true'
-[ -f "$TMP/agents/com.samosa.jobsd.plist" ]
+[ -f "$TMP/agents/com.samosa.jobsd.plist" ] || fail "expected file $TMP/agents/com.samosa.jobsd.plist"
 /usr/bin/grep -q '<string>jobsd-once</string>' "$TMP/agents/com.samosa.jobsd.plist"
 /usr/bin/curl -fsS "http://127.0.0.1:$PORT/v1/jobs/launchd/status" | /usr/bin/grep -q '"installed":true'
 /usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/launchd/uninstall" | /usr/bin/grep -q '"removed":true'

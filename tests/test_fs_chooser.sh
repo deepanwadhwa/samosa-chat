@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 # T1.3 (docs/TASKS_UI_CHUTNI.md sec5.4): safe browser directory chooser.
 # HOME is overridden to a sandboxed fixture tree -- this is the real OS user
 # home the chooser roots from (see Gateway.user_home), distinct from
@@ -22,7 +27,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-gateway >/dev/null 2>&1 || true
+
 
 mkdir -p "$HOME_DIR/Documents/Research" "$HOME_DIR/.hidden_dir" "$HOME_DIR/Documents/NoPerm" "$SAMOSA_HOME"
 printf 'not a folder\n' >"$HOME_DIR/Documents/notes.txt"

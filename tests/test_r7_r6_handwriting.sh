@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/r7_r6_test.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
@@ -10,7 +15,7 @@ PORT_GW=18154
 BUILD_DIR="${BUILD_DIR:-build}"
 
 # Compile binaries if needed
-make samosa-ocr samosa-gateway test_fake_openai_backend >/dev/null 2>&1 || true
+
 
 REAL_HOME="$HOME"
 PACK="${SAMOSA_OCR_PACK:-$REAL_HOME/.samosa/models/ocr-pack-v1}"

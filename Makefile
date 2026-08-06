@@ -435,3 +435,16 @@ jobs-test: samosa-fs
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+debian-portability-test: compiled-gateway-test test-chutni-db test-chutni chutni-gateway-test
+
+ci-debian:
+	docker run --rm --platform linux/amd64 \
+	  -v "$$PWD:/work" -w /work debian:bookworm-slim \
+	  sh -ec ' \
+	    apt-get update; \
+	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+	      make gcc curl python3 file nodejs sqlite3 libomp-dev; \
+	    rm -rf build-debian; \
+	    BUILD_DIR=build-debian make debian-portability-test; \
+	  '

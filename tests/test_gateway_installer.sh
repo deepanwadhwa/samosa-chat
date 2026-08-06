@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=${TMPDIR:-/tmp}/samosa-gateway-install-test.$$
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM

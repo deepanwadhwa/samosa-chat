@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 REAL=${REAL_CHUTNI_MCP:?REAL_CHUTNI_MCP is required}
 
 if [ "${1:-}" = "--call" ] && [ "${2:-}" = "chutni_folder_activate" ]; then

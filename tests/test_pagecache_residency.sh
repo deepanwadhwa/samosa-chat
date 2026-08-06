@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 tool="${1:-./pagecache-residency}"
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/samosa-pagecache-test.XXXXXX")"
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM

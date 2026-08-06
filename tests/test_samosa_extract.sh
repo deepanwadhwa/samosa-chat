@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 EXTRACTOR=${SAMOSA_EXTRACT:-./samosa-extract}
 FIXTURE=tests/fixtures/documents/hello.pdf
 TEXT_FIXTURE=tests/fixtures/documents/notes.txt

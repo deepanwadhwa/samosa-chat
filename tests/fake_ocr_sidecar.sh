@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 case "${1:-}" in
   --version)
     printf '%s\n' 'samosa-ocr fixture-1'

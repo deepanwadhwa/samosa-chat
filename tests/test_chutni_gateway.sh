@@ -7,6 +7,7 @@ fail() {
 }
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+BUILD_DIR="${BUILD_DIR:-build}"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-chutni-gateway.XXXXXX")
 PORT=19277
 PID=
@@ -27,7 +28,7 @@ mkdir -p "$TMP/home/qwen-model"
 printf 'fixture\n' >"$TMP/home/qwen-model/experts.bin"
 printf '{}\n' >"$TMP/tokenizer.json"
 
-SAMOSA_EXTRACT="$ROOT/build/samosa-extract"
+SAMOSA_EXTRACT="$ROOT/$BUILD_DIR/samosa-extract"
 if [ ! -f "$SAMOSA_EXTRACT" ] || [ ! -x "$SAMOSA_EXTRACT" ]; then
   echo "test_chutni_gateway.sh: SKIPPED (no samosa-extract build on this machine)"
   exit 0
@@ -39,14 +40,14 @@ CHUTNI_HOME="$TMP/chutni-home" \
 SAMOSA_PORT="$PORT" \
 SAMOSA_BACKEND_PORT=$((PORT + 1)) \
 SAMOSA_APP_HTML="$ROOT/assets/app.html" \
-SAMOSA_QWEN_ENGINE="$ROOT/build/test_fake_openai_backend" \
+SAMOSA_QWEN_ENGINE="$ROOT/$BUILD_DIR/test_fake_openai_backend" \
 SAMOSA_QWEN_MODEL="$TMP/home/qwen-model" \
 SAMOSA_TOKENIZER="$TMP/tokenizer.json" \
-SAMOSA_CHUTNI_SERVICE="$ROOT/build/chutni-mcp" \
+SAMOSA_CHUTNI_SERVICE="$ROOT/$BUILD_DIR/chutni-mcp" \
 SAMOSA_EXTRACT="$SAMOSA_EXTRACT" \
 SAMOSA_OCR="$ROOT/tests/fake_ocr_sidecar.sh" \
 SAMOSA_APP_VERSION="test-enrichment-1" \
-"$ROOT/build/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
+"$ROOT/$BUILD_DIR/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
 PID=$!
 
 i=0
@@ -91,9 +92,9 @@ while [ "$i" -lt 300 ]; do
 done
 [ "$i" -lt 300 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "scope never reached ready state"; }
 
-[ -f "$STORE/manifest.json" ]
-[ -f "$STORE/catalog.sqlite" ]
-[ -f "$STORE/indexes/lexical.sqlite" ]
+[ -f "$STORE/manifest.json" ] || fail "expected file $STORE/manifest.json"
+[ -f "$STORE/catalog.sqlite" ] || fail "expected file $STORE/catalog.sqlite"
+[ -f "$STORE/indexes/lexical.sqlite" ] || fail "expected file $STORE/indexes/lexical.sqlite"
 printf '%s' "$STATUS" | grep -q '"files_indexed":4'
 printf '%s' "$STATUS" | grep -q '"summary_token_budget":128'
 printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
@@ -137,16 +138,16 @@ printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
 # Samosa enrichment is committed into the portable protocol store, not a
 # private cache: PDF pages, image OCR, captions, and summaries are searchable
 # with their protocol artifact kinds and provenance.
-PDF_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+PDF_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"synthetic fixture document\",\"limit\":20}")
 printf '%s' "$PDF_RESULT" | grep -q '"artifact_kind":"page_text"'
-OCR_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+OCR_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"Poličar 2019\",\"limit\":20}")
 printf '%s' "$OCR_RESULT" | grep -q '"artifact_kind":"ocr_text"'
-CAPTION_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+CAPTION_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"small repository OCR fixture\",\"limit\":20}")
 printf '%s' "$CAPTION_RESULT" | grep -q '"artifact_kind":"image_caption"'
-SUMMARY_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+SUMMARY_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"portable Chutni memory\",\"limit\":20}")
 printf '%s' "$SUMMARY_RESULT" | grep -q '"artifact_kind":"summary_short"'
 
@@ -215,7 +216,7 @@ printf '%s' "$NO_MATCH" | grep -q 'saw honest no-match status'
 
 # A second host reads the exact store Samosa created; there is no migration or
 # Samosa-private catalog in the retrieval path.
-DIRECT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_search \
+DIRECT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"handoff\"}")
 printf '%s' "$DIRECT" | grep -q '"count":1'
 printf '%s' "$DIRECT" | grep -q 'notes.md'
@@ -223,7 +224,7 @@ printf '%s' "$DIRECT" | grep -q 'notes.md'
 # The generic service updates the store, and Samosa immediately reads the
 # other host's update.
 printf 'retention date September\n' >"$TMP/source/report.txt"
-HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/build/chutni-mcp" --call chutni_scan \
+HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_scan \
   "{\"store_path\":\"$STORE\",\"confirmed\":true,\"app_name\":\"handoff-test\",\"app_version\":\"1\"}" \
   >"$TMP/direct-scan.json"
 UPDATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
@@ -253,7 +254,7 @@ FORGOTTEN=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/
   "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/forget" \
   --data-binary '{"confirm":true}')
 printf '%s' "$FORGOTTEN" | grep -q '"portable_store_preserved":true'
-[ -f "$STORE/manifest.json" ]
+[ -f "$STORE/manifest.json" ] || fail "expected file $STORE/manifest.json"
 SCOPES=$(curl -fsS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/chutni/scopes")
 printf '%s' "$SCOPES" | grep -q '"scopes":\[\]'
 

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 # Regression test for the fail-closed /v1/ dispatcher gate
 # (src/samosa_gateway.c: v1_route_is_legacy_unauthenticated /
 # require_ui_session in gateway_handler()).
@@ -32,7 +37,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-gateway >/dev/null 2>&1 || true
+
 
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Compiled Samosa</title><meta name="samosa-ui-token" content="__SAMOSA_UI_TOKEN__">\n' >"$TMP/app.html"

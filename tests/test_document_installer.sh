@@ -3,6 +3,11 @@
 # verified-release installer and be usable from its final, relative rpath.
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 ARCHIVE=${PDFIUM_MAC_ARM64_ARCHIVE:-}
 if [ -z "$ARCHIVE" ] || [ ! -f "$ARCHIVE" ]; then
   echo "document installer: SKIP (set PDFIUM_MAC_ARM64_ARCHIVE to the reviewed artifact)"
@@ -43,7 +48,7 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 RELEASE=$(readlink "$HOME_DIR/current")
 RELEASE_DIR="$HOME_DIR/$RELEASE"
 [ -x "$RELEASE_DIR/bin/samosa-extract" ]
-[ -f "$RELEASE_DIR/lib/libpdfium.dylib" ]
+[ -f "$RELEASE_DIR/lib/libpdfium.dylib" ] || fail "expected file $RELEASE_DIR/lib/libpdfium.dylib"
 "$RELEASE_DIR/bin/samosa-extract" --json "$ROOT/tests/fixtures/documents/hello.pdf" |
   grep -F '"ok":true' >/dev/null
 "$RELEASE_DIR/bin/samosa-extract" --json-pages "$ROOT/tests/fixtures/documents/hello.pdf" 1 5 |

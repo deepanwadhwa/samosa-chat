@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
 # T3.3: the Chutni scope-view logic, checked against the acceptance rules.
 #
 # The rendering itself cannot be seen from here, so what is testable is the

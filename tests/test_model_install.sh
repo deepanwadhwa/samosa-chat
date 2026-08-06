@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 # T2.2 (docs/TASKS_UI_CHUTNI.md section 5.3): resumable server-owned model
 # downloads. Exercises the real compiled gateway against
 # tests/fake_model_download_server.c (T0.1), which already implements every
@@ -37,7 +42,7 @@ sha256_file() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-gateway fake_model_download_server >/dev/null 2>&1 || true
+
 
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

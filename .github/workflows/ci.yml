@@ -74,6 +74,6 @@ jobs:
               su -s /bin/sh ci -c "
                 cd /work
                 rm -rf build-debian
-                BUILD_DIR=build-debian make test
+                BUILD_DIR=build-debian make debian-portability-test
               "
             '

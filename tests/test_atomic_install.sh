@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=${TMPDIR:-/tmp}/samosa-atomic-install-test.$$
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -32,7 +37,7 @@ install_release() {
 package
 install_release
 first=$(readlink "$HOME_DIR/current")
-[ -n "$first" ]
+[ -n "$first" ] || fail "expected non-empty value"
 [ -x "$HOME_DIR/bin/samosa" ]
 SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor > "$TMP/doctor_q4.log"
 grep -q 'LEGACY whole-row q4' "$TMP/doctor_q4.log"

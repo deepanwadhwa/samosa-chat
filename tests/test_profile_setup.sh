@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+fail() {
+  echo "$(basename "$0"): FAIL: $1" >&2
+  exit 1
+}
+
 # T1.2 (docs/TASKS_UI_CHUTNI.md): profile and setup state, plus the §5.0
 # UI-token/Origin session contract every new v1 route in this program uses.
 
@@ -18,7 +23,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-make samosa-gateway >/dev/null 2>&1 || true
+
 
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Compiled Samosa</title><meta name="samosa-ui-token" content="__SAMOSA_UI_TOKEN__">\n' >"$TMP/app.html"
@@ -87,7 +92,7 @@ STATUS=$(curl -sS -o "$TMP/resp.json" -w '%{http_code}' -X PUT -H "X-Samosa-Toke
 # --- name validation: invalid UTF-8 rejected ---
 python3 -c "
 import json
-body = b'{\"name\":\"' + b'\xff\xfe' + b'\"}'
+body = b'{\"name\":\"' + b'\377\376' + b'\"}'
 open('$TMP/invalid_utf8.json', 'wb').write(body)
 "
 STATUS=$(curl -sS -o "$TMP/resp.json" -w '%{http_code}' -X PUT -H "X-Samosa-Token: $TOKEN" -H "Origin: $ORIGIN" \
