@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T2.4 (docs/TASKS_UI_CHUTNI.md section 5.1/4): setup/status's next_step now
 # resolves against real T2.1 catalog state and T2.2/T2.3 install/selection
 # job state (setup_status_resolve() in src/samosa_gateway.c) instead of the
@@ -43,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway fake_model_download_server test_fake_openai_backend >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

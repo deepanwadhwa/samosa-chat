@@ -1,13 +1,14 @@
 #!/bin/sh
 set -eu
 
+BUILD_DIR="${BUILD_DIR:-build}"
+
 fail() {
   echo "test_chutni_gateway.sh: FAIL: $1" >&2
   exit 1
 }
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-BUILD_DIR="${BUILD_DIR:-build}"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-chutni-gateway.XXXXXX")
 PORT=19277
 PID=
@@ -92,9 +93,9 @@ while [ "$i" -lt 300 ]; do
 done
 [ "$i" -lt 300 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "scope never reached ready state"; }
 
-[ -f "$STORE/manifest.json" ] || fail "expected file $STORE/manifest.json"
-[ -f "$STORE/catalog.sqlite" ] || fail "expected file $STORE/catalog.sqlite"
-[ -f "$STORE/indexes/lexical.sqlite" ] || fail "expected file $STORE/indexes/lexical.sqlite"
+[ -f "$STORE/manifest.json" ]
+[ -f "$STORE/catalog.sqlite" ]
+[ -f "$STORE/indexes/lexical.sqlite" ]
 printf '%s' "$STATUS" | grep -q '"files_indexed":4'
 printf '%s' "$STATUS" | grep -q '"summary_token_budget":128'
 printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
@@ -254,7 +255,7 @@ FORGOTTEN=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/
   "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/forget" \
   --data-binary '{"confirm":true}')
 printf '%s' "$FORGOTTEN" | grep -q '"portable_store_preserved":true'
-[ -f "$STORE/manifest.json" ] || fail "expected file $STORE/manifest.json"
+[ -f "$STORE/manifest.json" ]
 SCOPES=$(curl -fsS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/chutni/scopes")
 printf '%s' "$SCOPES" | grep -q '"scopes":\[\]'
 

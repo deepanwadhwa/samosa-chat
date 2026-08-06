@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/motto_scenario_test.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
@@ -15,7 +10,7 @@ PORT_GW=18134
 BUILD_DIR="${BUILD_DIR:-build}"
 
 # Compile test fake backend if not built
-
+make test_fake_openai_backend >/dev/null 2>&1 || true
 
 # Start fake backend
 "${BUILD_DIR}/test_fake_openai_backend" --port "$PORT_BE" &

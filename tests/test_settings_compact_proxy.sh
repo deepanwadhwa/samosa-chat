@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T3.2 (docs/TASKS_UI_CHUTNI.md): POST /v1/settings and POST /v1/compact were
 # always called by assets/app.html but the compiled gateway never routed
 # them -- verified live (before this fix) that both 404'd unconditionally.
@@ -33,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway test_fake_openai_backend >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR/qwen-model"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

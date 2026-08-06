@@ -1,10 +1,5 @@
 #!/bin/sh
 set -eu
-
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
 # A CSS author `display` rule beats the UA `[hidden] { display: none }` rule at
 # equal specificity. An element whose class sets a *visible* display therefore
 # ignores hidden=true unless the stylesheet also carries a `[hidden]` guard.

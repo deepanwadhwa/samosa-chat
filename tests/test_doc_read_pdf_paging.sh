@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T0.3 (docs/TASKS_UI_CHUTNI.md): "A PDF longer than five pages is processed
 # without violating the extractor contract." Runs the REAL samosa-extract
 # (samosa_extract.c enforces --json-pages COUNT<=5) against a real 7-page

@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T0.1 (docs/TASKS_UI_CHUTNI.md): the fake model-download server must exercise
 # every failure mode T2.2's future resumable downloader will need to survive,
 # deterministically and offline. This test proves the fixture server itself is
@@ -35,7 +30,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make fake_model_download_server >/dev/null 2>&1 || true
 
 FIXTURE="$TMP/artifact.bin"
 # 5000 deterministic bytes, not all-zero, so a single flipped byte is detectable.

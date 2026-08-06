@@ -37,9 +37,9 @@ def chunk(tag, data):
     out += struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
     return out
 
-sig = b'\211PNG\r\n\032\n'
+sig = b'\x89PNG\r\n\x1a\n'
 ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
-raw = b'\000' + b'\377\377\377'
+raw = b'\x00' + b'\xff\xff\xff'
 idat = zlib.compress(raw)
 data = sig + chunk(b'IHDR', ihdr) + chunk(b'IDAT', idat) + chunk(b'IEND', b'')
 open('$1', 'wb').write(data)

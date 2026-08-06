@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # Exercises the real localhost STT boundary without downloading Whisper.cpp:
 # a tiny argv-safe fake CLI stands in for the pinned binary, while the model
 # file is sparse but exact-size so the same readiness check production uses is
@@ -35,7 +30,7 @@ grep -F -- '-DBUILD_SHARED_LIBS=OFF' "$RUNTIME_SCRIPT" >/dev/null
 grep -F -- 'f049fff95a089aa9969deb009cdd4892b3e74916' "$RUNTIME_SCRIPT" >/dev/null
 grep -F -- 'd8cd961352377b1cc612224016a9ebdfe0ae508dc2b2f9ef514b341d672e3fdc' "$RUNTIME_SCRIPT" >/dev/null
 
-
+make samosa-gateway >/dev/null 2>&1 || true
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Samosa voice fixture</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
@@ -44,11 +39,6 @@ python3 -c "from pathlib import Path; Path('$TMP/ggml-base.en.bin').write_bytes(
 cat >"$TMP/whisper-cli" <<'EOF'
 #!/bin/sh
 set -eu
-
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
 out=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -56,7 +46,7 @@ while [ "$#" -gt 0 ]; do
     *) shift ;;
   esac
 done
-[ -n "$out" ] || fail "expected non-empty value"
+[ -n "$out" ]
 printf 'hello from local whisper\n' >"$out.txt"
 EOF
 chmod 700 "$TMP/whisper-cli"

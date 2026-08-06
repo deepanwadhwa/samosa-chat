@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T1.2 (docs/TASKS_UI_CHUTNI.md): profile and setup state, plus the §5.0
 # UI-token/Origin session contract every new v1 route in this program uses.
 

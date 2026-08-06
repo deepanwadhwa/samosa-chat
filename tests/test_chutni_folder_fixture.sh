@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T0.1: proves the shared Chutni folder-tree fixture generator itself is
 # correct — build produces the exact expected shape, every mutate- subcommand
 # does what it claims, and fix-perms leaves nothing behind that `rm -rf` can't

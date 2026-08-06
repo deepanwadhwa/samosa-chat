@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): POST/GET/DELETE /v1/attachments is
 # new content-addressed storage replacing base64-in-localStorage for
 # composer image/document attachments, plus the attachment_ids resolution
@@ -46,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway test_fake_openai_backend
 
 mkdir -p "$HOME_DIR/qwen-model"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

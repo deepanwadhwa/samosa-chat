@@ -1,10 +1,5 @@
 #!/bin/sh
 set -eu
-
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
 # tests/test_backend_limits.c mirrors backend_limits() from the gateway so the
 # tier table can be checked for machines this repo cannot run on. A mirror that
 # drifts is worse than no test, so the tier constants are compared directly.

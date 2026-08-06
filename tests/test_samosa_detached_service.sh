@@ -1,13 +1,9 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
+BUILD_DIR="${BUILD_DIR:-build}"
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-BUILD_DIR="${BUILD_DIR:-build}"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/samosa-detached-service.XXXXXX")
 PORT=19371
 LAUNCH_SHELL=
@@ -36,11 +32,6 @@ printf '{}\n' >"$TMP/release/tokenizer_qwen36.json"
 cat >"$TMP/launch-shell.sh" <<EOF
 #!/bin/sh
 set -eu
-
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
 SAMOSA_HOME="$TMP/home" SAMOSA_RELEASE_DIR="$TMP/release" \
   SAMOSA_PORT="$PORT" sh "$ROOT/dist/samosa" serve
 printf 'launcher-returned\n' >"$TMP/launcher-returned"

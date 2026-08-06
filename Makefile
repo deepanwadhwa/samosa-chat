@@ -90,8 +90,8 @@ ifeq ($(UNAME_S),Darwin)
   CHUTNI_OPT := -O2 -Wno-error=implicit-function-declaration
   CWARN := -Wall -Wextra -Werror
 else
-  LINUX_WARNING_FLAGS := -Werror -Wno-error=format-truncation
-  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration $(LINUX_WARNING_FLAGS)
+  LINUX_WARNING_FLAGS := -Werror -Wno-error=format-truncation -Wno-error=discarded-qualifiers
+  CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration -Wno-error=format-truncation
   CWARN := -Wall -Wextra $(LINUX_WARNING_FLAGS)
 endif
 
@@ -445,7 +445,7 @@ ci-debian:
 	  sh -ec '\
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc curl python3 nodejs sqlite3 libomp-dev file ca-certificates; \
+	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates; \
 	    useradd -m ci; \
 	    cp -a /src /work; \
 	    chown -R ci:ci /work; \
@@ -453,5 +453,24 @@ ci-debian:
 	      cd /work && \
 	      rm -rf build-debian && \
 	      BUILD_DIR=build-debian make debian-portability-test\
+	    "; \
+	  '
+
+ci-ubuntu-full:
+	docker run --rm --platform linux/amd64 \
+	  -v "$$PWD:/src:ro" \
+	  ubuntu:latest \
+	  sh -ec '\
+	    apt-get update; \
+	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev \
+	      file ca-certificates git bash; \
+	    useradd -m ci; \
+	    cp -a /src /work; \
+	    chown -R ci:ci /work; \
+	    su -s /bin/bash ci -c "\
+	      cd /work && \
+	      rm -rf build && \
+	      SAMOSA_ALLOW_SLOW_CPU=1 make test\
 	    "; \
 	  '

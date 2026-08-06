@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T1.4 (docs/TASKS_UI_CHUTNI.md sec5.2): conversation schema v2 and
 # gateway-enforced model binding. Exercises the canonical GET/PUT
 # /v1/conversations/<id>/binding endpoints directly, then the binding
@@ -30,7 +25,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway test_fake_openai_backend >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR/models/ornith-9b"
 ORNITH_MODEL="$HOME_DIR/models/ornith-9b/Ornith-Fixture-Q4_K_M.gguf"

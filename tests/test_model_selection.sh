@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T2.3 (docs/TASKS_UI_CHUTNI.md section 5.3): readiness-safe model
 # activation. Exercises the real compiled gateway's POST /v1/backends/select
 # against tests/fake_openai_backend.c, which now supports a /healthz alias
@@ -32,7 +27,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway test_fake_openai_backend >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR/qwen-model" "$HOME_DIR/models/bonsai-27b-1bit"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

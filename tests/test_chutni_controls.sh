@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+BUILD_DIR="${BUILD_DIR:-build}"
+
 fail() {
   echo "test_chutni_controls.sh: FAIL: $1" >&2
   exit 1
@@ -22,8 +24,6 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$TMP/home" "$TMP/source"
 printf 'repository-only pause fixture\n' >"$TMP/source/one.txt"
-
-BUILD_DIR="${BUILD_DIR:-build}"
 
 SAMOSA_FAKE_MODEL_FILE="$TMP/model.gguf" \
   "$ROOT/$BUILD_DIR/test_fake_openai_backend" "$((PORT + 1))" >"$TMP/backend.log" 2>&1 &
@@ -77,21 +77,21 @@ printf '%s' "$STATUS" | grep -q '"files_per_second":' || fail "missing files_per
 PAUSED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/pause" \
   --data-binary "{\"job_id\":\"$JOB\"}")
-printf '%s' "$PAUSED" | grep -q '"state":"paused_user"' || fail "expected state:paused_user"
+printf '%s' "$PAUSED" | grep -q '"state":"paused_user"'
 # Simulate a scope created by the pre-monitoring release. The live status
 # overlay must add new fields instead of requiring the user to forget/re-add.
 printf '{"id":"%s","schema_version":2,"kind":"folder","display_name":"Control fixture","canonical_root":"%s","state":"unbuilt","evidence_generation":0}\n' \
   "$SCOPE" "$TMP/source" >"$TMP/home/chutni/scopes/$SCOPE/scope.json"
 STATUS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE")
-printf '%s' "$STATUS" | grep -q '"state":"paused_user"' || fail "expected state:paused_user"
-printf '%s' "$STATUS" | grep -q "\"active_job_id\":\"$JOB\"" || fail "missing active_job_id"
-printf '%s' "$STATUS" | grep -q '"scan_files_seen":' || fail "missing scan_files_seen"
+printf '%s' "$STATUS" | grep -q '"state":"paused_user"'
+printf '%s' "$STATUS" | grep -q "\"active_job_id\":\"$JOB\""
+printf '%s' "$STATUS" | grep -q '"scan_files_seen":'
 
 RESUMED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/resume" \
   --data-binary "{\"job_id\":\"$JOB\"}")
-printf '%s' "$RESUMED" | grep -q '"state":"queued"' || fail "expected state:queued"
+printf '%s' "$RESUMED" | grep -q '"state":"queued"'
 
 i=0
 while [ "$i" -lt 100 ]; do
@@ -106,9 +106,9 @@ done
 CANCELED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE/cancel" \
   --data-binary "{\"job_id\":\"$JOB\"}")
-printf '%s' "$CANCELED" | grep -q '"state":"canceling"' || fail "expected state:canceling"
+printf '%s' "$CANCELED" | grep -q '"state":"canceling"'
 STATUS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   "http://127.0.0.1:$PORT/v1/chutni/scopes/$SCOPE")
-printf '%s' "$STATUS" | grep -q '"state":"canceled_initial"' || fail "expected state:canceled_initial"
+printf '%s' "$STATUS" | grep -q '"state":"canceled_initial"'
 
 echo "test_chutni_controls.sh: PASS"

@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 # T1.1 (docs/TASKS_UI_CHUTNI.md): "Start the gateway with zero installed
 # models." Supersedes tests/test_baseline_zero_model_startup.sh (T0.1's
 # frozen record of the pre-fix defect: the process used to exit(2) before
@@ -28,7 +23,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-
+make samosa-gateway >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"

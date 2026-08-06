@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "test_kokoro_native_gateway.sh: SKIP (macOS dylib contract test)" >&2
   exit 0

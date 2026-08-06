@@ -1,11 +1,6 @@
 #!/bin/sh
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 DB=$(mktemp "${TMPDIR:-/tmp}/samosa-chutni-db.XXXXXX")
 cleanup() { rm -f "$DB" "$DB-wal" "$DB-shm"; }
 trap cleanup EXIT HUP INT TERM

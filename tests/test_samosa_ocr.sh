@@ -6,11 +6,6 @@
 # offline by tools/export_ocr_pack.py; the weights are not committed).
 set -eu
 
-fail() {
-  echo "$(basename "$0"): FAIL: $1" >&2
-  exit 1
-}
-
 OCR="${SAMOSA_OCR:-./build/samosa-ocr}"
 PACK="${SAMOSA_OCR_PACK:-$HOME/.samosa/models/ocr-pack-v1}"
 GOLD="tools/testdata/ocr"
