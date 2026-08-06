@@ -33,7 +33,27 @@ printf 'A second document about renewal terms.\n' >"$ROOT/b.txt"
 
 # A digest of the source tree. The single most important property of a failed
 # build is that it did not touch the user's files.
-source_digest() { find "$ROOT" -type f -exec shasum {} \; | sort | shasum | cut -d' ' -f1; }
+source_digest() {
+  python3 - "${1:-$ROOT}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+digest = hashlib.sha256()
+
+for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    relative = path.relative_to(root).as_posix().encode()
+    content = path.read_bytes()
+
+    digest.update(len(relative).to_bytes(8, "big"))
+    digest.update(relative)
+    digest.update(len(content).to_bytes(8, "big"))
+    digest.update(content)
+
+print(digest.hexdigest())
+PY
+}
 active_gen() {
   python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["evidence_generation"])' \
     "$STATE/scopes/$1/active.json" 2>/dev/null || echo "none"
@@ -202,13 +222,13 @@ if [ "$RAM_OK" = "1" ]; then
   [ "$BALLAST_KB" -gt 0 ] || fail "the small volume has no room to work with"
   dd if=/dev/zero of="$RAM_MP/ballast" bs=1024 count="$BALLAST_KB" >/dev/null 2>&1 || true
 
-  FULL_SRC_BEFORE=$(find "$FULL_ROOT" -type f -exec shasum {} \; | sort | shasum | cut -d' ' -f1)
+  FULL_SRC_BEFORE=$(source_digest "$FULL_ROOT")
   if "$DB_BIN" scope-build "$FULL_STATE" f "$TOKENIZER" >/dev/null 2>&1; then
     fail "a build must not report success on a full filesystem"
   fi
   # This is an *initial* generation failure: there is no older generation to
   # fall back to, so the scope must not pretend one exists.
-  [ "$(find "$FULL_ROOT" -type f -exec shasum {} \; | sort | shasum | cut -d' ' -f1)" = "$FULL_SRC_BEFORE" ] \
+  [ "$(source_digest "$FULL_ROOT")" = "$FULL_SRC_BEFORE" ] \
     || fail "ENOSPC: source bytes changed"
   if [ -f "$FULL_STATE/scopes/f/active.json" ]; then
     fail "ENOSPC on the initial build must not publish an active generation"

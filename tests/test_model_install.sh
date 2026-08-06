@@ -24,6 +24,17 @@ cleanup() {
   [ -z "$SERVER_PID" ] || wait "$SERVER_PID" 2>/dev/null || true
   rm -rf "$TMP"
 }
+
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
 trap cleanup EXIT HUP INT TERM
 
 make samosa-gateway fake_model_download_server >/dev/null 2>&1 || true
@@ -162,7 +173,7 @@ COMPLETED=$(job_field "$FINAL" completed_bytes)
 TOTAL=$(job_field "$FINAL" total_bytes)
 [ "$COMPLETED" = "$TOTAL" ] || { echo "FAIL: completed_bytes ($COMPLETED) != total_bytes ($TOTAL)"; exit 1; }
 [ -f "$HOME_DIR/test/artifact.bin" ] || { echo "FAIL: artifact was not activated at install_path"; exit 1; }
-ACTUAL_SHA=$(shasum -a 256 "$HOME_DIR/test/artifact.bin" | awk '{print $1}')
+ACTUAL_SHA=$(sha256_file "$HOME_DIR/test/artifact.bin")
 [ "$ACTUAL_SHA" = "$FIXTURE_SHA" ] || { echo "FAIL: activated file hash mismatch"; exit 1; }
 PERMS=$(stat -f "%Lp" "$HOME_DIR/test/artifact.bin" 2>/dev/null || stat -c "%a" "$HOME_DIR/test/artifact.bin")
 [ "$PERMS" = "600" ] || { echo "FAIL: expected mode 600 on activated artifact, got $PERMS"; exit 1; }
@@ -275,7 +286,7 @@ for MODE in ignore_range bad_content_range; do
   JOB_ID=$(job_field "$RESP" job_id)
   FINAL=$(wait_terminal "$JOB_ID")
   [ "$(job_field "$FINAL" state)" = "installed" ] || { echo "FAIL: $MODE should still result in a correct install, got $(job_field "$FINAL" state)"; echo "$FINAL"; exit 1; }
-  ACTUAL_SHA=$(shasum -a 256 "$HOME_DIR/test/artifact.bin" | awk '{print $1}')
+  ACTUAL_SHA=$(sha256_file "$HOME_DIR/test/artifact.bin")
   [ "$ACTUAL_SHA" = "$FIXTURE_SHA" ] || { echo "FAIL: $MODE activated a file with the wrong hash"; exit 1; }
   stop_gateway
   stop_server
@@ -292,7 +303,7 @@ RESP=$(install_request testmodel v1)
 JOB_ID=$(job_field "$RESP" job_id)
 wait_terminal "$JOB_ID" >/dev/null
 [ -f "$HOME_DIR/test/artifact.bin" ] || { echo "FAIL: setup for 7c did not install the first copy"; exit 1; }
-ORIGINAL_SHA=$(shasum -a 256 "$HOME_DIR/test/artifact.bin" | awk '{print $1}')
+ORIGINAL_SHA=$(sha256_file "$HOME_DIR/test/artifact.bin")
 ORIGINAL_MTIME=$(stat -f "%m" "$HOME_DIR/test/artifact.bin" 2>/dev/null || stat -c "%Y" "$HOME_DIR/test/artifact.bin")
 stop_server
 start_server corrupt "$TMP/artifact.bin"
@@ -301,7 +312,7 @@ JOB_ID2=$(job_field "$RESP2" job_id)
 [ "$JOB_ID2" != "$JOB_ID" ] || { echo "FAIL: the first job is already terminal (installed), a fresh request must get a new job"; exit 1; }
 FINAL2=$(wait_terminal "$JOB_ID2")
 [ "$(job_field "$FINAL2" state)" = "failed" ] || { echo "FAIL: the corrupt re-install attempt should fail, got $(job_field "$FINAL2" state)"; exit 1; }
-SURVIVING_SHA=$(shasum -a 256 "$HOME_DIR/test/artifact.bin" | awk '{print $1}')
+SURVIVING_SHA=$(sha256_file "$HOME_DIR/test/artifact.bin")
 SURVIVING_MTIME=$(stat -f "%m" "$HOME_DIR/test/artifact.bin" 2>/dev/null || stat -c "%Y" "$HOME_DIR/test/artifact.bin")
 [ "$SURVIVING_SHA" = "$ORIGINAL_SHA" ] || { echo "FAIL: the working installed file was corrupted by a failed re-install"; exit 1; }
 [ "$SURVIVING_MTIME" = "$ORIGINAL_MTIME" ] || { echo "FAIL: the working installed file was rewritten by a failed re-install (mtime changed)"; exit 1; }

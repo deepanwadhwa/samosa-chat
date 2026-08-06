@@ -17,6 +17,17 @@ mkdir -p "$REMOTE" "$HOME_DIR"
 
 fail() { echo "runtime-only release: FAIL — $1" >&2; exit 1; }
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
+
 MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json'
 
 serve_remote() {
@@ -78,8 +89,7 @@ fi
 
 LEGACY_INODE_BEFORE=$(get_inode "$LEGACY_MODEL_DIR/experts.bin")
 LEGACY_MTIME_BEFORE=$(get_mtime "$LEGACY_MODEL_DIR/experts.bin")
-LEGACY_SHA_BEFORE=$(shasum -a 256 "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null | awk '{print $1}')
-[ -n "$LEGACY_SHA_BEFORE" ] || LEGACY_SHA_BEFORE=$(sha256sum "$LEGACY_MODEL_DIR/experts.bin" | awk '{print $1}')
+LEGACY_SHA_BEFORE=$(sha256_file "$LEGACY_MODEL_DIR/experts.bin")
 
 SERVER_PORT=$((19000 + $$ % 4000))
 SERVER_PID=""
@@ -171,8 +181,7 @@ stop_remote
   fail "legacy model inode changed after upgrade"
 [ "$(get_mtime "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_MTIME_BEFORE" ] ||
   fail "legacy model mtime changed after upgrade"
-LEGACY_SHA_AFTER=$(shasum -a 256 "$LEGACY_MODEL_DIR/experts.bin" 2>/dev/null | awk '{print $1}')
-[ -n "$LEGACY_SHA_AFTER" ] || LEGACY_SHA_AFTER=$(sha256sum "$LEGACY_MODEL_DIR/experts.bin" | awk '{print $1}')
+LEGACY_SHA_AFTER=$(sha256_file "$LEGACY_MODEL_DIR/experts.bin")
 [ "$LEGACY_SHA_AFTER" = "$LEGACY_SHA_BEFORE" ] || fail "legacy model bytes changed after upgrade"
 
 echo "runtime-only release: PASS"

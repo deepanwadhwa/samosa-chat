@@ -22,6 +22,18 @@ cleanup() {
   [ -z "$PID" ] || wait "$PID" 2>/dev/null || true
   rm -rf "$TMP"
 }
+
+sha256_file() {
+  target="${1:--}"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$target" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$target" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
 trap cleanup EXIT HUP INT TERM
 
 make samosa-gateway >/dev/null 2>&1 || true
@@ -129,7 +141,7 @@ stop_gateway
 FIXROOT="$TMP/fixmodels"
 mkdir -p "$FIXROOT/qwen"
 printf 'abcdefghij' >"$FIXROOT/qwen/experts.bin"   # 10 bytes, real content
-FIXTURE_SHA=$(shasum -a 256 "$FIXROOT/qwen/experts.bin" | awk '{print $1}')
+FIXTURE_SHA=$(sha256_file "$FIXROOT/qwen/experts.bin")
 
 cat >"$TMP/fixture_catalog.json" <<EOF
 {
@@ -216,7 +228,7 @@ cat >"$TMP/fixture_catalog.json" <<EOF
           "install_path": "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf",
           "file_mode": "0600",
           "bytes": 6,
-          "sha256": "$(printf 'bonsai' | shasum -a 256 | awk '{print $1}')"
+          "sha256": "$(printf 'bonsai' | sha256_file)"
         }
       ]
     }

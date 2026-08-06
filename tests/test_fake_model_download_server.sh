@@ -12,6 +12,17 @@ PORT=18979
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fake_download_server.XXXXXX")
 PID=""
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
+
 cleanup() {
   [ -z "$PID" ] || kill "$PID" 2>/dev/null || true
   [ -z "$PID" ] || wait "$PID" 2>/dev/null || true
@@ -28,7 +39,7 @@ import sys
 data = bytes((i * 37 + 11) % 256 for i in range(5000))
 open('$FIXTURE', 'wb').write(data)
 "
-EXPECTED_SHA=$(shasum -a 256 "$FIXTURE" 2>/dev/null | awk '{print $1}' || sha256sum "$FIXTURE" | awk '{print $1}')
+EXPECTED_SHA=$(sha256_file "$FIXTURE")
 
 start_server() {
   mode="$1"
@@ -54,7 +65,7 @@ stop_server() {
 start_server normal "$FIXTURE"
 curl -fsS "http://127.0.0.1:$PORT/artifact" -o "$TMP/full.bin"
 [ "$(wc -c <"$TMP/full.bin" | tr -d ' ')" = 5000 ] || { echo "FAIL: normal full GET size"; exit 1; }
-GOT_SHA=$(shasum -a 256 "$TMP/full.bin" 2>/dev/null | awk '{print $1}' || sha256sum "$TMP/full.bin" | awk '{print $1}')
+GOT_SHA=$(sha256_file "$TMP/full.bin")
 [ "$GOT_SHA" = "$EXPECTED_SHA" ] || { echo "FAIL: normal full GET checksum"; exit 1; }
 
 # --- normal: valid ranged GET (206 + Content-Range) ---
@@ -83,7 +94,7 @@ stop_server
 start_server corrupt "$FIXTURE"
 curl -fsS "http://127.0.0.1:$PORT/artifact" -o "$TMP/corrupt.bin"
 [ "$(wc -c <"$TMP/corrupt.bin" | tr -d ' ')" = 5000 ] || { echo "FAIL: corrupt mode changed length"; exit 1; }
-GOT_SHA=$(shasum -a 256 "$TMP/corrupt.bin" 2>/dev/null | awk '{print $1}' || sha256sum "$TMP/corrupt.bin" | awk '{print $1}')
+GOT_SHA=$(sha256_file "$TMP/corrupt.bin")
 [ "$GOT_SHA" != "$EXPECTED_SHA" ] || { echo "FAIL: corrupt mode did not change checksum"; exit 1; }
 stop_server
 

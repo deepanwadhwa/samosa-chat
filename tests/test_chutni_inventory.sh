@@ -13,6 +13,17 @@ GEN="$(CDPATH= cd -- "$(dirname "$0")" && pwd)/fixtures/ui_chutni/gen_folder_fix
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/chutni_inventory_test.XXXXXX")
 ROOT="$TMP/root"
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
+
 cleanup() {
   sh "$GEN" fix-perms "$ROOT" 2>/dev/null || true
   rm -rf "$TMP"
@@ -84,7 +95,7 @@ rm -rf "$ROOT"
 
 # --- chutni-hash: a complete SHA-256, never a prefix, with identity checks ---
 sh "$GEN" build "$ROOT"
-EXPECTED=$(shasum -a 256 "$ROOT/plain/report.md" 2>/dev/null | awk '{print $1}' || sha256sum "$ROOT/plain/report.md" | awk '{print $1}')
+EXPECTED=$(sha256_file "$ROOT/plain/report.md") || exit 1
 GOT=$("$FS" chutni-hash --root "$ROOT" plain/report.md)
 printf '%s' "$GOT" | grep -q "\"sha256\":\"$EXPECTED\"" \
   || { echo "FAIL: chutni-hash mismatch"; echo "$GOT"; exit 1; }

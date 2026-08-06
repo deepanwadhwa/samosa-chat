@@ -10,6 +10,17 @@ GEN="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/tests/fixtures/ui_chutni/gen_f
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/chutni_folder_fixture.XXXXXX")
 TARGET="$TMP/root"
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "FAIL: neither shasum nor sha256sum is installed" >&2
+    return 127
+  fi
+}
+
 cleanup() {
   sh "$GEN" fix-perms "$TARGET" 2>/dev/null || true
   rm -rf "$TMP"
@@ -34,8 +45,8 @@ sh "$GEN" build "$TARGET"
 [ -L "$TARGET/symlink-escape/escape-rel" ] || { echo "FAIL: relative escape symlink missing"; exit 1; }
 
 # --- duplicate content really is identical bytes at two distinct paths ---
-SUM_A=$(shasum -a 256 "$TARGET/duplicate/a/receipt.txt" 2>/dev/null | awk '{print $1}' || sha256sum "$TARGET/duplicate/a/receipt.txt" | awk '{print $1}')
-SUM_B=$(shasum -a 256 "$TARGET/duplicate/b/receipt-copy.txt" 2>/dev/null | awk '{print $1}' || sha256sum "$TARGET/duplicate/b/receipt-copy.txt" | awk '{print $1}')
+SUM_A=$(sha256_file "$TARGET/duplicate/a/receipt.txt")
+SUM_B=$(sha256_file "$TARGET/duplicate/b/receipt-copy.txt")
 [ "$SUM_A" = "$SUM_B" ] || { echo "FAIL: duplicate fixture files are not byte-identical"; exit 1; }
 
 # --- the PNG is real and decodable (magic bytes) ---
@@ -70,9 +81,9 @@ sh "$GEN" mutate-rename "$TARGET"
 sh "$GEN" mutate-delete "$TARGET"
 [ ! -e "$TARGET/plain/report.md" ] || { echo "FAIL: mutate-delete did not remove the file"; exit 1; }
 
-BEFORE_SUM=$(shasum -a 256 "$TARGET/duplicate/a/receipt.txt" 2>/dev/null | awk '{print $1}' || sha256sum "$TARGET/duplicate/a/receipt.txt" | awk '{print $1}')
+BEFORE_SUM=$(sha256_file "$TARGET/duplicate/a/receipt.txt")
 sh "$GEN" mutate-change "$TARGET"
-AFTER_SUM=$(shasum -a 256 "$TARGET/duplicate/a/receipt.txt" 2>/dev/null | awk '{print $1}' || sha256sum "$TARGET/duplicate/a/receipt.txt" | awk '{print $1}')
+AFTER_SUM=$(sha256_file "$TARGET/duplicate/a/receipt.txt")
 [ "$BEFORE_SUM" != "$AFTER_SUM" ] || { echo "FAIL: mutate-change did not change content"; exit 1; }
 
 # --- fix-perms leaves a tree rm -rf can remove cleanly ---
