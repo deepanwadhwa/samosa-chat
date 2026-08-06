@@ -440,11 +440,18 @@ debian-portability-test: compiled-gateway-test test-chutni-db test-chutni chutni
 
 ci-debian:
 	docker run --rm --platform linux/amd64 \
-	  -v "$$PWD:/work" -w /work debian:bookworm-slim \
-	  sh -ec ' \
+	  -v "$$PWD:/src:ro" \
+	  debian:bookworm-slim \
+	  sh -ec '\
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc curl python3 file nodejs sqlite3 libomp-dev; \
-	    rm -rf build-debian; \
-	    BUILD_DIR=build-debian make debian-portability-test; \
+	      make gcc curl python3 nodejs sqlite3 libomp-dev file ca-certificates; \
+	    useradd -m ci; \
+	    cp -a /src /work; \
+	    chown -R ci:ci /work; \
+	    su -s /bin/sh ci -c "\
+	      cd /work && \
+	      rm -rf build-debian && \
+	      BUILD_DIR=build-debian make debian-portability-test\
+	    "; \
 	  '
