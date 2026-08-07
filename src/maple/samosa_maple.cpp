@@ -174,6 +174,19 @@ int main(int argc, char** argv) {
         std::string prompt = tokenizer.apply_chat_template(msgs, true);
         auto input_ids = tokenizer.encode(prompt);
         
+        // Always output the formatted prompt for chat-template parity
+        std::cout << "PROMPT: " << prompt << std::endl;
+        std::cout << "PROMPT_IDS: ";
+        for (size_t i = 0; i < input_ids.size(); i++) {
+            std::cout << input_ids[i] << (i + 1 == input_ids.size() ? "" : ",");
+        }
+        std::cout << std::endl;
+        
+        if (max_tokens == 0) {
+            // Tokenizer/template-only mode
+            return 0;
+        }
+        
         std::vector<int> out_tokens;
         for (int i = 0; i < max_tokens; i++) {
             mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
