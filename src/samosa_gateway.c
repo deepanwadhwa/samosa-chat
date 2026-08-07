@@ -61,6 +61,8 @@ typedef struct {
     char app_logo[PATH_MAX];
     char qwen_engine[PATH_MAX];
     char qwen_model[PATH_MAX];
+    char maple_engine[PATH_MAX];
+    char maple_model[PATH_MAX];
     char tokenizer[PATH_MAX];
     char llama_server[PATH_MAX];
     char bonsai_model[PATH_MAX];
@@ -5276,6 +5278,8 @@ static int backend_available(Gateway *g, const char *name) {
         return regular_file(g->llama_server, 1) && regular_file(g->bonsai_model, 0);
     if (!strcmp(name, "ornith"))
         return regular_file(g->llama_server, 1) && regular_file(g->ornith_model, 0);
+    if (!strcmp(name, "maple"))
+        return regular_file(g->maple_engine, 1) && regular_file(g->maple_model, 0);
     return 0;
 }
 
@@ -5327,7 +5331,8 @@ static int backend_probe(Gateway *g) {
     struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    const char *path = !strcmp(g->backend, "qwen") ? "/healthz" : "/health";
+    const char *path = !strcmp(g->backend, "qwen") ? "/healthz" : 
+                       !strcmp(g->backend, "maple") ? "/healthz" : "/health";
     char request[256];
     int n = snprintf(request, sizeof(request),
                      "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nConnection: close\r\n\r\n",
@@ -5410,6 +5415,9 @@ static int backend_start(Gateway *g) {
                     runtime.auto_compact ? "on" : "off", runtime.compact_threshold_percent);
             execl(g->qwen_engine, g->qwen_engine, "--serve", "--port", port,
                   "--tokenizer", g->tokenizer, (char *)NULL);
+        } else if (!strcmp(g->backend, "maple")) {
+            fprintf(stderr, "[samosa] runtime: starting maple backend on port %s\n", port);
+            execl(g->maple_engine, g->maple_engine, "--model-dir", g->maple_model, "--port", port, (char *)NULL);
         } else {
             int is_ornith = !strcmp(g->backend, "ornith");
             char *model = is_ornith ? g->ornith_model : g->bonsai_model;
@@ -6155,7 +6163,8 @@ static const char *active_model_id(Gateway *g) {
 
 static void active_model_version(Gateway *g, char *out, size_t cap) {
     const char *path = !strcmp(g->backend, "bonsai") ? g->bonsai_model :
-                        !strcmp(g->backend, "ornith") ? g->ornith_model : g->qwen_model;
+                        !strcmp(g->backend, "ornith") ? g->ornith_model : 
+                        !strcmp(g->backend, "maple") ? g->maple_model : g->qwen_model;
     const char *base = strrchr(path, '/');
     base = (base && base[1]) ? base + 1 : path;
     path_copy(out, cap, base[0] ? base : "unknown");
@@ -8891,7 +8900,7 @@ static int catalog_validate(jval *root, char *reason, size_t reason_cap) {
         jval *backend_kind = json_get(entry, "backend_kind");
         if (!backend_kind || backend_kind->t != J_STR ||
             (strcmp(backend_kind->str, "qwen_native") && strcmp(backend_kind->str, "llama_cpp") &&
-             strcmp(backend_kind->str, "whisper_cpp")))
+             strcmp(backend_kind->str, "whisper_cpp") && strcmp(backend_kind->str, "mlx_native")))
             REJECT("unknown backend_kind");
 
         jval *req_abi = json_get(entry, "required_runtime_abi");
@@ -8966,6 +8975,9 @@ static int resolve_installed_artifact(Gateway *g, const char *model_id,
         if (!strcmp(artifact_name, "tokenizer_qwen36.json"))
             return path_copy(out, cap, g->tokenizer);
         return path_join(out, cap, g->qwen_model, artifact_name);
+    }
+    if (!strcmp(model_id, "maple")) {
+        return path_join(out, cap, g->maple_model, artifact_name);
     }
     if (!strcmp(model_id, "bonsai")) {
         if (!strcmp(artifact_name, "Bonsai-27B-mmproj-Q8_0.gguf"))
@@ -10666,6 +10678,7 @@ static void selection_job_event(Gateway *g, const char *job_id, const char *stat
 
 static int selection_backend_weights_path(Gateway *g, const char *backend_name, char out[PATH_MAX]) {
     if (!strcmp(backend_name, "qwen")) return path_join(out, PATH_MAX, g->qwen_model, "experts.bin");
+    if (!strcmp(backend_name, "maple")) return path_join(out, PATH_MAX, g->maple_model, "model.safetensors");
     if (!strcmp(backend_name, "bonsai")) return path_copy(out, PATH_MAX, g->bonsai_model);
     if (!strcmp(backend_name, "ornith")) return path_copy(out, PATH_MAX, g->ornith_model);
     return 0;
@@ -12987,11 +13000,13 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "{\"active\":\"%s\",\"backends\":["
             "{\"id\":\"bonsai\",\"label\":\"Bonsai 27B 1-bit\",\"model\":\"bonsai-27b-1bit\",\"supports_images\":%s,\"available\":%s},"
             "{\"id\":\"ornith\",\"label\":\"Ornith 9B\",\"model\":\"ornith-1.0-9b\",\"supports_images\":false,\"available\":%s},"
-            "{\"id\":\"qwen\",\"label\":\"Qwen3.6 35B A3B\",\"model\":\"qwen3.6-35b-a3b\",\"supports_images\":true,\"available\":%s}]}",
+            "{\"id\":\"qwen\",\"label\":\"Qwen3.6 35B A3B\",\"model\":\"qwen3.6-35b-a3b\",\"supports_images\":true,\"available\":%s},"
+            "{\"id\":\"maple\",\"label\":\"DeepGrove Maple-Preview\",\"model\":\"deepgrove-maple-preview\",\"supports_images\":false,\"available\":%s}]}",
             g->backend, backend_supports_images(g, "bonsai") ? "true" : "false",
             backend_available(g, "bonsai") ? "true" : "false",
             backend_available(g, "ornith") ? "true" : "false",
-            backend_available(g, "qwen") ? "true" : "false");
+            backend_available(g, "qwen") ? "true" : "false",
+            backend_available(g, "maple") ? "true" : "false");
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/backends/select")) {
@@ -13000,7 +13015,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         jval *selected = root && root->t == J_OBJ ? json_get(root, "backend") : NULL;
         if (!selected || selected->t != J_STR ||
             (strcmp(selected->str, "qwen") && strcmp(selected->str, "bonsai") &&
-             strcmp(selected->str, "ornith"))) {
+             strcmp(selected->str, "ornith") && strcmp(selected->str, "maple"))) {
             json_free(root); free(arena);
             return samosa_http_json_error(fd, 400, "invalid_backend", "Unknown model backend.");
         }
@@ -13255,6 +13270,8 @@ static int load_config(Gateway *g) {
     ENV_PATH(app_logo, "SAMOSA_APP_LOGO", "current/samosa-chat.png");
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
     ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "current/model");
+    ENV_PATH(maple_engine, "SAMOSA_MAPLE_ENGINE", "current/bin/samosa-maple");
+    ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "models/maple");
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");

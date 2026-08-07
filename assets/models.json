@@ -10,10 +10,16 @@
       "preferred_for_backend": true,
       "label": "Qwen3.6 35B A3B",
       "description": "Expert-streamed local chat and coding model with image support.",
-      "capabilities": ["text", "image"],
+      "capabilities": [
+        "text",
+        "image"
+      ],
       "backend_kind": "qwen_native",
       "supported_platforms": [
-        { "os": "macos", "architecture": "arm64" }
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
       ],
       "required_runtime_abi": "samosa-model-runtime-v1",
       "minimum_ram_bytes": 0,
@@ -101,10 +107,16 @@
       "preferred_for_backend": true,
       "label": "Bonsai 27B 1-bit",
       "description": "1-bit GGUF reasoning model with optional vision.",
-      "capabilities": ["text", "image"],
+      "capabilities": [
+        "text",
+        "image"
+      ],
       "backend_kind": "llama_cpp",
       "supported_platforms": [
-        { "os": "macos", "architecture": "arm64" }
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
       ],
       "required_runtime_abi": "samosa-model-runtime-v1",
       "minimum_ram_bytes": 0,
@@ -150,10 +162,15 @@
       "preferred_for_backend": true,
       "label": "Ornith 1.0 9B",
       "description": "Q4_K_M GGUF coding and reasoning model.",
-      "capabilities": ["text"],
+      "capabilities": [
+        "text"
+      ],
       "backend_kind": "llama_cpp",
       "supported_platforms": [
-        { "os": "macos", "architecture": "arm64" }
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
       ],
       "required_runtime_abi": "samosa-model-runtime-v1",
       "minimum_ram_bytes": 0,
@@ -189,12 +206,24 @@
       "preferred_for_backend": true,
       "label": "Whisper Base English",
       "description": "Private on-device speech recognition for hands-free Samosa. Best balance of accuracy and memory on a 16 GB Mac.",
-      "capabilities": ["speech_to_text", "english"],
+      "capabilities": [
+        "speech_to_text",
+        "english"
+      ],
       "backend_kind": "whisper_cpp",
       "supported_platforms": [
-        { "os": "macos", "architecture": "arm64" },
-        { "os": "linux", "architecture": "x86_64" },
-        { "os": "linux", "architecture": "arm64" }
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        },
+        {
+          "os": "linux",
+          "architecture": "x86_64"
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64"
+        }
       ],
       "required_runtime_abi": "samosa-model-runtime-v1",
       "minimum_ram_bytes": 536870912,
@@ -220,6 +249,160 @@
           "file_mode": "0600",
           "bytes": 147964211,
           "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"
+        }
+      ]
+    },
+    {
+      "id": "maple",
+      "family": "chat",
+      "version": "361db5da5e74ff6fcdd852d478e1f266ce11013a",
+      "preferred_for_backend": true,
+      "label": "DeepGrove Maple-Preview",
+      "description": "20B ternary reasoning model optimized for Apple Silicon.",
+      "capabilities": [
+        "text"
+      ],
+      "backend_kind": "mlx_native",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "mlx_native_default",
+      "runtime_dependencies": [
+        {
+          "package_id": "samosa-maple",
+          "version": "v1",
+          "source": "bundled"
+        }
+      ],
+      "license": {
+        "name": "MIT",
+        "url": "https://huggingface.co/deepgrove-ai/mlx-lm-deepgrove"
+      },
+      "artifacts": [
+        {
+          "name": "model-00001-of-00003.safetensors",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00001-of-00003.safetensors",
+          "install_path": "models/maple/model-00001-of-00003.safetensors",
+          "file_mode": "0600",
+          "bytes": 2162084350,
+          "sha256": "1444bbc92e2842e9a612c32b6d6f30f0f026a107c8094a4ac273819a22eb84e1"
+        },
+        {
+          "name": "model-00002-of-00003.safetensors",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00002-of-00003.safetensors",
+          "install_path": "models/maple/model-00002-of-00003.safetensors",
+          "file_mode": "0600",
+          "bytes": 2187444586,
+          "sha256": "d051e252c46570f989b65c5e037b94402d22f892e96dc91f5fb83dbb06b50d30"
+        },
+        {
+          "name": "model-00003-of-00003.safetensors",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00003-of-00003.safetensors",
+          "install_path": "models/maple/model-00003-of-00003.safetensors",
+          "file_mode": "0600",
+          "bytes": 958711742,
+          "sha256": "85c97321214c864597562d5b7286b9e8a0dac36e5abd622f11f9b8425ee88705"
+        },
+        {
+          "name": "model.safetensors.index.json",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model.safetensors.index.json",
+          "install_path": "models/maple/model.safetensors.index.json",
+          "file_mode": "0600",
+          "bytes": 40054,
+          "sha256": "56000110535c5023b43209a5c142035e12c1cde7b1118759cc9f86335d46ef95"
+        },
+        {
+          "name": "config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/config.json",
+          "install_path": "models/maple/config.json",
+          "file_mode": "0600",
+          "bytes": 2710,
+          "sha256": "57eb521da63629196ebda2c103be929c81c1027ddf2766e7b19e2d2427f77443"
+        },
+        {
+          "name": "tokenizer.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/tokenizer.json",
+          "install_path": "models/maple/tokenizer.json",
+          "file_mode": "0600",
+          "bytes": 11422654,
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        {
+          "name": "tokenizer_config.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/tokenizer_config.json",
+          "install_path": "models/maple/tokenizer_config.json",
+          "file_mode": "0600",
+          "bytes": 5432,
+          "sha256": "bcab9fe0f4f56a0cffba7c916f943c376810d32c08f2cebf01f8b15849039d35"
+        },
+        {
+          "name": "special_tokens_map.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/special_tokens_map.json",
+          "install_path": "models/maple/special_tokens_map.json",
+          "file_mode": "0600",
+          "bytes": 613,
+          "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+        },
+        {
+          "name": "added_tokens.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/added_tokens.json",
+          "install_path": "models/maple/added_tokens.json",
+          "file_mode": "0600",
+          "bytes": 707,
+          "sha256": "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680"
+        },
+        {
+          "name": "merges.txt",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/merges.txt",
+          "install_path": "models/maple/merges.txt",
+          "file_mode": "0600",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        {
+          "name": "vocab.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/vocab.json",
+          "install_path": "models/maple/vocab.json",
+          "file_mode": "0600",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        },
+        {
+          "name": "chat_template.jinja",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/chat_template.jinja",
+          "install_path": "models/maple/chat_template.jinja",
+          "file_mode": "0600",
+          "bytes": 3292,
+          "sha256": "83e4c58ca602ade89b126cc75a036eb8bd06d373d4fd94b09d2277d609131089"
         }
       ]
     }

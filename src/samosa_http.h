@@ -158,7 +158,7 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
                                     int *error_status) {
     memset(request,0,sizeof(*request));
     *error_status=400;
-    char *buffer=malloc(SAMOSA_HTTP_MAX_HEADER+1);
+    char *buffer=(char*)malloc(SAMOSA_HTTP_MAX_HEADER+1);
     if (!buffer) return 0;
     size_t used=0, header_bytes=0;
     while (used<SAMOSA_HTTP_MAX_HEADER) {
@@ -232,7 +232,7 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
         }
         cursor=next+2;
     }
-    request->body=malloc(content_length+1);
+    request->body=(char*)malloc(content_length+1);
     if (!request->body) { free(buffer); *error_status=500; return 0; }
     size_t present=used-header_bytes;
     if (present>content_length) present=content_length;
@@ -335,7 +335,7 @@ static int samosa_http_server_run(SamosaHttpServer *server) {
             fprintf(stderr, "samosa_http_server_run: accept failed: %s\n", strerror(errno)); fflush(stderr);
             return 0;
         }
-        SamosaHttpConnection *connection=malloc(sizeof(*connection));
+        SamosaHttpConnection *connection=(SamosaHttpConnection*)malloc(sizeof(*connection));
         if(!connection){ close(fd); continue; }
         connection->server=server; connection->fd=fd;
         pthread_mutex_lock(&server->connection_mu); server->active_connections++;

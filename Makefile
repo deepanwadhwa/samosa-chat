@@ -474,3 +474,34 @@ ci-ubuntu-full:
 	      SAMOSA_ALLOW_SLOW_CPU=1 make test\
 	    "; \
 	  '
+
+# Maple MLX Smoke Test (Stage A)
+MLX_BUILD_DIR ?= $(BUILD_DIR)/mlx-build
+MLX_INCLUDE = -Ivendor/mlx -I$(MLX_BUILD_DIR)
+MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx -L$(MLX_BUILD_DIR)/jaccl -ljaccl -framework Foundation -framework Metal -framework Accelerate -lc++
+
+mlx:
+	sh tools/build_mlx_native.sh
+
+maple-mlx-smoke: tests/maple_mlx_smoke.cpp
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/maple_mlx_smoke.cpp -o $(BUILD_DIR)/maple-mlx-smoke $(MLX_LDFLAGS)
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/maple-mlx-smoke
+
+test-maple-native: tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp
+	@echo "Building test-maple-native..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/test-maple-native $(MLX_LDFLAGS)
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
+
+test-maple-parity: samosa-maple tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
+	python3 tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
+
+
+samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp
+	@echo "Building samosa-maple HTTP server..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)

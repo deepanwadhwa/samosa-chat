@@ -8,10 +8,10 @@ set -eu
 # Bonsai/Ornith install is discovered and registered without ever fetching or
 # storing a real multi-gigabyte model.
 #
-# Usage: gen_legacy_model_fixture.sh HOME_DIR [ornith|bonsai|both]
+# Usage: gen_legacy_model_fixture.sh HOME_DIR [ornith|bonsai|maple|all]
 
-home="${1:?usage: gen_legacy_model_fixture.sh HOME_DIR [ornith|bonsai|both]}"
-which="${2:-both}"
+home="${1:?usage: gen_legacy_model_fixture.sh HOME_DIR [ornith|bonsai|maple|all]}"
+which="${2:-all}"
 
 gen_ornith() {
   mkdir -p "$home/models/ornith-9b"
@@ -27,11 +27,20 @@ gen_bonsai() {
     >"$home/bonsai-mmproj.gguf"
 }
 
+gen_maple() {
+  mkdir -p "$home/models/maple"
+  printf 'maple fixture weights (not a real model)\n' \
+    >"$home/models/maple/model.safetensors"
+  printf '{}' \
+    >"$home/models/maple/tokenizer.json"
+}
+
 case "$which" in
   ornith) gen_ornith ;;
   bonsai) gen_bonsai ;;
-  both) gen_ornith; gen_bonsai ;;
-  *) echo "unknown model selector: $which (expected ornith|bonsai|both)" >&2; exit 64 ;;
+  maple) gen_maple ;;
+  all|both) gen_ornith; gen_bonsai; gen_maple ;;
+  *) echo "unknown model selector: $which (expected ornith|bonsai|maple|all)" >&2; exit 64 ;;
 esac
 
 echo "gen_legacy_model_fixture.sh: placed $which fixture(s) under $home"

@@ -52,9 +52,9 @@ static char *j_parse_str_raw(jparser *p) {
     const char *start = p->s;
     /* trova la fine gestendo gli escape, poi copia decodificando i casi base */
     int cap = 1024;
-    char *tmp = malloc(cap);
+    char *tmp = (char *)malloc(cap);
     int n = 0;
-    #define J_PUT(ch) do{ if (n >= cap - 1) { cap *= 2; tmp = realloc(tmp, cap); } tmp[n++] = (char)(ch); }while(0)
+    #define J_PUT(ch) do{ if (n >= cap - 1) { cap *= 2; tmp = (char *)realloc(tmp, cap); } tmp[n++] = (char)(ch); }while(0)
     while (*p->s && *p->s != '"') {
         char c = *p->s++;
         if (c == '\\' && *p->s) {
@@ -96,7 +96,7 @@ static jval *j_parse_val(jparser *p) {
     if (c == '"') { jval *v = j_new(J_STR); v->str = j_parse_str_raw(p); return v; }
     if (c == '{') {
         p->s++; jval *v = j_new(J_OBJ);
-        int cap = 8; v->keys = malloc(cap * sizeof(char*)); v->kids = malloc(cap * sizeof(jval*));
+        int cap = 8; v->keys = (char **)malloc(cap * sizeof(char*)); v->kids = (jval **)malloc(cap * sizeof(jval*));
         j_ws(p);
         if (*p->s == '}') { p->s++; return v; }
         for (;;) {
@@ -104,7 +104,7 @@ static jval *j_parse_val(jparser *p) {
             char *key = j_parse_str_raw(p);
             j_ws(p); if (*p->s == ':') p->s++;
             jval *val = j_parse_val(p);
-            if (v->len == cap) { cap *= 2; v->keys = realloc(v->keys, cap*sizeof(char*)); v->kids = realloc(v->kids, cap*sizeof(jval*)); }
+            if (v->len == cap) { cap *= 2; v->keys = (char **)realloc(v->keys, cap*sizeof(char*)); v->kids = (jval **)realloc(v->kids, cap*sizeof(jval*)); }
             v->keys[v->len] = key; v->kids[v->len] = val; v->len++;
             j_ws(p);
             if (*p->s == ',') { p->s++; continue; }
@@ -115,12 +115,12 @@ static jval *j_parse_val(jparser *p) {
     }
     if (c == '[') {
         p->s++; jval *v = j_new(J_ARR);
-        int cap = 8; v->kids = malloc(cap * sizeof(jval*));
+        int cap = 8; v->kids = (jval **)malloc(cap * sizeof(jval*));
         j_ws(p);
         if (*p->s == ']') { p->s++; return v; }
         for (;;) {
             jval *val = j_parse_val(p);
-            if (v->len == cap) { cap *= 2; v->kids = realloc(v->kids, cap*sizeof(jval*)); }
+            if (v->len == cap) { cap *= 2; v->kids = (jval **)realloc(v->kids, cap*sizeof(jval*)); }
             v->kids[v->len++] = val;
             j_ws(p);
             if (*p->s == ',') { p->s++; continue; }
