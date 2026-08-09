@@ -6,11 +6,19 @@
 #include <iostream>
 #include <unordered_set>
 #include <filesystem>
+#include <cmath>
 
 namespace samosa {
 namespace maple {
 
 using namespace mlx::core;
+
+array maple_rms_norm(const array& x, const array& weight, float eps) {
+    auto x_f32 = astype(x, float32);
+    auto weight_f32 = astype(weight, float32);
+    auto norm = fast::rms_norm(x_f32, weight_f32, eps);
+    return astype(norm, x.dtype());
+}
 
 std::string format_eps(float eps) {
     std::ostringstream out;
@@ -29,6 +37,8 @@ std::string tag_eps(float eps) {
     }
     return tag;
 }
+
+
 
 array add_rms_norm(const array& h, const array& r, const array& w, float eps) {
     std::string source = R"(
@@ -305,22 +315,42 @@ std::pair<array, array> fused_router(const array& x, const array& w, array& ctr_
         source
     );
     
-    auto out = kernel(
-        {reshape(x, {-1}), w, ctr_in},
-        {{8}, {8}, {num_experts}},
-        {int32, float32, float32},
-        std::make_tuple((num_experts / 32) * 256, 1, 1),
-        std::make_tuple(256, 1, 1),
-        {{"T_", w.dtype()}, {"NEXP", num_experts}, {"DIM", x.shape().back()}},
-        std::nullopt,
-        false,
-        default_stream(default_device())
-    );
+    int seq_len = x.shape(0);
+    int dim = x.shape(1);
+    int ntg = num_experts / 32;
     
-    // out_indices is out[0], out_scores is out[1]
-    auto shape = x.shape();
-    shape.back() = 8;
-    return {reshape(out[0], shape), reshape(out[1], shape)};
+    // The Metal kernel processes ONE token at a time. Loop over tokens.
+    std::vector<array> all_indices, all_scores;
+    for (int t = 0; t < seq_len; ++t) {
+        auto x_t = reshape(slice(x, {t, 0}, {t + 1, dim}), {dim});
+        auto out_t = kernel(
+            {x_t, w, ctr_in},
+            {{1, 8}, {1, 8}, {num_experts}},
+            {int32, float32, float32},
+            std::make_tuple(ntg * 256, 1, 1),
+            std::make_tuple(256, 1, 1),
+            {{"T_", w.dtype()}, {"NEXP", num_experts}, {"DIM", dim}},
+            std::nullopt,
+            false,
+            default_stream(default_device())
+        );
+        all_indices.push_back(reshape(out_t[0], {1, 8}));
+        all_scores.push_back(reshape(out_t[1], {1, 8}));
+    }
+    
+    auto indices = concatenate(all_indices, 0);
+    auto scores = concatenate(all_scores, 0);
+    
+    return {indices, scores};
+}
+
+
+array safe_at2(const std::unordered_map<std::string, array>& weights, const std::string& key) {
+    auto it = weights.find(key);
+    if (it == weights.end()) {
+        throw std::runtime_error("Key not found: " + key);
+    }
+    return it->second;
 }
 
 array clamped_swiglu(const array& gate, const array& x, float mlp_clamp) {
@@ -332,7 +362,6 @@ array clamped_swiglu(const array& gate, const array& x, float mlp_clamp) {
 
 MapleAttention::MapleAttention(const ModelArgs& args, int layer_idx)
     : args_(args), use_rope_(false),
-      qkv_proj_weight_(array(0.0f)), o_proj_weight_(array(0.0f)),
       q_norm_weight_(array(0.0f)), k_norm_weight_(array(0.0f)) {
     if (layer_idx < args.layer_types.size() && args.layer_types[layer_idx] == "sliding_attention") {
         use_rope_ = true;
@@ -340,42 +369,144 @@ MapleAttention::MapleAttention(const ModelArgs& args, int layer_idx)
 }
 
 void MapleAttention::load_weights(const std::unordered_map<std::string, array>& weights, const std::string& prefix) {
-    qkv_proj_weight_ = weights.at(prefix + ".self_attn.qkv_proj.weight");
-    o_proj_weight_ = weights.at(prefix + ".self_attn.o_proj.weight");
-    q_norm_weight_ = weights.at(prefix + ".self_attn.q_norm.weight");
-    k_norm_weight_ = weights.at(prefix + ".self_attn.k_norm.weight");
+    std::string p = prefix.empty() ? "" : prefix + ".";
+    q_proj_.load(weights, p + "self_attn.q_proj");
+    k_proj_.load(weights, p + "self_attn.k_proj");
+    v_proj_.load(weights, p + "self_attn.v_proj");
+    o_proj_.load(weights, p + "self_attn.o_proj");
+    q_norm_weight_ = safe_at2(weights, p + "self_attn.q_norm.weight");
+    k_norm_weight_ = safe_at2(weights, p + "self_attn.k_norm.weight");
 }
 
-array MapleAttention::operator()(const array& x) {
-    // Stage C check: just verify shapes for now. Actual execution will be in Stage E.
-    return x; 
+array MapleAttention::operator()(const array& x, const std::optional<array>& mask, KVCache* cache) {
+    auto B = x.shape(0);
+    auto L = x.shape(1);
+
+    auto q = q_proj_(x);
+    auto k = k_proj_(x);
+    auto v = v_proj_(x);
+
+    auto queries = reshape(q, {B, L, args_.num_attention_heads, args_.head_dim});
+    auto keys = reshape(k, {B, L, args_.num_key_value_heads, args_.head_dim});
+    auto values = reshape(v, {B, L, args_.num_key_value_heads, args_.head_dim});
+
+    queries = maple_rms_norm(queries, q_norm_weight_, args_.rms_norm_eps);
+    keys = maple_rms_norm(keys, k_norm_weight_, args_.rms_norm_eps);
+
+    queries = transpose(queries, {0, 2, 1, 3});
+    keys = transpose(keys, {0, 2, 1, 3});
+    values = transpose(values, {0, 2, 1, 3});
+
+    if (use_rope_) {
+        int rope_dim = args_.head_dim * 0.5;
+        int offset = cache ? cache->offset : 0;
+        queries = fast::rope(queries, rope_dim, /*traditional=*/false, args_.rope_theta, /*scale=*/1.0f, offset);
+        keys = fast::rope(keys, rope_dim, /*traditional=*/false, args_.rope_theta, /*scale=*/1.0f, offset);
+    }
+
+    if (cache) {
+        cache->update_and_fetch(keys, values);
+    }
+
+    float scale = 1.0f / std::sqrt((float)args_.head_dim);
+    auto output = fast::scaled_dot_product_attention(queries, keys, values, scale, "", mask);
+
+    output = reshape(transpose(output, {0, 2, 1, 3}), {B, L, -1});
+    return o_proj_(output);
 }
 
-MapleMLP::MapleMLP(const ModelArgs& args) 
-    : gate_proj_weight_(array(0.0f)), up_proj_weight_(array(0.0f)), down_proj_weight_(array(0.0f)) {}
+MapleMLP::MapleMLP(const ModelArgs& /*args*/) {}
 
 void MapleMLP::load_weights(const std::unordered_map<std::string, array>& weights, const std::string& prefix) {
-    gate_proj_weight_ = weights.at(prefix + ".mlp.gate_proj.weight");
-    up_proj_weight_ = weights.at(prefix + ".mlp.up_proj.weight");
-    down_proj_weight_ = weights.at(prefix + ".mlp.down_proj.weight");
+    std::string p = prefix.empty() ? "" : prefix + ".";
+    gate_proj_.load(weights, p + "mlp.gate_proj");
+    up_proj_.load(weights, p + "mlp.up_proj");
+    down_proj_.load(weights, p + "mlp.down_proj");
 }
 
-array MapleMLP::operator()(const array& x) { return x; }
+array MapleMLP::operator()(const array& x) {
+    auto gate = gate_proj_(x);
+    auto up = up_proj_(x);
+    auto act = clamped_swiglu(gate, up, 7.0f);
+    return down_proj_(act);
+}
 
 MapleSparseMoeBlock::MapleSparseMoeBlock(const ModelArgs& args) 
     : num_experts_(args.num_experts),
-      gate_weight_(array(0.0f)), switch_up_gate_proj_weight_(array(0.0f)),
-      switch_down_proj_weight_(array(0.0f)), router_ctr_(array(0.0f)) {
+      gate_weight_(array(0.0f)), router_ctr_(array(0.0f)) {
     router_ctr_ = zeros({8}, uint32);
 }
 
 void MapleSparseMoeBlock::load_weights(const std::unordered_map<std::string, array>& weights, const std::string& prefix) {
-    gate_weight_ = weights.at(prefix + ".mlp.gate.weight");
-    switch_up_gate_proj_weight_ = weights.at(prefix + ".mlp.switch_mlp.up_gate_proj.weight");
-    switch_down_proj_weight_ = weights.at(prefix + ".mlp.switch_mlp.down_proj.weight");
+    std::string p = prefix.empty() ? "" : prefix + ".";
+    gate_weight_ = safe_at2(weights, p + "mlp.gate.weight");
+    switch_up_proj_.load(weights, p + "mlp.switch_mlp.up_proj");
+    switch_gate_proj_.load(weights, p + "mlp.switch_mlp.gate_proj");
+    switch_down_proj_.load(weights, p + "mlp.switch_mlp.down_proj");
 }
 
-array MapleSparseMoeBlock::operator()(const array& x) { return x; }
+array MapleSparseMoeBlock::operator()(const array& x) {
+    auto b = x.shape(0);
+    auto l = x.shape(1);
+    auto h = x.shape(2);
+    auto x_flat = reshape(x, {-1, h});
+
+    array topk_idx(0.0f), topk_val(0.0f);
+    if (b == 1 && l == 1) {
+        auto router_res = fused_router(x_flat, gate_weight_, router_ctr_, num_experts_);
+        topk_idx = reshape(router_res.first, {b, l, -1});
+        topk_val = reshape(router_res.second, {b, l, -1});
+    } else {
+        auto x_f32 = astype(x, float32);
+        auto gate_weight_f32 = astype(gate_weight_, float32);
+        auto gates = matmul(x_f32, swapaxes(gate_weight_f32, -1, -2));
+        auto scores = softmax(gates, -1);
+        topk_idx = argpartition(scores, -8, -1);
+        topk_idx = slice(topk_idx, {0, 0, scores.shape(-1) - 8}, {b, l, scores.shape(-1)});
+        topk_val = take_along_axis(scores, topk_idx, -1);
+        auto sums = sum(topk_val, -1, /* keepdims */ true);
+        topk_val = divide(topk_val, add(sums, array(1e-20f)));
+    }
+    
+    // 3. Dispatch to experts
+    auto x_exp = reshape(x, {b, l, 1, 1, h});
+    auto up_w = take(switch_up_proj_.weight, topk_idx, 0);
+    auto gate_w = take(switch_gate_proj_.weight, topk_idx, 0);
+
+    array up(0.0f), gate(0.0f);
+    if (switch_up_proj_.is_quantized) {
+        auto up_scales = take(switch_up_proj_.scales, topk_idx, 0);
+        auto up_biases = take(switch_up_proj_.biases, topk_idx, 0);
+        up = quantized_matmul(x_exp, up_w, up_scales, up_biases, true, switch_up_proj_.group_size, switch_up_proj_.bits);
+        
+        auto gate_scales = take(switch_gate_proj_.scales, topk_idx, 0);
+        auto gate_biases = take(switch_gate_proj_.biases, topk_idx, 0);
+        gate = quantized_matmul(x_exp, gate_w, gate_scales, gate_biases, true, switch_gate_proj_.group_size, switch_gate_proj_.bits);
+    } else {
+        up = matmul(x_exp, swapaxes(up_w, -1, -2));
+        gate = matmul(x_exp, swapaxes(gate_w, -1, -2));
+    }
+    up = squeeze(up, -2);
+    gate = squeeze(gate, -2);
+
+    auto act = clamped_swiglu(gate, up, 7.0f);
+    act = expand_dims(act, -2);
+
+    auto down_w = take(switch_down_proj_.weight, topk_idx, 0);
+    array down(0.0f);
+    if (switch_down_proj_.is_quantized) {
+        auto scales = take(switch_down_proj_.scales, topk_idx, 0);
+        auto biases = take(switch_down_proj_.biases, topk_idx, 0);
+        down = quantized_matmul(act, down_w, scales, biases, true, switch_down_proj_.group_size, switch_down_proj_.bits);
+    } else {
+        down = matmul(act, swapaxes(down_w, -1, -2));
+    }
+    down = squeeze(down, -2);
+
+    auto scores = expand_dims(topk_val, -1);
+    auto out = sum(multiply(down, scores), -2);
+    return astype(out, x.dtype());
+}
 
 MapleDecoderLayer::MapleDecoderLayer(const ModelArgs& args, int layer_idx)
     : args_(args), is_moe_(layer_idx >= args.first_k_dense_replace), self_attn_(args, layer_idx),
@@ -388,8 +519,9 @@ MapleDecoderLayer::MapleDecoderLayer(const ModelArgs& args, int layer_idx)
 }
 
 void MapleDecoderLayer::load_weights(const std::unordered_map<std::string, array>& weights, const std::string& prefix) {
-    input_layernorm_weight_ = weights.at(prefix + ".input_layernorm.weight");
-    post_attention_layernorm_weight_ = weights.at(prefix + ".post_attention_layernorm.weight");
+    std::string p = prefix.empty() ? "" : prefix + ".";
+    input_layernorm_weight_ = safe_at2(weights, p + "input_layernorm.weight");
+    post_attention_layernorm_weight_ = safe_at2(weights, p + "post_attention_layernorm.weight");
     self_attn_.load_weights(weights, prefix);
     if (is_moe_) {
         moe_mlp_->load_weights(weights, prefix);
@@ -398,25 +530,79 @@ void MapleDecoderLayer::load_weights(const std::unordered_map<std::string, array
     }
 }
 
-array MapleDecoderLayer::operator()(const array& x) { return x; }
+array MapleDecoderLayer::operator()(const array& x, const std::optional<array>& mask, KVCache* cache) {
+    auto norm1 = maple_rms_norm(x, input_layernorm_weight_, args_.rms_norm_eps);
+    auto h_attn = self_attn_(norm1, mask, cache);
+    
+    auto h_mid = add(x, h_attn);
+    
+    auto norm2 = maple_rms_norm(h_mid, post_attention_layernorm_weight_, args_.rms_norm_eps);
+    auto r = is_moe_ ? (*moe_mlp_)(norm2) : (*mlp_)(norm2);
+    auto h_out = add(h_mid, r);
+    return h_out;
+}
 
 MapleModel::MapleModel(const ModelArgs& args) 
-    : args_(args), word_embeddings_weight_(array(0.0f)), norm_weight_(array(0.0f)), lm_head_weight_(array(0.0f)) {
+    : args_(args), word_embeddings_weight_(array(0.0f)), norm_weight_(array(0.0f)) {
     for (int i = 0; i < args.num_hidden_layers; ++i) {
         layers_.emplace_back(args, i);
     }
 }
 
 void MapleModel::load_weights(const std::unordered_map<std::string, array>& weights) {
-    word_embeddings_weight_ = weights.at("model.embed_tokens.weight");
-    norm_weight_ = weights.at("model.norm.weight");
-    lm_head_weight_ = weights.at("lm_head.weight");
+    if (weights.count("model.word_embeddings.scales")) {
+        word_embeddings_weight_ = safe_at2(weights, "model.word_embeddings.weight");
+        word_embeddings_scales_ = safe_at2(weights, "model.word_embeddings.scales");
+        word_embeddings_biases_ = safe_at2(weights, "model.word_embeddings.biases");
+        word_embeddings_quantized_ = true;
+    } else {
+        word_embeddings_weight_ = safe_at2(weights, "model.word_embeddings.weight");
+        word_embeddings_quantized_ = false;
+    }
+    
+    norm_weight_ = safe_at2(weights, "model.norm.weight");
+    lm_head_proj_.load(weights, "lm_head");
     for (int i = 0; i < args_.num_hidden_layers; ++i) {
         layers_[i].load_weights(weights, "model.layers." + std::to_string(i));
     }
 }
 
-array MapleModel::operator()(const array& inputs) { return inputs; }
+array MapleModel::operator()(const array& inputs, std::vector<KVCache*>* caches) {
+    
+
+    auto w_taken = take(word_embeddings_weight_, inputs, 0);
+    auto s_taken = take(*word_embeddings_scales_, inputs, 0);
+    auto b_taken = take(*word_embeddings_biases_, inputs, 0);
+    
+
+    array h = array(0.0f);
+    if (word_embeddings_quantized_) {
+        h = dequantize(w_taken, s_taken, b_taken, 64, 4, "affine", std::nullopt, bfloat16);
+    } else {
+        h = take(word_embeddings_weight_, inputs, 0);
+    }
+    
+
+    std::optional<array> mask = std::nullopt;
+    if (inputs.shape(1) > 1) {
+        int L = inputs.shape(1);
+        auto linds = expand_dims(arange(L), 1);
+        auto rinds = expand_dims(arange(L), 0);
+        auto bool_mask = less(linds, rinds);
+        // Create additive mask like Python's nn.MultiHeadAttention.create_additive_causal_mask
+        // mlx fast::scaled_dot_product_attention supports additive float masks
+        mask = astype(multiply(astype(bool_mask, float32), array(-3.4028235e38f)), bfloat16);
+    }
+
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        KVCache* cache = (caches && i < caches->size()) ? (*caches)[i] : nullptr;
+        h = layers_[i](h, mask, cache);
+    }
+    
+    h = maple_rms_norm(h, norm_weight_, args_.rms_norm_eps);
+    auto logits = lm_head_proj_(h);
+    return logits;
+}
 
 MapleModel load_maple_model(const std::string& model_dir) {
     std::string config_path = model_dir + "/config.json";
@@ -449,6 +635,7 @@ MapleModel load_maple_model(const std::string& model_dir) {
     if (jval* v = json_get(config, "first_k_dense_replace")) args.first_k_dense_replace = (int)v->num;
     if (jval* v = json_get(config, "rms_norm_eps")) args.rms_norm_eps = (float)v->num;
     if (jval* v = json_get(config, "vocab_size")) args.vocab_size = (int)v->num;
+    if (jval* v = json_get(config, "sliding_window")) args.sliding_window = (int)v->num;
     
     if (jval* v = json_get(config, "layer_types")) {
         args.layer_types.clear();
@@ -489,7 +676,10 @@ MapleModel load_maple_model(const std::string& model_dir) {
     for (int i = 0; i < weight_map->len; ++i) {
         jval* val = weight_map->kids[i];
         if (val && val->t == J_STR) {
-            shards_to_load.insert(val->str);
+            std::string shard_name = val->str;
+            if (shard_name.find("flashhead") == std::string::npos) {
+                shards_to_load.insert(shard_name);
+            }
         }
     }
     

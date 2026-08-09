@@ -2,6 +2,10 @@
 
 #include "mlx/mlx.h"
 #include <string>
+#include <unordered_map>
+#include <vector>
+#include <memory>
+#include <iostream>
 
 namespace samosa {
 namespace maple {
@@ -43,9 +47,103 @@ struct ModelArgs {
     int num_experts = 256;
     int num_experts_per_tok = 8;
     int first_k_dense_replace = 0;
-    float rms_norm_eps = 1e-6f;
-    int vocab_size = 151936;
+    float rms_norm_eps = 1e-5f;
+    int vocab_size = 32000;
+    float rope_theta = 10000.0f;
+    int max_position_embeddings = 4096;
+    int sliding_window = 4096;
     std::vector<std::string> layer_types;
+};
+
+class KVCache {
+public:
+    mlx::core::array keys;
+    mlx::core::array values;
+    int offset = 0;
+
+    KVCache() : keys(mlx::core::array(0.0f)), values(mlx::core::array(0.0f)) {}
+    virtual ~KVCache() = default;
+
+    virtual void update_and_fetch(mlx::core::array& k, mlx::core::array& v) {
+        if (keys.ndim() == 0) {
+            keys = k;
+            values = v;
+        } else {
+            keys = mlx::core::concatenate({keys, k}, 2);
+            values = mlx::core::concatenate({values, v}, 2);
+        }
+        offset += k.shape(2);
+        k = keys;
+        v = values;
+    }
+};
+
+class RotatingKVCache : public KVCache {
+public:
+    int max_size;
+    RotatingKVCache(int max_size) : max_size(max_size) {}
+
+    void update_and_fetch(mlx::core::array& k, mlx::core::array& v) override {
+        if (keys.ndim() == 0) {
+            keys = k;
+            values = v;
+        } else {
+            keys = mlx::core::concatenate({keys, k}, 2);
+            values = mlx::core::concatenate({values, v}, 2);
+        }
+
+        if (keys.shape(2) > max_size) {
+            keys = mlx::core::slice(keys, {0, 0, keys.shape(2) - max_size, 0}, {keys.shape(0), keys.shape(1), keys.shape(2), keys.shape(3)});
+            values = mlx::core::slice(values, {0, 0, values.shape(2) - max_size, 0}, {values.shape(0), values.shape(1), values.shape(2), values.shape(3)});
+        }
+        offset += k.shape(2);
+        k = keys;
+        v = values;
+    }
+};
+
+struct QLinear {
+    mlx::core::array weight;
+    mlx::core::array scales;
+    mlx::core::array biases;
+    bool is_quantized = false;
+    int group_size = 32;
+    int bits = 2;
+    
+    QLinear() : weight(mlx::core::array(0.0f)), scales(mlx::core::array(0.0f)), biases(mlx::core::array(0.0f)) {}
+    
+    void load(const std::unordered_map<std::string, mlx::core::array>& weights, const std::string& prefix) {
+        if (!weights.count(prefix + ".weight")) throw std::runtime_error("Key not found: " + prefix + ".weight");
+        weight = weights.at(prefix + ".weight");
+        if (weights.count(prefix + ".scales")) {
+            scales = weights.at(prefix + ".scales");
+            biases = weights.at(prefix + ".biases");
+            is_quantized = true;
+            group_size = 64;
+            bits = 4;
+        } else if (weights.count(prefix + ".row_alpha")) {
+            auto alpha = weights.at(prefix + ".row_alpha");
+            int n_groups = (weight.shape().back() * 16) / 128;
+            std::vector<int> out_shape(alpha.shape().begin(), alpha.shape().end());
+            out_shape.push_back(n_groups);
+            scales = mlx::core::broadcast_to(mlx::core::expand_dims(alpha, -1), mlx::core::Shape(out_shape.begin(), out_shape.end()));
+            biases = mlx::core::negative(scales);
+            is_quantized = true;
+            group_size = 128;
+            bits = 2;
+        } else {
+            std::cout << "Warning: " << prefix << " is NOT quantized! No .scales or .row_alpha found!" << std::endl;
+            is_quantized = false;
+        }
+    }
+    
+    mlx::core::array operator()(const mlx::core::array& x) const {
+        if (is_quantized) {
+            return mlx::core::quantized_matmul(x, weight, scales, biases, true, group_size, bits);
+        } else {
+            return mlx::core::matmul(x, mlx::core::swapaxes(weight, -1, -2));
+        }
+    }
 };
 
 class MapleAttention {
@@ -54,15 +152,18 @@ public:
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights, const std::string& prefix);
     
     // (B, L, hidden_size) -> (B, L, hidden_size)
-    mlx::core::array operator()(const mlx::core::array& x);
+    mlx::core::array operator()(const mlx::core::array& x, const std::optional<mlx::core::array>& mask = std::nullopt, KVCache* cache = nullptr);
     
-private:
+public:
     ModelArgs args_;
     bool use_rope_;
-    mlx::core::array qkv_proj_weight_;
-    mlx::core::array o_proj_weight_;
+    QLinear q_proj_;
+    QLinear k_proj_;
+    QLinear v_proj_;
+    QLinear o_proj_;
     mlx::core::array q_norm_weight_;
     mlx::core::array k_norm_weight_;
+    int sliding_window_ = 0;
 };
 
 class MapleMLP {
@@ -72,9 +173,9 @@ public:
     mlx::core::array operator()(const mlx::core::array& x);
     
 private:
-    mlx::core::array gate_proj_weight_;
-    mlx::core::array up_proj_weight_;
-    mlx::core::array down_proj_weight_;
+    QLinear gate_proj_;
+    QLinear up_proj_;
+    QLinear down_proj_;
 };
 
 class MapleSparseMoeBlock {
@@ -86,8 +187,9 @@ public:
 private:
     int num_experts_;
     mlx::core::array gate_weight_;
-    mlx::core::array switch_up_gate_proj_weight_;
-    mlx::core::array switch_down_proj_weight_;
+    QLinear switch_up_proj_;
+    QLinear switch_gate_proj_;
+    QLinear switch_down_proj_;
     mlx::core::array router_ctr_; // initialized to zeros
 };
 
@@ -95,7 +197,7 @@ class MapleDecoderLayer {
 public:
     MapleDecoderLayer(const ModelArgs& args, int layer_idx);
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights, const std::string& prefix);
-    mlx::core::array operator()(const mlx::core::array& x);
+    mlx::core::array operator()(const mlx::core::array& x, const std::optional<mlx::core::array>& mask = std::nullopt, KVCache* cache = nullptr);
     
 private:
     ModelArgs args_;
@@ -112,13 +214,18 @@ class MapleModel {
 public:
     MapleModel(const ModelArgs& args);
     void load_weights(const std::unordered_map<std::string, mlx::core::array>& weights);
-    mlx::core::array operator()(const mlx::core::array& inputs);
+    mlx::core::array operator()(const mlx::core::array& inputs, std::vector<KVCache*>* caches = nullptr);
     
-private:
+    const ModelArgs& args() const { return args_; }
+    
+public:
     ModelArgs args_;
     mlx::core::array word_embeddings_weight_;
+    std::optional<mlx::core::array> word_embeddings_scales_;
+    std::optional<mlx::core::array> word_embeddings_biases_;
+    bool word_embeddings_quantized_{false};
     mlx::core::array norm_weight_;
-    mlx::core::array lm_head_weight_;
+    QLinear lm_head_proj_;
     std::vector<MapleDecoderLayer> layers_;
 };
 

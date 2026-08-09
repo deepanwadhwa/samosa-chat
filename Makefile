@@ -496,6 +496,44 @@ test-maple-native: tests/test_maple_native.cpp src/maple/maple_model.cpp src/map
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/test-maple-native $(MLX_LDFLAGS)
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
 
+test-maple-components: tests/test_maple_components.cpp src/maple/maple_model.cpp
+	@echo "Building C++ parity tests..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+
+test-maple-model: tests/test_maple_model.cpp src/maple/maple_model.cpp
+	@echo "Building C++ model tests..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+
+test-maple-gate-a: tests/test_maple_gate_a.cpp src/maple/maple_model.cpp
+	@echo "Building C++ Gate A test..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+
+test-maple-gate-c: tests/test_maple_gate_c.cpp src/maple/maple_model.cpp
+	@echo "Building C++ Gate C test..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+
+test-maple: test-maple-components test-maple-model
+	@echo "Running Maple C++ Components Tests"
+	$(BUILD_DIR)/test-maple-components
+	@echo "Running Maple C++ Model Tests"
+	$(BUILD_DIR)/test-maple-model
+
+test-maple-sanitize: tests/fixtures/maple/test_checkpoint_sanitization.py
+	sh tools/run_memory_guarded.sh python3 tests/fixtures/maple/test_checkpoint_sanitization.py
+
+test-maple-memory: tools/test_maple_memory_safety.sh
+	sh tools/test_maple_memory_safety.sh
+
+test-maple-real: test-maple-native
+	@test -n "$(MAPLE_MODEL_DIR)" || { echo "set MAPLE_MODEL_DIR to point to real checkpoint" >&2; exit 2; }
+	MAPLE_MODEL_DIR="$(MAPLE_MODEL_DIR)" METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
+
+test-maple-reference-live:
+	@echo "WARNING: This command may load the complete upstream Maple model."
+	@echo "Memory guard is active. (8GB Limit)"
+	@test -n "$(MAPLE_MODEL_DIR)" || { echo "set MAPLE_MODEL_DIR to point to real checkpoint" >&2; exit 2; }
+	MAPLE_MODEL_DIR="$(MAPLE_MODEL_DIR)" MAX_FOOTPRINT_MB=8192 MAX_SWAP_DELTA_MB=256 sh tools/run_memory_guarded.sh python3 tools/maple_reference.py
+
 test-maple-parity: samosa-maple tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
 	python3 tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
 
@@ -505,3 +543,6 @@ samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tok
 	@mkdir -p $(BUILD_DIR)
 	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
+
+test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Ivendor/mlx -Ibuild/mlx-build/include -Isrc $^ -o build/$@ -Lbuild/mlx-build -lmlx $(MLX_LDFLAGS)

@@ -186,17 +186,37 @@ int main(int argc, char** argv) {
             // Tokenizer/template-only mode
             return 0;
         }
-        
+
+        std::vector<KVCache*> caches;
+        for (const auto& ltype : model.args().layer_types) {
+            if (ltype == "sliding_attention") {
+                caches.push_back(new RotatingKVCache(model.args().sliding_window));
+            } else {
+                caches.push_back(new KVCache());
+            }
+        }
+
         std::vector<int> out_tokens;
-        for (int i = 0; i < max_tokens; i++) {
-            mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
-            x = mlx::core::reshape(x, {1, (int)input_ids.size()});
-            auto logits = model(x);
-            auto last_logits = mlx::core::slice(logits, {0, (int)input_ids.size() - 1, 0}, {1, (int)input_ids.size(), logits.shape(-1)});
-            int next_token = sample_argmax(last_logits);
-            input_ids.push_back(next_token);
+        
+        // Prefill
+        mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
+        x = mlx::core::reshape(x, {1, (int)input_ids.size()});
+        auto logits = model(x, &caches);
+        auto last_logits = mlx::core::slice(logits, {0, (int)input_ids.size() - 1, 0}, {1, (int)input_ids.size(), logits.shape(-1)});
+        int next_token = sample_argmax(last_logits);
+        out_tokens.push_back(next_token);
+        
+        // Decode
+        for (int i = 1; i < max_tokens; i++) {
+            x = mlx::core::array({next_token});
+            x = mlx::core::reshape(x, {1, 1});
+            logits = model(x, &caches);
+            last_logits = mlx::core::slice(logits, {0, 0, 0}, {1, 1, logits.shape(-1)});
+            next_token = sample_argmax(last_logits);
             out_tokens.push_back(next_token);
         }
+
+        for (auto c : caches) delete c;
         
         std::cout << "TOKENS: ";
         for (size_t i = 0; i < out_tokens.size(); i++) {
