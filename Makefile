@@ -331,7 +331,7 @@ omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm $(OMP_LDFLAGS)
 
-install: omp samosa-gateway samosa-jobsd samosa-fs samosa-ocr chutni-service
+install: omp samosa-gateway samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service
 	sh tools/install_local_dev.sh
 
 # E-X5 experiment build only — never shipped. Same as `omp` plus
@@ -479,6 +479,12 @@ ci-ubuntu-full:
 MLX_BUILD_DIR ?= $(BUILD_DIR)/mlx-build
 MLX_INCLUDE = -Ivendor/mlx -I$(MLX_BUILD_DIR)
 MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx -L$(MLX_BUILD_DIR)/jaccl -ljaccl -framework Foundation -framework Metal -framework Accelerate -lc++
+MAPLE_STREAMING_SRCS = src/maple/maple_expert_views.cpp src/maple/maple_expert_store.cpp
+MAPLE_CACHE_OBJ = $(BUILD_DIR)/expert_cache.o
+
+$(MAPLE_CACHE_OBJ): src/expert_cache.c src/expert_cache.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Isrc -c src/expert_cache.c -o $(MAPLE_CACHE_OBJ)
 
 mlx:
 	sh tools/build_mlx_native.sh
@@ -489,28 +495,28 @@ maple-mlx-smoke: tests/maple_mlx_smoke.cpp
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/maple_mlx_smoke.cpp -o $(BUILD_DIR)/maple-mlx-smoke $(MLX_LDFLAGS)
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/maple-mlx-smoke
 
-test-maple-native: tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp
+test-maple-native: tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building test-maple-native..."
 	@mkdir -p $(BUILD_DIR)
 	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/test-maple-native $(MLX_LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-native $(MLX_LDFLAGS)
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
 
-test-maple-components: tests/test_maple_components.cpp src/maple/maple_model.cpp
+test-maple-components: tests/test_maple_components.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building C++ parity tests..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
 
-test-maple-model: tests/test_maple_model.cpp src/maple/maple_model.cpp
+test-maple-model: tests/test_maple_model.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building C++ model tests..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
 
-test-maple-gate-a: tests/test_maple_gate_a.cpp src/maple/maple_model.cpp
+test-maple-gate-a: tests/test_maple_gate_a.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building C++ Gate A test..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
 
-test-maple-gate-c: tests/test_maple_gate_c.cpp src/maple/maple_model.cpp
+test-maple-gate-c: tests/test_maple_gate_c.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building C++ Gate C test..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
 
 test-maple: test-maple-components test-maple-model
 	@echo "Running Maple C++ Components Tests"
@@ -526,7 +532,34 @@ test-maple-memory: tools/test_maple_memory_safety.sh
 
 test-maple-real: test-maple-native
 	@test -n "$(MAPLE_MODEL_DIR)" || { echo "set MAPLE_MODEL_DIR to point to real checkpoint" >&2; exit 2; }
-	MAPLE_MODEL_DIR="$(MAPLE_MODEL_DIR)" METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
+	MAPLE_MODEL_DIR="$(MAPLE_MODEL_DIR)" \
+	  MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-1000} \
+	  MAX_SWAP_DELTA_MB=$${MAX_SWAP_DELTA_MB:-64} \
+	  SAMOSA_MAPLE_EXPERT_BUDGET_MB=$${SAMOSA_MAPLE_EXPERT_BUDGET_MB:-64} \
+	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	  sh tools/run_memory_guarded.sh $(BUILD_DIR)/test-maple-native
+
+test-maple-greedy-parity: tests/test_maple_greedy_parity.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
+	@echo "Building Maple greedy streaming parity test..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple tests/test_maple_greedy_parity.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-greedy-parity $(MLX_LDFLAGS)
+	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-1000} \
+	  MAX_SWAP_DELTA_MB=$${MAX_SWAP_DELTA_MB:-64} \
+	  SAMOSA_MAPLE_EXPERT_BUDGET_MB=$${SAMOSA_MAPLE_EXPERT_BUDGET_MB:-64} \
+	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	  sh tools/run_memory_guarded.sh $(BUILD_DIR)/test-maple-greedy-parity
+
+test-maple-streamed-logits: tests/test_maple_streamed_logits.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
+	@echo "Building Maple streamed raw-logit parity test..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple tests/test_maple_streamed_logits.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-streamed-logits $(MLX_LDFLAGS)
+	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-1000} \
+	  MAX_SWAP_DELTA_MB=$${MAX_SWAP_DELTA_MB:-64} \
+	  SAMOSA_MAPLE_EXPERT_BUDGET_MB=$${SAMOSA_MAPLE_EXPERT_BUDGET_MB:-64} \
+	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	  sh tools/run_memory_guarded.sh $(BUILD_DIR)/test-maple-streamed-logits
 
 test-maple-reference-live:
 	@echo "WARNING: This command may load the complete upstream Maple model."
@@ -538,11 +571,32 @@ test-maple-parity: samosa-maple tests/fixtures/maple/361db5da5e74ff6fcdd852d478e
 	python3 tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
 
 
-samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp
+samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building samosa-maple HTTP server..."
 	@mkdir -p $(BUILD_DIR)
 	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
 
-test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp
-	$(CXX) -std=c++17 -O2 -Wall -Wextra -Ivendor/mlx -Ibuild/mlx-build/include -Isrc $^ -o build/$@ -Lbuild/mlx-build -lmlx $(MLX_LDFLAGS)
+maple-pack: tools/maple_pack.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/json.h $(MAPLE_CACHE_OBJ)
+	@echo "Building maple-pack..."
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tools/maple_pack.cpp src/maple/maple_expert_store.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/maple-pack
+
+test-maple-streaming-quarantine: samosa-gateway
+	sh tests/test_maple_streaming_quarantine.sh
+
+test-maple-expert-store: tests/test_maple_expert_store.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/expert_cache.h src/json.h $(MAPLE_CACHE_OBJ)
+	@echo "Building Maple expert store tests..."
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tests/test_maple_expert_store.cpp src/maple/maple_expert_store.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-store
+	$(BUILD_DIR)/test-maple-expert-store
+
+test-maple-expert-views: tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp src/expert_cache.h src/json.h $(MAPLE_CACHE_OBJ)
+	@echo "Building Maple MLX expert-view tests..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-views $(MLX_LDFLAGS)
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-expert-views
+
+test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc $^ -o build/$@ $(MLX_LDFLAGS)

@@ -473,6 +473,62 @@ static int test_prefetch_waste_and_io_telemetry(void) {
     return 0;
 }
 
+static int test_pin_blocks_eviction_pressure_and_explicit_release(void) {
+    const ecache_config config = {256, 64, 4, 1, ECACHE_POLICY_LRU};
+    const ecache_key pinned = {0, 0};
+    fixture f;
+    ecache_view view;
+    ecache_stats stats;
+    uint64_t reclaimed;
+    CHECK(fixture_init(&f, &config, NULL, 16));
+
+    CHECK_STATUS(insert_base(&f, pinned, 1, 11, ECACHE_ADMIT_DEMAND, NULL),
+                 ECACHE_OK);
+    CHECK_STATUS(promote(&f, pinned, 1, 12, ECACHE_ADMIT_DEMAND, NULL),
+                 ECACHE_OK);
+    CHECK_STATUS(insert_base(&f, (ecache_key){0, 1}, 1, 21,
+                             ECACHE_ADMIT_DEMAND, NULL), ECACHE_OK);
+    CHECK_STATUS(insert_base(&f, (ecache_key){0, 2}, 1, 31,
+                             ECACHE_ADMIT_DEMAND, NULL), ECACHE_OK);
+
+    CHECK_STATUS(ecache_pin(f.cache, pinned, &view), ECACHE_OK);
+    CHECK(view.pin_count == 1);
+    CHECK_STATUS(ecache_pin(f.cache, pinned, &view), ECACHE_OK);
+    CHECK(view.pin_count == 2);
+
+    f.releases.event_count = 0;
+    CHECK_STATUS(insert_base(&f, (ecache_key){0, 3}, 1, 41,
+                             ECACHE_ADMIT_DEMAND, NULL), ECACHE_OK);
+    CHECK(f.releases.event_count == 1);
+    CHECK(f.releases.events[0].key.expert == 1);
+    CHECK_STATUS(ecache_peek(f.cache, pinned, &view), ECACHE_OK);
+    CHECK(view.pin_count == 2 && view.state == ECACHE_BASE_AND_RESIDUAL);
+
+    f.releases.event_count = 0;
+    CHECK_STATUS(ecache_apply_pressure(f.cache, ECACHE_PRESSURE_CRITICAL, 64,
+                                       &reclaimed), ECACHE_PARTIAL);
+    CHECK(reclaimed == 128);
+    CHECK(f.releases.event_count == 2);
+    CHECK(f.releases.events[0].key.expert != pinned.expert);
+    CHECK(f.releases.events[1].key.expert != pinned.expert);
+    ecache_get_stats(f.cache, &stats);
+    CHECK(stats.payload_bytes == 128 && stats.entries == 1);
+    CHECK_STATUS(ecache_remove(f.cache, pinned), ECACHE_ERR_POLICY);
+    CHECK_STATUS(ecache_destroy(f.cache), ECACHE_ERR_POLICY);
+
+    CHECK_STATUS(ecache_unpin(f.cache, pinned, &view), ECACHE_OK);
+    CHECK(view.pin_count == 1);
+    CHECK_STATUS(ecache_remove(f.cache, pinned), ECACHE_ERR_POLICY);
+    CHECK_STATUS(ecache_unpin(f.cache, pinned, &view), ECACHE_OK);
+    CHECK(view.pin_count == 0);
+    CHECK_STATUS(ecache_unpin(f.cache, pinned, &view), ECACHE_ERR_POLICY);
+    CHECK_STATUS(ecache_remove(f.cache, pinned), ECACHE_OK);
+    CHECK_STATUS(ecache_validate(f.cache), ECACHE_OK);
+    CHECK(destroy_and_check(&f) == 0);
+    fixture_free(&f);
+    return 0;
+}
+
 static int test_malformed_and_overflow_inputs(void) {
     ecache_config config = {128, 64, 2, 1, ECACHE_POLICY_LRU};
     ecache_callbacks callbacks = {release_callback, NULL};
@@ -519,6 +575,10 @@ static int test_malformed_and_overflow_inputs(void) {
                             (ecache_requirement)99,
                             &(ecache_lookup_result){0}, &view),
                  ECACHE_ERR_ARGUMENT);
+    CHECK_STATUS(ecache_pin(cache, (ecache_key){1, 0}, NULL),
+                 ECACHE_ERR_ARGUMENT);
+    CHECK_STATUS(ecache_unpin(cache, (ecache_key){0, 0}, NULL),
+                 ECACHE_ERR_NOT_FOUND);
     CHECK_STATUS(ecache_apply_pressure(cache, ECACHE_PRESSURE_WARN, 129,
                                        &(uint64_t){0}), ECACHE_ERR_SIZE);
     CHECK_STATUS(ecache_validate(cache), ECACHE_OK);
@@ -741,6 +801,7 @@ int main(void) {
     CHECK(test_pressure_order_and_warn_guarantee() == 0);
     CHECK(test_2q_protects_reused_entries() == 0);
     CHECK(test_prefetch_waste_and_io_telemetry() == 0);
+    CHECK(test_pin_blocks_eviction_pressure_and_explicit_release() == 0);
     CHECK(test_malformed_and_overflow_inputs() == 0);
     CHECK(test_exhaustive_short_traces() == 0);
     CHECK(test_randomized_state_machine() == 0);

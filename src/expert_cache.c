@@ -29,6 +29,7 @@ typedef struct cache_entry {
     uint8_t base_prefetched_unused;
     uint8_t residual_prefetched_unused;
     uint8_t planned_base_evict;
+    uint32_t pin_count;
 } cache_entry;
 
 typedef struct layer_state {
@@ -317,6 +318,7 @@ static void fill_view(const cache_entry *entry, ecache_view *view) {
     view->base_charged_bytes = entry->base_charge;
     view->residual_logical_bytes = entry->residual_logical;
     view->residual_charged_bytes = entry->residual_charge;
+    view->pin_count = entry->pin_count;
     view->hot_queue = entry->queue == QUEUE_HOT;
 }
 
@@ -417,7 +419,8 @@ static int base_floor_allows(const expert_cache *cache, uint32_t slot,
     const layer_state *layer;
     uint64_t bytes;
     uint32_t entries;
-    if (!entry->occupied || entry->planned_base_evict) return 0;
+    if (!entry->occupied || entry->planned_base_evict || entry->pin_count)
+        return 0;
     layer = &cache->layers[entry->key.layer];
     bytes = planning ? layer->plan_base_bytes : layer->base_bytes;
     entries = planning ? layer->plan_base_entries : layer->base_entries;
@@ -447,7 +450,8 @@ static uint32_t choose_residual(const expert_cache *cache) {
     uint32_t best = UINT32_MAX, i;
     for (i = 0; i < cache->config.max_entries; ++i) {
         const cache_entry *entry = &cache->entries[i];
-        if (!entry->occupied || !entry->has_residual) continue;
+        if (!entry->occupied || !entry->has_residual || entry->pin_count)
+            continue;
         if (best == UINT32_MAX ||
             candidate_precedes(cache, entry, i, &cache->entries[best], best))
             best = i;
@@ -476,6 +480,19 @@ static uint64_t required_reclaim(const expert_cache *cache,
     return incoming > available ? incoming - available : 0;
 }
 
+static uint64_t eligible_residual_bytes(const expert_cache *cache) {
+    uint64_t bytes = 0;
+    uint32_t i;
+    for (i = 0; i < cache->config.max_entries; ++i) {
+        const cache_entry *entry = &cache->entries[i];
+        if (!entry->occupied || !entry->has_residual || entry->pin_count)
+            continue;
+        if (UINT64_MAX - bytes < entry->residual_charge) return UINT64_MAX;
+        bytes += entry->residual_charge;
+    }
+    return bytes;
+}
+
 /* Non-mutating admission proof.  Temporary planning fields are internal and
  * cleared before return, including every failure path. */
 static int can_make_room(expert_cache *cache, uint64_t incoming,
@@ -486,13 +503,13 @@ static int can_make_room(expert_cache *cache, uint64_t incoming,
 
     if (incoming > cache->config.budget_bytes) return 0;
     needed = required_reclaim(cache, incoming);
+    freed = eligible_residual_bytes(cache);
     require_base = (need_entry_slot &&
                     cache->entry_count >= cache->config.max_entries) ||
-                   cache->stats.residual_bytes < needed;
+                   freed < needed;
     if (!require_base) return 1;
 
     /* Once any base must leave, the runtime policy drops every residual first. */
-    freed = cache->stats.residual_bytes;
     for (i = 0; i < cache->config.layer_count; ++i) {
         cache->layers[i].plan_base_bytes = cache->layers[i].base_bytes;
         cache->layers[i].plan_base_entries = cache->layers[i].base_entries;
@@ -615,6 +632,36 @@ ecache_status ecache_peek(const expert_cache *cache, ecache_key key,
     return ECACHE_OK;
 }
 
+ecache_status ecache_pin(expert_cache *cache, ecache_key key,
+                         ecache_view *view) {
+    uint32_t slot;
+    cache_entry *entry;
+    if (!cache_valid(cache)) return ECACHE_ERR_ARGUMENT;
+    if (key.layer >= cache->config.layer_count)
+        return ECACHE_ERR_ARGUMENT;
+    if (!hash_find(cache, key, NULL, &slot)) return ECACHE_ERR_NOT_FOUND;
+    entry = &cache->entries[slot];
+    if (entry->pin_count == UINT32_MAX) return ECACHE_ERR_OVERFLOW;
+    ++entry->pin_count;
+    fill_view(entry, view);
+    return ECACHE_OK;
+}
+
+ecache_status ecache_unpin(expert_cache *cache, ecache_key key,
+                           ecache_view *view) {
+    uint32_t slot;
+    cache_entry *entry;
+    if (!cache_valid(cache)) return ECACHE_ERR_ARGUMENT;
+    if (key.layer >= cache->config.layer_count)
+        return ECACHE_ERR_ARGUMENT;
+    if (!hash_find(cache, key, NULL, &slot)) return ECACHE_ERR_NOT_FOUND;
+    entry = &cache->entries[slot];
+    if (!entry->pin_count) return ECACHE_ERR_POLICY;
+    --entry->pin_count;
+    fill_view(entry, view);
+    return ECACHE_OK;
+}
+
 ecache_status ecache_insert_base(expert_cache *cache, ecache_key key,
                                  void *payload, uint64_t logical_bytes,
                                  uint64_t source_bytes_read,
@@ -732,6 +779,7 @@ ecache_status ecache_remove(expert_cache *cache, ecache_key key) {
     if (key.layer >= cache->config.layer_count)
         return ECACHE_ERR_ARGUMENT;
     if (!hash_find(cache, key, NULL, &slot)) return ECACHE_ERR_NOT_FOUND;
+    if (cache->entries[slot].pin_count) return ECACHE_ERR_POLICY;
     if (cache->entries[slot].has_residual)
         release_residual(cache, slot, ECACHE_RELEASE_EXPLICIT, 0);
     release_base(cache, slot, ECACHE_RELEASE_EXPLICIT, 0);
@@ -913,6 +961,10 @@ ecache_status ecache_validate(const expert_cache *cache) {
 ecache_status ecache_destroy(expert_cache *cache) {
     uint32_t i;
     if (!cache_valid(cache)) return ECACHE_ERR_ARGUMENT;
+    for (i = 0; i < cache->config.max_entries; ++i) {
+        if (cache->entries[i].occupied && cache->entries[i].pin_count)
+            return ECACHE_ERR_POLICY;
+    }
     for (i = 0; i < cache->config.max_entries; ++i) {
         if (!cache->entries[i].occupied) continue;
         if (cache->entries[i].has_residual)

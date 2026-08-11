@@ -2403,9 +2403,12 @@
         // means. Qwen's --serve keeps the first system message and the last
         // user message, so a single leading system message reaches every
         // backend the same way.
+        const simpleGreeting = /^(hi|hello|hey|hiya|howdy)[.!? ]*$/i.test(text.trim());
         const sysBits = [`Today is ${new Date().toLocaleDateString(undefined,
-          {weekday:"long", year:"numeric", month:"long", day:"numeric"})}.`];
-        if (profileName) sysBits.push(`You are talking to ${profileName}.`);
+          {weekday:"long", year:"numeric", month:"long", day:"numeric"})}.`,
+          "The date and any user name supplied here are silent system context. Do not mention, repeat, or volunteer them unless the user asks about them or they are directly relevant to the request.",
+          "For a simple greeting, respond naturally and briefly; do not comment on the date, your context, or the user's name."];
+        if (profileName && !simpleGreeting) sysBits.push(`The user's name is ${profileName}.`);
         if (sendPrompt.voiceRun && voiceGreetingContext) {
           sysBits.push(`You have already greeted the user by saying: "${voiceGreetingContext}". Treat this first voice message as their response to that greeting.`);
           voiceGreetingContext = "";
@@ -5480,7 +5483,7 @@
           requestAnimationFrame(() => focusTarget.focus());
         }
       }
-      
+
       // T3.2 composer `+` menu wiring. The button toggles the menu; each item
       // either opens its file picker or is disabled with a stated reason.
       els.attachBtn.onclick = () => {

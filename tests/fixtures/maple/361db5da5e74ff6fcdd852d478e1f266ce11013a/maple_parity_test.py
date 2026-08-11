@@ -84,11 +84,35 @@ weight_map = index["weight_map"]
 shards = set(weight_map.values())
 weights = {}
 for shard in sorted(shards):
+    if "flashhead" in shard:
+        continue
     shard_path = os.path.join(MODEL_PATH, shard)
     shard_weights = mx.load(shard_path)
     weights.update(shard_weights)
 
-ref_model.load_weights(list(weights.items()))
+if hasattr(ref_model, "sanitize"):
+    weights = ref_model.sanitize(weights)
+
+# Apply mlx_lm's standard quantization pass to the ref_model
+def class_predicate(p, m):
+    if "quantization" in config and p in config["quantization"]:
+        return config["quantization"][p]
+    if not hasattr(m, "to_quantized"):
+        return False
+    return f"{p}.scales" in weights or f"{p}.row_alpha" in weights
+
+import mlx.nn as nn
+if "quantization" in config:
+    quantization = config["quantization"]
+    nn.quantize(
+        ref_model,
+        group_size=quantization.get("group_size", 128),
+        bits=quantization.get("bits", 2),
+        mode=quantization.get("mode", "affine"),
+        class_predicate=class_predicate,
+    )
+
+ref_model.load_weights(list(weights.items()), strict=True)
 mx.eval(ref_model.parameters())
 print(f"Reference model loaded ({len(weights)} tensors)")
 
@@ -212,7 +236,7 @@ tokenizer_test_strings = [
 
 for i, test_str in enumerate(tokenizer_test_strings):
     ref_ids = ref_tokenizer.encode(test_str)
-    
+
     # Run native tokenizer via samosa-maple --tokenize mode
     # For now, compare against the reference tokenizer output
     # The native tokenizer is tested through the E2E path
@@ -249,7 +273,7 @@ try:
     for line in res.stdout.splitlines():
         if line.startswith("PROMPT: "):
             native_prompt = line[8:]
-    
+
     if native_prompt and native_prompt == ref_prompt:
         results["chat_template_parity"]["passed"] = True
         results["chat_template_parity"]["details"] = f"Exact match: {repr(ref_prompt[:80])}..."
@@ -275,12 +299,12 @@ fixture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "..", "..", "..", "tests", "maple_parity_fixtures.safetensors")
 if os.path.exists(fixture_path):
     fixtures = mx.load(fixture_path)
-    
+
     if "fused_router_x" in fixtures and "fused_router_w" in fixtures:
         router_x = fixtures["fused_router_x"]
         router_w = fixtures["fused_router_w"]
         ref_inds = fixtures.get("fused_router_inds", None)
-        
+
         if ref_inds is not None:
             ref_inds_list = ref_inds.tolist()
             results["router_parity"]["total"] = 1
@@ -356,7 +380,7 @@ e2e_all_pass = True
 for i, prompt in enumerate(e2e_prompts):
     print(f"\nPrompt {i+1}/10: {prompt}")
     results["e2e_parity"]["total"] += 1
-    
+
     # 1. Native samosa-maple
     try:
         res = subprocess.run(
@@ -373,29 +397,29 @@ for i, prompt in enumerate(e2e_prompts):
         e2e_all_pass = False
         results["e2e_parity"]["details"].append({"prompt": prompt, "match": False, "error": "timeout"})
         continue
-        
+
     native_tokens = []
     for line in res.stdout.splitlines():
         if line.startswith("TOKENS: "):
             tok_str = line.replace("TOKENS: ", "").strip()
             if tok_str:
                 native_tokens = [int(x) for x in tok_str.split(",")]
-    
+
     # 2. Reference via pinned maple.py
     messages = [{"role": "user", "content": prompt}]
     formatted_prompt = ref_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     input_ids = mx.array(ref_tokenizer.encode(formatted_prompt))
-    
+
     ref_tokens = []
     cache = maple_ref.make_cache(ref_model) if hasattr(maple_ref, 'make_cache') else None
-    
+
     # Simple greedy generation loop using the reference model
     x = input_ids[None, :]  # (1, L)
     if cache is not None:
         logits = ref_model(x, cache=cache)
     else:
         logits = ref_model(x)
-    
+
     for step in range(32):
         if cache is not None:
             if step == 0:
@@ -406,20 +430,20 @@ for i, prompt in enumerate(e2e_prompts):
                 next_logits = logits[:, -1, :]
         else:
             next_logits = logits[:, -1, :]
-        
+
         next_token = mx.argmax(next_logits, axis=-1).item()
         ref_tokens.append(next_token)
-        
+
         if cache is None:
             # Without cache, must re-run full sequence
             full_ids = mx.concatenate([input_ids, mx.array(ref_tokens)])
             logits = ref_model(full_ids[None, :])
-        
+
         mx.eval(mx.array(ref_tokens[-1]))
-    
+
     print(f"  Reference: {ref_tokens[:16]}...")
     print(f"  Native:    {native_tokens[:16]}...")
-    
+
     if ref_tokens == native_tokens:
         print(f"  ✓ MATCH (32/32 tokens identical)")
         results["e2e_parity"]["passed"] += 1
@@ -463,12 +487,12 @@ all_pass = (
 
 if all_pass:
     print("\nALL PARITY GATES PASSED")
-    
+
     # Write partial validation record (parity only, lifecycle still needed)
     binary_sha = hashlib.sha256(open(SAMOSA_EXE, "rb").read()).hexdigest()
     git_rev = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     mlx_rev = open("vendor/mlx.version").read().strip() if os.path.exists("vendor/mlx.version") else "unknown"
-    
+
     record = {
         "checkpoint_revision": CHECKPOINT_REV,
         "samosa_git_commit": git_rev,
@@ -479,7 +503,7 @@ if all_pass:
         "lifecycle_result": "NOT_RUN",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    
+
     # Load existing record if lifecycle already passed
     if os.path.exists(VALIDATION_RECORD):
         try:
@@ -491,7 +515,7 @@ if all_pass:
                 record["lifecycle_details"] = existing.get("lifecycle_details", {})
         except Exception:
             pass
-    
+
     with open(VALIDATION_RECORD, "w") as f:
         json.dump(record, f, indent=2)
     print(f"Validation record written to {VALIDATION_RECORD}")

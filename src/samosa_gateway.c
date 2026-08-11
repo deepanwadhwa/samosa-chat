@@ -3263,7 +3263,7 @@ static char *reshape_doc_read_result(const char *full_lines_json, const char *re
     }
     jval *pages_v = json_get(root, "pages");
     int total_pages = pages_v && pages_v->t == J_ARR ? pages_v->len : 0;
-    
+
     int start_idx = page_start - 1;
     if (start_idx < 0) start_idx = 0;
     if (start_idx > total_pages) start_idx = total_pages;
@@ -5278,8 +5278,24 @@ static int backend_available(Gateway *g, const char *name) {
         return regular_file(g->llama_server, 1) && regular_file(g->bonsai_model, 0);
     if (!strcmp(name, "ornith"))
         return regular_file(g->llama_server, 1) && regular_file(g->ornith_model, 0);
-    if (!strcmp(name, "maple"))
-        return regular_file(g->maple_engine, 1) && regular_file(g->maple_model, 0);
+    if (!strcmp(name, "maple")) {
+        /* The original MLX adapter materializes every routed expert and used
+           roughly 10 GB on the 16 GB reference Mac.  Do not advertise or
+           launch Maple until the bounded SSD-streaming artifacts exist.  The
+           source safetensor shards are conversion inputs, not a production
+           runtime fallback.  See docs/MAPLE_SSD_STREAMING_PLAN.md (M0). */
+        char experts_path[PATH_MAX], resident_path[PATH_MAX], manifest_path[PATH_MAX];
+        char config_path[PATH_MAX], tokenizer_path[PATH_MAX];
+        return path_join(experts_path, sizeof(experts_path), g->maple_model, "maple-experts.bin") &&
+               path_join(resident_path, sizeof(resident_path), g->maple_model, "maple-resident.safetensors") &&
+               path_join(manifest_path, sizeof(manifest_path), g->maple_model, "maple-manifest.json") &&
+               path_join(config_path, sizeof(config_path), g->maple_model, "config.json") &&
+               path_join(tokenizer_path, sizeof(tokenizer_path), g->maple_model, "tokenizer.json") &&
+               regular_file(g->maple_engine, 1) && directory_exists(g->maple_model) &&
+               regular_file(experts_path, 0) && regular_file(resident_path, 0) &&
+               regular_file(manifest_path, 0) && regular_file(config_path, 0) &&
+               regular_file(tokenizer_path, 0);
+    }
     return 0;
 }
 
@@ -5331,7 +5347,7 @@ static int backend_probe(Gateway *g) {
     struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    const char *path = !strcmp(g->backend, "qwen") ? "/healthz" : 
+    const char *path = !strcmp(g->backend, "qwen") ? "/healthz" :
                        !strcmp(g->backend, "maple") ? "/healthz" : "/health";
     char request[256];
     int n = snprintf(request, sizeof(request),
@@ -5622,12 +5638,14 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
 static const char *backend_label(const char *name) {
     if (!strcmp(name, "ornith")) return "Ornith 9B";
     if (!strcmp(name, "bonsai")) return "Bonsai 27B 1-bit";
+    if (!strcmp(name, "maple")) return "DeepGrove Maple-Preview";
     return "Qwen3.6 35B A3B";
 }
 
 static const char *backend_model(const char *name) {
     if (!strcmp(name, "ornith")) return "ornith-1.0-9b";
     if (!strcmp(name, "bonsai")) return "bonsai-27b-1bit";
+    if (!strcmp(name, "maple")) return "deepgrove-maple-preview";
     return "qwen3.6-35b-a3b";
 }
 
@@ -6163,7 +6181,7 @@ static const char *active_model_id(Gateway *g) {
 
 static void active_model_version(Gateway *g, char *out, size_t cap) {
     const char *path = !strcmp(g->backend, "bonsai") ? g->bonsai_model :
-                        !strcmp(g->backend, "ornith") ? g->ornith_model : 
+                        !strcmp(g->backend, "ornith") ? g->ornith_model :
                         !strcmp(g->backend, "maple") ? g->maple_model : g->qwen_model;
     const char *base = strrchr(path, '/');
     base = (base && base[1]) ? base + 1 : path;
@@ -10678,7 +10696,7 @@ static void selection_job_event(Gateway *g, const char *job_id, const char *stat
 
 static int selection_backend_weights_path(Gateway *g, const char *backend_name, char out[PATH_MAX]) {
     if (!strcmp(backend_name, "qwen")) return path_join(out, PATH_MAX, g->qwen_model, "experts.bin");
-    if (!strcmp(backend_name, "maple")) return path_join(out, PATH_MAX, g->maple_model, "model.safetensors");
+    if (!strcmp(backend_name, "maple")) return path_join(out, PATH_MAX, g->maple_model, "maple-manifest.json");
     if (!strcmp(backend_name, "bonsai")) return path_copy(out, PATH_MAX, g->bonsai_model);
     if (!strcmp(backend_name, "ornith")) return path_copy(out, PATH_MAX, g->ornith_model);
     return 0;
@@ -13271,7 +13289,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
     ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "current/model");
     ENV_PATH(maple_engine, "SAMOSA_MAPLE_ENGINE", "current/bin/samosa-maple");
-    ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "models/maple");
+    ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "current/models/maple");
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");

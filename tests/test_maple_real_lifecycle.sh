@@ -22,6 +22,9 @@ MAPLE_EXE="$BUILD_DIR/samosa-maple"
 MAPLE_MODEL_DIR="${MAPLE_MODEL_DIR:-models/maple}"
 FAKE_BACKEND="$BUILD_DIR/test_fake_openai_backend"
 VALIDATION_RECORD=".maple_validation_record.json"
+MEMORY_GUARD="tools/run_memory_guarded.sh"
+MAX_FOOTPRINT_MB="${MAX_FOOTPRINT_MB:-1000}"
+MAX_SWAP_DELTA_MB="${MAX_SWAP_DELTA_MB:-64}"
 
 # Check prerequisites
 if [ ! -f "$GATEWAY" ]; then
@@ -44,7 +47,10 @@ echo "================================================================"
 # ---- 1. Native self-test ----
 echo ""
 echo "--- Test 1: Native self-test ---"
+MAX_FOOTPRINT_MB="$MAX_FOOTPRINT_MB" \
+MAX_SWAP_DELTA_MB="$MAX_SWAP_DELTA_MB" \
 METAL_PATH="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels" \
+    sh "$MEMORY_GUARD" \
     "$MAPLE_EXE" --model-dir "$MAPLE_MODEL_DIR" --self-test
 echo "Self-test: PASS"
 
@@ -52,9 +58,20 @@ echo "Self-test: PASS"
 echo ""
 echo "--- Test 2: Streamed HTTP generation ---"
 MAPLE_PORT=18998
+MAX_FOOTPRINT_MB="$MAX_FOOTPRINT_MB" \
+MAX_SWAP_DELTA_MB="$MAX_SWAP_DELTA_MB" \
 METAL_PATH="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels" \
+    sh "$MEMORY_GUARD" \
     "$MAPLE_EXE" --model-dir "$MAPLE_MODEL_DIR" --port "$MAPLE_PORT" &
-MAPLE_PID=$!
+MAPLE_GUARD_PID=$!
+cleanup_maple() {
+    if [ -n "${MAPLE_GUARD_PID:-}" ]; then
+        kill "$MAPLE_GUARD_PID" 2>/dev/null || true
+        wait "$MAPLE_GUARD_PID" 2>/dev/null || true
+        MAPLE_GUARD_PID=""
+    fi
+}
+trap cleanup_maple EXIT INT TERM
 
 # Wait for server to start
 i=0
@@ -76,7 +93,8 @@ if echo "$STREAM_RESP" | grep -q "data:"; then
 else
     echo "Streaming response missing SSE data"
     echo "$STREAM_RESP"
-    kill $MAPLE_PID 2>/dev/null || true
+    kill "$MAPLE_GUARD_PID" 2>/dev/null || true
+    wait "$MAPLE_GUARD_PID" 2>/dev/null || true
     exit 1
 fi
 
@@ -92,13 +110,15 @@ if echo "$MULTI_RESP" | grep -q "choices"; then
 else
     echo "Multi-turn response invalid"
     echo "$MULTI_RESP"
-    kill $MAPLE_PID 2>/dev/null || true
+    kill "$MAPLE_GUARD_PID" 2>/dev/null || true
+    wait "$MAPLE_GUARD_PID" 2>/dev/null || true
     exit 1
 fi
 
 # Clean up maple server
-kill $MAPLE_PID 2>/dev/null || true
-wait $MAPLE_PID 2>/dev/null || true
+kill "$MAPLE_GUARD_PID" 2>/dev/null || true
+wait "$MAPLE_GUARD_PID" 2>/dev/null || true
+MAPLE_GUARD_PID=""
 
 # ---- 4. Process cleanup verification ----
 echo ""

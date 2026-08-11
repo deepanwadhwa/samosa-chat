@@ -19,11 +19,12 @@ public:
 
     std::vector<int> encode(const std::string& text) const;
     std::string decode(const std::vector<int>& tokens) const;
-    
+
     // Applies the model's chat template to generate a prompt.
     // DeepGrove Maple uses Qwen-style ChatML.
-    std::string apply_chat_template(const std::vector<Message>& messages, bool add_generation_prompt) const;
-    
+    std::string apply_chat_template(const std::vector<Message>& messages, bool add_generation_prompt,
+                                    bool enable_thinking = true) const;
+
     int get_eos_token() const { return eos_token_; }
     int get_pad_token() const { return pad_token_; }
 

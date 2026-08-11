@@ -10,8 +10,8 @@ echo "MAPLE READINESS CHECK"
 echo "================================================================"
 
 echo ""
-echo "1. Building samosa-maple and test-maple-native..."
-make samosa-maple test-maple-native || { echo "FAIL: Build failed"; exit 1; }
+echo "1. Building samosa-maple and native component tests..."
+make samosa-maple test-maple-components || { echo "FAIL: Build failed"; exit 1; }
 echo "   Build: PASS"
 
 echo ""
@@ -24,7 +24,7 @@ echo "   Zero-Python: PASS"
 
 echo ""
 echo "3. Running native unit tests..."
-METAL_PATH="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels" "$BUILD_DIR/test-maple-native" || { echo "FAIL: Native tests failed"; exit 1; }
+METAL_PATH="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels" "$BUILD_DIR/test-maple-components" || { echo "FAIL: Native tests failed"; exit 1; }
 echo "   Native tests: PASS"
 
 echo ""

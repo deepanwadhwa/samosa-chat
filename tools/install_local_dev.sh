@@ -11,6 +11,8 @@ TOKENIZER=${SAMOSA_TOKENIZER:-"$MODEL_ROOT/tokenizer_qwen36.json"}
 HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/${BUILD_DIR:-build}"}
 ENGINE="$BUILD_DIR/qwen36b"
+MAPLE_ENGINE="$BUILD_DIR/samosa-maple"
+MAPLE_MODEL="$ROOT/models/maple"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 JOBSD="$BUILD_DIR/samosa-jobsd"
@@ -21,10 +23,17 @@ OCR="$BUILD_DIR/samosa-ocr"
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
+done
+
+MAPLE_MODEL_OK=1
+for path in "$MAPLE_MODEL/config.json" "$MAPLE_MODEL/tokenizer.json" \
+  "$MAPLE_MODEL/maple-experts.bin" "$MAPLE_MODEL/maple-resident.safetensors" \
+  "$MAPLE_MODEL/maple-manifest.json"; do
+  [ -f "$path" ] || MAPLE_MODEL_OK=0
 done
 
 # The Qwen snapshot is staged when it happens to be present, and skipped
@@ -38,13 +47,14 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
-release_hash=$(shasum -a 256 "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa" |
+release_hash=$(shasum -a 256 "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
 final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage/bin" "$stage/model" "$HOME_DIR/releases" "$HOME_DIR/bin"
+if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
 
 if [ "$SNAPSHOT_OK" = "1" ]; then
   for name in experts.bin resident.safetensors manifest.json config.json generation_config.json; do
@@ -59,6 +69,7 @@ if [ "$SNAPSHOT_OK" = "1" ]; then
   }
 fi
 cp "$ENGINE" "$stage/bin/qwen36b"
+cp "$MAPLE_ENGINE" "$stage/bin/samosa-maple"
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"
@@ -71,6 +82,17 @@ cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 cp "$ROOT/assets/models.json" "$stage/models.json"
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime"
+chmod +x "$stage/bin/samosa-maple"
+
+if [ "$MAPLE_MODEL_OK" = "1" ]; then
+  for file in "$MAPLE_MODEL"/*; do
+    [ -f "$file" ] || continue
+    ln "$file" "$stage/models/maple/$(basename "$file")" || {
+      echo "hard-link failed for Maple asset $(basename "$file")" >&2
+      exit 1
+    }
+  done
+fi
 
 # Document extraction (PDF text via libpdfium, docs/TASKS_DOCUMENTS.md) is an
 # optional capability, not a hard dependency of this installer: most dev
@@ -98,13 +120,16 @@ if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
     echo "staged document extractor accepted a non-PDF interface smoke input" >&2
     exit 1
   fi
-  grep -F 'not_pdf' "$EXTRACT_SMOKE_LOG" >/dev/null || {
+  if grep -F 'not_pdf' "$EXTRACT_SMOKE_LOG" >/dev/null; then
+    rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
+    DOCUMENTS_ENABLED=1
+  else
     sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
-    echo "staged document extractor does not support the required --json-pages interface" >&2
-    exit 1
-  }
-  rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
-  DOCUMENTS_ENABLED=1
+    echo "warning: skipping incompatible document extractor; Maple/app installation will continue" >&2
+    rm -f "$stage/bin/samosa-extract" "$stage/bin/$(basename "$EXTRACT_LIB")"
+    rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
+    DOCUMENTS_ENABLED=0
+  fi
 else
   DOCUMENTS_ENABLED=0
 fi

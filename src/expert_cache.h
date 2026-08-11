@@ -141,6 +141,7 @@ typedef struct ecache_view {
     uint64_t base_charged_bytes;
     uint64_t residual_logical_bytes;
     uint64_t residual_charged_bytes;
+    uint32_t pin_count;
     int hot_queue;
 } ecache_view;
 
@@ -209,6 +210,16 @@ ecache_status ecache_get(expert_cache *cache, ecache_key key,
 /* Inspection without recency or telemetry changes. */
 ecache_status ecache_peek(const expert_cache *cache, ecache_key key,
                           ecache_view *view);
+
+/* Pins make an entry non-evictable while external lazy compute may still
+ * reference its payload bytes.  Pinning is entry-scoped: both base and residual
+ * planes, if present, are protected.  Automatic eviction and pressure reclaim
+ * skip pinned entries.  Explicit remove/destroy reject live pins so callers can
+ * wait for quiescence and retry. */
+ecache_status ecache_pin(expert_cache *cache, ecache_key key,
+                         ecache_view *view);
+ecache_status ecache_unpin(expert_cache *cache, ecache_key key,
+                           ecache_view *view);
 
 /* On success, ownership of payload transfers to the cache.  logical_bytes is
  * rounded up to payload_alignment for budget accounting; source_bytes_read is
