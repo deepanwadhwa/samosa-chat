@@ -2,6 +2,7 @@ build/
 *.qws
 *.dSYM/
 model/
+/models/
 .env
 __pycache__/
 dist/libpdfium.dylib
@@ -9,3 +10,10 @@ dist/samosa-extract
 /results/
 .maple_validation_record.json
 .DS_Store
+
+# Locally generated Maple parity/debug fixtures. Canonical frozen fixtures are
+# tracked explicitly; these are reproducible intermediates and can be large.
+/tests/attn_parity.npz
+/tests/fixtures/maple/components/
+/tests/fixtures/maple/raw_parity_[0-9].json
+/tests/fixtures/maple/raw_parity_[0-9].safetensors
