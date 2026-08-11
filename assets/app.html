@@ -2396,6 +2396,8 @@
         const attachmentIds = attachments.map(a => a.id);
         // Captured before clearAttachments() empties the composer below.
         const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
+        if (!webContext.some(w => w.kind === "search") && shouldContinueWebResearch(chat, text))
+          webContext.push({ kind: "search", url: null });
         const researching = webContext.some(w => w.kind === "search");
         const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
           activity:"",sources:[]};
@@ -2450,10 +2452,12 @@
         // The gateway resolves these into image data URIs / extracted
         // document text server-side; the browser never builds either.
         if (attachmentIds.length) payload.attachment_ids = attachmentIds;
-        // Web access is controlled per turn by visible composer context.
-        // A pasted page reads only that page. `web:true` is sent only after the
-        // user explicitly adds the Web search chip; merely having a configured
-        // provider must never let the model initiate a search on its own.
+        // Web access is controlled per turn. A pasted page reads only that
+        // page. `web:true` follows a visible Web-search chip, an explicit
+        // natural-language request to use the internet, or a freshness
+        // follow-up to a conversation that already shows public sources.
+        // Merely having a configured provider never lets the model initiate a
+        // search on its own.
         applyPendingWebContext(payload, webContext);
         if (chat.directory_context) payload.directory_context = chat.directory_context;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
@@ -3453,6 +3457,22 @@
       // no server-side ID to issue, mark referenced, or delete. Entries are
       // {clientId, kind:"url"|"search", name, url}.
       let pendingWeb = [];
+      function shouldContinueWebResearch(chat, text) {
+        if (!web.available || !web.search_configured || web.offline || web.consent !== "granted") return false;
+        const request = String(text || "").trim();
+        if (!request) return false;
+        // Saying "check/search/browse the web" is itself an explicit request;
+        // making the user also find and click a composer chip adds no privacy
+        // protection. Keep ordinary questions local unless this is either an
+        // explicit request or a freshness follow-up to a turn that already
+        // used public sources.
+        const explicit = /\b(?:search|browse|check|look\s*up|google)\b[^.!?]{0,40}\b(?:web|internet|online)\b|\b(?:web|internet|online)\b[^.!?]{0,40}\b(?:search|browse|check|look\s*up)\b/i.test(request);
+        if (explicit) return true;
+        const sourced = !!chat?.messages?.some(message =>
+          message?.role === "assistant" && Array.isArray(message.sources) && message.sources.length);
+        if (!sourced) return false;
+        return /\b(?:latest|current|currently|today|tonight|yesterday|news|update|updated|new developments?|this (?:week|month|year)|as of|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(request);
+      }
       function applyPendingWebContext(payload, context) {
         const webUrls = context.filter(w => w.kind === "url").map(w => w.url);
         const wantsWebSearch = context.some(w => w.kind === "search");

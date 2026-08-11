@@ -481,6 +481,11 @@ static int handler(SamosaHttpServer *server, int fd,
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
                 "\"{\\\"queries\\\":[\\\"check accuracy above information provide latest thanks\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "check the internet dumbass"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"queries\\\":[\\\"check the internet dumbass\\\"]}\"}}]}", NULL);
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
@@ -531,6 +536,18 @@ static int handler(SamosaHttpServer *server, int fd,
     /* The answering turn. Reports whether the web evidence actually arrived
        spliced into the user message, so a silently dropped splice fails the
        test instead of looking like a pass. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe hostile"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Authoritative page read:") &&
+            strstr(request->body, "HIGH-STAKES TURN:") &&
+            strstr(request->body, "Do not claim that you cannot browse") &&
+            !strstr(request->body, "I cannot browse the internet") &&
+            !strstr(request->body, "999,999 alleged deaths from an unverified snippet")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"unsafe web grounding\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe"))
         return samosa_http_response(fd, 200, "application/json",

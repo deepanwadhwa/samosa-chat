@@ -147,7 +147,7 @@ function loadComposer({ authFetch } = {}) {
     return { applyCapabilities, setAttachItem, openAttachMenu, closeAttachMenu,
              attachMenuKeydown, setAttachError, removeAttachment, renderAttachments,
              uploadAttachment, pickAttachment, clearAttachments,
-             addWebPage, addWebSearch, applyPendingWebContext,
+             addWebPage, addWebSearch, applyPendingWebContext, shouldContinueWebResearch,
              get pending() { return pendingAttachments; },
              set pending(v) { pendingAttachments = v; },
              get pendingWebContext() { return pendingWeb; },
@@ -157,7 +157,21 @@ function loadComposer({ authFetch } = {}) {
   return { fns, els };
 }
 
-// --- Phase W: the visible per-turn chip is the only web-search control ----
+// A literal request to use the internet is explicit consent for that turn.
+// Freshness follow-ups also continue a thread whose prior answer visibly used
+// public sources; unrelated local questions do not start network activity.
+{
+  const { fns } = loadComposer();
+  globalThis.web = { offline: false, fetch_available: true, search_configured: true,
+                     available: true, consent: "granted", provider: "brave", reason: "" };
+  const researched = { messages: [{ role: "assistant", sources: [{ url: "https://example.com" }] }] };
+  assert.equal(fns.shouldContinueWebResearch({ messages: [] }, "check the internet dumbass"), true);
+  assert.equal(fns.shouldContinueWebResearch(researched, "Is there any news from August 2026?"), true);
+  assert.equal(fns.shouldContinueWebResearch(researched, "Rewrite that more clearly."), false);
+  assert.equal(fns.shouldContinueWebResearch({ messages: [] }, "What is a closure?"), false);
+}
+
+// --- Phase W: visible chip remains the direct per-turn web-search control --
 {
   const { fns } = loadComposer();
   // A configured provider does not grant automatic per-turn use.

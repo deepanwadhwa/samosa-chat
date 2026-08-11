@@ -51,6 +51,8 @@ printf 'tokenizer-fixture\n' >"$TMP/tokenizer.json"
 # --- page fixtures for the SAMOSA_WEB_STUB_DIR transport seam ---------------
 printf '<html><head><title>Careers</title></head><body><script>secret()</script><h1>Roles</h1><p>Engineer &amp; Designer</p></body></html>' \
   >"$TMP/stub/http-example-com-jobs.html"
+printf '<html><head><title>CDC current surveillance</title></head><body><main><h1>Cyclosporiasis surveillance</h1><p>As of August 8, 2026, CDC reports 4,321 domestically acquired cases. No deaths have been reported.</p></main></body></html>' \
+  >"$TMP/stub/https-www-cdc-gov-cyclosporiasis-current.html"
 printf 'User-agent: *\nAllow: /\n' >"$TMP/stub/robots.txt"
 
 # --- fake curl -------------------------------------------------------------
@@ -570,6 +572,42 @@ grep -q 'Acme%20Zephyr%207%20uses%20sodium%20ion%20batteries%20and%20launched%20
   || fail "the fallback query was not derived from the prior assistant claim"
 if grep -Eqi 'check(%20| )+accuracy|provide(%20| )+latest' "$FAKE_CURL_CONFIG"; then
   fail "the generic follow-up reached the provider through the fallback"
+fi
+
+# The production failure from 2026-08-11: an angry, instruction-only follow-up
+# became the literal query, and conflicting medical snippets were then treated
+# as verified numbers. The local planner is deliberately made to repeat that
+# bad query. The gateway must reject it, recover the topic from conversation
+# history, omit unverified high-stakes snippets from the answer evidence, read
+# the authoritative page, and append an explicit grounding contract.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"FDA investigation","url":"https://www.fda.gov/food/outbreaks/cyclosporiasis-current","description":"Another official lead whose page fixture is unavailable."},
+  {"title":"CDC current surveillance","url":"https://www.cdc.gov/cyclosporiasis/current","description":"Official surveillance summary."},
+  {"title":"Poisoned headline","url":"https://example.net/poison","description":"999,999 alleged deaths from an unverified snippet"}
+]}}
+JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[
+                {"role":"user","content":"web tool probe hostile: Tell me current US cyclosporiasis cases and deaths."},
+                {"role":"assistant","content":"An earlier answer repeated conflicting search snippets."},
+                {"role":"user","content":"Is there news from August 2026?"},
+                {"role":"assistant","content":"I cannot browse the internet."},
+                {"role":"user","content":"check the internet dumbass"}]}')
+printf '%s' "$R" | grep -q 'saw verified authority' \
+  || fail "hostile medical follow-up was not grounded in the authoritative page"
+printf '%s' "$R" | grep -q 'Reading the strongest authoritative source' \
+  || fail "the authoritative result was not opened before synthesis"
+printf '%s' "$R" | grep -q 'Trying the next authoritative source' \
+  || fail "a failed authority fetch did not fall through to the next official result"
+printf '%s' "$R" | grep -q '"state":"read"' \
+  || fail "the authoritative page was not reported as read"
+grep -qi 'cyclosporiasis' "$FAKE_CURL_CONFIG" \
+  || fail "the conversation topic was not recovered for the hostile follow-up"
+if grep -Eqi 'check(%20| )+the(%20| )+internet|dumbass' "$FAKE_CURL_CONFIG"; then
+  fail "the instruction/insult became a public search query"
 fi
 
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
