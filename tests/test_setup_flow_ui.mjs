@@ -97,6 +97,12 @@ function loadSetupFlowUi() {
 
 assert.match(app, /\/\/ The app always opens in Chat\.[\s\S]*?\n      enterChat\(\);/,
   "startup must bootstrap Chat directly instead of routing through setup/status");
+assert.match(app, /h\.ready\?`\$\{h\.label\} ready`:`Choose a model`/,
+  "a non-ready backend must offer model choice instead of claiming to load");
+assert.match(app, /function openModelSettings\(\) \{ openSettings\("models"\); \}/,
+  "the model choice must open Settings directly on Models");
+assert.match(app, /els\.status\.onclick=.*openModelSettings\(\)/,
+  "the Choose a model status action must be clickable");
 
 // --- setupViewForNextStep: collapses "download" into "model", passes the rest through ---
 {

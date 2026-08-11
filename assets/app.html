@@ -182,6 +182,10 @@
     .welcome img { width: 118px; height: 118px; object-fit: contain; }
     .welcome h1 { margin: 17px 0 7px; font-size: clamp(28px, 4vw, 34px); line-height: 1.2; letter-spacing: -.02em; font-weight: 700; }
     .welcome p { margin: 0 auto; max-width: 520px; color: var(--ink-2); font-size: 16px; }
+    .choose-model-button { border: 0; border-radius: var(--r-md); background: var(--accent); color: #fff; padding: 14px 20px; cursor: pointer; font: 700 15px var(--font-ui); }
+    .choose-model-button:hover { filter: brightness(.96); }
+    .model-status-action { appearance: none; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; text-align: left; }
+    .model-status-action:not(:disabled) { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
     .prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 31px auto 0; max-width: 640px; text-align: left; }
     .prompt-chip { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 13px 15px; cursor: pointer; line-height: 1.35; transition: border-color .15s ease; }
     .prompt-chip:hover { border-color: var(--line-strong); }
@@ -1360,7 +1364,7 @@
       <header class="topbar">
         <div class="top-left">
           <button class="menu-button" id="menuButton" aria-label="Open conversations"><svg aria-hidden="true"><use href="#icon-menu"></use></svg></button>
-          <div><div class="conversation-name" id="conversationName">New conversation</div><div class="model-line"><span class="status-dot" id="statusDot"></span><span id="modelStatus">Connecting to local model…</span></div></div>
+          <div><div class="conversation-name" id="conversationName">New conversation</div><div class="model-line"><span class="status-dot" id="statusDot"></span><button class="model-status-action" id="modelStatus" type="button" disabled>Connecting to local model…</button></div></div>
         </div>
         <div class="top-actions">
           <button class="icon-button" id="settingsButton" aria-label="Open settings"><svg aria-hidden="true"><use href="#icon-gear"></use></svg></button>
@@ -2050,6 +2054,9 @@
         const heading = profileName ? `Welcome, ${escapeHTML(profileName)}` : "Your model. Your machine.";
         return `<div class="welcome"><div class="welcome-kicker"><span>Local intelligence</span><span>Private by default</span></div><div class="welcome-copy"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>${heading}</h1><p>Think something through, make a plan, or get unstuck. Your conversations are stored on this computer.</p></div><div class="prompt-label">Four ways to begin</div><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through a logic puzzle</button></div></div>`;
       }
+      function chooseModelHTML() {
+        return `<div class="welcome"><button class="choose-model-button" type="button" data-choose-model>Choose a model</button></div>`;
+      }
       // A document attachment (and an image whose bytes could not be loaded)
       // renders as a named chip. Built with textContent throughout -- a
       // filename is user data.
@@ -2093,7 +2100,12 @@
       let renderLimit = RENDER_WINDOW;
       function renderMessages() {
         const chat = activeChat();
-        if (!chat || !chat.messages.length) { els.messages.innerHTML = welcomeHTML(); els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); }); return; }
+        if (!chat || !chat.messages.length) {
+          els.messages.innerHTML = backend.ready ? welcomeHTML() : chooseModelHTML();
+          els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); });
+          els.messages.querySelector("[data-choose-model]")?.addEventListener("click", openModelSettings);
+          return;
+        }
         els.messages.innerHTML = "";
         const total = chat.messages.length;
         const start = Math.max(0, total - renderLimit);
@@ -2168,7 +2180,7 @@
       function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; updateActiveMemoryContext(); }
       function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
       function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
-      function resizePrompt() { const hasText=!!els.prompt.value.trim(); els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.composer.classList.toggle("has-text",hasText); els.send.disabled=!hasText||generating; }
+      function resizePrompt() { const hasText=!!els.prompt.value.trim(); els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.composer.classList.toggle("has-text",hasText); els.send.disabled=!hasText||generating||!backend.ready; }
       function setGenerating(value) { generating=value; document.body.classList.toggle("generating",value); els.prompt.disabled=value; els.send.disabled=value||!els.prompt.value.trim(); if (typeof updateVoiceAvailability === "function") updateVoiceAvailability(); if (typeof updateRuntimeControlAvailability === "function") updateRuntimeControlAvailability(); }
 
       // TTS uses the browser's installed speech engine (macOS supplies many
@@ -2354,7 +2366,7 @@
         if (generating || !text.trim()) return;
         if (!backend.ready) {
           els.modelHelp.textContent="Install or wait for a model before starting a conversation.";
-          openSettings();
+          openModelSettings();
           return;
         }
         const chat=ensureChat();
@@ -3046,6 +3058,7 @@
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
           await refreshWebConfig();
           const previousBackend=backend.id;
+          const previousReady=!!backend.ready;
           if(h.gateway) {
             backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready};
             // T3.2: the `+` button itself stays enabled -- it opens a menu
@@ -3053,13 +3066,18 @@
             // the whole button would hide those reasons entirely.
             applyCapabilities();
             els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:`Loading ${h.label}…`;
+            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:`Choose a model`;
+            els.status.disabled=!!h.ready || !!h.generating;
           } else {
             backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true};
             applyCapabilities();
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating":"Qwen3.6 ready";
           }
           els.sideDot.className=els.dot.className; els.sideStatus.textContent=backend.label;
+          els.prompt.disabled=!backend.ready || generating;
+          els.prompt.placeholder=backend.ready?"Message your local model…":"Choose a model in Settings";
+          resizePrompt();
+          if(previousReady!==!!backend.ready && !(activeChat()?.messages || []).length) renderMessages();
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
           if(h.context_limit_tokens){const effective=h.context_limit_tokens.toLocaleString(), model=(h.model_context_limit_tokens||h.context_limit_tokens).toLocaleString(); els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${h.context_limit_mode||"configured"} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;}
           // Runtime controls are hydrated from the gateway-owned settings API,
@@ -5465,13 +5483,14 @@
         if (event.shiftKey && (active === first || !els.settings.contains(active))) { event.preventDefault(); last.focus(); }
         else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
       }
-      function openSettings() {
+      function openSettings(initialPane = "general") {
         settingsReturnFocus = document.activeElement;
         els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false");
         $("shell").inert = true;
-        selectSettingsPane("general"); refreshSettingsModels(); refreshRuntimeSettings({force:true}); startSettingsPolling();
+        selectSettingsPane(initialPane); refreshSettingsModels(); refreshRuntimeSettings({force:true}); startSettingsPolling();
         requestAnimationFrame(() => $("closeSettings").focus());
       }
+      function openModelSettings() { openSettings("models"); }
       function closePanels() {
         const settingsWasOpen = els.settings.classList.contains("open");
         els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true");
@@ -5521,7 +5540,7 @@
       };
 
       $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
-      $("settingsButton").onclick=openSettings; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
+      $("settingsButton").onclick=()=>openSettings(); els.status.onclick=()=>{ if(!backend.ready) openModelSettings(); }; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
       els.settings.addEventListener("keydown", settingsKeydown);
       document.querySelectorAll("[data-settings-pane]").forEach(button => { button.onclick = () => selectSettingsPane(button.dataset.settingsPane); });
       chooserEls.openBtn.onclick=openChooser; chooserEls.close.onclick=closeChooser; chooserEls.scrim.onclick=closeChooser;
