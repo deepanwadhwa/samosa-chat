@@ -13,6 +13,7 @@ HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/${BUILD_DIR:-build}"}
 ENGINE="$BUILD_DIR/qwen36b"
 MAPLE_ENGINE="$BUILD_DIR/samosa-maple"
+MAPLE_METALLIB="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 JOBSD="$BUILD_DIR/samosa-jobsd"
@@ -23,7 +24,7 @@ OCR="$BUILD_DIR/samosa-ocr"
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
@@ -47,7 +48,7 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
-set -- "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
+set -- "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa"
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
@@ -75,6 +76,10 @@ if [ "$SNAPSHOT_OK" = "1" ]; then
 fi
 cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$MAPLE_ENGINE" "$stage/bin/samosa-maple"
+ln "$MAPLE_METALLIB" "$stage/bin/mlx.metallib" || {
+  echo "hard-link failed for mlx.metallib; refusing to duplicate the Metal runtime" >&2
+  exit 1
+}
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"

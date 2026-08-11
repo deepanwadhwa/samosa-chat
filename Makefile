@@ -506,6 +506,16 @@ test-maple-components: tests/test_maple_components.cpp src/maple/maple_model.cpp
 	@echo "Building C++ parity tests..."
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
 
+test-maple-openai-messages: tests/test_maple_openai_messages.cpp src/maple/openai_message_content.h src/json.h
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tests/test_maple_openai_messages.cpp -o $(BUILD_DIR)/$@
+	$(BUILD_DIR)/$@
+
+test-maple-cache-boundary: tests/test_maple_cache_boundary.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
+	$(BUILD_DIR)/$@
+
 test-maple-model: tests/test_maple_model.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	@echo "Building C++ model tests..."
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)

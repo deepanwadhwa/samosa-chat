@@ -19,6 +19,7 @@ import os
 import pathlib
 import shutil
 import sys
+import platform
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODEL_ROOT = ROOT.parent / "samosa-models"
@@ -139,6 +140,21 @@ def main() -> int:
     version = version_file.read_text(encoding="utf-8").strip()
 
     staged: list[pathlib.Path] = []
+
+    # Maple is an Apple-Silicon native runtime.  MLX first looks for its Metal
+    # library beside the executable; shipping both makes the installed runtime
+    # independent of the developer's build tree and its absolute CMake path.
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        maple_runtime = ROOT / "build" / "samosa-maple"
+        maple_metallib = (ROOT / "build" / "mlx-build" / "mlx" / "backend" /
+                          "metal" / "kernels" / "mlx.metallib")
+        for src, name in ((maple_runtime, "samosa-maple"),
+                          (maple_metallib, "mlx.metallib")):
+            if not src.is_file():
+                print(f"missing Apple-Silicon Maple runtime: {src}", file=sys.stderr)
+                return 1
+            place(src, out / "runtime" / "macos-arm64" / name, link=True)
+            staged.append(out / "runtime" / "macos-arm64" / name)
     if not args.runtime_only:
         for name in MODEL_FILES:
             src = args.snapshot / name

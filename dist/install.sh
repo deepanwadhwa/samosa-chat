@@ -113,6 +113,8 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png|models.json) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/samosa_voice_runtime.sh) printf '%s/bin/samosa-voice-runtime\n' "$STAGE" ;;
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
+    runtime/macos-arm64/samosa-maple) printf '%s/bin/samosa-maple\n' "$STAGE" ;;
+    runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
@@ -131,6 +133,20 @@ INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expe
 # MCP-capable applications can launch directly.
 CHUTNI_FILES="engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c"
 INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
+
+# The native Maple executable and its colocated MLX Metal library are a paired
+# Apple-Silicon capability.  Never install one without the other.
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  maple_exe=runtime/macos-arm64/samosa-maple
+  maple_lib=runtime/macos-arm64/mlx.metallib
+  if manifest_field "$maple_exe" 1 >/dev/null 2>&1 ||
+     manifest_field "$maple_lib" 1 >/dev/null 2>&1; then
+    manifest_field "$maple_exe" 1 >/dev/null 2>&1 &&
+      manifest_field "$maple_lib" 1 >/dev/null 2>&1 ||
+      fail "release contains an incomplete Maple runtime"
+    INSTALL_FILES="$INSTALL_FILES $maple_exe $maple_lib"
+  fi
+fi
 
 # Model weights are a separate, optional concern from the runtime: a
 # runtime-only release (tools/package_hf.py --runtime-only) omits them

@@ -1,5 +1,6 @@
 #include "mlx/mlx.h"
 #include "maple_model.h"
+#include <cassert>
 #include <iostream>
 #include <vector>
 
@@ -49,6 +50,23 @@ void test_rotating_cache() {
     }
 }
 
+void test_rotating_chunk_boundary() {
+    const int max_size = 512;
+    RotatingKVCache cache(max_size);
+    auto k0 = zeros({1, 1, max_size, 16}, float32);
+    auto v0 = zeros({1, 1, max_size, 16}, float32);
+    cache.update_and_fetch(k0, v0);
+    assert(k0.shape(2) == max_size);
+
+    auto k1 = ones({1, 1, 64, 16}, float32);
+    auto v1 = ones({1, 1, 64, 16}, float32);
+    cache.update_and_fetch(k1, v1);
+    // mlx-lm preserves window + chunk - 1 keys so every query in the
+    // multi-token append has a complete 512-token causal window.
+    assert(k1.shape(2) == max_size + 64 - 1);
+    assert(cache.size() == max_size);
+}
+
 void test_global_cache() {
     std::cout << "--- Global KVCache Test ---\n";
     KVCache cache;
@@ -73,6 +91,7 @@ int main() {
     std::cout << "=== 4. CACHE VALIDATION (Boundary Math) ===\n";
     test_global_cache();
     test_rotating_cache();
+    test_rotating_chunk_boundary();
     std::cout << "PASS: KV Cache semantics verified natively.\n";
     return 0;
 }

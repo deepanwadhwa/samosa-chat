@@ -978,42 +978,66 @@ array MapleModel::operator()(const array& inputs, std::vector<KVCache*>* caches)
             const int query_len = inputs.shape(1);
             const int old_offset = cache ? cache->offset : 0;
             const int old_len = cache ? cache->size() : 0;
-            int total_len = old_len + query_len;
             const bool sliding = i < args_.layer_types.size() &&
                                   args_.layer_types[i] == "sliding_attention";
-            if (sliding && args_.sliding_window > 0) {
-                total_len = std::min(total_len, args_.sliding_window);
-            }
 
-            /* mlx-lm uses the optimized causal mode unless a sliding batch
-             * actually crosses the window boundary. */
+            /* A rotating cache intentionally returns window + N - 1 keys for
+             * an N-token append so every query token retains a full window.
+             * Match mlx-lm RotatingKVCache.make_mask(): its relative query
+             * offset is capped at window - 1, and the mask width is that
+             * offset plus N (not merely window). */
             const int mask_offset = sliding && args_.sliding_window > 0
                 ? std::min(args_.sliding_window - 1, old_offset)
                 : old_offset;
-            const bool needs_array_mask =
-                sliding && args_.sliding_window > 0 &&
-                mask_offset + query_len > args_.sliding_window;
+            const int total_len = sliding && args_.sliding_window > 0
+                ? mask_offset + query_len
+                : old_len + query_len;
+            /* MLX's implicit "causal" SDPA mask is only safe when query and
+             * key lengths match.  During chunked prefill, every chunk after
+             * the first attends to cached keys as well; reusing the implicit
+             * mask can retain the preceding key length (for example 512)
+             * while the cache has grown (for example 575), causing a hard
+             * broadcast failure.  Build the exact absolute-position mask for
+             * every cached multi-token chunk. */
+            const bool needs_array_mask = old_offset > 0 ||
+                (sliding && args_.sliding_window > 0 &&
+                 mask_offset + query_len > args_.sliding_window);
             if (needs_array_mask) {
-                // Keys are appended before attention.  For a rotating cache
-                // they represent the final total_len absolute positions.
-                const int first_key_pos = old_offset + query_len - total_len;
-                auto qpos = reshape(arange(query_len), {query_len, 1}) + array(old_offset);
-                auto kpos = reshape(arange(total_len), {1, total_len}) + array(first_key_pos);
+                auto qpos = reshape(arange(query_len), {query_len, 1}) + array(mask_offset);
+                auto kpos = reshape(arange(total_len), {1, total_len});
                 auto blocked = greater(kpos, qpos);
-                blocked = logical_or(
-                    blocked,
-                    less(kpos, qpos - array(args_.sliding_window - 1)));
+                if (sliding && args_.sliding_window > 0) {
+                    blocked = logical_or(
+                        blocked,
+                        less(kpos, qpos - array(args_.sliding_window - 1)));
+                }
                 mask = astype(
                     multiply(astype(blocked, float32), array(-3.4028235e38f)),
                     bfloat16);
             }
         }
-        if (fused_streaming_decode) {
-            auto state = layers_[i].decode_fused(h, residual, mask, cache);
-            h = state.first;
-            residual = state.second;
-        } else {
-            h = layers_[i](h, mask, cache);
+        try {
+            if (fused_streaming_decode) {
+                auto state = layers_[i].decode_fused(h, residual, mask, cache);
+                h = state.first;
+                residual = state.second;
+            } else {
+                h = layers_[i](h, mask, cache);
+            }
+        } catch (const std::exception& e) {
+            std::string mask_shape = "none";
+            if (mask) {
+                mask_shape.clear();
+                for (int dim : mask->shape()) {
+                    if (!mask_shape.empty()) mask_shape += "x";
+                    mask_shape += std::to_string(dim);
+                }
+            }
+            throw std::runtime_error(
+                "Maple layer=" + std::to_string(i) + " query_len=" +
+                std::to_string(inputs.shape(1)) + " cache_offset=" +
+                std::to_string(cache ? cache->offset : -1) + " mask=" +
+                mask_shape + ": " + e.what());
         }
     }
 
@@ -1041,17 +1065,32 @@ array MapleModel::run_token_sequence(const array& inputs,
     for (int start = 0; start < inputs.shape(1);
          start += kPrefillChunkTokens) {
         const int end = std::min(inputs.shape(1), start + kPrefillChunkTokens);
-        auto chunk = slice(inputs, {0, start}, {1, end});
-        auto projected = (*this)(chunk, caches);
-        /* Hidden activations are capped at 64 tokens, the vocabulary head is
-         * capped at the same bounded chunk, and every routed expert is still
-         * evaluated and released before the next layer.  Evaluate the full
-         * projection before slicing so MLX preserves the reference kernel. */
-        eval(projected);
-        last = slice(
-            projected, {0, projected.shape(1) - 1, 0},
-            {1, projected.shape(1), projected.shape(2)});
-        eval(last);
+        try {
+            auto chunk = slice(inputs, {0, start}, {1, end});
+            auto projected = (*this)(chunk, caches);
+            /* Hidden activations are capped at 64 tokens, the vocabulary head is
+             * capped at the same bounded chunk, and every routed expert is still
+             * evaluated and released before the next layer.  Evaluate the full
+             * projection before slicing so MLX preserves the reference kernel. */
+            eval(projected);
+            last = slice(
+                projected, {0, projected.shape(1) - 1, 0},
+                {1, projected.shape(1), projected.shape(2)});
+            eval(last);
+            /* eval() only enqueues Metal work.  KVCache::update_and_fetch can
+             * donate and rewrite its backing buffer in the next chunk, so a
+             * real chunk boundary must wait until the preceding attention
+             * graph has consumed its old cache shape and mask.  This barrier
+             * is also what makes the documented 64-token memory/release
+             * boundary true rather than merely lazy graph construction. */
+            synchronize(default_stream(default_device()));
+        } catch (const std::exception& e) {
+            const int offset = caches->empty() ? -1 : (*caches)[0]->offset;
+            throw std::runtime_error(
+                "Maple prefill chunk [" + std::to_string(start) + "," +
+                std::to_string(end) + ") cache_offset=" +
+                std::to_string(offset) + ": " + e.what());
+        }
     }
     return last;
 }

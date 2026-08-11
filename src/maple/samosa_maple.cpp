@@ -1,5 +1,6 @@
 #include "maple_model.h"
 #include "tokenizer.h"
+#include "openai_message_content.h"
 #include "../samosa_http.h"
 #include "../json.h"
 #include "mlx/utils.h"
@@ -105,10 +106,16 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             if (m->t == J_OBJ) {
                 jval* role = json_get(m, "role");
                 jval* content = json_get(m, "content");
-                if (role && content && role->t == J_STR && content->t == J_STR) {
-                    msgs.push_back({role->str, content->str});
+                std::string text;
+                if (role && role->t == J_STR && openai_message_text(content, text)) {
+                    msgs.push_back({role->str, std::move(text)});
                 }
             }
+        }
+
+        if (msgs.empty()) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 400, "invalid_request", "messages must contain text content.");
         }
 
         bool stream = false;
@@ -152,7 +159,34 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             }
         }
 
-        if (max_tokens > 0) {
+        bool client_connected = true;
+        std::string streamed_text;
+        if (stream) {
+            client_connected = samosa_http_stream_headers(fd) &&
+                samosa_send_all(fd, ": maple generation started\n\n", 28);
+        }
+
+        auto stream_progress = [&]() {
+            if (!stream || !client_connected) return;
+            std::string visible = visible_answer(
+                server_ctx->tokenizer->decode(generated_tokens), enable_thinking);
+            if (visible.size() > streamed_text.size() &&
+                visible.compare(0, streamed_text.size(), streamed_text) == 0) {
+                std::string delta = visible.substr(streamed_text.size());
+                char escaped[8192];
+                samosa_json_escape(escaped, sizeof(escaped), delta.c_str());
+                char chunk[8704];
+                snprintf(chunk, sizeof(chunk),
+                    "data: {\"choices\": [{\"delta\": {\"content\": \"%s\"}}]}\n\n",
+                    escaped);
+                client_connected = samosa_send_all(fd, chunk, strlen(chunk));
+                streamed_text = std::move(visible);
+            } else {
+                client_connected = samosa_send_all(fd, ": keepalive\n\n", 13);
+            }
+        };
+
+        if (max_tokens > 0 && client_connected) {
             // Prefill once, then feed one token at a time through the caches.
             mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
             x = mlx::core::reshape(x, {1, (int)input_ids.size()});
@@ -168,8 +202,9 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             for (int i = 0; i < max_tokens; i++) {
                 generated_tokens.push_back(next_token);
                 input_ids.push_back(next_token);
+                stream_progress();
 
-                if (next_token == eos_token || i + 1 == max_tokens) break;
+                if (!client_connected || next_token == eos_token || i + 1 == max_tokens) break;
 
                 x = mlx::core::array({next_token}, {1, 1});
                 logits = (*server_ctx->model)(x, &caches);
@@ -182,14 +217,11 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
 
         std::string text = visible_answer(server_ctx->tokenizer->decode(generated_tokens), enable_thinking);
         if (stream) {
-            samosa_http_stream_headers(fd);
-            char escaped[8192];
-            samosa_json_escape(escaped, sizeof(escaped), text.c_str());
-            char chunk[8704];
-            snprintf(chunk, sizeof(chunk), "data: {\"choices\": [{\"delta\": {\"content\": \"%s\"}}]}\n\n", escaped);
-            samosa_send_all(fd, chunk, strlen(chunk));
-            const char* end_chunk = "data: [DONE]\n\n";
-            samosa_send_all(fd, end_chunk, strlen(end_chunk));
+            if (client_connected) {
+                stream_progress();
+                const char* end_chunk = "data: [DONE]\n\n";
+                samosa_send_all(fd, end_chunk, strlen(end_chunk));
+            }
         } else {
             // Construct JSON response
             char body[12288];
