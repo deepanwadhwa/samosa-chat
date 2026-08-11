@@ -5,22 +5,23 @@ MLX_VERSION=$(cat vendor/mlx.version)
 BUILD_DIR="${BUILD_DIR:-build}"
 MLX_BUILD_DIR="$BUILD_DIR/mlx-build"
 
-if [ ! -d "vendor/mlx" ]; then
-    echo "Cloning MLX..."
-    git clone https://github.com/ml-explore/mlx.git vendor/mlx
-fi
+[ "$(uname -s):$(uname -m)" = "Darwin:arm64" ] || {
+    echo "Maple's native MLX runtime requires Apple Silicon" >&2
+    exit 2
+}
+[ -f vendor/mlx/CMakeLists.txt ] || {
+    echo "missing MLX submodule; run: git submodule update --init vendor/mlx" >&2
+    exit 2
+}
 
-echo "Checking out pinned MLX version $MLX_VERSION"
-cd vendor/mlx
-git fetch --tags
-git checkout "$MLX_VERSION"
-cd ../..
+MLX_ACTUAL=$(git -C vendor/mlx rev-parse HEAD)
+[ "$MLX_ACTUAL" = "$MLX_VERSION" ] || {
+    echo "MLX submodule is $MLX_ACTUAL, expected pinned revision $MLX_VERSION" >&2
+    exit 2
+}
 
 echo "Building native MLX (Python bindings OFF)"
-mkdir -p "$MLX_BUILD_DIR"
-cd "$MLX_BUILD_DIR"
-
-cmake ../../vendor/mlx \
+cmake -S vendor/mlx -B "$MLX_BUILD_DIR" \
     -DMLX_BUILD_PYTHON_BINDINGS=OFF \
     -DMLX_BUILD_METAL=ON \
     -DMLX_BUILD_SAFETENSORS=ON \
@@ -28,7 +29,6 @@ cmake ../../vendor/mlx \
     -DMLX_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release
 
-make -j$(sysctl -n hw.ncpu)
-cd ../..
+cmake --build "$MLX_BUILD_DIR" --parallel "$(sysctl -n hw.ncpu)"
 
 echo "MLX Native Build Complete."

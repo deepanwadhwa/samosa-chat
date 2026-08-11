@@ -124,6 +124,15 @@ def main() -> int:
     ap.add_argument("--repo-id", default="REPO_ID_PLACEHOLDER")
     ap.add_argument("--pdfium-dir", type=pathlib.Path,
                     help="directory containing all SHA-reviewed PDFium archives")
+    ap.add_argument(
+        "--maple-runtime", type=pathlib.Path,
+        default=ROOT / "build" / "samosa-maple",
+        help="Apple-Silicon samosa-maple executable (defaults to the production build)")
+    ap.add_argument(
+        "--maple-metallib", type=pathlib.Path,
+        default=(ROOT / "build" / "mlx-build" / "mlx" / "backend" /
+                 "metal" / "kernels" / "mlx.metallib"),
+        help="Metal library paired with --maple-runtime")
     ap.add_argument("--runtime-only", action="store_true",
                     help="package the browser control plane (gateway, engine "
                          "sources, app shell) with no model weights at all -- "
@@ -145,13 +154,14 @@ def main() -> int:
     # library beside the executable; shipping both makes the installed runtime
     # independent of the developer's build tree and its absolute CMake path.
     if sys.platform == "darwin" and platform.machine() == "arm64":
-        maple_runtime = ROOT / "build" / "samosa-maple"
-        maple_metallib = (ROOT / "build" / "mlx-build" / "mlx" / "backend" /
-                          "metal" / "kernels" / "mlx.metallib")
-        for src, name in ((maple_runtime, "samosa-maple"),
-                          (maple_metallib, "mlx.metallib")):
+        for src, name in ((args.maple_runtime, "samosa-maple"),
+                          (args.maple_metallib, "mlx.metallib")):
             if not src.is_file():
                 print(f"missing Apple-Silicon Maple runtime: {src}", file=sys.stderr)
+                return 1
+            if name == "samosa-maple" and not os.access(src, os.X_OK):
+                print(f"Apple-Silicon Maple runtime is not executable: {src}",
+                      file=sys.stderr)
                 return 1
             place(src, out / "runtime" / "macos-arm64" / name, link=True)
             staged.append(out / "runtime" / "macos-arm64" / name)

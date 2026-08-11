@@ -228,6 +228,9 @@ done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 # Downloads do not retain source file modes.
 chmod 755 "$STAGE/bin/samosa" "$STAGE/bin/samosa-voice-runtime" "$STAGE/bin/samosa-kokoro-runtime"
+if [ -f "$STAGE/bin/samosa-maple" ]; then
+  chmod 755 "$STAGE/bin/samosa-maple"
+fi
 
 say "Compiling the staged engine..."
 COMPILER=""

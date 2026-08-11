@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install libomp
+          brew install cmake libomp
           python3 -m pip install --break-system-packages numpy || true
 
       - name: Install dependencies (Linux)
@@ -41,6 +41,15 @@ jobs:
 
       - name: Build (multithreaded)
         run: make omp
+
+      # Maple is a shipped Apple-Silicon runtime, so the arm64 release tests
+      # must package a real clean-runner build rather than relying on a local
+      # developer artifact or weakening package_hf.py's fail-closed contract.
+      - name: Build Maple runtime (Apple Silicon)
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        run: |
+          make mlx
+          make samosa-maple
 
       # The suite is self-contained: it stubs the engine and the network, and
       # uses tiny fixtures rather than the 24 GB model, so it runs on a clean

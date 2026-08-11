@@ -70,6 +70,12 @@ grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the local voice runtime builder"
 grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the native Kokoro installer"
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  grep -q 'runtime/macos-arm64/samosa-maple$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing samosa-maple"
+  grep -q 'runtime/macos-arm64/mlx.metallib$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing mlx.metallib"
+fi
 for name in $MODEL_ARTIFACT_NAMES; do
   grep -q "	$name$" "$REMOTE/release-manifest.tsv" &&
     fail "runtime-only manifest unexpectedly lists model artifact '$name'"
@@ -137,6 +143,12 @@ RECORDED_CHUTNI_VERSION=$(sqlite3 \
   fail "runtime-only install did not stage the native Kokoro installer"
 [ ! -e "$HOME_DIR/current/bin/samosa-pocket-tts-runtime" ] ||
   fail "runtime-only install staged the obsolete Python voice runtime"
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  [ -x "$HOME_DIR/current/bin/samosa-maple" ] ||
+    fail "Apple-Silicon install did not stage samosa-maple"
+  [ -f "$HOME_DIR/current/bin/mlx.metallib" ] ||
+    fail "Apple-Silicon install did not stage mlx.metallib"
+fi
 
 assert_no_model_requests
 stop_remote

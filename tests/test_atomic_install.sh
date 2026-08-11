@@ -18,7 +18,9 @@ printf '{}\n' >"$TMP/tokenizer.json"
 
 package() {
   python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
-    --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa >/dev/null
+    --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa \
+    --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+    --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" >/dev/null
 }
 
 install_release() {

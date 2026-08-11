@@ -1,0 +1,4 @@
+#!/bin/sh
+# Small package/install fixture. The real Maple runtime is built and exercised
+# by tests/test_runtime_only_release.sh on Apple-Silicon CI.
+exit 0

@@ -26,7 +26,9 @@ printf '{}\n'                >"$SNAP/generation_config.json"
 printf '{}\n'                >"$TMP/tokenizer.json"
 
 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
-  --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa >/dev/null
+  --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa \
+  --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" >/dev/null
 
 # Runs the installer against the file:// fixture remote.
 #   $1 = fake HOME, $2 = SHELL, $3 = PATH, $4 = extra env assignment ("" for none)

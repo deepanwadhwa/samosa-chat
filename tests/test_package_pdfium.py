@@ -12,6 +12,8 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "tools" / "package_hf.py"
+MAPLE_RUNTIME = ROOT / "tests" / "fixtures" / "maple-runtime" / "samosa-maple"
+MAPLE_METALLIB = ROOT / "tests" / "fixtures" / "maple-runtime" / "mlx.metallib"
 ARCHIVES = (
     "pdfium-mac-arm64.tgz",
     "pdfium-linux-x64.tgz",
@@ -34,7 +36,9 @@ class PackagePdfiumTest(unittest.TestCase):
                 pdfium: pathlib.Path, output: pathlib.Path) -> list[str]:
         return ["python3", str(PACKAGE), "--out", str(output), "--snapshot",
                 str(root / "snapshot"), "--tokenizer", str(tokenizer),
-                "--pdfium-dir", str(pdfium)]
+                "--pdfium-dir", str(pdfium),
+                "--maple-runtime", str(MAPLE_RUNTIME),
+                "--maple-metallib", str(MAPLE_METALLIB)]
 
     def test_requires_the_complete_platform_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
