@@ -2,7 +2,8 @@
 # test_maple_real_lifecycle.sh — opt-in real-model lifecycle test.
 #
 # Requires:
-#   - Real Maple checkpoint installed at models/maple/
+#   - Real Maple checkpoint in $MAPLE_MODEL_DIR, or in the shared external
+#     model root at ../samosa-models/maple by default
 #   - Compiled samosa-gateway and samosa-maple
 #   - Other backends (fake_openai_backend standing in for Bonsai/Ornith/Qwen)
 #
@@ -19,7 +20,8 @@ set -eu
 BUILD_DIR="${BUILD_DIR:-build}"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 MAPLE_EXE="$BUILD_DIR/samosa-maple"
-MAPLE_MODEL_DIR="${MAPLE_MODEL_DIR:-models/maple}"
+MODEL_ROOT="${SAMOSA_MODELS_DIR:-../samosa-models}"
+MAPLE_MODEL_DIR="${MAPLE_MODEL_DIR:-$MODEL_ROOT/maple}"
 FAKE_BACKEND="$BUILD_DIR/test_fake_openai_backend"
 VALIDATION_RECORD=".maple_validation_record.json"
 MEMORY_GUARD="tools/run_memory_guarded.sh"

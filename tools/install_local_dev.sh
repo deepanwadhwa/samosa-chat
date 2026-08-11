@@ -8,11 +8,11 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 MODEL_ROOT=${SAMOSA_MODELS_DIR:-"$(dirname "$ROOT")/samosa-models"}
 SNAPSHOT=${SAMOSA_SNAPSHOT:-"$MODEL_ROOT/qwen36_group32_i8"}
 TOKENIZER=${SAMOSA_TOKENIZER:-"$MODEL_ROOT/tokenizer_qwen36.json"}
+MAPLE_MODEL=${SAMOSA_MAPLE_MODEL_SOURCE:-"$MODEL_ROOT/maple"}
 HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/${BUILD_DIR:-build}"}
 ENGINE="$BUILD_DIR/qwen36b"
 MAPLE_ENGINE="$BUILD_DIR/samosa-maple"
-MAPLE_MODEL="$ROOT/models/maple"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 JOBSD="$BUILD_DIR/samosa-jobsd"
@@ -47,7 +47,12 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
-release_hash=$(shasum -a 256 "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa" |
+set -- "$ENGINE" "$MAPLE_ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
+  "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
+  "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa"
+if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
+if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
+release_hash=$(shasum -a 256 "$@" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
