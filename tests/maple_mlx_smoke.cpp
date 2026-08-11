@@ -32,7 +32,7 @@ int main() {
     auto out_dtypes = std::vector<Dtype>{c.dtype()};
     auto grid = std::make_tuple((int)c.size(), 1, 1);
     auto threadgroup = std::make_tuple(1, 1, 1);
-    
+
     // custom_k returns a vector of arrays
     auto res = custom_k(
         {c}, out_shapes, out_dtypes, grid, threadgroup,

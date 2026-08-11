@@ -5,10 +5,10 @@ import numpy as np
 def generate_fixture():
     print("Loading model...")
     model, _ = mlx_lm.load('models/maple')
-    
+
     inputs = mx.array([[785, 3974, 13876, 38835, 34208, 916, 279, 15678, 5562]], dtype=mx.int32)
     cache = mlx_lm.models.cache.make_prompt_cache(model)
-    
+
     generated_tokens = []
     y = inputs
     print("Starting generation...")
@@ -19,9 +19,9 @@ def generate_fixture():
         generated_tokens.append(token.item())
         y = token[:, None]
         print(f"Step {step}: token {token.item()}")
-    
+
     generated_tokens_arr = mx.array(generated_tokens, dtype=mx.int32)
-    
+
     mx.save_safetensors('tests/fixtures/maple/gate_d_fixture.safetensors', {
         'x': inputs,
         'expected_tokens': generated_tokens_arr

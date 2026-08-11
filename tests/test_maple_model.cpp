@@ -34,7 +34,7 @@ int main() {
     std::cout << "Running Maple C++ Model Test\n";
     auto data_pair = load_safetensors("tests/fixtures/maple/components/model.safetensors");
     auto data = data_pair.first;
-    
+
     ModelArgs args;
     args.hidden_size = 128;
     args.intermediate_size = 256;
@@ -49,7 +49,7 @@ int main() {
     args.num_experts = 32;
     args.num_experts_per_tok = 8;
     args.first_k_dense_replace = 0;
-    
+
     MapleModel model(args);
     model.load_weights(data);
 
@@ -65,21 +65,21 @@ int main() {
     auto x_seq = data.at("x_seq");
     auto out_prefill = model(x_seq, &caches);
     eval(out_prefill);
-    
+
     std::cout << "[Prefill Test]\n";
     assert_allclose(out_prefill, data.at("out_prefill"), 1e-2f, 1e-2f);
-    
+
     auto x_dec1 = data.at("x_dec1");
     auto out_dec1 = model(x_dec1, &caches);
     eval(out_dec1);
-    
+
     std::cout << "[Decode 1 Test]\n";
     assert_allclose(out_dec1, data.at("out_dec1"), 1e-2f, 1e-2f);
 
     auto x_dec2 = data.at("x_dec2");
     auto out_dec2 = model(x_dec2, &caches);
     eval(out_dec2);
-    
+
     std::cout << "[Decode 2 Test]\n";
     assert_allclose(out_dec2, data.at("out_dec2"), 1e-2f, 1e-2f);
 

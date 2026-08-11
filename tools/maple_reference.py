@@ -16,7 +16,7 @@ def test_add_rms_norm():
     x = mx.random.normal((1, 1, dim), dtype=mx.bfloat16)
     r = mx.random.normal((1, 1, dim), dtype=mx.bfloat16)
     w = mx.random.normal((dim,), dtype=mx.bfloat16)
-    
+
     h_out, hn_out = maple._add_rms_norm(x, r, w, eps)
     mx.eval(h_out, hn_out)
     return {
@@ -35,15 +35,15 @@ def test_qk_norm_rope():
     head_dim = 128
     eps = 1e-6
     rope_dim = 64
-    
+
     # 20 heads total (16 q + 4 kv)
     qk = mx.random.normal((n_q + n_kv, head_dim), dtype=mx.bfloat16)
     w = mx.random.normal((n_q + n_kv, head_dim), dtype=mx.bfloat16)
-    
+
     inv_freq = 10000.0 ** (-mx.arange(rope_dim // 2, dtype=mx.float32) / (rope_dim // 2))
-    
+
     pos_eps = mx.array([7.0, eps], dtype=mx.float32)
-    
+
     out = maple._qk_norm_rope_kernel(
         inputs=[qk, w, inv_freq, pos_eps],
         template=[
@@ -70,11 +70,11 @@ def test_fused_router():
     mx.random.seed(0)
     dim = 2048
     num_experts = 256
-    
+
     x = mx.random.normal((1, dim), dtype=mx.bfloat16)
     w = mx.random.normal((num_experts, dim), dtype=mx.float32)
     ctr_in = mx.zeros((8,), dtype=mx.uint32)
-    
+
     inds, scores, _ = maple._fused_router_kernel(
         inputs=[x.reshape(-1), w, ctr_in],
         template=[
@@ -121,13 +121,13 @@ def dump_npz():
     t2 = test_qk_norm_rope()
     t3 = test_fused_router()
     t4 = test_swiglu()
-    
+
     out_dict = {}
     for k, v in t1.items(): out_dict[f"add_rms_norm_{k}"] = to_mx(v)
     for k, v in t2.items(): out_dict[f"qk_norm_rope_{k}"] = to_mx(v)
     for k, v in t3.items(): out_dict[f"fused_router_{k}"] = to_mx(v)
     for k, v in t4.items(): out_dict[f"swiglu_{k}"] = to_mx(v)
-    
+
     mx.save_safetensors("tests/maple_parity_fixtures.safetensors", out_dict)
     print("Wrote tests/maple_parity_fixtures.safetensors")
 
@@ -135,9 +135,9 @@ def generate_fake_model():
     import json
     import os
     import mlx.core as mx
-    
+
     os.makedirs("tests/fake_model", exist_ok=True)
-    
+
     config = {
         "model_type": "maple",
         "hidden_size": 128,
@@ -154,30 +154,30 @@ def generate_fake_model():
         "vocab_size": 32000,
         "layer_types": ["full_attention", "sliding_attention"]
     }
-    
+
     with open("tests/fake_model/config.json", "w") as f:
         json.dump(config, f)
-        
+
     weights = {}
     weights["model.embed_tokens.weight"] = mx.random.normal((config["vocab_size"], config["hidden_size"]))
     weights["model.norm.weight"] = mx.ones((config["hidden_size"],))
     weights["lm_head.weight"] = mx.random.normal((config["vocab_size"], config["hidden_size"]))
-    
+
     for l in range(config["num_hidden_layers"]):
         prefix = f"model.layers.{l}"
         weights[f"{prefix}.input_layernorm.weight"] = mx.ones((config["hidden_size"],))
         weights[f"{prefix}.post_attention_layernorm.weight"] = mx.ones((config["hidden_size"],))
-        
+
         # Attention
         n_q = config["num_attention_heads"]
         n_kv = config["num_key_value_heads"]
         d = config["head_dim"]
-        
+
         weights[f"{prefix}.self_attn.qkv_proj.weight"] = mx.random.normal(((n_q + 2*n_kv) * d, config["hidden_size"]))
         weights[f"{prefix}.self_attn.o_proj.weight"] = mx.random.normal((config["hidden_size"], n_q * d))
         weights[f"{prefix}.self_attn.q_norm.weight"] = mx.ones((d,))
         weights[f"{prefix}.self_attn.k_norm.weight"] = mx.ones((d,))
-        
+
         if l < config["first_k_dense_replace"]:
             # Dense MLP
             weights[f"{prefix}.mlp.gate_proj.weight"] = mx.random.normal((config["intermediate_size"], config["hidden_size"]))
@@ -186,7 +186,7 @@ def generate_fake_model():
         else:
             # MoE MLP
             weights[f"{prefix}.mlp.gate.weight"] = mx.random.normal((config["num_experts"], config["hidden_size"]))
-            
+
             # SwitchGLU weights (fused)
             weights[f"{prefix}.mlp.switch_mlp.up_gate_proj.weight"] = mx.random.normal((config["num_experts"], 2 * config["moe_intermediate_size"], config["hidden_size"]))
             weights[f"{prefix}.mlp.switch_mlp.down_proj.weight"] = mx.random.normal((config["num_experts"], config["hidden_size"], config["moe_intermediate_size"]))

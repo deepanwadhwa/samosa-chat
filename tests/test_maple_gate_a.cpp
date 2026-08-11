@@ -18,16 +18,16 @@ size_t get_footprint_mb() {
 int main() {
     std::cout << "[Gate A] Real Checkpoint Load Test\n";
     std::cout << "Initial Footprint: " << get_footprint_mb() << " MB\n";
-    
+
     std::string model_dir = "models/maple";
-    
+
     try {
         std::cout << "Loading MapleModel from: " << model_dir << "\n";
         MapleModel model = load_maple_model(model_dir);
-        
+
         std::cout << "Model successfully instantiated.\n";
         std::cout << "Final Footprint: " << get_footprint_mb() << " MB\n";
-        
+
         if (get_footprint_mb() > 200) {
             std::cerr << "FAIL: Memory footprint exceeded 200 MB, load is not mmap safe!\n";
             return 1;

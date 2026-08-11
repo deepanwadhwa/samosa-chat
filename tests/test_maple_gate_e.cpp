@@ -28,22 +28,22 @@ int main() {
     auto fixture = load_safetensors("tests/fixtures/maple/gate_e_fixture.safetensors").first;
     auto x = fixture.at("x");
     auto expected_logits_cached = fixture.at("expected_logits_cached");
-    
+
     std::vector<KVCache*> caches;
     for (int i = 0; i < model.args().num_hidden_layers; i++) {
         caches.push_back(new KVCache());
     }
-    
+
     std::vector<array> cached_logits_list;
     for (int i = 0; i < x.shape(1); ++i) {
         auto token = slice(x, {0, i}, {x.shape(0), i + 1});
         auto l = model(token, &caches);
         cached_logits_list.push_back(l);
     }
-    
+
     auto logits_cached = concatenate(cached_logits_list, 1);
     eval(logits_cached);
-    
+
     // Update fixture natively if needed
     std::unordered_map<std::string, array> dict;
     dict.insert({"x", x});
@@ -53,7 +53,7 @@ int main() {
 
     compare_arrays(logits_cached, expected_logits_cached);
     std::cout << "PASS: Gate E passed perfectly!\n";
-    
+
     for (auto c : caches) delete c;
     return 0;
 }

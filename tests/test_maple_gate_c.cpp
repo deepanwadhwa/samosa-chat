@@ -31,7 +31,7 @@ int main() {
     for (int i = 0; i < model.args().num_hidden_layers; i++) {
         caches.push_back(new KVCache());
     }
-    
+
     auto logits = model(x, &caches);
     auto first_token_logits = slice(logits, {0, logits.shape(1) - 1, 0}, {logits.shape(0), logits.shape(1), logits.shape(2)});
     first_token_logits = squeeze(first_token_logits, 1);
@@ -40,7 +40,7 @@ int main() {
     auto expected_logits = fixture.at("expected_logits");
     compare_arrays(first_token_logits, expected_logits);
     std::cout << "PASS: Gate C passed perfectly!\n";
-    
+
     for (auto c : caches) delete c;
     return 0;
 }
