@@ -28,6 +28,7 @@ Samosa is a local model application and HTTP gateway. Models can be downloaded, 
 | Model | Download | Description | Runtime | License |
 |---|---:|---|---|---|
 | [Qwen3.6 35B A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | 24.0 GB | Expert-streamed local chat with image support | Samosa C engine | Apache-2.0 |
+| [Maple](https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD) | 5.4 GB | 2-bit MoE with routed experts streamed from SSD | Samosa Metal engine | MIT |
 | [Bonsai 27B 1-bit](https://huggingface.co/prism-ml/Bonsai-27B-gguf) | 3.8 GB | 1-bit GGUF reasoning model | Prism llama.cpp | Apache-2.0 |
 | [Ornith 1.0 9B](https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF) | 5.6 GB | Q4_K_M GGUF coding and reasoning model | Prism llama.cpp | MIT |
 

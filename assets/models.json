@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_revision": "2026-07-27.1",
+  "catalog_revision": "2026-08-11.1",
   "runtime_abi": "samosa-model-runtime-v1",
   "models": [
     {
@@ -255,7 +255,7 @@
     {
       "id": "maple",
       "family": "chat",
-      "version": "361db5da5e74ff6fcdd852d478e1f266ce11013a",
+      "version": "5567ec8bf083f6716a6311734da71a0f44aed929",
       "preferred_for_backend": true,
       "label": "DeepGrove Maple-Preview",
       "description": "20B ternary reasoning model optimized for Apple Silicon.",
@@ -281,54 +281,44 @@
       ],
       "license": {
         "name": "MIT",
-        "url": "https://huggingface.co/deepgrove-ai/mlx-lm-deepgrove"
+        "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD"
       },
       "artifacts": [
         {
-          "name": "model-00001-of-00003.safetensors",
+          "name": "maple-experts.bin",
           "role": "weights",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00001-of-00003.safetensors",
-          "install_path": "models/maple/model-00001-of-00003.safetensors",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/maple-experts.bin",
+          "install_path": "models/maple/maple-experts.bin",
           "file_mode": "0600",
-          "bytes": 2162084350,
-          "sha256": "1444bbc92e2842e9a612c32b6d6f30f0f026a107c8094a4ac273819a22eb84e1"
+          "bytes": 4932501504,
+          "sha256": "8d45be29b44943e686044ace75896df0b4f5f833e29ec9b47510102ef94b1d10"
         },
         {
-          "name": "model-00002-of-00003.safetensors",
+          "name": "maple-resident.safetensors",
           "role": "weights",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00002-of-00003.safetensors",
-          "install_path": "models/maple/model-00002-of-00003.safetensors",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/maple-resident.safetensors",
+          "install_path": "models/maple/maple-resident.safetensors",
           "file_mode": "0600",
-          "bytes": 2187444586,
-          "sha256": "d051e252c46570f989b65c5e037b94402d22f892e96dc91f5fb83dbb06b50d30"
+          "bytes": 438635364,
+          "sha256": "8ba6ffda91e041f2bf792bead255de6c68470a6209adcacfcb8d88337a418a97"
         },
         {
-          "name": "model-00003-of-00003.safetensors",
-          "role": "weights",
+          "name": "maple-manifest.json",
+          "role": "configuration",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model-00003-of-00003.safetensors",
-          "install_path": "models/maple/model-00003-of-00003.safetensors",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/maple-manifest.json",
+          "install_path": "models/maple/maple-manifest.json",
           "file_mode": "0600",
-          "bytes": 958711742,
-          "sha256": "85c97321214c864597562d5b7286b9e8a0dac36e5abd622f11f9b8425ee88705"
-        },
-        {
-          "name": "model.safetensors.index.json",
-          "role": "weights",
-          "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/model.safetensors.index.json",
-          "install_path": "models/maple/model.safetensors.index.json",
-          "file_mode": "0600",
-          "bytes": 40054,
-          "sha256": "56000110535c5023b43209a5c142035e12c1cde7b1118759cc9f86335d46ef95"
+          "bytes": 389,
+          "sha256": "704cc97208a3ee7e2a002ba049f706198b0b40da2ec4347fcdc7819af79a7336"
         },
         {
           "name": "config.json",
           "role": "configuration",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/config.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/config.json",
           "install_path": "models/maple/config.json",
           "file_mode": "0600",
           "bytes": 2710,
@@ -338,7 +328,7 @@
           "name": "tokenizer.json",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/tokenizer.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/tokenizer.json",
           "install_path": "models/maple/tokenizer.json",
           "file_mode": "0600",
           "bytes": 11422654,
@@ -348,7 +338,7 @@
           "name": "tokenizer_config.json",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/tokenizer_config.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/tokenizer_config.json",
           "install_path": "models/maple/tokenizer_config.json",
           "file_mode": "0600",
           "bytes": 5432,
@@ -358,7 +348,7 @@
           "name": "special_tokens_map.json",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/special_tokens_map.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/special_tokens_map.json",
           "install_path": "models/maple/special_tokens_map.json",
           "file_mode": "0600",
           "bytes": 613,
@@ -368,7 +358,7 @@
           "name": "added_tokens.json",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/added_tokens.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/added_tokens.json",
           "install_path": "models/maple/added_tokens.json",
           "file_mode": "0600",
           "bytes": 707,
@@ -378,7 +368,7 @@
           "name": "merges.txt",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/merges.txt",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/merges.txt",
           "install_path": "models/maple/merges.txt",
           "file_mode": "0600",
           "bytes": 1671853,
@@ -388,7 +378,7 @@
           "name": "vocab.json",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/vocab.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/vocab.json",
           "install_path": "models/maple/vocab.json",
           "file_mode": "0600",
           "bytes": 2776833,
@@ -398,7 +388,7 @@
           "name": "chat_template.jinja",
           "role": "tokenizer",
           "required": true,
-          "url": "https://huggingface.co/deepgrove/maple-preview-2bit-mlx/resolve/361db5da5e74ff6fcdd852d478e1f266ce11013a/chat_template.jinja",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/5567ec8bf083f6716a6311734da71a0f44aed929/chat_template.jinja",
           "install_path": "models/maple/chat_template.jinja",
           "file_mode": "0600",
           "bytes": 3292,

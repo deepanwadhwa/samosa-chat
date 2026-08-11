@@ -16,10 +16,11 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -p "$TMP/home" "$TMP/maple"
-printf '{}\n' >"$TMP/maple/config.json"
-printf '{}\n' >"$TMP/maple/tokenizer.json"
-printf '{}\n' >"$TMP/maple/model.safetensors.index.json"
+MAPLE_DIR="$TMP/home/models/maple"
+mkdir -p "$MAPLE_DIR"
+printf '{}\n' >"$MAPLE_DIR/config.json"
+printf '{}\n' >"$MAPLE_DIR/tokenizer.json"
+printf '{}\n' >"$MAPLE_DIR/model.safetensors.index.json"
 printf '#!/bin/sh\nexit 0\n' >"$TMP/samosa-maple"
 chmod +x "$TMP/samosa-maple"
 
@@ -28,7 +29,6 @@ SAMOSA_HOME="$TMP/home" \
 SAMOSA_PORT="$PORT" \
 SAMOSA_BACKEND_PORT=$((PORT + 1)) \
 SAMOSA_MAPLE_ENGINE="$TMP/samosa-maple" \
-SAMOSA_MAPLE_MODEL="$TMP/maple" \
 SAMOSA_QWEN_ENGINE="$TMP/missing-qwen" \
 SAMOSA_QWEN_MODEL="$TMP/missing-qwen-model" \
 SAMOSA_BONSAI_SERVER="$TMP/missing-llama" \
@@ -52,9 +52,9 @@ printf '%s' "$BACKENDS" | grep -q '"id":"maple"[^}]*"available":false' || {
   exit 1
 }
 
-printf 'streamed experts fixture\n' >"$TMP/maple/maple-experts.bin"
-printf 'resident fixture\n' >"$TMP/maple/maple-resident.safetensors"
-printf '{}\n' >"$TMP/maple/maple-manifest.json"
+printf 'streamed experts fixture\n' >"$MAPLE_DIR/maple-experts.bin"
+printf 'resident fixture\n' >"$MAPLE_DIR/maple-resident.safetensors"
+printf '{}\n' >"$MAPLE_DIR/maple-manifest.json"
 
 BACKENDS=$(curl -fsS --max-time 2 "http://127.0.0.1:$PORT/v1/backends")
 printf '%s' "$BACKENDS" | grep -q '"id":"maple"[^}]*"available":true' || {
@@ -63,4 +63,4 @@ printf '%s' "$BACKENDS" | grep -q '"id":"maple"[^}]*"available":true' || {
   exit 1
 }
 
-echo "PASS: Maple requires SSD-streaming artifacts"
+echo "PASS: downloaded Maple path requires SSD-streaming artifacts"

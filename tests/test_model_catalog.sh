@@ -114,6 +114,19 @@ assert qwen_artifacts['experts.bin']['bytes'] == 20942159872
 assert qwen_artifacts['experts.bin']['sha256'] == '00d64d44c39496e5ab5691f4cb27b67e27f3a10efd1f7c54024a9b43b130dbba'
 assert qwen_artifacts['resident.safetensors']['bytes'] == 3015056192
 assert by_id['qwen']['download_bytes'] == 20942159872 + 3015056192 + 1908179 + 3686 + 202 + 28142621
+# Maple ships the native SSD-streaming pack, never the incompatible raw MLX
+# shards. Downloads persist outside the versioned runtime release.
+maple_artifacts = {a['name']: a for a in by_id['maple']['artifacts']}
+assert set(maple_artifacts) == {
+    'maple-experts.bin', 'maple-resident.safetensors', 'maple-manifest.json',
+    'config.json', 'tokenizer.json', 'tokenizer_config.json',
+    'special_tokens_map.json', 'added_tokens.json', 'merges.txt', 'vocab.json',
+    'chat_template.jinja'
+}, set(maple_artifacts)
+for artifact in maple_artifacts.values():
+    assert artifact['install_path'].startswith('models/maple/'), artifact
+    assert '/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/' in artifact['url'], artifact
+assert by_id['maple']['download_bytes'] < 6_000_000_000
 # Ornith has exactly one artifact with a real, HF-verified hash.
 ornith_artifacts = {a['name']: a for a in by_id['ornith']['artifacts']}
 assert ornith_artifacts['ornith-1.0-9b-Q4_K_M.gguf']['sha256'] == '5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106'

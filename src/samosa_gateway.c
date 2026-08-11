@@ -13289,7 +13289,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
     ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "current/model");
     ENV_PATH(maple_engine, "SAMOSA_MAPLE_ENGINE", "current/bin/samosa-maple");
-    ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "current/models/maple");
+    ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "models/maple");
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(bonsai_model, "SAMOSA_BONSAI_MODEL", "models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf");
@@ -13312,6 +13312,18 @@ static int load_config(Gateway *g) {
     ENV_PATH(samosa_ocr, "SAMOSA_OCR", "current/bin/samosa-ocr");
     ENV_PATH(chutni_service, "SAMOSA_CHUTNI_SERVICE", "current/bin/chutni-mcp");
 #undef ENV_PATH
+    /* Downloaded models are persistent app data, not part of a versioned
+       runtime release. Keep compatibility with development releases created
+       before Maple moved to $SAMOSA_HOME/models/maple. */
+    if (!getenv("SAMOSA_MAPLE_MODEL")) {
+        char packed[PATH_MAX], legacy[PATH_MAX], legacy_packed[PATH_MAX];
+        if ((!path_join(packed, sizeof(packed), g->maple_model, "maple-manifest.json") ||
+             !regular_file(packed, 0)) &&
+            path_join(legacy, sizeof(legacy), g->home, "current/models/maple") &&
+            path_join(legacy_packed, sizeof(legacy_packed), legacy, "maple-manifest.json") &&
+            regular_file(legacy_packed, 0))
+            path_copy(g->maple_model, sizeof(g->maple_model), legacy);
+    }
     const char *jobs_root = getenv("SAMOSA_JOBS_ROOT");
     if (jobs_root ? !path_copy(g->jobs_root, sizeof(g->jobs_root), jobs_root) :
                     !path_join(g->jobs_root, sizeof(g->jobs_root), g->home, "jobs")) return 0;
