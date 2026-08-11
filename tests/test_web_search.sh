@@ -589,7 +589,7 @@ cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 JSON
 : >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
-     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,
               "messages":[
                 {"role":"user","content":"web tool probe hostile: Tell me current US cyclosporiasis cases and deaths."},
                 {"role":"assistant","content":"An earlier answer repeated conflicting search snippets."},
@@ -597,7 +597,7 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
                 {"role":"assistant","content":"I cannot browse the internet."},
                 {"role":"user","content":"check the internet dumbass"}]}')
 printf '%s' "$R" | grep -q 'saw verified authority' \
-  || fail "hostile medical follow-up was not grounded in the authoritative page"
+  || fail "gateway did not turn an explicit internet request from a stale client into grounded research"
 printf '%s' "$R" | grep -q 'Reading the strongest authoritative source' \
   || fail "the authoritative result was not opened before synthesis"
 printf '%s' "$R" | grep -q 'Trying the next authoritative source' \

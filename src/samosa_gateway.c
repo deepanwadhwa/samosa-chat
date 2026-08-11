@@ -7700,6 +7700,36 @@ static void web_append_grounding_requirements(TextBuffer *evidence, int high_sta
     text_add(evidence, "--- end gateway instructions ---");
 }
 
+/* An explicit sentence such as "check the internet" is itself a per-turn web
+   request. Enforce this at the gateway, not only in app.html: an already-open
+   tab keeps its old JavaScript across a local upgrade, and otherwise sends the
+   sentence as an ordinary model turn that can only answer "I can't browse".
+   Normalize punctuation/spacing, then match narrow imperative phrases so a
+   discussion *about* web-search algorithms does not silently go online. */
+static int web_explicit_text_request(const char *text) {
+    char normalized[512]; size_t used = 0; int space = 1;
+    for (const unsigned char *p = (const unsigned char *)(text ? text : "");
+         *p && used + 1 < sizeof(normalized); ++p) {
+        if (isalnum(*p)) {
+            normalized[used++] = (char)tolower(*p); space = 0;
+        } else if (!space && used + 1 < sizeof(normalized)) {
+            normalized[used++] = ' '; space = 1;
+        }
+    }
+    while (used && normalized[used - 1] == ' ') --used;
+    normalized[used] = 0;
+    static const char *const phrases[] = {
+        "check the internet", "check internet", "check the web", "check web",
+        "search the internet", "search internet", "search the web", "search web",
+        "browse the internet", "browse internet", "browse the web", "browse web",
+        "look it up online", "look this up online", "look that up online",
+        "web search for", "internet search for", "google this", "google it", NULL
+    };
+    for (const char *const *phrase = phrases; *phrase; ++phrase)
+        if (strstr(normalized, *phrase)) return 1;
+    return 0;
+}
+
 /* Plan zero to three genuinely distinct queries locally. A valid empty array
    is authoritative: adding the Web chip permits research, but does not require
    a pointless search for writing, arithmetic, or an unresolved reference.
@@ -8445,12 +8475,11 @@ static int chutni_chat_evidence(Gateway *g, jval *directory_context,
 static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest *request, jval *body) {
     jval *attach_ids = body && body->t == J_OBJ ? json_get(body, "attachment_ids") : NULL;
     int have_attachments = attach_ids && attach_ids->t == J_ARR && attach_ids->len > 0;
-    /* Phase W (docs/TASKS_WEB_SEARCH.md W5). Two distinct opt-ins, both from
-       the composer: `web_urls` is "read exactly this page I pasted", `web` is
-       "you may reach the web this turn, decide for yourself whether to".
-       Neither is inferred from the text of the message -- a turn that asks for
-       neither takes the original passthrough below and is byte-identical to
-       pre-W behaviour, with no planner round trip and no added latency. */
+    /* Phase W (docs/TASKS_WEB_SEARCH.md W5). `web_urls` means "read exactly
+       this page I pasted"; `web` means "research this turn". A narrow explicit
+       sentence such as "check the internet" is equivalent to the latter and
+       is recognized again here so a stale browser tab cannot lose the request.
+       Every other plain turn remains the original byte-identical passthrough. */
     jval *web_flag = body && body->t == J_OBJ ? json_get(body, "web") : NULL;
     jval *web_urls = body && body->t == J_OBJ ? json_get(body, "web_urls") : NULL;
     int want_web_tools = web_flag && web_flag->t == J_BOOL && web_flag->boolean;
@@ -8461,9 +8490,6 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     if (directory_context && directory_context->t != J_NULL && !have_chutni)
         return samosa_http_json_error(fd, 400, "invalid_directory_context",
                                       "directory_context must be null or a Chutni scope object.");
-    if (!have_attachments && !want_web_tools && !have_web_urls && !have_chutni)
-        return proxy_request(g, fd, request);
-
     jval *messages = json_get(body, "messages");
     int last_idx = -1;
     if (messages && messages->t == J_ARR) {
@@ -8472,6 +8498,18 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             if (role && role->t == J_STR && !strcmp(role->str, "user")) { last_idx = i; break; }
         }
     }
+    if (!want_web_tools && last_idx >= 0) {
+        jval *latest = messages->kids[last_idx];
+        jval *latest_content = latest && latest->t == J_OBJ ? json_get(latest, "content") : NULL;
+        if (latest_content && latest_content->t == J_STR &&
+            web_explicit_text_request(latest_content->str)) {
+            WebStatus status; web_status(g, &status);
+            if (!status.offline && status.consent == WEB_CONSENT_GRANTED && status.search_configured)
+                want_web_tools = 1;
+        }
+    }
+    if (!have_attachments && !want_web_tools && !have_web_urls && !have_chutni)
+        return proxy_request(g, fd, request);
     if (last_idx < 0)
         return samosa_http_json_error(fd, 400, "attachment_requires_user_message",
             have_attachments ? "attachment_ids requires at least one user message."
