@@ -1,3 +1,9 @@
 [submodule "vendor/chutni"]
 	path = vendor/chutni
 	url = https://github.com/deepanwadhwa/chutni-protocol.git
+[submodule "vendor/mlx"]
+	path = vendor/mlx
+	url = https://github.com/ml-explore/mlx.git
+[submodule "vendor/maple-reference"]
+	path = vendor/maple-reference
+	url = https://github.com/deepgrove-ai/mlx-lm-deepgrove.git

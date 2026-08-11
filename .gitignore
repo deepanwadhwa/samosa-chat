@@ -8,6 +8,7 @@ __pycache__/
 dist/libpdfium.dylib
 dist/samosa-extract
 /results/
+/test_tok
 .maple_validation_record.json
 .DS_Store
 
