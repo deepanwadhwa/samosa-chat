@@ -478,7 +478,12 @@ ci-ubuntu-full:
 # Maple MLX Smoke Test (Stage A)
 MLX_BUILD_DIR ?= $(BUILD_DIR)/mlx-build
 MLX_INCLUDE = -Ivendor/mlx -I$(MLX_BUILD_DIR)
-MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx -L$(MLX_BUILD_DIR)/jaccl -ljaccl -framework Foundation -framework Metal -framework Accelerate -lc++
+# MLX builds JACCL only with a sufficiently new macOS SDK; older supported
+# SDKs compile no_jaccl.cpp into libmlx instead. Link the companion archive
+# exactly when CMake produced it, so clean runners and newer developer SDKs
+# use the same pinned source without a host-specific hardcoded assumption.
+MLX_JACCL_LIB = $(wildcard $(MLX_BUILD_DIR)/jaccl/libjaccl.a)
+MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx $(MLX_JACCL_LIB) -framework Foundation -framework Metal -framework Accelerate -lc++
 MAPLE_STREAMING_SRCS = src/maple/maple_expert_views.cpp src/maple/maple_expert_store.cpp
 MAPLE_CACHE_OBJ = $(BUILD_DIR)/expert_cache.o
 
