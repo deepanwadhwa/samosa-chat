@@ -1,4 +1,5 @@
 build/
+/build-ci-*/
 *.qws
 *.dSYM/
 model/

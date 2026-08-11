@@ -155,13 +155,23 @@ grep -q 'none installed yet' "$TMP/doctor.log" ||
 SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor >/dev/null ||
   fail "doctor exited non-zero on a valid model-free runtime install"
 
-# --- Upgrade: repackage with different runtime bytes, reinstall -------------
-# A trivial content change (not just a re-run of the same bytes) forces a new
-# RELEASE_ID so this actually exercises the upgrade path, not a same-release
-# no-op.
-cp -R "$ROOT" "$TMP/repo-v2"
-printf '\n// t1.0 runtime-only upgrade test marker\n' >>"$TMP/repo-v2/src/samosa_http.h"
-( cd "$TMP/repo-v2" && python3 tools/package_hf.py --out "$REMOTE" --runtime-only --repo-id test/samosa >/dev/null )
+# --- Upgrade: change one packaged runtime file, reinstall -------------------
+# A content change plus its matching manifest entry forces a new RELEASE_ID,
+# so this exercises the upgrade path rather than a same-release no-op. Do not
+# clone the whole working tree here: developer clones can contain many GB of
+# Git objects and ignored build artifacts that are irrelevant to this test.
+UPGRADE_REL=engine/samosa_http.h
+UPGRADE_FILE="$REMOTE/$UPGRADE_REL"
+printf '\n// t1.0 runtime-only upgrade test marker\n' >>"$UPGRADE_FILE"
+UPGRADE_SHA=$(sha256_file "$UPGRADE_FILE")
+UPGRADE_BYTES=$(wc -c <"$UPGRADE_FILE" | tr -d ' ')
+awk -F '\t' -v OFS='\t' -v path="$UPGRADE_REL" -v sha="$UPGRADE_SHA" -v bytes="$UPGRADE_BYTES" '
+  $3 == path { $1 = sha; $2 = bytes; found = 1 }
+  { print }
+  END { if (!found) exit 2 }
+' "$REMOTE/release-manifest.tsv" >"$TMP/release-manifest.next.tsv" ||
+  fail "could not update the upgrade fixture manifest"
+mv "$TMP/release-manifest.next.tsv" "$REMOTE/release-manifest.tsv"
 
 SERVER_PID=""
 serve_remote
