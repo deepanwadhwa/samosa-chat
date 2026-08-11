@@ -245,12 +245,45 @@ cat >"$TMP/fixture_catalog.json" <<EOF
           "sha256": "$(printf 'bonsai' | sha256_file)"
         }
       ]
+    },
+    {
+      "id": "maple",
+      "version": "v1",
+      "preferred_for_backend": true,
+      "label": "Packed Maple present",
+      "description": "Fixture proving the bundled Maple runtime dependency is recognized.",
+      "capabilities": ["text"],
+      "backend_kind": "mlx_native",
+      "supported_platforms": [{ "os": "macos", "architecture": "arm64" }],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "mlx_native_default",
+      "runtime_dependencies": [
+        { "package_id": "samosa-maple", "version": "v1", "source": "bundled" }
+      ],
+      "license": { "name": "test", "url": "https://huggingface.co/test" },
+      "artifacts": [
+        {
+          "name": "maple-manifest.json",
+          "role": "configuration",
+          "required": true,
+          "url": "https://huggingface.co/test/maple-manifest.json",
+          "install_path": "models/maple/maple-manifest.json",
+          "file_mode": "0600",
+          "bytes": 3,
+          "sha256": "$(printf '{}\n' | sha256_file)"
+        }
+      ]
     }
   ]
 }
 EOF
 mkdir -p "$FIXROOT/bonsai_weights_dir"
 printf 'bonsai' >"$FIXROOT/bonsai_weights_dir/Bonsai-27B-Q1_0.gguf"
+mkdir -p "$FIXROOT/maple"
+printf '{}\n' >"$FIXROOT/maple/maple-manifest.json"
+printf '#!/bin/sh\nexit 0\n' >"$FIXROOT/samosa-maple"
+chmod +x "$FIXROOT/samosa-maple"
 
 # qwen's one required artifact resolves via g->qwen_model joined with the
 # artifact name "experts.bin" (resolve_installed_artifact()'s qwen case);
@@ -261,6 +294,8 @@ printf 'bonsai' >"$FIXROOT/bonsai_weights_dir/Bonsai-27B-Q1_0.gguf"
 # path here), exercising the shared-runtime-dependency gate on its own.
 SAMOSA_QWEN_MODEL="$FIXROOT/qwen" \
 SAMOSA_BONSAI_MODEL="$FIXROOT/bonsai_weights_dir/Bonsai-27B-Q1_0.gguf" \
+SAMOSA_MAPLE_MODEL="$FIXROOT/maple" \
+SAMOSA_MAPLE_ENGINE="$FIXROOT/samosa-maple" \
 SAMOSA_HOME="$HOME_DIR" \
 SAMOSA_PORT="$PORT" \
 SAMOSA_BACKEND_PORT=$((PORT + 1)) \
@@ -297,6 +332,9 @@ assert missing['compatibility_reason'], 'compatibility_reason must be non-empty 
 shared_dep_missing = by_id['bonsai']
 assert shared_dep_missing['installed_bytes'] == 6, shared_dep_missing['installed_bytes']
 assert shared_dep_missing['install_state'] == 'not_installed', shared_dep_missing['install_state']
+maple = by_id['maple']
+assert maple['installed_bytes'] == 3, maple['installed_bytes']
+assert maple['install_state'] == 'ready', maple['install_state']
 print('fixture detection: OK')
 "
 stop_gateway

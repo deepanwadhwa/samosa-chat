@@ -9027,18 +9027,13 @@ static int artifact_is_present(Gateway *g, const char *model_id, jval *artifact)
     return (double)st.st_size == bytes->num;
 }
 
-/* The only runtime dependency in the v1 catalog is the shared Prism
-   llama-server binary (Bonsai and Ornith both launch through it -- see
-   backend_start()'s single g->llama_server execv() for both). Reusing
-   regular_file() here, rather than re-deriving a path, is what makes
-   "shared dependency missing" correctly mark BOTH models not_installed
-   even when each one's own weights file is present (T2.1 acceptance:
-   a shared dependency installed once must not let an incomplete model
-   appear ready). */
+/* Runtime dependencies are bundled executables, checked through the same
+   configured paths backend_start() uses. Unknown package ids fail closed. */
 static int runtime_dependency_is_present(Gateway *g, jval *dep) {
     jval *pkg = json_get(dep, "package_id");
     if (!pkg || pkg->t != J_STR) return 0;
     if (!strcmp(pkg->str, "llama-server")) return regular_file(g->llama_server, 1);
+    if (!strcmp(pkg->str, "samosa-maple")) return regular_file(g->maple_engine, 1);
     if (!strcmp(pkg->str, "whisper-cli")) return regular_file(g->whisper_cli, 1);
     return 0;
 }
