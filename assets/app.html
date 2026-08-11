@@ -3754,12 +3754,11 @@
         if (nextStep === "name" || nextStep === "welcome" || nextStep === "chat") return nextStep;
         return "model";
       }
-      // First-run setup is allowed to choose the app's top-level surface only
-      // until Chat has bootstrapped. Model downloads and switches reuse these
-      // cards from Settings, but their transient "download"/"starting" status
-      // must never send a returning user back into onboarding.
-      function setupViewForStatus(status, alreadyInChat) {
-        return alreadyInChat ? "chat" : setupViewForNextStep(status?.next_step);
+      // Chat is always the app's top-level surface. Profile/setup state is
+      // retained for API compatibility, but it must never replace Chat with a
+      // model catalog: downloads and switches belong exclusively in Settings.
+      function setupViewForStatus(_status, _alreadyInChat) {
+        return "chat";
       }
       function formatBytes(n) {
         const bytes = Number(n) || 0;
@@ -5631,12 +5630,9 @@
       refreshVoiceStatus();
       resizePrompt();
       els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text;
-      // T2.4: the chat shell only ever bootstraps (ensureChat/render/health/
-      // capabilities/profile, all inside enterChat()) once GET /v1/setup/status
-      // says next_step is "chat" -- refreshSetup() is what decides that, for
-      // the very first load exactly the same way it does for every later
-      // poll or post-action refresh.
-      refreshSetup();
+      // The app always opens in Chat. Model discovery, download, and switching
+      // are available from Settings -> Models and never take over startup.
+      enterChat();
     })();
   </script>
 </body>

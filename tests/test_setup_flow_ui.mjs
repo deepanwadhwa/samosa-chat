@@ -82,16 +82,21 @@ function loadSetupFlowUi() {
   return { fns, byId: fakeElementsById };
 }
 
-// --- once Chat exists, transient model lifecycle states stay inside Chat/Settings ---
+// --- Chat is always the top-level surface; model lifecycle stays in Settings ---
 {
   const { fns } = loadSetupFlowUi();
   assert.equal(fns.setupViewForStatus({ next_step: "download" }, true), "chat",
     "a Settings download must not reopen first-run model setup");
   assert.equal(fns.setupViewForStatus({ next_step: "model" }, true), "chat",
     "a Settings switch failure must stay in Chat where its error can be handled");
-  assert.equal(fns.setupViewForStatus({ next_step: "download" }, false), "model",
-    "the same state still renders the model step during genuine first-run setup");
+  assert.equal(fns.setupViewForStatus({ next_step: "download" }, false), "chat",
+    "a first launch must open Chat; downloads belong in Settings");
+  assert.equal(fns.setupViewForStatus({ next_step: "name" }, false), "chat",
+    "profile onboarding must not replace the app shell");
 }
+
+assert.match(app, /\/\/ The app always opens in Chat\.[\s\S]*?\n      enterChat\(\);/,
+  "startup must bootstrap Chat directly instead of routing through setup/status");
 
 // --- setupViewForNextStep: collapses "download" into "model", passes the rest through ---
 {
