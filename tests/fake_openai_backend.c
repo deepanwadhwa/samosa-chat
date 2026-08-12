@@ -497,6 +497,12 @@ static int handler(SamosaHttpServer *server, int fd,
                 "\"message\":{\"role\":\"assistant\",\"content\":"
                 "\"{\\\"resolved_question\\\":\\\"How many cyclosporiasis cases are in South Carolina in 2026 and what safety guidance applies?\\\","
                 "\\\"queries\\\":[\\\"2026 cyclosporiasis cases South Carolina safety guidance\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe eight articles"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"resolved_question\\\":\\\"What do eight current article fixtures report?\\\","
+                "\\\"queries\\\":[\\\"eight current article fixtures\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "check the internet dumbass"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -529,14 +535,15 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json", response, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "Decide whether this fetched web page contains enough evidence")) {
-        int sufficient = !strstr(request->body, "Generic CDC background page text") ||
-                         strstr(request->body, "South Carolina DPH confirms 30 cases");
-        return samosa_http_response(fd, 200, "application/json", sufficient ?
+        strstr(request->body, "Decide whether the fetched article digests contain enough evidence")) {
+        int insufficient = strstr(request->body, "Readable generic national fixture") != NULL;
+        return samosa_http_response(fd, 200, "application/json", insufficient ?
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-            "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"sufficient\\\":true}\"}}]}" :
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"sufficient\\\":false,\\\"raw_indices\\\":[1,2]}\"}}]}" :
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-            "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"sufficient\\\":false}\"}}]}", NULL);
+            "\"message\":{\"role\":\"assistant\",\"content\":"
+            "\"{\\\"sufficient\\\":true,\\\"raw_indices\\\":[]}\"}}]}", NULL);
     }
     /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
        Planner rounds are recognised by their system prompt; the second round
@@ -584,7 +591,7 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe hostile"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Fetched page evidence:") &&
+            strstr(request->body, "--- Fetched article digest") &&
             strstr(request->body, "HIGH-STAKES TURN:") &&
             strstr(request->body, "Do not claim that you cannot browse") &&
             !strstr(request->body, "I cannot browse the internet") &&
@@ -596,9 +603,9 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe state count followup"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Fetched page evidence:") &&
+            strstr(request->body, "--- Fetched article digest") &&
             strstr(request->body, "South Carolina DPH confirms 30 cases") &&
-            !strstr(request->body, "Generic CDC background page text")
+            strstr(request->body, "South Carolina reports 30 cyclosporiasis cases")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"used directly relevant state evidence\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

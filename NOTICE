@@ -13,5 +13,16 @@ Qwen3.6-35B-A3B (https://huggingface.co/Qwen/Qwen3.6-35B-A3B),
 copyright the Qwen team / Alibaba Cloud, licensed under the Apache
 License, Version 2.0.
 
+The native text-summarization model distributed with this software is a
+Q8_0 conversion of Falconsai/text_summarization revision
+6e505f907968c4a9360773ff57885cdc6dca4bfd, copyright Falcons.ai,
+licensed under the Apache License, Version 2.0.
+
+The native summarizer runtime uses llama.cpp revision
+9fcaed763ccda38ea81068ad9d7f991aaddca451, copyright the llama.cpp
+contributors, licensed under the MIT License. The encoder/decoder inference
+loop in src/samosa_summarizer.cpp is adapted from llama.cpp's `simple`
+example under that license.
+
 Samosa Chat is not affiliated with or endorsed by the colibrì project,
-Alibaba Cloud, or the Qwen team.
+Alibaba Cloud, the Qwen team, Falcons.ai, or the llama.cpp project.

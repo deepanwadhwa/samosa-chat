@@ -21,6 +21,7 @@ set -eu
 BUILD_DIR="${BUILD_DIR:-build}"
 GATEWAY="${SAMOSA_COMPILED_GATEWAY:-./$BUILD_DIR/samosa-gateway}"
 BACKEND="${SAMOSA_FAKE_BACKEND:-./$BUILD_DIR/test_fake_openai_backend}"
+SUMMARIZER="${SAMOSA_FAKE_SUMMARIZER:-./$BUILD_DIR/test_fake_native_summarizer}"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/web_search_test.XXXXXX")
 HOME_DIR="$TMP/home"
 # Distinct from every other tests/*.sh port (18642-18643, 18977-18998, 19010,
@@ -31,6 +32,7 @@ LIVE_PID=""
 
 cleanup() {
   status=$?
+  trap - EXIT HUP INT TERM
   if [ "$status" -ne 0 ] && [ -f "$TMP/stderr.log" ]; then
     echo "--- gateway stderr ---" >&2
     sed -n '1,160p' "$TMP/stderr.log" >&2
@@ -42,6 +44,7 @@ cleanup() {
   [ -z "$GW_PID" ] || wait "$GW_PID" 2>/dev/null || true
   curl -sS -m 2 -X POST "http://127.0.0.1:$((PORT + 1))/shutdown" >/dev/null 2>&1 || true
   rm -rf "$TMP"
+  exit "$status"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -52,6 +55,8 @@ printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 printf 'experts-fixture\n' >"$HOME_DIR/qwen-model/experts.bin"
 printf 'tokenizer-fixture\n' >"$TMP/tokenizer.json"
+printf 'native-summarizer-model-fixture\n' >"$TMP/summarizer.gguf"
+: >"$TMP/summarizer-calls.log"
 
 # --- page fixtures for the SAMOSA_WEB_STUB_DIR transport seam ---------------
 printf '<html><head><title>Careers</title></head><body><script>secret()</script><h1>Roles</h1><p>Engineer &amp; Designer</p></body></html>' \
@@ -62,6 +67,14 @@ printf '<html><head><title>Cyclosporiasis background</title></head><body><main><
   >"$TMP/stub/https-www-cdc-gov-cyclosporiasis.html"
 printf '<html><head><title>South Carolina reports 30 cyclosporiasis cases</title></head><body><main><h1>South Carolina cyclosporiasis update</h1><p>South Carolina DPH confirms 30 cases in 2026 and provides produce washing and symptom guidance.</p></main></body></html>' \
   >"$TMP/stub/https-dph-sc-gov-cyclosporiasis-cases.html"
+printf '<html><head><title>Article one</title></head><body><p>Article one reports the first current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-one.html"
+printf '<html><head><title>Article two</title></head><body><p>Article two reports the second current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-two.html"
+printf '<html><head><title>Article three</title></head><body><p>Article three reports the third current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-three.html"
+printf '<html><head><title>Article four</title></head><body><p>Article four reports the fourth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-four.html"
+printf '<html><head><title>Article five</title></head><body><p>Article five reports the fifth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-five.html"
+printf '<html><head><title>Article six</title></head><body><p>Article six reports the sixth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-six.html"
+printf '<html><head><title>Article seven</title></head><body><p>Article seven reports the seventh current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-seven.html"
+printf '<html><head><title>Article eight</title></head><body><p>Article eight reports the eighth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-eight.html"
 printf 'User-agent: *\nAllow: /\n' >"$TMP/stub/robots.txt"
 
 # --- fake curl -------------------------------------------------------------
@@ -134,10 +147,14 @@ start_gateway() {
   SAMOSA_QWEN_ENGINE="$BACKEND"
   SAMOSA_QWEN_MODEL="$HOME_DIR/qwen-model"
   SAMOSA_TOKENIZER="$TMP/tokenizer.json"
+  SAMOSA_SUMMARIZER_ENGINE="$SUMMARIZER"
+  SAMOSA_SUMMARIZER_MODEL="$TMP/summarizer.gguf"
+  SAMOSA_FAKE_SUMMARIZER_LOG="$TMP/summarizer-calls.log"
   SAMOSA_WEB_MIN_INTERVAL=0
   SAMOSA_CURL="$TMP/curl/fake-curl"
   export SAMOSA_HOME SAMOSA_PORT SAMOSA_BACKEND_PORT SAMOSA_APP_HTML SAMOSA_APP_LOGO \
-         SAMOSA_QWEN_ENGINE SAMOSA_QWEN_MODEL SAMOSA_TOKENIZER SAMOSA_WEB_MIN_INTERVAL SAMOSA_CURL
+         SAMOSA_QWEN_ENGINE SAMOSA_QWEN_MODEL SAMOSA_TOKENIZER SAMOSA_SUMMARIZER_ENGINE \
+         SAMOSA_SUMMARIZER_MODEL SAMOSA_FAKE_SUMMARIZER_LOG SAMOSA_WEB_MIN_INTERVAL SAMOSA_CURL
   if [ "${1:-stub}" = "stub" ]; then
     SAMOSA_WEB_STUB_DIR="$TMP/stub"; export SAMOSA_WEB_STUB_DIR
   else
@@ -607,9 +624,9 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
                 {"role":"user","content":"check the internet dumbass"}]}')
 printf '%s' "$R" | grep -q 'saw verified authority' \
   || fail "gateway did not turn an explicit internet request from a stale client into grounded research"
-printf '%s' "$R" | grep -q 'Reading the most relevant source selected by the model' \
+printf '%s' "$R" | grep -q 'Reading and locally summarizing the model-ranked sources' \
   || fail "the model-ranked result was not opened before synthesis"
-printf '%s' "$R" | grep -q 'Reading the next most relevant source' \
+printf '%s' "$R" | grep -q 'Reading and locally summarizing another ranked source' \
   || fail "a failed fetch did not fall through to the model's next result"
 printf '%s' "$R" | grep -q '"state":"read"' \
   || fail "the authoritative page was not reported as read"
@@ -644,11 +661,10 @@ grep -q '2026%20cyclosporiasis%20cases%20South%20Carolina%20safety%20guidance' "
   || fail "the follow-up search lost its disease, state, time, or safety scope"
 printf '%s' "$R" | grep -q 'https://dph.sc.gov/cyclosporiasis/cases' \
   || fail "the directly relevant state page was not selected"
-if printf '%s' "$R" | grep -q 'https://www.cdc.gov/cyclosporiasis.*\"kind\":\"page\"'; then
-  fail "retrieval fetched the generic CDC page after sufficient state evidence"
-fi
-printf '%s' "$R" | grep -q 'That page directly addresses the research question' \
-  || fail "the sufficiency judgement did not stop retrieval explicitly"
+printf '%s' "$R" | grep -q 'native summarizer compressed 2 of 2 fetched articles' \
+  || fail "the fetched state and background articles were not summarized together"
+printf '%s' "$R" | grep -q 'summaries and verbatim anchors directly address' \
+  || fail "the combined digest sufficiency judgement was not reported"
 
 # Independently pin the other half of the retrieval contract: even when the
 # ranker puts a readable but generic page first, readability cannot end the
@@ -664,10 +680,36 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
               "messages":[{"role":"user","content":"web tool probe readable insufficient: How many cyclosporiasis cases are in South Carolina in 2026?"}]}')
 printf '%s' "$R" | grep -q 'continued past readable insufficient page' \
   || fail "retrieval stopped merely because the first selected page was readable"
-printf '%s' "$R" | grep -q 'readable but did not fully answer the question' \
-  || fail "a false page-sufficiency judgement was not reported"
-printf '%s' "$R" | grep -q 'Reading the next most relevant source' \
-  || fail "a false page-sufficiency judgement did not advance to the next result"
+printf '%s' "$R" | grep -q 'digests left an evidence gap' \
+  || fail "a false combined-sufficiency judgement was not reported"
+
+# The native path is intentionally eight-wide: all fetched article bodies are
+# compressed before the single combined evidence review. This catches a
+# regression back to the old two-page/readability-stop pipeline.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Article one","url":"https://articles.example/one","description":"one"},
+  {"title":"Article two","url":"https://articles.example/two","description":"two"},
+  {"title":"Article three","url":"https://articles.example/three","description":"three"},
+  {"title":"Article four","url":"https://articles.example/four","description":"four"},
+  {"title":"Article five","url":"https://articles.example/five","description":"five"},
+  {"title":"Article six","url":"https://articles.example/six","description":"six"},
+  {"title":"Article seven","url":"https://articles.example/seven","description":"seven"},
+  {"title":"Article eight","url":"https://articles.example/eight","description":"eight"}
+]}}
+JSON
+: >"$TMP/summarizer-calls.log"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"web tool probe eight articles: compare the current article fixtures"}]}')
+printf '%s' "$R" | grep -q 'saw web evidence' \
+  || fail "the eight-article turn did not reach final synthesis"
+printf '%s' "$R" | grep -q 'native summarizer compressed 8 of 8 fetched articles' \
+  || fail "the gateway did not summarize all eight fetched articles"
+[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "8" ] \
+  || fail "the persistent native sidecar did not receive exactly eight article requests"
+[ "$(sort -u "$TMP/summarizer-calls.log" | wc -l | tr -d ' ')" = "1" ] \
+  || fail "the gateway restarted the summarizer instead of keeping one resident process"
 
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
 # is authoritative and must not be back-filled with mechanical variants.

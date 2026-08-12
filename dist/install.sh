@@ -115,6 +115,10 @@ destination() { # destination <remote-path>
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-maple) printf '%s/bin/samosa-maple\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
+    runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
+    runtime/macos-arm64/lib/*) printf '%s/lib/%s\n' "$STAGE" "${1##*/}" ;;
+    runtime/common/samosa-text-summarization-Q8_0.gguf)
+      printf '%s/models/native-summarizer/samosa-text-summarization-Q8_0.gguf\n' "$STAGE" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
@@ -146,12 +150,29 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
       fail "release contains an incomplete Maple runtime"
     INSTALL_FILES="$INSTALL_FILES $maple_exe $maple_lib"
   fi
+
+  summarizer_exe=runtime/macos-arm64/samosa-summarizer
+  summarizer_model=runtime/common/samosa-text-summarization-Q8_0.gguf
+  summarizer_libs="runtime/macos-arm64/lib/libllama.0.dylib runtime/macos-arm64/lib/libggml.0.dylib runtime/macos-arm64/lib/libggml-cpu.0.dylib runtime/macos-arm64/lib/libggml-blas.0.dylib runtime/macos-arm64/lib/libggml-metal.0.dylib runtime/macos-arm64/lib/libggml-base.0.dylib"
+  if manifest_field "$summarizer_exe" 1 >/dev/null 2>&1 ||
+     manifest_field "$summarizer_model" 1 >/dev/null 2>&1; then
+    manifest_field "$summarizer_exe" 1 >/dev/null 2>&1 ||
+      fail "release contains a summarizer model without its native runtime"
+    manifest_field "$summarizer_model" 1 >/dev/null 2>&1 ||
+      fail "release contains a native summarizer runtime without its model"
+    for relative in $summarizer_libs; do
+      manifest_field "$relative" 1 >/dev/null 2>&1 ||
+        fail "release contains an incomplete native summarizer runtime"
+    done
+    INSTALL_FILES="$INSTALL_FILES $summarizer_exe $summarizer_model $summarizer_libs"
+  fi
 fi
 
-# Model weights are a separate, optional concern from the runtime: a
-# runtime-only release (tools/package_hf.py --runtime-only) omits them
-# entirely, and a clean install must make no request for any of them. Stage
-# each only if the release manifest actually lists it -- same pattern as the
+# Primary chat-model weights are a separate, optional concern from the runtime:
+# a runtime-only release (tools/package_hf.py --runtime-only) omits them, and a
+# clean install must make no request for any of them. The small summarizer model
+# above is an application runtime component. Stage each optional chat artifact
+# only if the release manifest actually lists it -- same pattern as the
 # PDFium/optional-capability blocks below.
 MODEL_FILES="experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json"
 
@@ -352,6 +373,9 @@ $COMPILER -O3 -Wno-unused-function -std=c11 -I"$STAGE/engine" \
   "$STAGE/engine/samosa_ocr.c" -o "$STAGE/bin/samosa-ocr" -lm ||
   fail "staged OCR sidecar compilation failed; live release was not changed"
 chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/samosa-ocr" "$STAGE/bin/chutni-mcp"
+if [ -f "$STAGE/bin/samosa-summarizer" ]; then
+  chmod +x "$STAGE/bin/samosa-summarizer"
+fi
 
 if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   # This is a control-plane smoke, not a model smoke (docs/TASKS_UI_CHUTNI.md

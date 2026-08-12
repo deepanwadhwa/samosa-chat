@@ -56,6 +56,7 @@ SOURCE_FILES = [
     # them unconditionally, not as an opt-in capability with a raw-Qwen
     # HTTP-serve fallback.
     "samosa_gateway.c",
+    "samosa_summarizer.cpp",
     "samosa_fs.c",
     "read_cache.h",
     "durable_job.h",
@@ -114,6 +115,46 @@ def place(src: pathlib.Path, dst: pathlib.Path, link: bool) -> None:
             pass
     shutil.copy2(src, dst)
 
+def stage_native_summarizer(args, out: pathlib.Path,
+                            staged: list[pathlib.Path]) -> bool:
+    binary = args.summarizer_runtime_dir / "bin" / "samosa-summarizer"
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        print(
+            "missing native summarizer runtime; run "
+            "tools/stage_native_summarizer_runtime.sh",
+            file=sys.stderr,
+        )
+        return False
+    place(binary, out / "runtime" / "macos-arm64" / "samosa-summarizer", True)
+    staged.append(out / "runtime" / "macos-arm64" / "samosa-summarizer")
+    for name in (
+        "libllama.0.dylib",
+        "libggml.0.dylib",
+        "libggml-cpu.0.dylib",
+        "libggml-blas.0.dylib",
+        "libggml-metal.0.dylib",
+        "libggml-base.0.dylib",
+    ):
+        src = args.summarizer_runtime_dir / "lib" / name
+        if not src.is_file():
+            print(f"missing native summarizer library: {src}", file=sys.stderr)
+            return False
+        place(src, out / "runtime" / "macos-arm64" / "lib" / name, True)
+        staged.append(out / "runtime" / "macos-arm64" / "lib" / name)
+    if not args.summarizer_model.is_file():
+        print(f"missing native summarizer model: {args.summarizer_model}", file=sys.stderr)
+        return False
+    package_fixture = os.environ.get("SAMOSA_PACKAGE_TEST") == "1"
+    if not package_fixture and (args.summarizer_model.stat().st_size != 65364992 or \
+            sha256_file(args.summarizer_model) != \
+            "30c73e0b2ebd4f65538d87f5157aa7193261e8ff362e441df86c6941f3e9265c"):
+        print("native summarizer model failed pinned byte/SHA-256 verification", file=sys.stderr)
+        return False
+    destination = out / "runtime" / "common" / "samosa-text-summarization-Q8_0.gguf"
+    place(args.summarizer_model, destination, True)
+    staged.append(destination)
+    return True
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, type=pathlib.Path)
@@ -133,9 +174,18 @@ def main() -> int:
         default=(ROOT / "build" / "mlx-build" / "mlx" / "backend" /
                  "metal" / "kernels" / "mlx.metallib"),
         help="Metal library paired with --maple-runtime")
+    ap.add_argument(
+        "--summarizer-model", type=pathlib.Path,
+        default=ROOT / "build" / "samosa-text-summarization-Q8_0.gguf",
+        help="verified Falconsai/text_summarization Q8_0 GGUF")
+    ap.add_argument(
+        "--summarizer-runtime-dir", type=pathlib.Path,
+        default=ROOT / "build" / "native-summarizer-runtime",
+        help="output from tools/stage_native_summarizer_runtime.sh")
     ap.add_argument("--runtime-only", action="store_true",
                     help="package the browser control plane (gateway, engine "
-                         "sources, app shell) with no model weights at all -- "
+                         "sources, app shell) without optional chat-model weights; "
+                         "the small native summarizer remains part of the runtime -- "
                          "docs/TASKS_UI_CHUTNI.md T1.0. Model artifacts are "
                          "installed separately through the in-app catalog.")
     args = ap.parse_args()
@@ -165,6 +215,9 @@ def main() -> int:
                 return 1
             place(src, out / "runtime" / "macos-arm64" / name, link=True)
             staged.append(out / "runtime" / "macos-arm64" / name)
+
+        if not stage_native_summarizer(args, out, staged):
+            return 1
     if not args.runtime_only:
         for name in MODEL_FILES:
             src = args.snapshot / name

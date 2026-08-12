@@ -34,10 +34,12 @@ cp "$ARCHIVE" "$PDFIUM/pdfium-mac-arm64.tgz"
 printf 'not selected on this platform\n' >"$PDFIUM/pdfium-linux-x64.tgz"
 printf 'not selected on this platform\n' >"$PDFIUM/pdfium-linux-arm64.tgz"
 
-python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
+SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
   --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa --pdfium-dir "$PDFIUM" \
   --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" >/dev/null
+  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
+  --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
+  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="file://$REMOTE" SAMOSA_HOME="$HOME_DIR" \
   sh "$ROOT/dist/install.sh" >/dev/null

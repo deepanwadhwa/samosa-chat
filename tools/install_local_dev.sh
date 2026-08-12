@@ -19,6 +19,10 @@ GATEWAY="$BUILD_DIR/samosa-gateway"
 JOBSD="$BUILD_DIR/samosa-jobsd"
 CHUTNI_SERVICE="$BUILD_DIR/chutni-mcp"
 OCR="$BUILD_DIR/samosa-ocr"
+SUMMARIZER_RUNTIME="$BUILD_DIR/native-summarizer-runtime"
+SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
+SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
+SUMMARIZER_LIBS="libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib"
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
@@ -29,6 +33,24 @@ for path in "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY"
   "$ROOT/dist/samosa"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
+
+# The native T5 summarizer is part of the Apple-Silicon application runtime,
+# not an optional developer tool. Keep the dev install shaped like a published
+# release and fail before activation when the staged runtime is incomplete.
+SUMMARIZER_OK=0
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  SUMMARIZER_OK=1
+  for path in "$SUMMARIZER" "$SUMMARIZER_MODEL"; do
+    [ -f "$path" ] || SUMMARIZER_OK=0
+  done
+  for name in $SUMMARIZER_LIBS; do
+    [ -f "$SUMMARIZER_RUNTIME/lib/$name" ] || SUMMARIZER_OK=0
+  done
+  if [ "$SUMMARIZER_OK" != "1" ]; then
+    echo "missing native summarizer inputs; run tools/stage_native_summarizer_runtime.sh and place the verified GGUF at $SUMMARIZER_MODEL" >&2
+    exit 1
+  fi
+fi
 
 MAPLE_MODEL_OK=1
 for path in "$MAPLE_MODEL/config.json" "$MAPLE_MODEL/tokenizer.json" \
@@ -65,6 +87,12 @@ set -- "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JO
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
 if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
 if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_BIN" "$EXTRACT_LIB"; fi
+if [ "$SUMMARIZER_OK" = "1" ]; then
+  set -- "$@" "$SUMMARIZER" "$SUMMARIZER_MODEL"
+  for name in $SUMMARIZER_LIBS; do
+    set -- "$@" "$SUMMARIZER_RUNTIME/lib/$name"
+  done
+fi
 release_hash=$(shasum -a 256 "$@" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
@@ -73,6 +101,9 @@ final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage/bin" "$stage/model" "$HOME_DIR/releases" "$HOME_DIR/bin"
 if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
+if [ "$SUMMARIZER_OK" = "1" ]; then
+  mkdir -p "$stage/lib" "$stage/models/native-summarizer"
+fi
 
 if [ "$SNAPSHOT_OK" = "1" ]; then
   for name in experts.bin resident.safetensors manifest.json config.json generation_config.json; do
@@ -105,6 +136,19 @@ cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 cp "$ROOT/assets/models.json" "$stage/models.json"
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime"
 chmod +x "$stage/bin/samosa-maple"
+
+if [ "$SUMMARIZER_OK" = "1" ]; then
+  cp "$SUMMARIZER" "$stage/bin/samosa-summarizer"
+  for name in $SUMMARIZER_LIBS; do
+    cp "$SUMMARIZER_RUNTIME/lib/$name" "$stage/lib/$name"
+  done
+  ln "$SUMMARIZER_MODEL" \
+    "$stage/models/native-summarizer/samosa-text-summarization-Q8_0.gguf" || {
+      echo "hard-link failed for the native summarizer model; refusing an implicit copy" >&2
+      exit 1
+    }
+  chmod +x "$stage/bin/samosa-summarizer"
+fi
 
 if [ "$MAPLE_MODEL_OK" = "1" ]; then
   for file in "$MAPLE_MODEL"/*; do
@@ -180,6 +224,9 @@ else
   echo "OCR reading: on ($final/bin/samosa-ocr)."
   echo "PDF text reading: off — samosa-extract/libpdfium.dylib not found."
   echo "  Build with: PDFIUM_DIR=<unpacked pdfium> make samosa-extract, then re-run this installer."
+fi
+if [ "$SUMMARIZER_OK" = "1" ]; then
+  echo "Native summaries: on ($final/bin/samosa-summarizer)."
 fi
 
 # Unlike dist/install.sh, this script never edits your shell rc — a dev install

@@ -16,10 +16,12 @@ printf '{"text_config":{}}\n' >"$SNAP/config.json"
 printf '{}\n' >"$SNAP/generation_config.json"
 printf '{}\n' >"$TMP/tokenizer.json"
 
-python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
+SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
   --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa \
   --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" >/dev/null
+  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
+  --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
+  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
@@ -29,6 +31,10 @@ grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_kokoro.h' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv"
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  grep -q 'runtime/macos-arm64/samosa-summarizer' "$REMOTE/release-manifest.tsv"
+  grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf' "$REMOTE/release-manifest.tsv"
+fi
 
 SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="file://$REMOTE" SAMOSA_HOME="$HOME_DIR" \
@@ -41,6 +47,10 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
 [ -x "$HOME_DIR/current/bin/samosa-ocr" ]
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ]
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  [ -x "$HOME_DIR/current/bin/samosa-summarizer" ]
+  [ -f "$HOME_DIR/current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf" ]
+fi
 # The launchd scheduler's plist runs current/bin/samosa-jobsd, so the installer
 # must build it or the scheduler is broken on a clean install.
 [ -x "$HOME_DIR/current/bin/samosa-jobsd" ]

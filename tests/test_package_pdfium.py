@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -14,6 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "tools" / "package_hf.py"
 MAPLE_RUNTIME = ROOT / "tests" / "fixtures" / "maple-runtime" / "samosa-maple"
 MAPLE_METALLIB = ROOT / "tests" / "fixtures" / "maple-runtime" / "mlx.metallib"
+SUMMARIZER = ROOT / "tests" / "fixtures" / "native-summarizer"
 ARCHIVES = (
     "pdfium-mac-arm64.tgz",
     "pdfium-linux-x64.tgz",
@@ -38,7 +40,14 @@ class PackagePdfiumTest(unittest.TestCase):
                 str(root / "snapshot"), "--tokenizer", str(tokenizer),
                 "--pdfium-dir", str(pdfium),
                 "--maple-runtime", str(MAPLE_RUNTIME),
-                "--maple-metallib", str(MAPLE_METALLIB)]
+                "--maple-metallib", str(MAPLE_METALLIB),
+                "--summarizer-model", str(SUMMARIZER / "model.gguf"),
+                "--summarizer-runtime-dir", str(SUMMARIZER)]
+
+    def run_package(self, command: list[str], **kwargs):
+        env = dict(os.environ)
+        env["SAMOSA_PACKAGE_TEST"] = "1"
+        return subprocess.run(command, env=env, **kwargs)
 
     def test_requires_the_complete_platform_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -47,8 +56,8 @@ class PackagePdfiumTest(unittest.TestCase):
             pdfium = root / "pdfium"
             pdfium.mkdir()
             (pdfium / ARCHIVES[0]).write_bytes(b"one archive")
-            result = subprocess.run(self.command(root, tokenizer, pdfium, root / "out"),
-                                    text=True, capture_output=True, check=False)
+            result = self.run_package(self.command(root, tokenizer, pdfium, root / "out"),
+                                      text=True, capture_output=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing PDFium archive", result.stderr)
 
@@ -64,8 +73,8 @@ class PackagePdfiumTest(unittest.TestCase):
                 (pdfium / name).write_bytes(content)
                 expected[f"pdfium/{name}"] = hashlib.sha256(content).hexdigest()
             output = root / "out"
-            subprocess.run(self.command(root, tokenizer, pdfium, output), check=True,
-                           text=True, capture_output=True)
+            self.run_package(self.command(root, tokenizer, pdfium, output), check=True,
+                             text=True, capture_output=True)
             manifest = {}
             for line in (output / "release-manifest.tsv").read_text(encoding="utf-8").splitlines():
                 digest, _size, name = line.split("\t")
@@ -81,8 +90,8 @@ class PackagePdfiumTest(unittest.TestCase):
             for name in ARCHIVES:
                 (pdfium / name).write_bytes(f"fixture {name}\n".encode())
             output = root / "out"
-            subprocess.run(self.command(root, tokenizer, pdfium, output), check=True,
-                           text=True, capture_output=True)
+            self.run_package(self.command(root, tokenizer, pdfium, output), check=True,
+                             text=True, capture_output=True)
             version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
             launcher = (output / "samosa").read_text(encoding="utf-8")
             # The real number is baked in; the empty marker must be gone so the

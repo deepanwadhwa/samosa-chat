@@ -9,6 +9,9 @@
 # the same way; keep the two in step.
 UNAME_S := $(shell uname -s)
 BUILD_DIR ?= build
+CXX ?= c++
+PRISM_LLAMA_DIR ?= $(HOME)/.samosa/backends/prism-llama.cpp
+PRISM_LLAMA_BUILD ?= $(PRISM_LLAMA_DIR)/build
 ifeq ($(UNAME_S),Darwin)
   CC ?= clang
   OMP_PREFIX := $(shell [ -d /opt/homebrew/opt/libomp ] && echo /opt/homebrew/opt/libomp || echo /usr/local/opt/libomp)
@@ -232,6 +235,31 @@ samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
 
+# Falconsai/text_summarization is T5 (encoder-decoder), so it needs the
+# dedicated llama_encode/llama_decode helper rather than llama-server's
+# decoder-only completion route. Release builds stage this executable and the
+# six small shared libraries beside the ordinary Samosa runtime; end users do
+# not need a compiler or Python to run summaries.
+samosa-summarizer: src/samosa_summarizer.cpp
+	@test -f "$(PRISM_LLAMA_DIR)/include/llama.h" || { echo "missing pinned Prism llama.cpp at $(PRISM_LLAMA_DIR)" >&2; exit 2; }
+	@test -f "$(PRISM_LLAMA_BUILD)/bin/libllama.0.dylib" || { echo "missing built Prism libraries under $(PRISM_LLAMA_BUILD)/bin" >&2; exit 2; }
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -O3 -std=c++17 -I"$(PRISM_LLAMA_DIR)/include" -I"$(PRISM_LLAMA_DIR)/ggml/include" \
+	  src/samosa_summarizer.cpp -o $(BUILD_DIR)/samosa-summarizer \
+	  -Wl,-rpath,@loader_path/../lib -Wl,-rpath,"$(PRISM_LLAMA_BUILD)/bin" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libllama.0.dylib" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libggml.0.dylib" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libggml-cpu.0.dylib" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libggml-blas.0.dylib" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libggml-metal.0.dylib" \
+	  "$(PRISM_LLAMA_BUILD)/bin/libggml-base.0.dylib"
+
+test-native-summarizer-real: samosa-summarizer tests/test_native_summarizer.c
+	@test -n "$(SAMOSA_SUMMARIZER_TEST_MODEL)" || { echo "set SAMOSA_SUMMARIZER_TEST_MODEL to the verified GGUF" >&2; exit 2; }
+	$(CC) -O2 $(CWARN) -std=c11 tests/test_native_summarizer.c \
+	  -o $(BUILD_DIR)/test_native_summarizer
+	$(BUILD_DIR)/test_native_summarizer $(BUILD_DIR)/samosa-summarizer "$(SAMOSA_SUMMARIZER_TEST_MODEL)"
+
 # The HTTP controller invokes the same generic service that MCP hosts use.
 chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
 	sh tests/test_chutni_gateway.sh
@@ -252,6 +280,17 @@ test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o $(BUILD_DIR)/test_fake_openai_backend
+
+test_fake_native_summarizer: tests/fake_native_summarizer.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
+	  -o $(BUILD_DIR)/test_fake_native_summarizer
+
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_native_summarizer_supervisor.c -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
+	$(BUILD_DIR)/test_native_summarizer_supervisor \
+	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
 test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c
 	@mkdir -p $(BUILD_DIR)
@@ -294,7 +333,7 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	node tests/test_composer_perf.mjs
 	node tests/test_web_activity_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh
+compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh
 	BUILD_DIR="$(BUILD_DIR)" \
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
@@ -307,6 +346,7 @@ compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_ba
 	sh tests/test_attachments.sh
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
+	SAMOSA_FAKE_SUMMARIZER="$$PWD/$(BUILD_DIR)/test_fake_native_summarizer" \
 	sh tests/test_web_search.sh
 
 # doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor

@@ -3,8 +3,8 @@ set -eux
 
 # T1.0 (docs/TASKS_UI_CHUTNI.md): a runtime-only release must install and
 # boot the full browser control plane -- gateway, engine, app shell -- while
-# making zero requests for any model artifact, and an upgrade must leave an
-# already-registered legacy model completely untouched. This runs the real
+# making zero requests for any optional chat-model artifact, and an upgrade
+# must leave an already-registered legacy model completely untouched. This runs the real
 # smoke path in dist/install.sh (SAMOSA_INSTALL_TEST is deliberately NOT set),
 # against a real HTTP server so every request the installer makes is logged.
 
@@ -59,7 +59,10 @@ assert_no_model_requests() {
 }
 
 # --- Package a runtime-only release: no --snapshot, no --tokenizer -----------
-python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runtime-only --repo-id test/samosa >/dev/null
+SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runtime-only \
+  --repo-id test/samosa \
+  --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
+  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv" ||
@@ -75,6 +78,10 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     fail "Apple-Silicon release manifest is missing samosa-maple"
   grep -q 'runtime/macos-arm64/mlx.metallib$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing mlx.metallib"
+  grep -q 'runtime/macos-arm64/samosa-summarizer$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing the native summarizer"
+  grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing the native summarizer model"
 fi
 for name in $MODEL_ARTIFACT_NAMES; do
   grep -q "	$name$" "$REMOTE/release-manifest.tsv" &&

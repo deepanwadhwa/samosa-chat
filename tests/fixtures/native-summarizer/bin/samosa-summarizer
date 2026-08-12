@@ -1,0 +1,3 @@
+#!/bin/sh
+# Packaging fixture only. Real releases stage the native C++ helper.
+exit 0
