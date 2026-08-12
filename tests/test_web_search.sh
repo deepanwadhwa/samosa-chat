@@ -30,6 +30,11 @@ GW_PID=""
 LIVE_PID=""
 
 cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ] && [ -f "$TMP/stderr.log" ]; then
+    echo "--- gateway stderr ---" >&2
+    sed -n '1,160p' "$TMP/stderr.log" >&2
+  fi
   rm -f "${FAKE_CURL_BLOCK_AFTER_FIRST:-/nonexistent}"
   [ -z "$LIVE_PID" ] || kill "$LIVE_PID" 2>/dev/null || true
   [ -z "$LIVE_PID" ] || wait "$LIVE_PID" 2>/dev/null || true
@@ -53,6 +58,10 @@ printf '<html><head><title>Careers</title></head><body><script>secret()</script>
   >"$TMP/stub/http-example-com-jobs.html"
 printf '<html><head><title>CDC current surveillance</title></head><body><main><h1>Cyclosporiasis surveillance</h1><p>As of August 8, 2026, CDC reports 4,321 domestically acquired cases. No deaths have been reported.</p></main></body></html>' \
   >"$TMP/stub/https-www-cdc-gov-cyclosporiasis-current.html"
+printf '<html><head><title>Cyclosporiasis background</title></head><body><main><h1>Cyclosporiasis</h1><p>Generic CDC background page text without a South Carolina case count.</p></main></body></html>' \
+  >"$TMP/stub/https-www-cdc-gov-cyclosporiasis.html"
+printf '<html><head><title>South Carolina reports 30 cyclosporiasis cases</title></head><body><main><h1>South Carolina cyclosporiasis update</h1><p>South Carolina DPH confirms 30 cases in 2026 and provides produce washing and symptom guidance.</p></main></body></html>' \
+  >"$TMP/stub/https-dph-sc-gov-cyclosporiasis-cases.html"
 printf 'User-agent: *\nAllow: /\n' >"$TMP/stub/robots.txt"
 
 # --- fake curl -------------------------------------------------------------
@@ -579,7 +588,7 @@ fi
 # as verified numbers. The local planner is deliberately made to repeat that
 # bad query. The gateway must reject it, recover the topic from conversation
 # history, omit unverified high-stakes snippets from the answer evidence, read
-# the authoritative page, and append an explicit grounding contract.
+# a fetched page, and append an explicit grounding contract.
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[
   {"title":"FDA investigation","url":"https://www.fda.gov/food/outbreaks/cyclosporiasis-current","description":"Another official lead whose page fixture is unavailable."},
@@ -598,10 +607,10 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
                 {"role":"user","content":"check the internet dumbass"}]}')
 printf '%s' "$R" | grep -q 'saw verified authority' \
   || fail "gateway did not turn an explicit internet request from a stale client into grounded research"
-printf '%s' "$R" | grep -q 'Reading the strongest authoritative source' \
-  || fail "the authoritative result was not opened before synthesis"
-printf '%s' "$R" | grep -q 'Trying the next authoritative source' \
-  || fail "a failed authority fetch did not fall through to the next official result"
+printf '%s' "$R" | grep -q 'Reading the most relevant source selected by the model' \
+  || fail "the model-ranked result was not opened before synthesis"
+printf '%s' "$R" | grep -q 'Reading the next most relevant source' \
+  || fail "a failed fetch did not fall through to the model's next result"
 printf '%s' "$R" | grep -q '"state":"read"' \
   || fail "the authoritative page was not reported as read"
 grep -qi 'cyclosporiasis' "$FAKE_CURL_CONFIG" \
@@ -609,6 +618,56 @@ grep -qi 'cyclosporiasis' "$FAKE_CURL_CONFIG" \
 if grep -Eqi 'check(%20| )+the(%20| )+internet|dumbass' "$FAKE_CURL_CONFIG"; then
   fail "the instruction/insult became a public search query"
 fi
+
+# Transcript-derived regression: the user's follow-up omitted the disease name,
+# the search results put a generic CDC page before a directly relevant state
+# page, and the answer used to stop at the first readable URL. The planner must
+# retain disease + state, the LLM ranker must choose the relevant state result,
+# and the sufficiency judge must stop only because that fetched page answers it.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Cyclosporiasis | CDC","url":"https://www.cdc.gov/cyclosporiasis","description":"General disease and surveillance background."},
+  {"title":"South Carolina reports 30 cyclosporiasis cases","url":"https://dph.sc.gov/cyclosporiasis/cases","description":"State case update and safety guidance."},
+  {"title":"SC reports 11 cases of parasitic illness","url":"https://example.net/old-sc-story","description":"An older search-result headline."}
+]}}
+JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[
+                {"role":"user","content":"web tool probe state count followup: What is going on with cyclosporiasis in the US currently?"},
+                {"role":"assistant","content":"There is a current multistate cyclosporiasis outbreak."},
+                {"role":"user","content":"Okay, tell me more details about numbers. How many cases in South Carolina? What should I do to be safe?"}]}')
+printf '%s' "$R" | grep -q 'used directly relevant state evidence' \
+  || fail "the answer did not use the model-selected South Carolina evidence"
+grep -q '2026%20cyclosporiasis%20cases%20South%20Carolina%20safety%20guidance' "$FAKE_CURL_CONFIG" \
+  || fail "the follow-up search lost its disease, state, time, or safety scope"
+printf '%s' "$R" | grep -q 'https://dph.sc.gov/cyclosporiasis/cases' \
+  || fail "the directly relevant state page was not selected"
+if printf '%s' "$R" | grep -q 'https://www.cdc.gov/cyclosporiasis.*\"kind\":\"page\"'; then
+  fail "retrieval fetched the generic CDC page after sufficient state evidence"
+fi
+printf '%s' "$R" | grep -q 'That page directly addresses the research question' \
+  || fail "the sufficiency judgement did not stop retrieval explicitly"
+
+# Independently pin the other half of the retrieval contract: even when the
+# ranker puts a readable but generic page first, readability cannot end the
+# loop. A false sufficiency judgement must advance to the next ranked result.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Readable generic national fixture","url":"https://www.cdc.gov/cyclosporiasis","description":"General disease background."},
+  {"title":"Direct South Carolina fixture","url":"https://dph.sc.gov/cyclosporiasis/cases","description":"State case update."}
+]}}
+JSON
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"web tool probe readable insufficient: How many cyclosporiasis cases are in South Carolina in 2026?"}]}')
+printf '%s' "$R" | grep -q 'continued past readable insufficient page' \
+  || fail "retrieval stopped merely because the first selected page was readable"
+printf '%s' "$R" | grep -q 'readable but did not fully answer the question' \
+  || fail "a false page-sufficiency judgement was not reported"
+printf '%s' "$R" | grep -q 'Reading the next most relevant source' \
+  || fail "a false page-sufficiency judgement did not advance to the next result"
 
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
 # is authoritative and must not be back-filled with mechanical variants.

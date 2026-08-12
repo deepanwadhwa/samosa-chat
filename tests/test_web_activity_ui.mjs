@@ -110,6 +110,21 @@ assert.equal(fns.mergeWebSource(message, {
 assert.equal(message.sources.length, 1, "repeated results update one source row");
 assert.equal(message.sources[0].url, "https://example.com/jobs", "fragments are removed from source URLs");
 
+const duplicateUrl = { sources: [] };
+fns.mergeWebSource(duplicateUrl, {
+  id: "search:one", kind: "search_result", state: "found",
+  title: "Result title", url: "https://example.com/same"
+});
+fns.mergeWebSource(duplicateUrl, {
+  id: "page:one", kind: "page", state: "read",
+  title: "Fetched title", url: "https://example.com/same#content"
+});
+assert.equal(duplicateUrl.sources.length, 1,
+  "a search result and fetched page with the same URL render as one source");
+assert.equal(duplicateUrl.sources[0].kind, "page");
+assert.equal(duplicateUrl.sources[0].state, "read");
+assert.equal(duplicateUrl.sources[0].title, "Fetched title");
+
 assert.equal(fns.mergeWebSource(message, {
   id: "page-1", kind: "page", state: "checking", title: "", url: "https://docs.example.org/start"
 }), true);
@@ -122,6 +137,10 @@ assert.equal(message.sources[1].state, "read");
 const row = new Element("article");
 const activity = new Element("div"); activity.className = "web-activity"; row.appendChild(activity);
 fns.renderWebActivity(row, message);
+const sourcesDetails = activity.querySelector(".web-sources");
+assert.equal(sourcesDetails.tagName, "details", "the source list is collapsible");
+assert.equal(sourcesDetails.querySelector(".web-sources-head").tagName, "summary");
+assert.equal(sourcesDetails.open, true, "sources stay expanded while research is streaming");
 const sourceRows = activity.querySelectorAll(".web-source");
 assert.equal(sourceRows.length, 2);
 assert.equal(sourceRows[0].tagName, "a");
@@ -148,6 +167,12 @@ message.activity += "Looking up 1 of 3…\n";
 fns.renderWebActivity(row, message);
 assert.equal(activity.querySelectorAll(".web-source")[0], originalResultRow,
   "activity updates preserve existing link nodes and keyboard focus");
+message.streaming = false;
+fns.renderWebActivity(row, message);
+assert.equal(sourcesDetails.open, false, "sources collapse when the completed answer arrives");
+sourcesDetails.open = true;
+fns.renderWebActivity(row, message);
+assert.equal(sourcesDetails.open, true, "completed renders preserve the user's open/closed choice");
 
 const failed = { streaming: true, activity: "Could not read that page.\n", sources: [] };
 fns.mergeWebSource(failed, { id: "bad-page", kind: "page", state: "failed", url: "https://example.net/missing" });

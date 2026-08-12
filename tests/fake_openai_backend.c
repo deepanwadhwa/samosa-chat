@@ -456,7 +456,8 @@ static int handler(SamosaHttpServer *server, int fd,
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
-                "\"{\\\"queries\\\":[\\\"planner reasoning controls missing\\\"]}\"}}]}", NULL);
+                "\"{\\\"resolved_question\\\":\\\"planner controls missing\\\","
+                "\\\"queries\\\":[\\\"planner reasoning controls missing\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "Acme Zephyr 7 uses sodium ion batteries"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -465,33 +466,77 @@ static int handler(SamosaHttpServer *server, int fd,
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
-                "\"{\\\"queries\\\":[\\\"SQLite 3.49 release notes\\\","
+                "\"{\\\"resolved_question\\\":\\\"What changed in recent SQLite releases and is WAL2 the current default?\\\","
+                "\\\"queries\\\":[\\\"SQLite 3.49 release notes\\\","
                 "\\\"SQLite current stable release\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "accuracy of the above"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
-                "\"{\\\"queries\\\":[\\\"check the accuracy of the above latest\\\"]}\"}}]}", NULL);
+                "\"{\\\"resolved_question\\\":\\\"check the accuracy of the above latest\\\","
+                "\\\"queries\\\":[\\\"check the accuracy of the above latest\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "Rewrite this sentence for clarity no public facts are needed"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-                "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"queries\\\":[]}\"}}]}", NULL);
+                "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"resolved_question\\\":\\\"Rewrite this sentence for clarity\\\",\\\"queries\\\":[]}\"}}]}", NULL);
         if (strstr(request->body, "check accuracy above information provide latest thanks"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
-                "\"{\\\"queries\\\":[\\\"check accuracy above information provide latest thanks\\\"]}\"}}]}", NULL);
+                "\"{\\\"resolved_question\\\":\\\"check accuracy above information provide latest thanks\\\","
+                "\\\"queries\\\":[\\\"check accuracy above information provide latest thanks\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe readable insufficient"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"resolved_question\\\":\\\"How many cyclosporiasis cases are in South Carolina in 2026?\\\","
+                "\\\"queries\\\":[\\\"2026 cyclosporiasis cases South Carolina\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe state count followup"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"resolved_question\\\":\\\"How many cyclosporiasis cases are in South Carolina in 2026 and what safety guidance applies?\\\","
+                "\\\"queries\\\":[\\\"2026 cyclosporiasis cases South Carolina safety guidance\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "check the internet dumbass"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
-                "\"{\\\"queries\\\":[\\\"check the internet dumbass\\\"]}\"}}]}", NULL);
+                "\"{\\\"resolved_question\\\":\\\"check the internet dumbass\\\","
+                "\\\"queries\\\":[\\\"check the internet dumbass\\\"]}\"}}]}", NULL);
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"{\\\"queries\\\":[\\\"museum exhibitions New York\\\","
+            "\"{\\\"resolved_question\\\":\\\"Which museum exhibitions and events are available in New York this week?\\\","
+            "\\\"queries\\\":[\\\"museum exhibitions New York\\\","
             "\\\"New York museum events this week\\\","
             "\\\"New York museum visitor guide\\\"]}\"}}]}", NULL);
+    }
+    /* Result selection is an LLM judgement. Fixtures force the failure modes
+       that a hostname score could not handle: an unreadable first result and
+       a directly relevant state page below a generic CDC result. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Rank web search results for the exact research question")) {
+        const char *content = strstr(request->body, "Readable generic national fixture") ?
+            "{\\\"indices\\\":[1,2]}" :
+            strstr(request->body, "South Carolina reports 30 cyclosporiasis cases") ?
+            "{\\\"indices\\\":[2,1]}" :
+            strstr(request->body, "web tool probe hostile") ?
+            "{\\\"indices\\\":[1,2]}" : "{\\\"indices\\\":[1]}";
+        char response[512];
+        snprintf(response, sizeof(response),
+                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                 "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", content);
+        return samosa_http_response(fd, 200, "application/json", response, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Decide whether this fetched web page contains enough evidence")) {
+        int sufficient = !strstr(request->body, "Generic CDC background page text") ||
+                         strstr(request->body, "South Carolina DPH confirms 30 cases");
+        return samosa_http_response(fd, 200, "application/json", sufficient ?
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"sufficient\\\":true}\"}}]}" :
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"sufficient\\\":false}\"}}]}", NULL);
     }
     /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
        Planner rounds are recognised by their system prompt; the second round
@@ -539,7 +584,7 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe hostile"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Authoritative page read:") &&
+            strstr(request->body, "--- Fetched page evidence:") &&
             strstr(request->body, "HIGH-STAKES TURN:") &&
             strstr(request->body, "Do not claim that you cannot browse") &&
             !strstr(request->body, "I cannot browse the internet") &&
@@ -548,6 +593,25 @@ static int handler(SamosaHttpServer *server, int fd,
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"unsafe web grounding\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe state count followup"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "--- Fetched page evidence:") &&
+            strstr(request->body, "South Carolina DPH confirms 30 cases") &&
+            !strstr(request->body, "Generic CDC background page text")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"used directly relevant state evidence\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"selected wrong evidence\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe readable insufficient"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "Generic CDC background page text") &&
+            strstr(request->body, "South Carolina DPH confirms 30 cases")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"continued past readable insufficient page\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"stopped at readable insufficient page\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe"))
         return samosa_http_response(fd, 200, "application/json",

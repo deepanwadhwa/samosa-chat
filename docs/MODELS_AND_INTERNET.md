@@ -70,8 +70,22 @@ appears in the thinking area as it happens. There is no keyword trigger: within
 an opted-in turn, "find an IMAX theater near Clemson" works the same as
 "search for …". The planner prompt carries the host's current local date.
 
+For an explicit **Web search**, the planner first resolves follow-up wording
+into a self-contained question, so the subject, place, and time window survive
+into every query. The active local model then ranks the search provider's
+titles, URLs, and excerpts for direct relevance to that question. Samosa fetches
+at most two ranked pages and asks the model whether each page contains enough
+evidence to answer before stopping. Source domains are not assigned fixed
+authority scores, and merely fetching a readable generic page does not end the
+search. Provider order is used only as a bounded fallback if the ranking call
+does not return valid JSON.
+
 Fetched page text is treated as untrusted input, labelled as such to the model,
-and never rendered as HTML.
+and never rendered as HTML. The result list includes provider-supplied title,
+URL, description, and excerpt text; full article text is available only after a
+page is fetched. In high-stakes turns, provider snippets are withheld from the
+answering prompt, while the ranker may still use them to select pages. The
+source list in the UI is URL-deduplicated and collapses when the answer finishes.
 
 Samosa blocks private, loopback, link-local, transition, multicast, and
 reserved addresses; resolves each host itself and pins curl to the validated

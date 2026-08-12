@@ -6,8 +6,12 @@ Branch: `codex/latest-10-chat-analysis-20260811`
 
 Samosa keeps the message text in browser `localStorage` (`samosa-chat-v2`), not
 under `~/.samosa/chats`. The local in-app browser bridge was unavailable during
-this audit, and no exported Samosa backup was present. I therefore did not read
-or infer the users' prompts or the assistants' answers.
+the initial audit, and no exported Samosa backup was present. The user later
+provided four labelled transcript excerpts for the cyclosporiasis failure;
+the files labelled Chat B and Chat C are byte-identical (SHA-256
+`fb619b5c6eb87377f5f7f8d057ee3412d12bd12d3727812d79c3759858260db6`).
+Those excerpts support the web-research findings below, but cannot be reliably
+mapped back to all ten server-side bindings.
 
 The ten records below are the latest *created* server-side conversation
 bindings, ordered by the `metadata.json` filesystem timestamp. They are not a
@@ -33,6 +37,93 @@ requires the browser state or an exported backup.
 | 2026-08-09 17:46:47 | `chat-812573bd-81a4-4d27-9aed-db13aa899550` | Maple |
 
 Model distribution: Maple 8, Ornith 1, Bonsai 1.
+
+## Transcript-derived web-research findings
+
+### Page selection was hard-coded, not model-scored
+
+The old gateway assigned scores in C based almost entirely on the hostname:
+CDC/FDA/NIH/SEC/IRS received 120, another `.gov` received 100, and `.edu`
+received 60. It did not score topical relevance. That is why a generic CDC
+surveillance page beat a South Carolina page and articles whose titles already
+contained a South Carolina count.
+
+Fix in this branch: delete the domain score and ask the active local LLM to
+rank the returned candidates against a self-contained version of the exact
+question. The ranking contract explicitly includes subject, geography, time,
+and requested number/detail, with primary-source preference used only after
+direct relevance.
+
+### Retrieval stopped because a page was readable, not because it answered
+
+The old high-stakes retrieval loop set `authority_read = 1` after the first
+successful HTML extraction. It never checked whether the fetched text supplied
+the requested state-level fact. This exactly reproduces the transcript: the
+CDC page was readable, contained national data, and retrieval stopped even
+though it lacked the South Carolina answer.
+
+Fix in this branch: after every fetch, a second bounded local-LLM judgement
+checks whether the fetched title/text actually covers the requested subject and
+scope. A merely readable or generally authoritative page is insufficient, so
+the gateway proceeds to the next model-ranked candidate. Page reads remain
+bounded to two and 6,000 characters each.
+
+### Follow-up query planning could drop the subject
+
+One follow-up was searched as generic words about “details,” “numbers,” and
+“safety,” producing unrelated COVID and measles results. The planner already
+received recent context, but its output contract did not require an explicit
+resolved question or require every query to repeat the subject and geographic
+scope.
+
+Fix in this branch: the planner must return both `resolved_question` and
+`queries`. The resolved question and every query must preserve the subject,
+place, and time qualifiers from the conversation. The ranker and sufficiency
+judge use that resolved question rather than the literal follow-up.
+
+### What text is available for the links in “Sources in view”
+
+The search provider returns a title, URL, and description/excerpt for each
+result; Samosa bounds the description to 400 characters. Before this fix,
+non-high-stakes answer synthesis received that metadata, while high-stakes
+synthesis intentionally withheld it because a search excerpt is not verified
+evidence. Only the single hostname-selected page was fetched for actual text.
+
+After this fix, the ranker sees all bounded result metadata, and answer
+synthesis still treats it only as discovery material. The gateway fetches the
+model-ranked pages and supplies their bounded extracted text as evidence. This
+uses the information the provider returned without converting an unverified
+headline into a medical fact.
+
+### Source presentation duplicated discovery and fetch states
+
+The gateway emitted one source event for the search result and another for the
+page fetch. The browser merged only when both URL *and kind* matched, so the
+same URL appeared separately as “Found” and “Read,” and the nine-row list stayed
+open after the answer.
+
+Fix in this branch: normalize and merge sources by URL across result/page kinds,
+retain the strongest state (`Read` is not downgraded by a later `Found` event),
+and render the source list as a native collapsible `details` element. It remains
+expanded during research, collapses once when the answer completes, and then
+respects the user's manual choice.
+
+### Transcript-derived regression
+
+The compiled-gateway fixture now reproduces the salient failure: a generic CDC
+page is result 1, a directly relevant South Carolina page with the answer in
+its title/text is result 2, and the current message is a referential follow-up.
+The test requires the provider query to retain cyclosporiasis, South Carolina,
+2026, and safety scope; requires the model ranker to fetch result 2; and requires
+the sufficiency judgement to stop there without fetching the generic CDC page.
+A companion fixture deliberately ranks a readable generic page first and
+requires a false sufficiency judgement to advance to the state page.
+
+The proposed Falconsai T5 summarizer was also evaluated. The existing Prism
+runtime can execute T5 without Python, but the available third-party Q4_K_M
+artifact produced corrupted output in a real native run and is not wired into
+this branch. The verified packaging path and evidence-preservation gates are in
+[`NATIVE_SUMMARIZER_PLAN.md`](../NATIVE_SUMMARIZER_PLAN.md).
 
 ## Confirmed findings
 
@@ -115,6 +206,7 @@ error class; never prompt text by default).
 ## Verification completed
 
 - `node tests/test_web_activity_ui.mjs`
+- `tests/test_web_search.sh` against the compiled gateway and fake local model
 - `make test-ui-setup` (outside the restricted runner so its localhost fixtures could bind)
 - `make samosa-maple`
 - real two-token Maple HTTP stream emitted `finish_reason: length` followed by `[DONE]`
