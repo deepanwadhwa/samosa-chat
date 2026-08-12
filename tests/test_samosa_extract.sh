@@ -10,6 +10,13 @@ if [ ! -x "$EXTRACTOR" ]; then
   exit 0
 fi
 
+if [ "$(uname -s)" = "Darwin" ]; then
+  otool -l "$EXTRACTOR" | grep -F 'path @loader_path' >/dev/null || {
+    echo "samosa-extract is missing its loader-relative PDFium rpath" >&2
+    exit 1
+  }
+fi
+
 out=$("$EXTRACTOR" --json "$FIXTURE")
 printf '%s' "$out" | grep -F '"ok":true' >/dev/null
 printf '%s' "$out" | grep -F 'Hello PDFium' >/dev/null

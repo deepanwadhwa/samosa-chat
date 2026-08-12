@@ -65,9 +65,29 @@ assert.ok(renderBegin >= 0 && renderEnd > renderBegin, "web activity renderer mu
 
 const fns = eval(`(() => {
   ${app.slice(helpersBegin, helpersEnd)}
+  ${app.slice(helpersEnd, renderBegin)}
   ${app.slice(renderBegin, renderEnd)}
-  return { privateWebHostname, normaliseWebSource, mergeWebSource, renderWebActivity };
+  return { privateWebHostname, normaliseWebSource, mergeWebSource, consumeEvent, renderWebActivity };
 })()`);
+
+globalThis.sendPrompt = function () {};
+sendPrompt.voiceRun = null;
+globalThis.els = { speed: new Element(), rss: new Element(), closure: new Element() };
+globalThis.updateAssistantNode = () => {};
+globalThis.scrollBottom = () => {};
+globalThis.setVoiceStage = () => {};
+
+const streamed = { content: "", reasoning: "", sources: [] };
+assert.equal(fns.consumeEvent('{"choices":[{"delta":{"content":"hello"}}]}', streamed), false,
+  "content chunks are not terminal");
+assert.equal(streamed.content, "hello");
+assert.equal(fns.consumeEvent('{"choices":[{"delta":{},"finish_reason":"stop"}]}', streamed), true,
+  "finish_reason marks a completed response even before the DONE sentinel");
+assert.equal(fns.consumeEvent("[DONE]", streamed), true, "the DONE sentinel marks a completed response");
+assert.equal(fns.consumeEvent("not-json", streamed), false, "malformed chunks cannot mark a response complete");
+assert.equal(fns.consumeEvent('{"error":{"message":"generation failed"}}', streamed), true,
+  "structured backend errors terminate the stream visibly");
+assert.equal(streamed.error, "generation failed");
 
 for (const url of [
   "javascript:alert(1)", "data:text/html,hello", "file:///etc/passwd", "/relative",

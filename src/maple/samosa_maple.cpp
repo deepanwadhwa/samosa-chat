@@ -161,6 +161,9 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
 
         bool client_connected = true;
         std::string streamed_text;
+        std::string text;
+        std::string generation_error;
+        const char* finish_reason = max_tokens == 0 ? "length" : "stop";
         if (stream) {
             client_connected = samosa_http_stream_headers(fd) &&
                 samosa_send_all(fd, ": maple generation started\n\n", 28);
@@ -186,41 +189,76 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             }
         };
 
-        if (max_tokens > 0 && client_connected) {
-            // Prefill once, then feed one token at a time through the caches.
-            mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
-            x = mlx::core::reshape(x, {1, (int)input_ids.size()});
-            auto logits = server_ctx->model->streaming_enabled()
-                              ? server_ctx->model->run_token_sequence(x, &caches)
-                              : (*server_ctx->model)(x, &caches);
-            auto last_logits = server_ctx->model->streaming_enabled()
-                                   ? logits
-                                   : mlx::core::slice(logits, {0, (int)input_ids.size() - 1, 0},
-                                                      {1, (int)input_ids.size(), logits.shape(-1)});
-            int next_token = sample_argmax(last_logits);
+        try {
+            if (max_tokens > 0 && client_connected) {
+                // Prefill once, then feed one token at a time through the caches.
+                mlx::core::array x(input_ids.begin(), {(int)input_ids.size()}, mlx::core::int32);
+                x = mlx::core::reshape(x, {1, (int)input_ids.size()});
+                auto logits = server_ctx->model->streaming_enabled()
+                                  ? server_ctx->model->run_token_sequence(x, &caches)
+                                  : (*server_ctx->model)(x, &caches);
+                auto last_logits = server_ctx->model->streaming_enabled()
+                                       ? logits
+                                       : mlx::core::slice(logits, {0, (int)input_ids.size() - 1, 0},
+                                                          {1, (int)input_ids.size(), logits.shape(-1)});
+                int next_token = sample_argmax(last_logits);
 
-            for (int i = 0; i < max_tokens; i++) {
-                generated_tokens.push_back(next_token);
-                input_ids.push_back(next_token);
-                stream_progress();
+                for (int i = 0; i < max_tokens; i++) {
+                    generated_tokens.push_back(next_token);
+                    input_ids.push_back(next_token);
+                    stream_progress();
 
-                if (!client_connected || next_token == eos_token || i + 1 == max_tokens) break;
+                    if (!client_connected) break;
+                    if (next_token == eos_token) {
+                        finish_reason = "stop";
+                        break;
+                    }
+                    if (i + 1 == max_tokens) {
+                        finish_reason = "length";
+                        break;
+                    }
 
-                x = mlx::core::array({next_token}, {1, 1});
-                logits = (*server_ctx->model)(x, &caches);
-                last_logits = mlx::core::slice(logits, {0, 0, 0}, {1, 1, logits.shape(-1)});
-                next_token = sample_argmax(last_logits);
+                    x = mlx::core::array({next_token}, {1, 1});
+                    logits = (*server_ctx->model)(x, &caches);
+                    last_logits = mlx::core::slice(logits, {0, 0, 0}, {1, 1, logits.shape(-1)});
+                    next_token = sample_argmax(last_logits);
+                }
             }
+            text = visible_answer(server_ctx->tokenizer->decode(generated_tokens), enable_thinking);
+            stream_progress();
+        } catch (const std::exception& error) {
+            generation_error = error.what();
+        } catch (...) {
+            generation_error = "unknown exception";
         }
 
         for (auto* cache : caches) delete cache;
 
-        std::string text = visible_answer(server_ctx->tokenizer->decode(generated_tokens), enable_thinking);
+        if (!generation_error.empty()) {
+            std::cerr << "Maple generation failed: " << generation_error << std::endl;
+            if (stream) {
+                if (client_connected) {
+                    const char* error_chunk =
+                        "data: {\"error\":{\"type\":\"generation_error\",\"message\":\"Maple generation failed. Please retry this turn.\"}}\n\n"
+                        "data: [DONE]\n\n";
+                    samosa_send_all(fd, error_chunk, strlen(error_chunk));
+                }
+            } else {
+                samosa_http_json_error(fd, 500, "generation_error",
+                                       "Maple generation failed. Please retry this turn.");
+            }
+            return 1;
+        }
+
         if (stream) {
             if (client_connected) {
-                stream_progress();
+                char finish_chunk[192];
+                snprintf(finish_chunk, sizeof(finish_chunk),
+                    "data: {\"choices\": [{\"delta\": {}, \"finish_reason\": \"%s\"}]}\n\n",
+                    finish_reason);
+                client_connected = samosa_send_all(fd, finish_chunk, strlen(finish_chunk));
                 const char* end_chunk = "data: [DONE]\n\n";
-                samosa_send_all(fd, end_chunk, strlen(end_chunk));
+                if (client_connected) samosa_send_all(fd, end_chunk, strlen(end_chunk));
             }
         } else {
             // Construct JSON response
@@ -228,8 +266,8 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             char escaped_text[8192];
             samosa_json_escape(escaped_text, sizeof(escaped_text), text.c_str());
             snprintf(body, sizeof(body),
-                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"%s\"}}]}",
-                escaped_text);
+                "{\"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"%s\"}, \"finish_reason\": \"%s\"}]}",
+                escaped_text, finish_reason);
 
             samosa_http_response(fd, 200, "application/json", body, nullptr);
         }

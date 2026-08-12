@@ -2465,13 +2465,19 @@
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
           if (!response.ok) { let detail=`Request failed (${response.status})`; try { const j=await response.json(); detail=j.error?.message||detail; } catch(_){} throw new Error(detail); }
           if (!response.body) throw new Error("Streaming is not available in this browser.");
-          const reader=response.body.getReader(), decoder=new TextDecoder(); let pending="", done=false;
+          const reader=response.body.getReader(), decoder=new TextDecoder();
+          let pending="", done=false, streamFinished=false;
           while (!done) {
             const part=await reader.read(); done=part.done; pending+=decoder.decode(part.value||new Uint8Array(),{stream:!done});
             const events=pending.split("\n\n"); pending=events.pop()||"";
-            for (const event of events) for (const line of event.split("\n")) if (line.startsWith("data: ")) consumeEvent(line.slice(6),assistant);
+            for (const event of events) for (const line of event.split("\n")) if (line.startsWith("data: ")) {
+              streamFinished=consumeEvent(line.slice(6),assistant)||streamFinished;
+            }
           }
-          if (pending.startsWith("data: ")) consumeEvent(pending.slice(6),assistant);
+          if (pending.startsWith("data: ")) streamFinished=consumeEvent(pending.slice(6),assistant)||streamFinished;
+          if (!streamFinished) {
+            throw new Error("The model connection ended before the response completed. Any partial answer was kept; please retry this turn.");
+          }
         } catch (error) {
           assistant.error=error.message||String(error);
         } finally {
@@ -2817,8 +2823,13 @@
         return true;
       }
       function consumeEvent(raw, assistant) {
-        if (raw === "[DONE]") return;
-        let event; try { event=JSON.parse(raw); } catch (_) { return; }
+        if (raw === "[DONE]") return true;
+        let event; try { event=JSON.parse(raw); } catch (_) { return false; }
+        if (event?.error) {
+          assistant.error=event.error.message||String(event.error);
+          updateAssistantNode(assistant); scrollBottom(false);
+          return true;
+        }
         const choice=event.choices?.[0], delta=choice?.delta||{};
         if (delta.reasoning||delta.reasoning_content) {
           assistant.reasoning+=delta.reasoning||delta.reasoning_content;
@@ -2843,6 +2854,7 @@
           if (meta.session_saved===false) assistant.error="The answer completed, but its continuation snapshot could not be saved.";
         }
         updateAssistantNode(assistant); scrollBottom(false);
+        return !!choice?.finish_reason;
       }
       // Steps are shown as a list rather than one replaced line, so a slow turn
       // reads as visible progress and the finished turn still shows what was

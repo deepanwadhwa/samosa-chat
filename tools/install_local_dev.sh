@@ -48,11 +48,23 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
+# Discover the optional document extractor before calculating the release ID.
+# Otherwise rebuilding only this sidecar can silently reuse a stale release.
+EXTRACT_BIN=""
+EXTRACT_LIB=""
+for candidate in "$BUILD_DIR/samosa-extract" "$ROOT/dist/samosa-extract"; do
+  [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
+done
+for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do
+  [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
+done
+
 set -- "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa"
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
 if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
+if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_BIN" "$EXTRACT_LIB"; fi
 release_hash=$(shasum -a 256 "$@" |
   shasum -a 256 | awk '{print substr($1,1,12)}')
 release_id="dev-$release_hash"
@@ -110,19 +122,15 @@ fi
 # unpacked PDFium artifact). When both the sidecar and its dylib exist —
 # checking repo root (the Makefile's freshly built output) before dist/ (the
 # fallback prebuilt convention) — stage them together in
-# bin/, where the binary's baked-in @loader_path rpath finds the dylib.
-EXTRACT_BIN=""
-EXTRACT_LIB=""
-for candidate in "$BUILD_DIR/samosa-extract" "$ROOT/dist/samosa-extract"; do
-  [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
-done
-for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do
-  [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
-done
+# bin/, where a loader-relative rpath finds the dylib.
 if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
   cp "$EXTRACT_BIN" "$stage/bin/samosa-extract"
   cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
   chmod +x "$stage/bin/samosa-extract"
+  if [ "$(uname -s)" = "Darwin" ] &&
+     ! otool -l "$stage/bin/samosa-extract" | grep -F 'path @loader_path (offset' >/dev/null; then
+    install_name_tool -add_rpath @loader_path "$stage/bin/samosa-extract"
+  fi
   EXTRACT_SMOKE_INPUT="$stage/.samosa-extract-interface-smoke.txt"
   EXTRACT_SMOKE_LOG="$stage/.samosa-extract-interface-smoke.log"
   printf 'not a pdf\n' >"$EXTRACT_SMOKE_INPUT"

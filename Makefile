@@ -21,8 +21,10 @@ else
 endif
 ifeq ($(UNAME_S),Darwin)
   DL_LDFLAGS :=
+  PDFIUM_LOCAL_RPATH := @loader_path
 else
   DL_LDFLAGS := -ldl
+  PDFIUM_LOCAL_RPATH := '$$ORIGIN'
 endif
 NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
 ENGINE_HEADERS := $(wildcard src/*.h)
@@ -55,7 +57,8 @@ samosa-extract: src/samosa_extract.c src/tok.h src/tok_unicode.h src/json.h $(PD
 	fi
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -I$(PDFIUM_DIR)/include \
 	  src/samosa_extract.c $(PDFIUM_LIBRARY) \
-	  -Wl,-rpath,$(PDFIUM_DIR)/lib -o $(BUILD_DIR)/samosa-extract
+	  -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(PDFIUM_DIR)/lib \
+	  -o $(BUILD_DIR)/samosa-extract
 	@if [ "$(UNAME_S)" = "Darwin" ]; then \
 	  install_name_tool -change ./libpdfium.dylib @rpath/libpdfium.dylib $(BUILD_DIR)/samosa-extract; \
 	fi
