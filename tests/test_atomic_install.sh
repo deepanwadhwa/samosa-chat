@@ -40,6 +40,9 @@ first=$(readlink "$HOME_DIR/current")
 [ -x "$HOME_DIR/bin/samosa" ]
 SAMOSA_HOME="$HOME_DIR" "$HOME_DIR/bin/samosa" doctor > "$TMP/doctor_q4.log"
 grep -q 'LEGACY whole-row q4' "$TMP/doctor_q4.log"
+[ -f "$HOME_DIR/models/qwen/experts.bin" ]
+[ -f "$HOME_DIR/models/qwen/tokenizer_qwen36.json" ]
+[ ! -e "$HOME_DIR/current/model" ]
 
 printf 'experts-v2\n' >"$SNAP/experts.bin"
 printf '%s\n' '{"expert_quantization":{"format":"groupwise-symmetric-q4-v1","group_size":32,"down_bits":4},"experts":{}}' >"$SNAP/manifest.json"

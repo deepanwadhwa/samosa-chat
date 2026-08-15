@@ -99,7 +99,7 @@ release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
 final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-mkdir -p "$stage/bin" "$stage/model" "$HOME_DIR/releases" "$HOME_DIR/bin"
+mkdir -p "$stage/bin" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
 if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
   mkdir -p "$stage/lib" "$stage/models/native-summarizer"
@@ -107,12 +107,12 @@ fi
 
 if [ "$SNAPSHOT_OK" = "1" ]; then
   for name in experts.bin resident.safetensors manifest.json config.json generation_config.json; do
-    ln "$SNAPSHOT/$name" "$stage/model/$name" || {
+    ln -f "$SNAPSHOT/$name" "$HOME_DIR/models/qwen/$name" || {
       echo "hard-link failed for $name; refusing to duplicate the model" >&2
       exit 1
     }
   done
-  ln "$TOKENIZER" "$stage/tokenizer_qwen36.json" || {
+  ln -f "$TOKENIZER" "$HOME_DIR/models/qwen/tokenizer_qwen36.json" || {
     echo "hard-link failed for tokenizer; refusing an implicit copy" >&2
     exit 1
   }

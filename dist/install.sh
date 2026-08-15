@@ -96,9 +96,9 @@ awk -F '\t' '
 RELEASE_ID=$(sha256_file "$MANIFEST_NEXT" | awk '{print substr($1,1,16)}')
 STAGE="$RELEASES_DIR/.${RELEASE_ID}.partial"
 FINAL="$RELEASES_DIR/$RELEASE_ID"
-# $STAGE/model is deliberately not pre-created here: a runtime-only release
-# (docs/TASKS_UI_CHUTNI.md T1.0) stages nothing there at all, and fetch()
-# below creates it on demand only when an actual model artifact is staged.
+# $HOME_DIR/models/qwen is persistent app data, not part of a versioned runtime
+# release. A runtime-only release stages no chat model there, and fetch() below
+# creates it on demand only when an actual model artifact is included.
 mkdir -p "$STAGE/engine" "$STAGE/bin"
 
 manifest_field() { # manifest_field <path> <column>
@@ -108,8 +108,8 @@ manifest_field() { # manifest_field <path> <column>
 destination() { # destination <remote-path>
   case "$1" in
     experts.bin|resident.safetensors|manifest.json|config.json|generation_config.json)
-      printf '%s/model/%s\n' "$STAGE" "$1" ;;
-    tokenizer_qwen36.json) printf '%s/tokenizer_qwen36.json\n' "$STAGE" ;;
+      printf '%s/models/qwen/%s\n' "$HOME_DIR" "$1" ;;
+    tokenizer_qwen36.json) printf '%s/models/qwen/tokenizer_qwen36.json\n' "$HOME_DIR" ;;
     app.html|samosa-chat.png|models.json) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/samosa_voice_runtime.sh) printf '%s/bin/samosa-voice-runtime\n' "$STAGE" ;;
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
@@ -237,13 +237,28 @@ verified() { # verified <relative-path> <local-file>
 }
 
 for relative in $INSTALL_FILES; do
-  target=$(destination "$relative")
-  if verified "$relative" "$target"; then
+  final_target=$(destination "$relative")
+  download_target=$final_target
+  model_download=0
+  case "$relative" in
+    experts.bin|resident.safetensors|manifest.json|config.json|generation_config.json|tokenizer_qwen36.json)
+      # Chat models live outside the immutable release. Download to a
+      # per-release temporary file first so a failed checksum never destroys
+      # the currently installed artifact (and so same-sized upgrades work).
+      download_target="$final_target.partial.$RELEASE_ID"
+      model_download=1
+      if [ -f "$download_target" ] && ! verified "$relative" "$download_target"; then
+        rm -f "$download_target"
+      fi
+      ;;
+  esac
+  if [ "$model_download" = 0 ] && verified "$relative" "$final_target"; then
     say "$relative already staged and verified - skipping"
   else
-    fetch "$relative" "$target"
-    verified "$relative" "$target" ||
+    fetch "$relative" "$download_target"
+    verified "$relative" "$download_target" ||
       fail "checksum mismatch for $relative in inactive staging; live release was not changed"
+    [ "$download_target" = "$final_target" ] || mv -f "$download_target" "$final_target"
   fi
 done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
