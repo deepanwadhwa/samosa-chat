@@ -44,6 +44,7 @@ typedef struct {
     SamosaHttpServer *server;
     pthread_mutex_t mu;
     pid_t backend_pid;
+    pid_t backend_pgid;
     pthread_mutex_t summarizer_mu;
     pid_t summarizer_pid;
     int summarizer_write_fd;
@@ -56,6 +57,7 @@ typedef struct {
     atomic_llong last_interactive_mono_ms;
     atomic_llong last_interactive_wall_ms;
     atomic_int stopping;
+    int app_owned;
     int public_port;
     int backend_port;
     char home[PATH_MAX];
@@ -5560,18 +5562,27 @@ static int backend_probe(Gateway *g) {
 static void backend_stop(Gateway *g) {
     pthread_mutex_lock(&g->mu);
     pid_t pid = g->backend_pid;
+    pid_t pgid = g->backend_pgid;
     int upstream = g->upstream_fd;
     g->backend_pid = 0;
+    g->backend_pgid = 0;
     g->upstream_fd = -1;
     pthread_mutex_unlock(&g->mu);
     if (upstream >= 0) shutdown(upstream, SHUT_RDWR);
     if (pid <= 0) return;
+    /* llama-server may create helper processes (for example Metal/runtime
+       helpers). Give every backend its own process group so closing the app
+       cannot leave one of those children behind after the tracked server is
+       gone. The guard prevents a failed setpgid() from ever targeting the
+       gateway's own group. */
+    if (pgid > 1 && pgid != getpgrp()) (void)kill(-pgid, SIGTERM);
     kill(pid, SIGTERM);
     for (int i = 0; i < 80; ++i) {
         if (waitpid(pid, NULL, WNOHANG) == pid) return;
         struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
         nanosleep(&pause, NULL);
     }
+    if (pgid > 1 && pgid != getpgrp()) (void)kill(-pgid, SIGKILL);
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
 }
@@ -5598,6 +5609,10 @@ static int backend_start(Gateway *g) {
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
+        /* Keep llama-server and any helpers it creates in a group owned by
+           this gateway. The parent repeats this call below to close the
+           small fork/exec race before it records the PID. */
+        (void)setpgid(0, 0);
         int log = open(g->backend_log, O_WRONLY | O_CREAT | O_APPEND, 0600);
         if (log >= 0) { dup2(log, STDOUT_FILENO); dup2(log, STDERR_FILENO); close(log); }
         char port[16];
@@ -5683,8 +5698,14 @@ static int backend_start(Gateway *g) {
         }
         _Exit(127);
     }
+    int grouped = setpgid(pid, pid) == 0;
+    if (!grouped) {
+        pid_t current = getpgid(pid);
+        grouped = current == pid;
+    }
     pthread_mutex_lock(&g->mu);
     g->backend_pid = pid;
+    g->backend_pgid = grouped ? pid : 0;
     pthread_mutex_unlock(&g->mu);
     return 1;
 }
@@ -13722,7 +13743,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         int native_summary_available = summarizer_available(g);
         active_model_version(g, version, sizeof(version));
         snprintf(body, sizeof(body),
-            "{\"gateway\":true,\"compiled\":true,\"backend\":\"%s\","
+            "{\"gateway\":true,\"compiled\":true,\"app_owned\":%s,\"backend\":\"%s\","
             "\"label\":\"%s\",\"model\":\"%s\",\"model_version\":\"%s\","
             "\"supports_images\":%s,\"supports_documents\":%s,"
             "\"chutni\":{\"available\":%s,\"managed_by\":\"samosa\","
@@ -13731,7 +13752,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "\"model\":\"Falconsai/text_summarization\",\"runtime\":\"native\"},"
             "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld,"
             "\"installed\":%s,\"backend_state\":\"%s\"}",
-            g->backend, backend_label(g->backend), backend_model(g->backend), version,
+            g->app_owned ? "true" : "false", g->backend, backend_label(g->backend), backend_model(g->backend), version,
             backend_supports_images(g, g->backend) ? "true" : "false",
             /* T3.2: the Document composer action reads a PDF through
                doc_read_handler(), which shells out to samosa-extract and
@@ -14008,7 +14029,7 @@ static void jobsd_on_signal(int number) {
 
 static int load_config(Gateway *g) {
     memset(g, 0, sizeof(*g));
-    g->backend_pid = 0; g->upstream_fd = -1;
+    g->backend_pid = 0; g->backend_pgid = 0; g->upstream_fd = -1;
     g->summarizer_pid = 0;
     g->summarizer_write_fd = -1;
     g->summarizer_read_fd = -1;
@@ -14023,6 +14044,8 @@ static int load_config(Gateway *g) {
     atomic_init(&g->last_interactive_mono_ms, 0);
     atomic_init(&g->last_interactive_wall_ms, 0);
     atomic_init(&g->stopping, 0);
+    g->app_owned = getenv("SAMOSA_APP_LIFECYCLE") &&
+                   !strcmp(getenv("SAMOSA_APP_LIFECYCLE"), "1");
     atomic_init(&g->chutni_control, 0);
     const char *home = getenv("SAMOSA_HOME");
     const char *user_home = getenv("HOME");
@@ -14045,10 +14068,10 @@ static int load_config(Gateway *g) {
     ENV_PATH(app_html, "SAMOSA_APP_HTML", "current/app.html");
     ENV_PATH(app_logo, "SAMOSA_APP_LOGO", "current/samosa-chat.png");
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
-    ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "current/model");
+    ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "models/qwen");
     ENV_PATH(maple_engine, "SAMOSA_MAPLE_ENGINE", "current/bin/samosa-maple");
     ENV_PATH(maple_model, "SAMOSA_MAPLE_MODEL", "models/maple");
-    ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "current/tokenizer_qwen36.json");
+    ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "models/qwen/tokenizer_qwen36.json");
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(summarizer_engine, "SAMOSA_SUMMARIZER_ENGINE", "current/bin/samosa-summarizer");
     ENV_PATH(summarizer_model, "SAMOSA_SUMMARIZER_MODEL", "current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf");

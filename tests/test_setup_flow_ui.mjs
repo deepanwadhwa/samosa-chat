@@ -97,8 +97,12 @@ function loadSetupFlowUi() {
 
 assert.match(app, /\/\/ The app always opens in Chat\.[\s\S]*?\n      enterChat\(\);/,
   "startup must bootstrap Chat directly instead of routing through setup/status");
-assert.match(app, /h\.ready\?`\$\{h\.label\} ready`:`Choose a model`/,
-  "a non-ready backend must offer model choice instead of claiming to load");
+assert.match(app, /h\.ready\?`\$\{h\.label\} ready`:modelLoading\?`Loading \$\{h\.label\}…`:`Choose a model`/,
+  "a non-ready backend must distinguish loading from a genuine no-model state");
+assert.match(app, /backend\.ready \|\| backend\.loading \? welcomeHTML\(\) : chooseModelHTML\(\)/,
+  "a loading model must keep the normal Chat empty state instead of flashing the chooser");
+assert.match(app, /const previousLoading=!!backend\.loading;[\s\S]*?previousLoading!==!!backend\.loading/,
+  "a loading-to-failed transition must still refresh the empty state");
 assert.match(app, /function openModelSettings\(\) \{ openSettings\("models"\); \}/,
   "the model choice must open Settings directly on Models");
 assert.match(app, /els\.status\.onclick=.*openModelSettings\(\)/,

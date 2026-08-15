@@ -42,8 +42,9 @@
           "name": "experts.bin",
           "role": "weights",
           "required": true,
-          "url": "",
-          "install_path": "model/experts.bin",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/experts.bin"
+,
+          "install_path": "models/qwen/experts.bin",
           "file_mode": "0600",
           "bytes": 20942159872,
           "sha256": "00d64d44c39496e5ab5691f4cb27b67e27f3a10efd1f7c54024a9b43b130dbba"
@@ -52,8 +53,9 @@
           "name": "resident.safetensors",
           "role": "weights",
           "required": true,
-          "url": "",
-          "install_path": "model/resident.safetensors",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/resident.safetensors"
+,
+          "install_path": "models/qwen/resident.safetensors",
           "file_mode": "0600",
           "bytes": 3015056192,
           "sha256": "52ff706830df2defaca591813810a8d19e1ba9b31d9b2d27b6ecf593b3a91627"
@@ -62,8 +64,8 @@
           "name": "manifest.json",
           "role": "configuration",
           "required": true,
-          "url": "",
-          "install_path": "model/manifest.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/manifest.json",
+          "install_path": "models/qwen/manifest.json",
           "file_mode": "0600",
           "bytes": 1908179,
           "sha256": "12ad73a9457e5d88b7cd4b00cae4a5c7ccb9031aa10d1111b80932d115f224d4"
@@ -72,8 +74,8 @@
           "name": "config.json",
           "role": "configuration",
           "required": true,
-          "url": "",
-          "install_path": "model/config.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/config.json",
+          "install_path": "models/qwen/config.json",
           "file_mode": "0600",
           "bytes": 3686,
           "sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99"
@@ -82,8 +84,9 @@
           "name": "generation_config.json",
           "role": "configuration",
           "required": true,
-          "url": "",
-          "install_path": "model/generation_config.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/generation_config.json"
+,
+          "install_path": "models/qwen/generation_config.json",
           "file_mode": "0600",
           "bytes": 202,
           "sha256": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e"
@@ -92,8 +95,9 @@
           "name": "tokenizer_qwen36.json",
           "role": "tokenizer",
           "required": true,
-          "url": "",
-          "install_path": "tokenizer_qwen36.json",
+          "url": "https://huggingface.co/deepanwa/Samosa-Chat-Qwen3.6-35B-A3B-group32/resolve/6de29dd71aa34628f1d0b4c005dbb03a53e0b655/tokenizer_qwen36.json"
+,
+          "install_path": "models/qwen/tokenizer_qwen36.json",
           "file_mode": "0600",
           "bytes": 28142621,
           "sha256": "6d56a5c681da15d38fb9f883016f86fa0638176e3f748a0acf5c7ba02725679b"

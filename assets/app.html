@@ -1763,6 +1763,17 @@
       // the v1 routes that require it (fs, profile, setup) need it attached;
       // legacy Chat/Jobs/backend routes are not gated by it yet.
       const UI_TOKEN = document.querySelector('meta[name="samosa-ui-token"]')?.content || "";
+      let appLifecycleOwned = false;
+      let appShutdownSent = false;
+      function shutDownOwnedApp(event) {
+        if (!appLifecycleOwned || event?.persisted || appShutdownSent) return;
+        appShutdownSent = true;
+        // Beacon is designed to finish during page teardown. The keepalive
+        // fetch is a fallback for browsers that do not expose sendBeacon.
+        const beaconSent = navigator.sendBeacon && navigator.sendBeacon("/v1/shutdown", "");
+        if (!beaconSent) fetch("/v1/shutdown", { method: "POST", keepalive: true }).catch(() => {});
+      }
+      window.addEventListener("pagehide", shutDownOwnedApp);
       function authFetch(path, opts = {}) {
         return fetch(path, { ...opts, headers: { "X-Samosa-Token": UI_TOKEN, ...(opts.headers || {}) } });
       }
@@ -1817,7 +1828,10 @@
       // {clientId, kind, name, id, status:"uploading"|"ready"|"failed", error, thumb}.
       // `id` is the server's SHA-256 and is the only part sent with a turn.
       let pendingAttachments = [];
-      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_documents:false,version:"",ready:false};
+      // `ready:false` is also reported for the short interval while a newly
+      // selected backend is starting. Keep that distinct from a genuine
+      // no-model state so a model switch never flashes the chooser in Chat.
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_documents:false,version:"",ready:false,loading:false};
       // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config last
       // reported. Starts fully closed so no web action is ever offered before
       // the server has confirmed it -- the same rule the other capabilities
@@ -2106,7 +2120,10 @@
       function renderMessages() {
         const chat = activeChat();
         if (!chat || !chat.messages.length) {
-          els.messages.innerHTML = backend.ready ? welcomeHTML() : chooseModelHTML();
+          // A backend that is loading is still a configured model. The
+          // chooser is only meaningful when the gateway explicitly reports
+          // that no model is available (or startup failed).
+          els.messages.innerHTML = backend.ready || backend.loading ? welcomeHTML() : chooseModelHTML();
           els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); });
           els.messages.querySelector("[data-choose-model]")?.addEventListener("click", openModelSettings);
           return;
@@ -3086,20 +3103,23 @@
       async function health() {
         try {
           const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
+          appLifecycleOwned = !!h.app_owned;
           await refreshWebConfig();
           const previousBackend=backend.id;
           const previousReady=!!backend.ready;
+          const previousLoading=!!backend.loading;
           if(h.gateway) {
-            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready};
+            const modelLoading = !!h.loading || h.backend_state === "loading";
+            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready,loading:modelLoading};
             // T3.2: the `+` button itself stays enabled -- it opens a menu
             // that explains, per item, what is and isn't available. Disabling
             // the whole button would hide those reasons entirely.
             applyCapabilities();
             els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:`Choose a model`;
+            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:modelLoading?`Loading ${h.label}…`:`Choose a model`;
             els.status.disabled=!!h.ready || !!h.generating;
           } else {
-            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true};
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true,loading:false};
             applyCapabilities();
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating":"Qwen3.6 ready";
           }
@@ -3107,7 +3127,7 @@
           els.prompt.disabled=!backend.ready || generating;
           els.prompt.placeholder=backend.ready?"Message your local model…":"Choose a model in Settings";
           resizePrompt();
-          if(previousReady!==!!backend.ready && !(activeChat()?.messages || []).length) renderMessages();
+          if((previousReady!==!!backend.ready || previousLoading!==!!backend.loading) && !(activeChat()?.messages || []).length) renderMessages();
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
           if(h.context_limit_tokens){const effective=h.context_limit_tokens.toLocaleString(), model=(h.model_context_limit_tokens||h.context_limit_tokens).toLocaleString(); els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${h.context_limit_mode||"configured"} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;}
           // Runtime controls are hydrated from the gateway-owned settings API,
@@ -4123,6 +4143,11 @@
           } else if (action === "select") {
             const r = await authFetch("/v1/backends/select", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backend: model.id, model_version: model.version }) });
             if (!r.ok) { const j = await r.json().catch(() => null); throw new Error(j?.error?.message || selectionErrorMessage(j?.error?.code)); }
+            // The selection endpoint accepts the switch before the new
+            // process is ready. Mark that interval immediately so a fresh
+            // conversation keeps its normal empty state while the first
+            // health poll catches up.
+            backend.loading = true;
             returnToChatAfterSelection = chatBootstrapped;
           }
         } catch (error) {

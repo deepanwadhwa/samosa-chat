@@ -38,8 +38,8 @@ else
 fi
 ENGINE="$RELEASE_DIR/bin/qwen36b"
 GATEWAY="$RELEASE_DIR/bin/samosa-gateway"
-MODEL="$RELEASE_DIR/model"
-TOKENIZER="$RELEASE_DIR/tokenizer_qwen36.json"
+MODEL="$HOME_DIR/models/qwen"
+TOKENIZER="$HOME_DIR/models/qwen/tokenizer_qwen36.json"
 APP_HTML="$RELEASE_DIR/app.html"
 APP_LOGO="$RELEASE_DIR/samosa-chat.png"
 MODELS_CATALOG="$RELEASE_DIR/models.json"
@@ -84,6 +84,7 @@ THINKING_BUDGET=""
 RESUME=""
 SEED=""
 CONTEXT_TOKENS="${SAMOSA_CONTEXT_TOKENS:-auto}"
+APP_LIFECYCLE=0
 
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[samosa] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -296,7 +297,44 @@ start_server_launchd() {
   return 0
 }
 
+start_server_detached() {
+  if command -v setsid >/dev/null 2>&1; then
+    nohup setsid env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+      SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+      SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+      SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+      SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
+      SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+      SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
+      "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
+  else
+    nohup env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+      SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+      SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
+      SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+      SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
+      SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+      SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
+      "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
+  fi
+  pid=$!
+  printf '%s\n' "$pid" >"$PID_FILE"
+}
+
 start_server() {
+  # App-owned servers must not be placed under launchd's KeepAlive policy:
+  # closing the browser needs to be able to terminate the whole Samosa tree,
+  # and killing its gateway must not cause launchd to respawn it. Boot out a
+  # stale service from an older release before attaching to its port.
+  if [ "$APP_LIFECYCLE" = 1 ] && launchd_available; then
+    if launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1; then
+      i=0
+      while server_running && [ "$i" -lt 50 ]; do
+        sleep 0.1
+        i=$((i + 1))
+      done
+    fi
+  fi
   server_running && return 0
   pid=$(port_owner_pid)
   if [ -n "$pid" ]; then
@@ -314,29 +352,13 @@ start_server() {
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
     return 1
   fi
-  if launchd_available; then
+  if [ "$APP_LIFECYCLE" = 1 ]; then
+    start_server_detached
+  elif launchd_available; then
     start_server_launchd || return 1
     pid=
   else
-    if command -v setsid >/dev/null 2>&1; then
-      nohup setsid env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
-        SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
-        SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
-        SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-        SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
-        SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
-        "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
-    else
-      nohup env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
-        SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
-        SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
-        SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
-        SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
-        SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
-        "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
-    fi
-    pid=$!
-    printf '%s\n' "$pid" >"$PID_FILE"
+    start_server_detached
   fi
   i=0
   while [ "$i" -lt 240 ]; do
@@ -517,6 +539,7 @@ fi
 
 if [ "${1:-}" = "app" ]; then
   shift
+  APP_LIFECYCLE=1
   if [ "${1:-}" = "--context-tokens" ]; then
     shift
     [ "$#" = 1 ] && context_tokens_value "$1" || fail "--context-tokens requires auto or a positive integer"
