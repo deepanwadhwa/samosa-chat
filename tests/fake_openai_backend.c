@@ -535,15 +535,18 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json", response, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
-        strstr(request->body, "Decide whether the fetched article digests contain enough evidence")) {
-        int insufficient = strstr(request->body, "Readable generic national fixture") != NULL;
+        strstr(request->body, "Decide whether this batch of fetched web sources contains enough evidence")) {
+        int insufficient = strstr(request->body, "What changed in recent SQLite releases") != NULL ||
+                           strstr(request->body, "Which museum exhibitions and events") != NULL ||
+                           (strstr(request->body, "How many cyclosporiasis cases are in South Carolina in 2026") != NULL &&
+                            strstr(request->body, "what safety guidance applies") == NULL);
         return samosa_http_response(fd, 200, "application/json", insufficient ?
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"{\\\"sufficient\\\":false,\\\"raw_indices\\\":[1,2]}\"}}]}" :
+            "\"{\\\"sufficient\\\":false,\\\"followup_query\\\":\\\"official source for the missing current fact\\\"}\"}}]}" :
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"{\\\"sufficient\\\":true,\\\"raw_indices\\\":[]}\"}}]}", NULL);
+            "\"{\\\"sufficient\\\":true,\\\"followup_query\\\":\\\"\\\"}\"}}]}", NULL);
     }
     /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
        Planner rounds are recognised by their system prompt; the second round
@@ -591,19 +594,22 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe hostile"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Fetched article digest") &&
+            strstr(request->body, "--- Fetched source batch") &&
+            strstr(request->body, "\\\"source\\\":{\\\"name\\\"") &&
+            strstr(request->body, "\\\"text_content\\\"") &&
             strstr(request->body, "HIGH-STAKES TURN:") &&
+            strstr(request->body, "selected pages could not be read") &&
             strstr(request->body, "Do not claim that you cannot browse") &&
             !strstr(request->body, "I cannot browse the internet") &&
             !strstr(request->body, "999,999 alleged deaths from an unverified snippet")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority\"}}]}"
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority. Note: 2 selected pages could not be read.\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"unsafe web grounding\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe state count followup"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Fetched article digest") &&
+            strstr(request->body, "--- Fetched source batch") &&
             strstr(request->body, "South Carolina DPH confirms 30 cases") &&
             strstr(request->body, "South Carolina reports 30 cyclosporiasis cases")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -622,7 +628,8 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe"))
         return samosa_http_response(fd, 200, "application/json",
-            (strstr(request->body, "--- Web page:") || strstr(request->body, "--- Web search results")) &&
+            (strstr(request->body, "--- Web page:") || strstr(request->body, "--- Web search results") ||
+             strstr(request->body, "--- Fetched source batch")) &&
             !strstr(request->body, "\"content\":[{\"type\":\"text\"")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw web evidence\"}}]}"

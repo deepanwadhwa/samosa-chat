@@ -543,9 +543,12 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
 printf '%s' "$R" | grep -q 'saw web evidence' || fail "search evidence never reached the answering turn"
 printf '%s' "$R" | grep -q 'Working out what needs checking' || fail "the user was not told research had begun"
 printf '%s' "$R" | grep -q 'Looking up 1 of 3' || fail "focused search progress was not streamed"
-printf '%s' "$R" | grep -q '"web_source"' || fail "search result links were not streamed to the UI"
-printf '%s' "$R" | grep -q '"title":"Careers at Example"' || fail "the streamed source omitted its title"
+printf '%s' "$R" | grep -q '"web_source"' || fail "a successfully read evidence source was not streamed to the UI"
+printf '%s' "$R" | grep -q '"title":"Careers"' || fail "the streamed evidence source omitted its fetched title"
 printf '%s' "$R" | grep -q '"url":"http://example.com/jobs"' || fail "the streamed source omitted its URL"
+if printf '%s' "$R" | grep -q '"kind":"search_result"'; then
+  fail "discovery-only candidates were shown as answer sources"
+fi
 [ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "3" ] \
   || fail "one research request did not issue three focused searches"
 grep -q 'museum%20exhibitions%20New%20York' "$FAKE_CURL_CONFIG" || fail "first planned query was not sent"
@@ -624,12 +627,20 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
                 {"role":"user","content":"check the internet dumbass"}]}')
 printf '%s' "$R" | grep -q 'saw verified authority' \
   || fail "gateway did not turn an explicit internet request from a stale client into grounded research"
-printf '%s' "$R" | grep -q 'Reading and locally summarizing the model-ranked sources' \
-  || fail "the model-ranked result was not opened before synthesis"
-printf '%s' "$R" | grep -q 'Reading and locally summarizing another ranked source' \
-  || fail "a failed fetch did not fall through to the model's next result"
+printf '%s' "$R" | grep -q 'Note: 2 selected pages could not be read' \
+  || fail "the final answer omitted the concise unreadable-page disclosure"
+printf '%s' "$R" | grep -q 'Reading the most relevant sources' \
+  || fail "the ranked source batch was not reported before synthesis"
+[ "$(printf '%s' "$R" | grep -o 'Reading the most relevant sources' | wc -l | tr -d ' ')" = "1" ] \
+  || fail "the source batch emitted repetitive per-page reading activity"
+if printf '%s' "$R" | grep -Eqi 'That selected page|fetch failed|HTTP 403|"state":"failed"'; then
+  fail "a transient page error leaked into live research activity"
+fi
 printf '%s' "$R" | grep -q '"state":"read"' \
   || fail "the authoritative page was not reported as read"
+if printf '%s' "$R" | grep -q '"kind":"search_result"'; then
+  fail "discovery-only search candidates were streamed as answer sources"
+fi
 grep -qi 'cyclosporiasis' "$FAKE_CURL_CONFIG" \
   || fail "the conversation topic was not recovered for the hostile follow-up"
 if grep -Eqi 'check(%20| )+the(%20| )+internet|dumbass' "$FAKE_CURL_CONFIG"; then
@@ -638,9 +649,9 @@ fi
 
 # Transcript-derived regression: the user's follow-up omitted the disease name,
 # the search results put a generic CDC page before a directly relevant state
-# page, and the answer used to stop at the first readable URL. The planner must
-# retain disease + state, the LLM ranker must choose the relevant state result,
-# and the sufficiency judge must stop only because that fetched page answers it.
+# page. The planner must retain disease + state, the LLM ranker must choose the
+# relevant state result, and both readable pages must enter one structured raw
+# source batch before the model judges whether another search is needed.
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[
   {"title":"Cyclosporiasis | CDC","url":"https://www.cdc.gov/cyclosporiasis","description":"General disease and surveillance background."},
@@ -661,31 +672,38 @@ grep -q '2026%20cyclosporiasis%20cases%20South%20Carolina%20safety%20guidance' "
   || fail "the follow-up search lost its disease, state, time, or safety scope"
 printf '%s' "$R" | grep -q 'https://dph.sc.gov/cyclosporiasis/cases' \
   || fail "the directly relevant state page was not selected"
-printf '%s' "$R" | grep -q 'native summarizer compressed 2 of 2 fetched articles' \
-  || fail "the fetched state and background articles were not summarized together"
-printf '%s' "$R" | grep -q 'summaries and verbatim anchors directly address' \
-  || fail "the combined digest sufficiency judgement was not reported"
+printf '%s' "$R" | grep -q 'Reading the most relevant sources' \
+  || fail "the fetched state and background pages were not read as one batch"
+if printf '%s' "$R" | grep -q 'native summarizer compressed'; then
+  fail "the raw source batch still took the old per-page summarizer path"
+fi
 
 # Independently pin the other half of the retrieval contract: even when the
-# ranker puts a readable but generic page first, readability cannot end the
-# loop. A false sufficiency judgement must advance to the next ranked result.
+# ranker puts a readable but generic page first, the gateway must collect the
+# rest of the small batch before asking one combined sufficiency question.
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[
   {"title":"Readable generic national fixture","url":"https://www.cdc.gov/cyclosporiasis","description":"General disease background."},
   {"title":"Direct South Carolina fixture","url":"https://dph.sc.gov/cyclosporiasis/cases","description":"State case update."}
 ]}}
 JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
 R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
      --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
               "messages":[{"role":"user","content":"web tool probe readable insufficient: How many cyclosporiasis cases are in South Carolina in 2026?"}]}')
 printf '%s' "$R" | grep -q 'continued past readable insufficient page' \
   || fail "retrieval stopped merely because the first selected page was readable"
-printf '%s' "$R" | grep -q 'digests left an evidence gap' \
-  || fail "a false combined-sufficiency judgement was not reported"
+printf '%s' "$R" | grep -q 'Looking up 2 of 2' \
+  || fail "an insufficient source batch did not trigger one focused follow-up search"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "2" ] \
+  || fail "an insufficient source batch did not issue exactly one follow-up search"
+if [ "$(printf '%s' "$R" | grep -o 'Reading the most relevant sources' | wc -l | tr -d ' ')" != "1" ]; then
+  fail "one source batch produced repetitive reading activity"
+fi
 
-# The native path is intentionally eight-wide: all fetched article bodies are
-# compressed before the single combined evidence review. This catches a
-# regression back to the old two-page/readability-stop pipeline.
+# Search still ranks all eight discovery candidates, but only the top three
+# readable pages belong in the first raw-text batch. This catches the exact
+# regression that made a simple earnings-date lookup fetch every result.
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[
   {"title":"Article one","url":"https://articles.example/one","description":"one"},
@@ -704,31 +722,30 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
               "messages":[{"role":"user","content":"web tool probe eight articles: compare the current article fixtures"}]}')
 printf '%s' "$R" | grep -q 'saw web evidence' \
   || fail "the eight-article turn did not reach final synthesis"
-printf '%s' "$R" | grep -q 'native summarizer compressed 8 of 8 fetched articles' \
-  || fail "the gateway did not summarize all eight fetched articles"
-[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "8" ] \
-  || fail "the persistent native sidecar did not receive exactly eight article requests"
-[ "$(sort -u "$TMP/summarizer-calls.log" | wc -l | tr -d ' ')" = "1" ] \
-  || fail "the gateway restarted the summarizer instead of keeping one resident process"
+printf '%s' "$R" | grep -q 'https://articles.example/three' \
+  || fail "the three-source batch did not include its third ranked page"
+if printf '%s' "$R" | grep -q 'https://articles.example/four'; then
+  fail "the initial raw-text batch fetched more than three readable pages"
+fi
+[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "0" ] \
+  || fail "the raw-text batch still invoked the per-page native summarizer"
+[ "$(printf '%s' "$R" | grep -o 'Reading the most relevant sources' | wc -l | tr -d ' ')" = "1" ] \
+  || fail "the eight-result search reported one reading step per page"
 
-# Voice turns use the same evidence contract but must not make a hands-free
-# user wait through the full eight-page research cap when the first readable
-# source already answers the question. The source list remains visible, while
-# only the first page is fetched and summarized.
+# Voice turns use the same batch contract with a two-source ordinary budget:
+# one answer source plus one corroborating source, never all eight candidates.
 : >"$TMP/summarizer-calls.log"
 VOICE_R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' -H 'X-Samosa-Voice-Turn: voice-fixture' \
   --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
            "messages":[{"role":"user","content":"web tool probe eight articles"}]}')
-printf '%s' "$VOICE_R" | grep -q 'first readable source directly answers' \
-  || fail "a voice turn did not stop after its first sufficient source"
-printf '%s' "$VOICE_R" | grep -q 'native summarizer compressed 1 of 1 fetched article' \
-  || fail "a voice turn read beyond its first sufficient source"
-if printf '%s' "$VOICE_R" | grep -q 'page:https://articles.example/two'; then
-  fail "a voice turn fetched a second page after the first source was sufficient"
+printf '%s' "$VOICE_R" | grep -q 'https://articles.example/two' \
+  || fail "a voice source batch omitted its corroborating page"
+if printf '%s' "$VOICE_R" | grep -q 'https://articles.example/three'; then
+  fail "an ordinary voice source batch read beyond two pages"
 fi
-[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "1" ] \
-  || fail "the voice early-stop path did not use exactly one native summary"
+[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "0" ] \
+  || fail "the voice raw-text batch invoked the native summarizer"
 
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
 # is authoritative and must not be back-filled with mechanical variants.
