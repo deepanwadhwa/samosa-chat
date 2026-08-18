@@ -38,6 +38,7 @@ typedef int32_t (*SamosaSherpaGeneratedAudioProgressCallbackWithArg)(
 
 typedef const SamosaSherpaOfflineTts *(*SamosaSherpaCreateTts)(const SamosaSherpaTtsConfig *);
 typedef void (*SamosaSherpaDestroyTts)(const SamosaSherpaOfflineTts *);
+typedef int32_t (*SamosaSherpaTtsSampleRate)(const SamosaSherpaOfflineTts *);
 typedef const SamosaSherpaGeneratedAudio *(*SamosaSherpaGenerateTts)(const SamosaSherpaOfflineTts *, const char *, const SamosaSherpaGenerationConfig *, SamosaSherpaGeneratedAudioProgressCallbackWithArg, void *);
 typedef void (*SamosaSherpaDestroyAudio)(const SamosaSherpaGeneratedAudio *);
 

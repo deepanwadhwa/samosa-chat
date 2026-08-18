@@ -296,6 +296,47 @@
     .voice-stage-copy span { display: block; margin-top: 7px; color: var(--ink-2); font-size: 15px; }
     .voice-stage-cancel { border: 0; border-radius: 999px; background: var(--surface); color: var(--ink-2); padding: 8px 12px; cursor: pointer; font-size: 13px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
     .voice-stage-cancel:hover { color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, var(--line)); }
+    .wake-word-card { display: grid; gap: 12px; }
+    .wake-word-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+    .wake-word-controls input { min-width: 0; }
+    .wake-word-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .wake-word-actions label { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 13px; }
+    .wake-word-actions .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .wake-word-actions .primary:hover { filter: brightness(1.06); }
+    .wake-word-listen-status { color: var(--ink-2); font-size: 13px; }
+    .wake-word-threshold { width: 130px; accent-color: var(--accent); }
+    .wake-word-status { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+    .wake-word-status.ready { color: var(--accent); }
+    .wake-word-status.error { color: var(--danger); }
+    .wake-word-guide { display: grid; gap: 9px; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--inset); }
+    .wake-word-guide-head, .wake-word-sound-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .wake-word-step { color: var(--ink); font-size: 13px; font-weight: 700; }
+    .wake-word-timer { color: var(--ink-2); font: 600 12px var(--font-mono); }
+    .wake-word-sound { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 13px; }
+    .wake-word-sound-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+    .wake-word-sound-dot.active { background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
+    .wake-word-meter { height: 5px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .wake-word-meter span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .08s linear; }
+    .wake-word-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    .wake-word-buttons .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .wake-word-buttons .primary:hover { filter: brightness(1.06); }
+    .wake-word-advanced label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .wake-word-advanced { border-top: 1px solid var(--line); padding-top: 10px; color: var(--ink-2); font-size: 12px; }
+    .wake-word-advanced summary { cursor: pointer; font-weight: 650; }
+    .wake-word-advanced p { margin: 8px 0 0; line-height: 1.45; }
+    .wake-word-count { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13px; }
+    .wake-word-count select { min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); }
+    .wake-word-recordings { display: grid; gap: 7px; }
+    .wake-word-recordings[hidden] { display: none; }
+    .wake-word-recordings-title { color: var(--ink); font-size: 13px; font-weight: 700; }
+    .wake-word-recording { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+    .wake-word-recording span { color: var(--ink-2); font-size: 13px; }
+    .wake-word-recording button { min-width: 70px; padding: 6px 10px; }
+    .voice-diagnostics { display: grid; gap: 10px; }
+    .voice-diagnostics-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .voice-diagnostics-status { color: var(--ink-2); font-size: 13px; }
+    .voice-diagnostics-status.active { color: var(--ok); }
+    .voice-diagnostics-path { color: var(--ink-2); overflow-wrap: anywhere; font: 500 11px/1.45 var(--font-mono); }
 
     @media (max-width: 640px) {
       .composer-wrap { padding: 9px 10px 12px; }
@@ -402,8 +443,9 @@
       background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit;
     }
     .attach-item svg { width: 18px; height: 18px; margin-top: 1px; color: var(--ink-2); }
-    .attach-item:hover:not(:disabled), .attach-item:focus-visible:not(:disabled) { background: var(--accent-soft); }
+    .attach-item:hover:not(:disabled), .attach-item:focus-visible:not(:disabled), .attach-item.selected:not(:disabled) { background: var(--accent-soft); }
     .attach-item:hover:not(:disabled) svg { color: var(--accent); }
+    .attach-item.selected:not(:disabled) svg { color: var(--accent); }
     .attach-item:disabled { cursor: default; color: var(--ink-2); }
     .attach-item-label { font-size: 13px; font-weight: 500; }
     .attach-item:disabled .attach-item-label { font-weight: 400; }
@@ -780,6 +822,7 @@
     .voice-model-list { display: grid; gap: 10px; }
     .voice-model-card { padding: 13px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
     .voice-model-card.ready { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+    .voice-model-card.selected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
     .voice-model-card-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
     .voice-model-card strong { display: block; font-size: 13px; font-weight: 600; }
     .voice-model-card p { margin: 4px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.45; }
@@ -788,6 +831,9 @@
     .voice-model-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .voice-model-card-actions button { border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink); padding: 7px 10px; cursor: pointer; font: 600 12px var(--font-ui); }
     .voice-model-card-actions button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .voice-model-card-tradeoffs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; color: var(--ink-2); font-size: 11.5px; line-height: 1.4; }
+    .voice-model-card-tradeoffs strong { display: inline; color: var(--ink); font-size: 11.5px; }
+    .voice-model-card-tradeoffs ul { margin: 4px 0 0; padding-left: 16px; }
     @media (max-width: 640px) {
       .setup { padding: 6vh 16px 20px; }
       .setup-actions { flex-direction: column-reverse; }
@@ -876,12 +922,82 @@
     .chat-item { margin: 1px 0; padding: 9px 8px 9px 11px; border: 0; border-radius: 10px; color: var(--sidebar-muted); }
     .chat-item:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
     .chat-item.active { border: 0; background: var(--sidebar-raised); color: var(--sidebar-ink); }
-    .chat-title { font-size: 12.5px; }
+    .chat-title { overflow: hidden; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
     .chat-delete { color: var(--sidebar-muted); }
     .chat-item:focus-within .chat-delete, .chat-delete:focus-visible { opacity: 1; }
     .side-footer { gap: 10px; padding: 14px 8px 1px; border-color: rgba(255,255,255,.09); color: var(--sidebar-muted); font-size: 10.5px; }
     .sidebar-status span:last-child { color: var(--sidebar-ink); }
     .privacy::before { width: 6px; height: 6px; box-shadow: 0 0 0 3px rgba(96,199,165,.12); }
+
+    /* The desktop sidebar has two explicit, persistent states. The narrow
+       rail deliberately keeps only the two actions that are useful without
+       conversation context: start a chat and restore the full sidebar. */
+    .shell, .sidebar { transition: grid-template-columns .18s ease, width .18s ease, padding .18s ease; }
+    .sidebar-top { display: flex; align-items: flex-start; gap: 6px; }
+    .sidebar-top .brand { min-width: 0; flex: 1; }
+    .sidebar-body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+    .sidebar-control, .sidebar-rail-button {
+      display: grid; place-items: center; flex: none;
+      width: 34px; height: 34px; padding: 0;
+      border: 1px solid rgba(255,255,255,.11); border-radius: 10px;
+      background: transparent; color: var(--sidebar-muted); cursor: pointer;
+      transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+    .sidebar-control { margin: 2px 1px 0 0; }
+    .sidebar-control:hover, .sidebar-rail-button:hover {
+      border-color: rgba(255,255,255,.2); background: var(--sidebar-raised); color: var(--sidebar-ink);
+    }
+    .sidebar-control svg, .sidebar-rail-button svg { width: 18px; height: 18px; }
+    .sidebar-rail { display: none; width: 100%; flex-direction: column; align-items: center; gap: 10px; }
+    .sidebar-rail-button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .sidebar-rail-button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #6f210c); color: var(--accent-ink); }
+    .shell.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+    .shell.sidebar-collapsed .sidebar { width: 64px; padding: 14px 10px; }
+    .shell.sidebar-collapsed .sidebar-top,
+    .shell.sidebar-collapsed .sidebar-body { display: none; }
+    .shell.sidebar-collapsed .sidebar-rail { display: flex; }
+
+    .conversation-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .conversation-heading .section-label { min-width: 0; }
+    .conversation-select, .chat-selection-action {
+      border: 0; border-radius: 8px; background: transparent; color: var(--sidebar-muted);
+      padding: 5px 8px; cursor: pointer; font-size: 11px; font-weight: 650;
+    }
+    .conversation-select:hover, .chat-selection-action:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .chat-selection-bar {
+      display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 6px;
+      margin: 1px 0 7px; padding: 7px 6px 7px 10px;
+      border: 1px solid rgba(255,255,255,.09); border-radius: 10px; background: var(--sidebar-raised);
+    }
+    .chat-selection-bar[hidden] { display: none; }
+    .chat-selection-count { color: var(--sidebar-ink); font: 600 10.5px/1 var(--font-mono); white-space: nowrap; }
+    .chat-selection-action { padding: 6px 7px; }
+    .chat-selection-action.danger { display: inline-flex; align-items: center; gap: 5px; color: #ff928b; }
+    .chat-selection-action.danger svg { width: 14px; height: 14px; }
+    .chat-selection-action.danger:hover { background: rgba(255,118,111,.12); color: #ffaaa5; }
+    .chat-selection-action:disabled { opacity: .38; cursor: default; background: transparent; }
+    #cancelChatSelection { grid-area: 1 / 2; }
+    #selectAllChats { grid-area: 2 / 1; justify-self: start; }
+    #deleteSelectedChats { grid-area: 2 / 2; justify-self: end; }
+    .chat-item.selecting { grid-template-columns: 18px minmax(0, 1fr); cursor: pointer; padding-left: 9px; }
+    .chat-item.selecting.selected { background: color-mix(in srgb, var(--accent) 16%, var(--sidebar-raised)); color: var(--sidebar-ink); }
+    .chat-checkbox { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .chat-item.selecting .chat-title { width: 100%; cursor: pointer; }
+
+    .delete-dialog-body { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; padding: 22px 20px 8px; }
+    .delete-dialog-icon {
+      display: grid; place-items: center; width: 44px; height: 44px;
+      border-radius: 13px; background: color-mix(in srgb, var(--danger) 13%, var(--surface)); color: var(--danger);
+    }
+    .delete-dialog-icon svg { width: 21px; height: 21px; }
+    .delete-dialog-copy p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.5; }
+    .delete-dialog-copy .delete-dialog-warning { margin-top: 6px; color: var(--ink-2); font-size: 12.5px; }
+    .delete-dialog .chooser-foot { justify-content: flex-end; padding-top: 18px; }
+    .delete-confirm {
+      border: 0; border-radius: 9px; background: var(--danger); color: #fff;
+      padding: 9px 16px; cursor: pointer; font-size: 13px; font-weight: 700;
+    }
+    .delete-confirm:hover { background: color-mix(in srgb, var(--danger) 86%, #5b0b08); }
 
     .main { background: var(--paper); }
     .topbar {
@@ -1252,6 +1368,11 @@
     @media (max-width: 760px) {
       .shell { grid-template-columns: 1fr; }
       .sidebar { width: min(310px, 88vw); box-shadow: var(--shadow-overlay); }
+      .shell.sidebar-collapsed { grid-template-columns: 1fr; }
+      .shell.sidebar-collapsed .sidebar { width: min(310px, 88vw); padding: 20px 14px 14px; }
+      .shell.sidebar-collapsed .sidebar-top { display: flex; }
+      .shell.sidebar-collapsed .sidebar-body { display: flex; }
+      .shell.sidebar-collapsed .sidebar-rail { display: none; }
       .topbar { min-height: 64px; padding: 10px 13px; }
       .voice-stage { inset: 64px 0 0; }
       .messages { padding: 26px 16px 20px; }
@@ -1347,21 +1468,39 @@
 
   <div class="shell" id="shell" data-view="chat" hidden>
     <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <img src="/assets/samosa-chat.png" alt="">
-        <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Private by design</div></div>
+      <div class="sidebar-rail" aria-label="Sidebar shortcuts">
+        <button class="sidebar-rail-button primary" id="railNewChat" type="button" aria-label="New conversation" title="New conversation"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
+        <button class="sidebar-rail-button" id="expandSidebar" type="button" aria-label="Open sidebar" title="Open sidebar"><svg aria-hidden="true"><use href="#icon-expand"></use></svg></button>
       </div>
-      <nav class="nav" role="tablist" aria-label="Sections">
-        <button class="nav-item active" id="navChat" role="tab" aria-selected="true"><svg aria-hidden="true"><use href="#icon-chat"></use></svg>Chat</button>
-        <button class="nav-item" id="navChutni" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-chutni"></use></svg>Chutni</button>
-        <button class="nav-item" id="navJobs" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-jobs"></use></svg>Jobs</button>
-      </nav>
-      <button class="new-chat" id="newChat"><svg aria-hidden="true" width="15" height="15"><use href="#icon-plus"></use></svg>New conversation</button>
-      <div class="section-label">Conversations</div>
-      <div class="chat-list" id="chatList"></div>
-      <div class="side-footer">
-        <div class="sidebar-status"><span class="status-dot" id="sidebarStatusDot"></span><span id="sidebarStatusText">Connecting…</span></div>
-        <div class="privacy">Running only on this computer</div>
+      <div class="sidebar-top">
+        <div class="brand">
+          <img src="/assets/samosa-chat.png" alt="">
+          <div><div class="brand-name">Samosa Chat</div><div class="brand-sub">Private by design</div></div>
+        </div>
+        <button class="sidebar-control" id="collapseSidebar" type="button" aria-label="Collapse sidebar" title="Collapse sidebar"><svg aria-hidden="true"><use href="#icon-collapse"></use></svg></button>
+      </div>
+      <div class="sidebar-body">
+        <nav class="nav" role="tablist" aria-label="Sections">
+          <button class="nav-item active" id="navChat" role="tab" aria-selected="true"><svg aria-hidden="true"><use href="#icon-chat"></use></svg>Chat</button>
+          <button class="nav-item" id="navChutni" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-chutni"></use></svg>Chutni</button>
+          <button class="nav-item" id="navJobs" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-jobs"></use></svg>Jobs</button>
+        </nav>
+        <button class="new-chat" id="newChat"><svg aria-hidden="true" width="15" height="15"><use href="#icon-plus"></use></svg>New conversation</button>
+        <div class="conversation-heading">
+          <div class="section-label">Conversations</div>
+          <button class="conversation-select" id="selectChats" type="button">Select</button>
+        </div>
+        <div class="chat-selection-bar" id="chatSelectionBar" hidden>
+          <span class="chat-selection-count" id="chatSelectionCount" aria-live="polite">0 selected</span>
+          <button class="chat-selection-action" id="selectAllChats" type="button">Select all</button>
+          <button class="chat-selection-action danger" id="deleteSelectedChats" type="button" disabled><svg aria-hidden="true"><use href="#icon-trash"></use></svg>Delete</button>
+          <button class="chat-selection-action" id="cancelChatSelection" type="button">Done</button>
+        </div>
+        <div class="chat-list" id="chatList"></div>
+        <div class="side-footer">
+          <div class="sidebar-status"><span class="status-dot" id="sidebarStatusDot"></span><span id="sidebarStatusText">Connecting…</span></div>
+          <div class="privacy">Running only on this computer</div>
+        </div>
       </div>
     </aside>
 
@@ -1424,7 +1563,7 @@
               <svg aria-hidden="true"><use href="#icon-globe"></use></svg>
               <span><span class="attach-item-label">Web page</span><span class="attach-item-reason" id="attachWebReason"></span></span>
             </button>
-            <button class="attach-item" id="attachWebSearch" type="button" role="menuitem" disabled>
+            <button class="attach-item" id="attachWebSearch" type="button" role="menuitemcheckbox" aria-checked="false" disabled>
               <svg aria-hidden="true"><use href="#icon-search"></use></svg>
               <span><span class="attach-item-label">Web search</span><span class="attach-item-reason" id="attachWebSearchReason"></span></span>
             </button>
@@ -1617,8 +1756,10 @@
           </section>
           <section class="preferences-pane" data-settings-pane-content="voice" hidden>
             <h3>Voice</h3><p class="preferences-lead">Talk naturally. Speech recognition, chat, and spoken replies run locally.</p>
-            <div class="preferences-card" id="handsfreeSettings"><h4>Voice conversation</h4><p class="voice-mode-intro">Download once to add Voice to Chat. Speak naturally; after you pause, Samosa understands, answers aloud, and listens again automatically until you end the conversation.</p><div class="setup-error" id="voiceModelError" role="alert" hidden></div><div class="voice-model-list" id="voiceModelList" aria-live="polite"></div></div>
+            <div class="preferences-card" id="handsfreeSettings"><h4>Voice conversation</h4><p class="voice-mode-intro">Download once to add Voice to Chat. Speak naturally; after you pause, Samosa understands, answers aloud, and listens again automatically until you end the conversation. Choose one STT model and one TTS model below; selecting a new model replaces the previous choice.</p><div class="setup-error" id="voiceModelError" role="alert" hidden></div><div class="voice-model-list" id="voiceModelList" aria-live="polite"></div></div>
+            <div class="preferences-card wake-word-card" id="wakeWordSettings"><h4>Custom wake word</h4><p class="voice-mode-intro">Choose a word or short phrase. Samosa will listen for it locally and open Voice when you say it. Your recordings stay on this Mac and are reduced to a small private voice profile.</p><div class="wake-word-controls"><input id="wakeWordInput" type="text" maxlength="48" placeholder="e.g. Mirchi" aria-label="Wake word"><button class="close-settings" id="wakeWordForget" type="button" disabled>Forget</button></div><div class="wake-word-count"><label for="wakeWordCount">How many times should I say it?</label><select id="wakeWordCount" aria-label="Number of wake-word recordings"><option value="3">3 times (recommended)</option><option value="4">4 times</option><option value="5">5 times</option><option value="6">6 times</option></select></div><div class="wake-word-guide"><div class="wake-word-guide-head"><span class="wake-word-step" id="wakeWordStep">Ready to record</span><span class="wake-word-timer" id="wakeWordTimer">3 seconds each</span></div><div class="wake-word-sound-row"><span class="wake-word-sound"><span class="wake-word-sound-dot" id="wakeWordSoundDot"></span><span id="wakeWordSoundStatus">Microphone is off</span></span><span id="wakeWordSoundHint">Press Start recording first</span></div><div class="wake-word-meter" aria-hidden="true"><span id="wakeWordLevel"></span></div><div class="wake-word-buttons"><button class="close-settings primary" id="wakeWordEnroll" type="button">Start recording</button><button class="close-settings primary" id="wakeWordNext" type="button" hidden>Next recording</button><button class="close-settings" id="wakeWordCancel" type="button" hidden>Cancel</button></div></div><div class="wake-word-recordings" id="wakeWordRecordings" hidden aria-live="polite"></div><div class="wake-word-actions"><button class="close-settings primary" id="wakeWordListen" type="button" disabled>Listen for wake word</button><span class="wake-word-listen-status" id="wakeWordListenStatus">Off — click Listen for wake word when you’re ready.</span></div><details class="wake-word-advanced"><summary>Advanced matching</summary><label for="wakeWordThreshold">How forgiving should matching be? <input class="wake-word-threshold" id="wakeWordThreshold" type="range" min="0.08" max="0.18" step="0.01" value="0.14" disabled></label><output id="wakeWordThresholdValue" for="wakeWordThreshold">Balanced</output><p>Most people can leave this on Balanced. Stricter helps prevent accidental wake-ups; more relaxed is easier to trigger.</p></details><div class="wake-word-status" id="wakeWordStatus" role="status" aria-live="polite">No wake word set up yet.</div></div>
             <div class="preferences-card voice-setting" id="voiceSettings"><h4>Spoken replies</h4><div class="field"><input id="voiceEnabled" type="checkbox" hidden><p class="voice-mode-intro">Text chats stay silent. Use Listen beneath a reply when you want it read aloud; Voice conversations speak automatically.</p><div class="voice-actions"><select id="voiceSelect" aria-label="Voice" disabled><option>Loading installed voices…</option></select><button class="close-settings" id="voicePreview" type="button" disabled>Preview</button></div><small id="voiceHelp">Uses a voice installed by your browser or macOS.</small></div></div>
+            <div class="preferences-card voice-diagnostics"><h4>Voice timing diagnostics</h4><p class="voice-mode-intro">Saves timing and size measurements locally—never audio, transcripts, prompts, or replies. Local development builds start this automatically; release builds leave it off.</p><div class="voice-diagnostics-row"><button class="close-settings" id="voiceTraceToggle" type="button">Start timing log</button><span class="voice-diagnostics-status" id="voiceTraceStatus">Off</span></div><div class="voice-diagnostics-path" id="voiceTracePath" hidden></div></div>
           </section>
           <section class="preferences-pane" data-settings-pane-content="privacy" hidden>
             <h3>Privacy</h3><p class="preferences-lead">Samosa is local-first. You decide when anything leaves your Mac.</p>
@@ -1644,6 +1785,15 @@
     </symbol>
     <symbol id="icon-menu" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
       <path d="M3 5.5h14M3 10h14M3 14.5h14"/>
+    </symbol>
+    <symbol id="icon-collapse" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.5 5l-5 5 5 5M15.5 5l-5 5 5 5"/>
+    </symbol>
+    <symbol id="icon-expand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 5l5 5-5 5M10.5 5l5 5-5 5"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 6.5h11M8 3.8h4M6 6.5l.7 9.2h6.6l.7-9.2M8.3 9v4.3M11.7 9v4.3"/>
     </symbol>
     <symbol id="icon-arrow-up" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M10 16V4M4.5 9.5L10 4l5.5 5.5"/>
@@ -1747,6 +1897,25 @@
     </div>
   </div>
 
+  <div class="chooser-scrim" id="deleteChatsScrim" hidden></div>
+  <div class="chooser-dialog delete-dialog" id="deleteChatsDialog" role="dialog" aria-modal="true" aria-labelledby="deleteChatsTitle" aria-describedby="deleteChatsMessage deleteChatsWarning" hidden>
+    <div class="chooser-head">
+      <h2 id="deleteChatsTitle">Delete conversation?</h2>
+      <button class="chooser-close" id="deleteChatsCancelTop" type="button">Cancel</button>
+    </div>
+    <div class="delete-dialog-body">
+      <div class="delete-dialog-icon"><svg aria-hidden="true"><use href="#icon-trash"></use></svg></div>
+      <div class="delete-dialog-copy">
+        <p id="deleteChatsMessage">This conversation will be deleted.</p>
+        <p class="delete-dialog-warning" id="deleteChatsWarning">This removes it from this browser and cannot be undone.</p>
+      </div>
+    </div>
+    <div class="chooser-foot">
+      <button class="chooser-close" id="deleteChatsCancel" type="button">Keep conversations</button>
+      <button class="delete-confirm" id="deleteChatsConfirm" type="button">Delete conversation</button>
+    </div>
+  </div>
+
   <div class="migration-banner" id="migrationBanner" role="alert" hidden>
     <span>Your previous conversations couldn't be loaded automatically. They haven't been deleted.</span>
     <div class="migration-banner-actions">
@@ -1763,23 +1932,52 @@
       // the v1 routes that require it (fs, profile, setup) need it attached;
       // legacy Chat/Jobs/backend routes are not gated by it yet.
       const UI_TOKEN = document.querySelector('meta[name="samosa-ui-token"]')?.content || "";
-      let appLifecycleOwned = false;
-      let appShutdownSent = false;
-      function shutDownOwnedApp(event) {
-        if (!appLifecycleOwned || event?.persisted || appShutdownSent) return;
-        appShutdownSent = true;
-        // Beacon is designed to finish during page teardown. The keepalive
-        // fetch is a fallback for browsers that do not expose sendBeacon.
-        const beaconSent = navigator.sendBeacon && navigator.sendBeacon("/v1/shutdown", "");
-        if (!beaconSent) fetch("/v1/shutdown", { method: "POST", keepalive: true }).catch(() => {});
-      }
-      window.addEventListener("pagehide", shutDownOwnedApp);
+      // Browser lifecycle requests are authenticated like the rest of the
+      // local control plane. The gateway applies a refresh-safe grace period
+      // rather than treating pagehide itself as an immediate shutdown.
       function authFetch(path, opts = {}) {
         return fetch(path, { ...opts, headers: { "X-Samosa-Token": UI_TOKEN, ...(opts.headers || {}) } });
       }
+      // App mode owns its gateway/model tree. A plain pagehide cannot shut it
+      // down immediately because refresh emits pagehide too. Register this
+      // document with a random id; closing removes only that id and the
+      // gateway waits briefly for a refreshed page before cleaning up.
+      const APP_CLIENT_ID = `page-${self.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64);
+      let appLifecycleTimer = 0;
+      function reportAppLifecycle(action) {
+        if (!UI_TOKEN) return;
+        const body = JSON.stringify({ action, client_id: APP_CLIENT_ID, token: UI_TOKEN });
+        // Beacon is the browser primitive specifically intended to survive
+        // document teardown. Keepalive fetch remains the fallback and handles
+        // ordinary open/heartbeat events where the response can be useful.
+        if (action === "close" && navigator.sendBeacon) {
+          const sent = navigator.sendBeacon("/v1/app/lifecycle", new Blob([body], { type: "application/json" }));
+          if (sent) return;
+        }
+        authFetch("/v1/app/lifecycle", {
+          method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+          body
+        }).catch(() => {});
+      }
+      function startAppLifecycle() {
+        reportAppLifecycle("open");
+        if (appLifecycleTimer) clearInterval(appLifecycleTimer);
+        appLifecycleTimer = setInterval(() => reportAppLifecycle("heartbeat"), 5000);
+      }
+      function closeAppLifecycle() {
+        if (appLifecycleTimer) clearInterval(appLifecycleTimer);
+        appLifecycleTimer = 0;
+        reportAppLifecycle("close");
+      }
+      startAppLifecycle();
+      window.addEventListener("pagehide", closeAppLifecycle);
+      window.addEventListener("pageshow", event => { if (event.persisted) startAppLifecycle(); });
       const $ = id => document.getElementById(id);
       const els = {
         sidebar: $("sidebar"), list: $("chatList"), messages: $("messages"), prompt: $("prompt"),
+        collapseSidebar: $("collapseSidebar"), expandSidebar: $("expandSidebar"), railNewChat: $("railNewChat"),
+        selectChats: $("selectChats"), chatSelectionBar: $("chatSelectionBar"), chatSelectionCount: $("chatSelectionCount"),
+        selectAllChats: $("selectAllChats"), deleteSelectedChats: $("deleteSelectedChats"), cancelChatSelection: $("cancelChatSelection"),
         composer: $("composer"), send: $("send"), stop: $("stop"), name: $("conversationName"),
         status: $("modelStatus"), dot: $("statusDot"), settings: $("settings"), scrim: $("scrim"),
         sideDot: $("sidebarStatusDot"), sideStatus: $("sidebarStatusText"),
@@ -1804,10 +2002,15 @@
         kill: $("killButton"),
         settingsModelList: $("settingsModelList"), settingsModelError: $("settingsModelError"), modelHelp: $("modelHelp"),
         voiceSettings: $("voiceSettings"), voiceEnabled: $("voiceEnabled"), voiceSelect: $("voiceSelect"), voicePreview: $("voicePreview"), voiceHelp: $("voiceHelp"),
+        voiceTraceToggle: $("voiceTraceToggle"), voiceTraceStatus: $("voiceTraceStatus"), voiceTracePath: $("voiceTracePath"),
+        wakeWordSettings: $("wakeWordSettings"), wakeWordInput: $("wakeWordInput"), wakeWordCount: $("wakeWordCount"), wakeWordListen: $("wakeWordListen"), wakeWordListenStatus: $("wakeWordListenStatus"), wakeWordEnroll: $("wakeWordEnroll"), wakeWordNext: $("wakeWordNext"), wakeWordCancel: $("wakeWordCancel"), wakeWordForget: $("wakeWordForget"), wakeWordStep: $("wakeWordStep"), wakeWordTimer: $("wakeWordTimer"), wakeWordSoundDot: $("wakeWordSoundDot"), wakeWordSoundStatus: $("wakeWordSoundStatus"), wakeWordSoundHint: $("wakeWordSoundHint"), wakeWordLevel: $("wakeWordLevel"), wakeWordRecordings: $("wakeWordRecordings"), wakeWordThreshold: $("wakeWordThreshold"), wakeWordThresholdValue: $("wakeWordThresholdValue"), wakeWordStatus: $("wakeWordStatus"),
         voiceToggle: $("voiceToggle"), voiceMic: $("voiceMic"), voiceStage: $("voiceStage"), voiceCanvas: $("voiceCanvas"), voiceStageTitle: $("voiceStageTitle"), voiceStageDetail: $("voiceStageDetail"), voiceStageCancel: $("voiceStageCancel"),
         voiceModelList: $("voiceModelList"), voiceModelError: $("voiceModelError"),
         mismatchScrim: $("mismatchScrim"), mismatchDialog: $("mismatchDialog"), mismatchDetail: $("mismatchDetail"),
         mismatchFork: $("mismatchFork"), mismatchCancel: $("mismatchCancel"),
+        deleteChatsScrim: $("deleteChatsScrim"), deleteChatsDialog: $("deleteChatsDialog"), deleteChatsTitle: $("deleteChatsTitle"),
+        deleteChatsMessage: $("deleteChatsMessage"), deleteChatsCancelTop: $("deleteChatsCancelTop"),
+        deleteChatsCancel: $("deleteChatsCancel"), deleteChatsConfirm: $("deleteChatsConfirm"),
         migrationBanner: $("migrationBanner"), migrationExport: $("migrationExport"), migrationReset: $("migrationReset")
       };
       // T1.4 (docs/TASKS_UI_CHUTNI.md sec5.2): schema v2 adds gateway-enforced
@@ -1816,10 +2019,19 @@
       // always leaves the user's original data recoverable.
       const STORAGE_KEY_V1 = "samosa-chat-v1";
       const STORAGE_KEY = "samosa-chat-v2";
+      const SIDEBAR_COLLAPSED_KEY = "samosa-sidebar-collapsed-v1";
+      const WAKE_PROFILE_KEY = "samosa-wake-profile-v1";
+      const WAKE_ENABLED_KEY = "samosa-wake-enabled-v1";
       let migrationRecoveryRaw = null;
       let state = loadState();
       let currentId = state.currentId;
       let generating = false;
+      let newChatPending = false;
+      let sidebarCollapsed = false;
+      let chatSelectionMode = false;
+      const selectedChatIds = new Set();
+      let pendingChatDeletion = [];
+      let deleteDialogOpener = null;
       let activeAssistant = null;
       let followOutput = true;
       // T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): composer attachments are
@@ -1850,8 +2062,23 @@
       let installedVoices = [];
       let voiceCatalog = [];
       let voiceStatus = { stt_ready: false, stt_runtime_ready: false, stt_model_downloaded: false, runtime_preparing: false, transcribing: false, tts_neural_ready: false, tts_preparing: false };
+      const browserTtsIds = new Set(["voice-tts-moss-nano", "voice-tts-kitten-nano"]);
+      const browserTtsStorageKey = "samosa.browser-tts.v1";
+      const browserTtsState = Object.create(null);
+      const browserTtsHosts = new Map();
+      const browserTtsActiveStreams = new Set();
+      let browserTtsRequestCounter = 0;
+      let browserTtsMessageListenerInstalled = false;
+      let voiceTraceStatus = { active: false, session_id: null, path: null };
+      const voiceTracePending = new Set();
       let handsfreeCapture = null;
       let handsfreeInFlight = false;
+      let wakeProfile = null;
+      let wakeEnrollment = null;
+      let wakeDetectionStats = { checks: 0, lastScore: null, detections: 0 };
+      let activeWakeRecordingAudio = null;
+      let wakeListeningRequested = false;
+      let wakeListenerStarting = false;
       let voiceConversationActive = false;
       let voiceConversationGreeted = false;
       let voiceGreetingContext = "";
@@ -2007,19 +2234,166 @@
         try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
         location.reload();
       }
-      function newChat() {
-        if (generating) return;
-        currentId = null; ensureChat(); render();
-        if (typeof showView === "function") showView("chat");
-        closePanels(); els.prompt.focus();
+      function isMobileSidebar() { return window.matchMedia("(max-width: 760px)").matches; }
+      function applySidebarState() {
+        $("shell").classList.toggle("sidebar-collapsed", sidebarCollapsed);
+        els.collapseSidebar.setAttribute("aria-expanded", String(!sidebarCollapsed));
+        els.expandSidebar.setAttribute("aria-expanded", String(!sidebarCollapsed));
       }
-      function deleteChat(id) {
+      function setSidebarCollapsed(collapsed, persist = true) {
+        sidebarCollapsed = !!collapsed;
+        if (sidebarCollapsed && chatSelectionMode) {
+          chatSelectionMode = false;
+          selectedChatIds.clear();
+          renderList();
+        }
+        applySidebarState();
+        if (!persist) return;
+        try {
+          if (sidebarCollapsed) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "1");
+          else localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
+        } catch (_) {}
+      }
+      function restoreSidebarState() {
+        try { sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1"; }
+        catch (_) { sidebarCollapsed = false; }
+        applySidebarState();
+      }
+      function collapseSidebar() {
+        if (isMobileSidebar()) {
+          els.sidebar.classList.remove("open");
+          els.scrim.classList.remove("show");
+          return;
+        }
+        setSidebarCollapsed(true);
+      }
+      function expandSidebar() { setSidebarCollapsed(false); }
+
+      function updateChatSelectionUi() {
+        for (const id of [...selectedChatIds]) {
+          if (!state.chats.some(chat => chat.id === id)) selectedChatIds.delete(id);
+        }
+        const selectedCount = selectedChatIds.size;
+        const allSelected = state.chats.length > 0 && selectedCount === state.chats.length;
+        const activeGenerationSelected = generating && selectedChatIds.has(currentId);
+        els.selectChats.hidden = chatSelectionMode;
+        els.chatSelectionBar.hidden = !chatSelectionMode;
+        els.chatSelectionCount.textContent = `${selectedCount} selected`;
+        els.selectAllChats.textContent = allSelected ? "Clear all" : "Select all";
+        els.deleteSelectedChats.disabled = selectedCount === 0 || activeGenerationSelected;
+        els.deleteSelectedChats.title = activeGenerationSelected ? "Stop the current response before deleting this conversation" : "Delete selected conversations";
+      }
+      function setChatSelectionMode(enabled) {
+        chatSelectionMode = !!enabled;
+        selectedChatIds.clear();
+        renderList();
+        if (chatSelectionMode) requestAnimationFrame(() => els.list.querySelector(".chat-checkbox")?.focus());
+      }
+      function toggleChatSelection(id) {
+        if (!chatSelectionMode || !state.chats.some(chat => chat.id === id)) return;
+        if (selectedChatIds.has(id)) selectedChatIds.delete(id); else selectedChatIds.add(id);
+        renderList();
+      }
+      function toggleAllChats() {
+        if (selectedChatIds.size === state.chats.length) selectedChatIds.clear();
+        else state.chats.forEach(chat => selectedChatIds.add(chat.id));
+        renderList();
+      }
+
+      function removeChatsById(chats, ids) {
+        const removed = new Set(ids);
+        return chats.filter(chat => !removed.has(chat.id));
+      }
+      function deleteDialogFocusableControls() {
+        return Array.from(els.deleteChatsDialog.querySelectorAll("button:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+      }
+      function deleteDialogKeydown(event) {
+        if (els.deleteChatsDialog.hidden) return;
+        if (event.key === "Escape") { event.preventDefault(); closeDeleteChatsDialog(); return; }
+        if (event.key !== "Tab") return;
+        const controls = deleteDialogFocusableControls();
+        if (!controls.length) return;
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+      function requestDeleteChats(ids, opener) {
+        const uniqueIds = [...new Set(ids)].filter(id => state.chats.some(chat => chat.id === id));
+        if (!uniqueIds.length || (generating && uniqueIds.includes(currentId))) return;
+        pendingChatDeletion = uniqueIds;
+        deleteDialogOpener = opener || document.activeElement;
+        const oneChat = uniqueIds.length === 1 ? state.chats.find(chat => chat.id === uniqueIds[0]) : null;
+        els.deleteChatsTitle.textContent = oneChat ? "Delete conversation?" : `Delete ${uniqueIds.length} conversations?`;
+        els.deleteChatsMessage.textContent = oneChat
+          ? `“${oneChat.title}” will be removed from your conversation list.`
+          : `${uniqueIds.length} selected conversations will be removed from your conversation list.`;
+        els.deleteChatsConfirm.textContent = oneChat ? "Delete conversation" : `Delete ${uniqueIds.length} conversations`;
+        els.deleteChatsScrim.hidden = false;
+        els.deleteChatsDialog.hidden = false;
+        els.deleteChatsScrim.classList.add("show");
+        els.deleteChatsDialog.classList.add("open");
+        $("shell").inert = true;
+        document.addEventListener("keydown", deleteDialogKeydown, true);
+        requestAnimationFrame(() => els.deleteChatsConfirm.focus());
+      }
+      function closeDeleteChatsDialog(restoreFocus = true) {
+        els.deleteChatsScrim.classList.remove("show");
+        els.deleteChatsDialog.classList.remove("open");
+        els.deleteChatsScrim.hidden = true;
+        els.deleteChatsDialog.hidden = true;
+        $("shell").inert = false;
+        document.removeEventListener("keydown", deleteDialogKeydown, true);
+        pendingChatDeletion = [];
+        if (restoreFocus && deleteDialogOpener?.focus) deleteDialogOpener.focus();
+        deleteDialogOpener = null;
+      }
+      function confirmDeleteChats() {
+        if (!pendingChatDeletion.length) return;
+        const deletedCurrent = pendingChatDeletion.includes(currentId);
+        state.chats = removeChatsById(state.chats, pendingChatDeletion);
+        if (deletedCurrent) currentId = state.chats[0]?.id || null;
+        chatSelectionMode = false;
+        selectedChatIds.clear();
+        closeDeleteChatsDialog(false);
+        render();
+        saveState();
+        requestAnimationFrame(() => els.selectChats.focus());
+      }
+      async function newChat() {
+        if (newChatPending) return;
+        newChatPending = true;
+        const controls = [$("newChat"), els.railNewChat].filter(Boolean);
+        controls.forEach(control => { control.disabled = true; });
+        try {
+          if (generating) {
+            els.closure.textContent = "Stopping the current response…";
+            await Promise.race([cancel(), new Promise(resolve => setTimeout(resolve, 1500))]);
+            const deadline = performance.now() + 3500;
+            while (generating && performance.now() < deadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+            if (generating) {
+              els.closure.textContent = "The current response is still stopping. Try New conversation again in a moment.";
+              return;
+            }
+          }
+          chatSelectionMode = false; selectedChatIds.clear();
+          closePanels();
+          // Yield once before replacing the transcript. This lets the click
+          // paint immediately even when local chat history is large.
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          currentId = null; ensureChat(); render();
+          if (typeof showView === "function") showView("chat");
+          els.prompt.focus();
+        } finally {
+          newChatPending = false;
+          controls.forEach(control => { control.disabled = false; });
+        }
+      }
+      function deleteChat(id, opener) {
         if (generating && id === currentId) return;
         const chat = state.chats.find(c => c.id === id);
-        if (!chat || !confirm(`Delete “${chat.title}” from this browser?`)) return;
-        state.chats = state.chats.filter(c => c.id !== id);
-        if (currentId === id) currentId = state.chats[0]?.id || null;
-        saveState(); render();
+        if (!chat) return;
+        requestDeleteChats([id], opener);
       }
       function selectChat(id) {
         if (generating) return;
@@ -2189,12 +2563,26 @@
       function renderList() {
         els.list.innerHTML = "";
         for (const chat of [...state.chats].sort((a,b) => b.updated-a.updated)) {
-          const item = document.createElement("div"); item.className = `chat-item${chat.id === currentId ? " active" : ""}`;
-          item.innerHTML = `<button class="chat-title" style="border:0;background:transparent;color:inherit;padding:0;cursor:pointer">${escapeHTML(chat.title)}</button><button class="chat-delete" aria-label="Delete conversation"><svg aria-hidden="true"><use href="#icon-x"></use></svg></button>`;
-          item.querySelector(".chat-title").onclick = () => selectChat(chat.id);
-          item.querySelector(".chat-delete").onclick = e => { e.stopPropagation(); deleteChat(chat.id); };
+          const selected = selectedChatIds.has(chat.id);
+          const item = document.createElement("div");
+          item.className = `chat-item${chat.id === currentId ? " active" : ""}${chatSelectionMode ? " selecting" : ""}${selected ? " selected" : ""}`;
+          if (chatSelectionMode) {
+            item.innerHTML = `<input class="chat-checkbox" type="checkbox" aria-label="Select ${escapeHTML(chat.title)}"${selected ? " checked" : ""}><button class="chat-title" type="button">${escapeHTML(chat.title)}</button>`;
+            const checkbox = item.querySelector(".chat-checkbox");
+            checkbox.onclick = event => event.stopPropagation();
+            checkbox.onchange = () => toggleChatSelection(chat.id);
+            item.querySelector(".chat-title").onclick = event => { event.stopPropagation(); toggleChatSelection(chat.id); };
+            item.onclick = () => toggleChatSelection(chat.id);
+          } else {
+            item.innerHTML = `<button class="chat-title" type="button">${escapeHTML(chat.title)}</button><button class="chat-delete" type="button" aria-label="Delete ${escapeHTML(chat.title)}"><svg aria-hidden="true"><use href="#icon-x"></use></svg></button>`;
+            item.querySelector(".chat-title").onclick = () => selectChat(chat.id);
+            const deleteButton = item.querySelector(".chat-delete");
+            deleteButton.disabled = generating && chat.id === currentId;
+            deleteButton.onclick = event => { event.stopPropagation(); deleteChat(chat.id, deleteButton); };
+          }
           els.list.appendChild(item);
         }
+        updateChatSelectionUi();
       }
       // Switching or creating a conversation starts a fresh render window --
       // "show earlier" expansion belongs to the conversation you expanded,
@@ -2217,7 +2605,49 @@
         // a modifier behind for a system voice to describe.
         const emoji = /(?:[#*0-9]\uFE0F?\u20E3)|(?:\p{Regional_Indicator}{2})|(?:\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
         return (node.textContent || "").replace(emoji, "").replace(/[\uFE0F\u200D]/g, "")
-          .replace(/[*_`~]+/g, "").replace(/\s+/g, " ").trim();
+          .replace(/\b(?:https?|file):\/\/\S+/gi, " link ")
+          .replace(/\bwww\.\S+/gi, " link ")
+          .replace(/[*_`~]+/g, "")
+          /* Pocket treats a decimal point like disposable punctuation when
+             it receives raw model text. Verbalize only dots surrounded by
+             digits, and separate the fractional digits so 3.14159 is spoken
+             as "three point one four one five nine" instead of 314159. This
+             changes only the private TTS copy; the visible answer is left
+             exactly as the model streamed it. */
+          .replace(/\b(\d+)\.(\d+)\b/g, (_match, whole, fraction) =>
+            `${whole} point ${Array.from(fraction).join(" ")}`)
+          /* Neural voices may verbalize these formatting glyphs as “colon”
+             and “slash”. Turn them into natural pauses before synthesis. */
+          .replace(/\s*[:;]+\s*/g, ", ")
+          .replace(/\s*[\\/|]+\s*/g, " ")
+          .replace(/\s*[–—]\s*/g, ", ")
+          .replace(/[<>]+/g, " ")
+          .replace(/\s+([,.!?])/g, "$1")
+          .replace(/,{2,}/g, ",")
+          .replace(/\s+/g, " ").trim();
+      }
+      function browserSpeechReady() {
+        if (!voiceSupported()) return false;
+        if (!installedVoices.length) installedVoices = window.speechSynthesis.getVoices();
+        /* Some browsers populate getVoices() asynchronously, but can still
+           speak through their default voice immediately. That default is a
+           safer escape hatch than sending a repeated-word clause to Pocket. */
+        return typeof window.speechSynthesis.speak === "function";
+      }
+      /* Pocket is a generative voice, not a deterministic phoneme reader. A
+         run of three identical words is a known stress case: the low-step
+         model can continue the word instead of finishing it. Preserve the
+         text exactly, but route that one utterance through the installed
+         system voice, which is designed to read repetitions literally. */
+      function hasRepeatedSpeechRun(text) {
+        const words = String(text || "").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+        let previous = "", run = 0;
+        for (const word of words) {
+          run = word === previous ? run + 1 : 1;
+          if (run >= 3) return true;
+          previous = word;
+        }
+        return false;
       }
       function selectedVoice() { return installedVoices.find(v => v.voiceURI === els.voiceSelect.value) || null; }
       function neuralTtsReady() { return !!voiceStatus.tts_neural_ready; }
@@ -2225,6 +2655,8 @@
       let activeVoiceAudio = null;
       let voicePlaybackContext = null;
       let activeVoiceSource = null;
+      let voicePlaybackLastEndTime = 0;
+      const activeVoiceSources = new Set();
       async function unlockVoicePlayback() {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) throw new Error("This browser cannot play local neural audio.");
@@ -2234,37 +2666,21 @@
       }
       function stopVoicePlayback() {
         window.speechSynthesis?.cancel?.();
+        const activeBrowserStreams = typeof browserTtsActiveStreams === "undefined" ? [] : [...browserTtsActiveStreams];
+        for (const stream of activeBrowserStreams) stream.cancel?.();
+        if (typeof browserTtsActiveStreams !== "undefined") browserTtsActiveStreams.clear();
         if (activeVoiceAudio) { activeVoiceAudio.pause(); activeVoiceAudio = null; }
         if (activeVoiceSource) {
           try { activeVoiceSource.stop(); activeVoiceSource.disconnect(); } catch (_) {}
           activeVoiceSource = null;
         }
+        for (const source of activeVoiceSources) {
+          try { source.stop(); source.disconnect(); } catch (_) {}
+        }
+        activeVoiceSources.clear();
+        voicePlaybackLastEndTime = 0;
       }
-      async function prepareKokoroReply(spoken) {
-        const selected = els.voiceSelect.value || "kokoro:bella";
-        const voice = selected.startsWith("kokoro:") ? selected.slice("kokoro:".length) : "bella";
-        const response = await authFetch("/v1/voice/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: spoken, voice }) });
-        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message || "The local neural voice could not create audio."); }
-        const context = await unlockVoicePlayback();
-        const buffer = await context.decodeAudioData(await response.arrayBuffer());
-        return { context, buffer };
-      }
-      async function playKokoroReply(audio) {
-        await new Promise((resolve, reject) => {
-          const source = audio.context.createBufferSource(); activeVoiceSource = source;
-          source.buffer = audio.buffer; source.connect(audio.context.destination);
-          source.onended = () => { if (activeVoiceSource === source) activeVoiceSource = null; resolve(); };
-          try { source.start(); } catch (error) { if (activeVoiceSource === source) activeVoiceSource = null; reject(error); }
-        });
-      }
-      async function speakKokoroReply(spoken) {
-        await playKokoroReply(await prepareKokoroReply(spoken));
-      }
-      function speakReply(text) {
-        if (!voicePlaybackReady()) return Promise.resolve();
-        const spoken = voiceText(text); if (!spoken) return Promise.resolve();
-        stopVoicePlayback();
-        if (neuralTtsReady()) return speakKokoroReply(spoken);
+      function speakBrowserReply(spoken) {
         const utterance = new SpeechSynthesisUtterance(spoken);
         const voice = selectedVoice(); if (voice) utterance.voice = voice;
         return new Promise(resolve => {
@@ -2272,30 +2688,524 @@
           window.speechSynthesis.speak(utterance);
         });
       }
-      function startVoiceStream(run) { voiceStream = { run, buffer: "", chain: Promise.resolve(), synthesis: Promise.resolve() }; }
-      function queueVoicePhrase(run, phrase) {
+      function isBrowserTtsModelId(modelId) { return modelId === "voice-tts-moss-nano" || modelId === "voice-tts-kitten-nano"; }
+      function browserTtsStored() {
+        try {
+          if (typeof localStorage === "undefined") return {};
+          const parsed = JSON.parse(localStorage.getItem(browserTtsStorageKey) || "{}");
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (_) { return {}; }
+      }
+      function browserTtsMarkDownloaded(modelId) {
+        try {
+          if (typeof localStorage === "undefined") return;
+          const stored = browserTtsStored();
+          stored[modelId] = { downloaded: true, at: Date.now() };
+          localStorage.setItem(browserTtsStorageKey, JSON.stringify(stored));
+        } catch (_) {}
+      }
+      function browserTtsStateFor(modelId) {
+        if (!browserTtsState[modelId]) {
+          const stored = browserTtsStored()[modelId];
+          browserTtsState[modelId] = { ready: false, preparing: false, downloaded: !!stored?.downloaded, progress: "" };
+        }
+        return browserTtsState[modelId];
+      }
+      function browserTtsVoiceName(modelId, selected) {
+        const raw = String(selected || "").split(":").slice(1).join(":").trim();
+        if (modelId === "voice-tts-kitten-nano") return raw || "Jasper";
+        return raw || "Junhao";
+      }
+      function browserTtsWake(stream) {
+        for (const resolve of stream.waiters.splice(0)) resolve();
+      }
+      function browserTtsFinishStream(host, stream, error = null) {
+        if (stream.done) return;
+        stream.error = error;
+        stream.done = true;
+        host.streams.delete(stream.requestId);
+        browserTtsActiveStreams.delete(stream);
+        stream.finish?.();
+        browserTtsWake(stream);
+      }
+      function browserTtsHandleMessage(host, payload, source = null) {
+        if (!payload) return;
+        if (payload.type === "ready") {
+          host.ready = true;
+          host.resolveReady?.(host);
+          const pendingReady = host.pending.get("kitten-ready");
+          if (pendingReady) { host.pending.delete("kitten-ready"); pendingReady.resolve(host); }
+          return;
+        }
+        if (payload.type === "progress") {
+          const state = browserTtsStateFor(host.modelId);
+          state.progress = payload.progress?.message || "Downloading browser-local model files…";
+          if (typeof renderVoiceModelCards === "function") renderVoiceModelCards();
+          return;
+        }
+        if (payload.type === "audio-chunk") {
+          const stream = host.streams.get(payload.requestId);
+          const buffers = Array.isArray(payload.buffers) ? payload.buffers : [];
+          if (stream && buffers.length && !stream.cancelled) {
+            stream.sampleRate = Number(payload.sampleRate) || stream.sampleRate || 24000;
+            const data = new Float32Array(buffers[0]);
+            stream.samplesReceived += data.length;
+            if (stream.samplesReceived > stream.maxSamples) {
+              stream.cancelled = true;
+              browserTtsFinishStream(host, stream, new Error("The browser-local TTS produced an unusually long utterance."));
+            } else {
+              stream.chunks.push(data);
+              browserTtsWake(stream);
+            }
+          }
+          const target = source || host.frame?.contentWindow;
+          target?.postMessage({ source: "nano-reader-browser-onnx-client", action: "chunk-ack",
+            requestId: payload.requestId, chunkId: payload.chunkId, accepted: !!stream && !stream.cancelled }, "*");
+          return;
+        }
+        if (payload.type === "audio") {
+          const stream = host.streams.get(payload.requestId);
+          if (!stream || stream.cancelled || !payload.data) return;
+          const data = payload.data instanceof Float32Array ? payload.data : new Float32Array(payload.data);
+          stream.sampleRate = Number(payload.sampleRate) || stream.sampleRate || 24000;
+          stream.samplesReceived += data.length;
+          if (stream.samplesReceived > stream.maxSamples) {
+            browserTtsFinishStream(host, stream, new Error("The browser-local TTS produced an unusually long utterance."));
+          } else { stream.chunks.push(data); browserTtsWake(stream); }
+          return;
+        }
+        if (payload.type === "done") {
+          const stream = host.streams.get(payload.requestId);
+          if (stream) { stream.sampleRate = Number(payload.sampleRate) || stream.sampleRate || 24000; browserTtsFinishStream(host, stream); }
+          return;
+        }
+        if (payload.type === "error") {
+          const pendingReady = host.pending.get("kitten-ready");
+          if (pendingReady && !payload.requestId) {
+            host.pending.delete("kitten-ready");
+            pendingReady.reject(new Error(payload.error || "Kitten browser model could not be prepared."));
+            return;
+          }
+          const stream = host.streams.get(payload.requestId);
+          if (stream) browserTtsFinishStream(host, stream, new Error(payload.error || "Browser-local TTS failed."));
+          return;
+        }
+        if (payload.type === "response" && payload.requestId) {
+          const pending = host.pending.get(payload.requestId);
+          if (!pending) return;
+          host.pending.delete(payload.requestId);
+          if (payload.ok) pending.resolve(payload.data || {});
+          else pending.reject(new Error(payload.error || "Browser-local TTS failed."));
+        }
+      }
+      function installBrowserTtsMessageListener() {
+        if (browserTtsMessageListenerInstalled) return;
+        browserTtsMessageListenerInstalled = true;
+        window.addEventListener("message", event => {
+          for (const host of browserTtsHosts.values()) {
+            if (host.frame?.contentWindow === event.source) {
+              browserTtsHandleMessage(host, event.data, event.source);
+              return;
+            }
+          }
+        });
+      }
+      function browserTtsHostFor(modelId) {
+        const existing = browserTtsHosts.get(modelId);
+        if (existing) return existing;
+        installBrowserTtsMessageListener();
+        const host = { modelId, kind: modelId === "voice-tts-moss-nano" ? "moss" : "kitten",
+          frame: null, worker: null, ready: false, pending: new Map(), streams: new Map() };
+        host.readyPromise = new Promise((resolve, reject) => { host.resolveReady = resolve; host.rejectReady = reject; });
+        if (host.kind === "moss") {
+          const frame = document.createElement("iframe");
+          frame.src = "/assets/voice/tts/moss/browser_onnx_host.html";
+          frame.title = "MOSS local TTS runtime";
+          frame.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:0;left:-9999px;top:-9999px";
+          host.frame = frame;
+          document.body.appendChild(frame);
+        } else {
+          const worker = new Worker("/assets/voice/tts/kitten/worker.js", { type: "module" });
+          worker.addEventListener("message", event => browserTtsHandleMessage(host, event.data));
+          worker.addEventListener("error", event => host.rejectReady?.(new Error(event.message || "Kitten browser worker failed.")));
+          host.worker = worker;
+        }
+        browserTtsHosts.set(modelId, host);
+        return host;
+      }
+      function browserTtsRequest(host, payload, requestId = null) {
+        const id = requestId || `browser-tts-${Date.now()}-${++browserTtsRequestCounter}`;
+        return new Promise((resolve, reject) => {
+          host.pending.set(id, { resolve, reject });
+          if (host.kind === "moss") host.frame.contentWindow.postMessage({ source: "nano-reader-browser-onnx-client", ...payload, requestId: id }, "*");
+        });
+      }
+      async function prepareBrowserTtsModel(modelId) {
+        const state = browserTtsStateFor(modelId);
+        if (state.ready) return;
+        if (state.preparing) return state.preparing;
+        state.progress = state.downloaded
+          ? "Verifying the browser-local model files…"
+          : (modelId === "voice-tts-moss-nano" ? "Downloading MOSS browser model files…" : "Downloading Kitten browser model files…");
+        if (typeof renderVoiceModelCards === "function") renderVoiceModelCards();
+        state.preparing = (async () => {
+          const host = browserTtsHostFor(modelId);
+          if (host.kind === "moss") {
+            await host.readyPromise;
+            await browserTtsRequest(host, { action: "warmup", config: { modelKey: "samosa-moss", modelPath: "managed://samosa-moss", threadCount: 1 } });
+          } else {
+            await new Promise((resolve, reject) => { host.pending.set("kitten-ready", { resolve, reject }); host.worker.postMessage({ type: "prepare" }); });
+          }
+          state.ready = true;
+          state.downloaded = true;
+          browserTtsMarkDownloaded(modelId);
+          state.progress = "Downloaded and ready in this browser.";
+        })().finally(() => {
+          state.preparing = false;
+          if (typeof renderVoiceModelCards === "function") renderVoiceModelCards();
+        });
+        return state.preparing;
+      }
+      async function browserTtsSynthesize(spoken, trace = {}) {
+        const modelId = voiceStatus.tts_model_id;
+        await prepareBrowserTtsModel(modelId);
+        const host = browserTtsHostFor(modelId);
+        const context = await unlockVoicePlayback();
+        const requestId = `browser-tts-${Date.now()}-${++browserTtsRequestCounter}`;
+        const stream = { requestId, context, sampleRate: 24000, chunks: [], waiters: [], done: false, error: null,
+          cancelled: false, samplesReceived: 0, maxSamples: Math.ceil(24000 * Math.max(12, Math.min(45, 8 + spoken.length / 8))), trace };
+        stream.finished = new Promise(resolve => { stream.finish = resolve; });
+        browserTtsActiveStreams.add(stream);
+        host.streams.set(requestId, stream);
+        const voice = browserTtsVoiceName(modelId, trace.voiceSelection || els.voiceSelect.value);
+        if (host.kind === "moss") {
+          browserTtsRequest(host, { action: "synthesize", config: { modelPath: "managed://samosa-moss", threadCount: 1 },
+            text: spoken, voiceName: voice, settings: { sampleMode: "greedy", doSample: false,
+              realtimeStreamingDecode: true, enableNormalizeTtsText: true, enableWeTextProcessing: false } }, requestId)
+            .then(() => { const current = host.streams.get(requestId); if (current) browserTtsFinishStream(host, current); })
+            .catch(error => { const current = host.streams.get(requestId); if (current) browserTtsFinishStream(host, current, error); });
+        } else {
+          host.worker.postMessage({ type: "synthesize", requestId, text: spoken, voice });
+        }
+        stream.cancel = () => {
+          stream.cancelled = true;
+          if (host.kind === "moss") host.frame.contentWindow.postMessage({ source: "nano-reader-browser-onnx-client",
+            action: "cancel", requestId: `cancel-${requestId}`, targetRequestId: requestId }, "*");
+          else host.worker.postMessage({ type: "cancel", requestId });
+          browserTtsFinishStream(host, stream, new Error("Browser-local TTS playback was stopped."));
+        };
+        return stream;
+      }
+      async function takeBrowserTtsChunk(stream) {
+        while (!stream.chunks.length && !stream.done) await new Promise(resolve => stream.waiters.push(resolve));
+        if (stream.chunks.length) return stream.chunks.shift();
+        if (stream.error) throw stream.error;
+        return null;
+      }
+      async function playBrowserTtsReply(audio) {
+        let scheduledUntil = Math.max(audio.context.currentTime + .06, voicePlaybackLastEndTime || 0);
+        let lastEnded = null, started = false;
+        while (true) {
+          const samples = await takeBrowserTtsChunk(audio);
+          if (!samples) break;
+          const sampleRate = audio.sampleRate || 24000;
+          const buffer = audio.context.createBuffer(1, samples.length, sampleRate);
+          buffer.getChannelData(0).set(samples);
+          const source = audio.context.createBufferSource(); activeVoiceSource = source; activeVoiceSources.add(source);
+          source.buffer = buffer; source.connect(audio.context.destination);
+          let resolveEnded; lastEnded = new Promise(resolve => { resolveEnded = resolve; });
+          source.onended = () => { activeVoiceSources.delete(source); if (activeVoiceSource === source) activeVoiceSource = null; try { source.disconnect(); } catch (_) {} resolveEnded(); };
+          const startsAt = Math.max(scheduledUntil, audio.context.currentTime + .035);
+          scheduledUntil = startsAt + samples.length / sampleRate;
+          source.start(startsAt); started = true;
+          if (!audio.firstByte) { audio.firstByte = true; voiceTraceEvent("tts_first_audio_byte", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex, sample_rate: sampleRate, sample_count: samples.length }); }
+          voiceTraceEvent("playback_started", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex, sample_rate: sampleRate, sample_count: samples.length });
+        }
+        if (!started) throw audio.error || new Error("The browser-local TTS returned no audio.");
+        voicePlaybackLastEndTime = scheduledUntil;
+        return { ended: (lastEnded || Promise.resolve()).then(() => voiceTraceEvent("playback_phrase_complete", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex })) };
+      }
+      async function prepareKokoroReply(spoken, trace = {}) {
+        const defaultVoice = voiceStatus.tts_engine === "pocket_native" ? "pocket:caro" : "kokoro:bella";
+        /* Voice is captured when a streamed reply starts. A settings refresh
+           must not swap the reference speaker between synthesis batches. */
+        const selected = trace.voiceSelection || els.voiceSelect.value || defaultVoice;
+        const voice = selected.startsWith("pocket:") ? selected.slice("pocket:".length)
+                    : selected.startsWith("kokoro:") ? selected.slice("kokoro:".length)
+                    : voiceStatus.tts_engine === "pocket_native" ? "caro" : "bella";
+        voiceTraceEvent("tts_request_started", trace.turnId, { phrase_index: trace.phraseIndex, phrase_count: trace.phraseCount || 1, phrase_chars: spoken.length, voice });
+        const headers = { "Content-Type": "application/json" };
+        if (trace.turnId) headers["X-Samosa-Voice-Turn"] = trace.turnId;
+        const response = await authFetch("/v1/voice/speech/stream", { method: "POST", headers, body: JSON.stringify({ text: spoken, voice, phrase_index: trace.phraseIndex, phrase_count: trace.phraseCount || 1 }) });
+        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message || "The local neural voice could not create audio."); }
+        if (!response.body) throw new Error("Streaming local voice playback is not available in this browser.");
+        const context = await unlockVoicePlayback();
+        const sampleRate = Number(response.headers.get("X-Samosa-Sample-Rate"));
+        if (!Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 96000)
+          throw new Error("The local neural voice returned an invalid sample rate.");
+        voiceTraceEvent("tts_response_headers", trace.turnId, { phrase_index: trace.phraseIndex, sample_rate: sampleRate, http_status: response.status });
+        const maxSeconds = Math.max(12, Math.min(180, 8 + spoken.length / 8));
+        const stream = { context, sampleRate, chunks: [], waiters: [], done: false, error: null, trace, firstByte: false,
+          samplesReceived: 0, maxSamples: Math.ceil(sampleRate * maxSeconds) };
+        const wake = () => { for (const resolve of stream.waiters.splice(0)) resolve(); };
+        stream.synthesisDone = (async () => {
+          const reader = response.body.getReader();
+          try {
+            while (true) {
+              const part = await reader.read();
+              if (part.done) break;
+              if (!part.value?.byteLength) continue;
+              const chunk = new Uint8Array(part.value);
+              stream.chunks.push(chunk);
+              if (!stream.firstByte) {
+                stream.firstByte = true;
+                voiceTraceEvent("tts_first_audio_byte", trace.turnId, { phrase_index: trace.phraseIndex, chunk_bytes: chunk.byteLength, sample_rate: sampleRate });
+              }
+              wake();
+            }
+          } catch (error) { stream.error = error; }
+          finally { stream.done = true; wake(); }
+        })();
+        return stream;
+      }
+      async function takeKokoroPcmChunk(stream) {
+        while (!stream.chunks.length && !stream.done) await new Promise(resolve => stream.waiters.push(resolve));
+        if (stream.chunks.length) return stream.chunks.shift();
+        if (stream.error) throw stream.error;
+        return null;
+      }
+      async function playKokoroReply(audio) {
+        let carry = null;
+        let scheduledUntil = Math.max(audio.context.currentTime + .06, voicePlaybackLastEndTime || 0);
+        let lastEnded = null, started = false;
+        while (true) {
+          let bytes = await takeKokoroPcmChunk(audio);
+          if (!bytes) break;
+          if (carry !== null) {
+            const joined = new Uint8Array(bytes.length + 1); joined[0] = carry; joined.set(bytes, 1); bytes = joined; carry = null;
+          }
+          if (bytes.length & 1) { carry = bytes[bytes.length - 1]; bytes = bytes.subarray(0, bytes.length - 1); }
+          if (!bytes.length) continue;
+          const samples = new Float32Array(bytes.length / 2);
+          for (let i = 0; i < samples.length; ++i) {
+            const value = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
+            const signed = value & 0x8000 ? value - 0x10000 : value;
+            samples[i] = signed / (signed < 0 ? 32768 : 32767);
+          }
+          audio.samplesReceived += samples.length;
+          if (audio.samplesReceived > audio.maxSamples) {
+            voiceTraceEvent("tts_safety_limit", audio.trace.turnId, {
+              phrase_index: audio.trace.phraseIndex, sample_count: audio.samplesReceived,
+              max_sample_count: audio.maxSamples, sample_rate: audio.sampleRate
+            });
+            stopVoicePlayback();
+            throw new Error("The local neural voice produced an unusually long utterance.");
+          }
+          const buffer = audio.context.createBuffer(1, samples.length, audio.sampleRate);
+          buffer.getChannelData(0).set(samples);
+          const source = audio.context.createBufferSource(); activeVoiceSource = source; activeVoiceSources.add(source);
+          source.buffer = buffer; source.connect(audio.context.destination);
+          let resolveEnded;
+          lastEnded = new Promise(resolve => { resolveEnded = resolve; });
+          source.onended = () => {
+            activeVoiceSources.delete(source);
+            if (activeVoiceSource === source) activeVoiceSource = null;
+            try { source.disconnect(); } catch (_) {}
+            resolveEnded();
+          };
+          const readyAt = audio.context.currentTime + .035;
+          if (started && scheduledUntil + .02 < readyAt)
+            voiceTraceEvent("playback_buffer_underrun", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex, gap_ms: (readyAt - scheduledUntil) * 1000 });
+          if (!started && voicePlaybackLastEndTime && voicePlaybackLastEndTime + .02 < readyAt)
+            voiceTraceEvent("playback_buffer_underrun", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex, gap_ms: (readyAt - voicePlaybackLastEndTime) * 1000 });
+          const startsAt = Math.max(scheduledUntil, readyAt);
+          scheduledUntil = startsAt + samples.length / audio.sampleRate;
+          try { source.start(startsAt); }
+          catch (error) {
+            activeVoiceSources.delete(source);
+            if (activeVoiceSource === source) activeVoiceSource = null;
+            try { source.disconnect(); } catch (_) {}
+            resolveEnded();
+            throw error;
+          }
+          if (!started) {
+            started = true;
+            voiceTraceEvent("playback_started", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex, sample_rate: audio.sampleRate, sample_count: samples.length });
+          }
+        }
+        await audio.synthesisDone;
+        if (audio.error) throw audio.error;
+        if (!started) throw new Error("The local neural voice returned no audio.");
+        /* Resolve after scheduling, not after playback. The next clause can
+           then be placed directly after this one on the same Web Audio
+           timeline while this clause is still audible. */
+        voicePlaybackLastEndTime = scheduledUntil;
+        const ended = (lastEnded || Promise.resolve()).then(() => {
+          voiceTraceEvent("playback_phrase_complete", audio.trace.turnId, { phrase_index: audio.trace.phraseIndex });
+        });
+        return { ended };
+      }
+      async function speakKokoroReply(spoken) {
+        const playback = await playKokoroReply(await prepareKokoroReply(spoken));
+        await playback.ended;
+      }
+      async function speakReply(text) {
+        if (!voicePlaybackReady()) return Promise.resolve();
+        const spoken = voiceText(text); if (!spoken) return Promise.resolve();
+        stopVoicePlayback();
+        if (neuralTtsReady() && isBrowserTtsModelId(voiceStatus.tts_model_id)) {
+          try {
+            const playback = await playBrowserTtsReply(await browserTtsSynthesize(spoken));
+            await playback.ended;
+            return;
+          } catch (error) {
+            voiceTraceEvent("tts_safety_fallback", null, { reason: "browser_output_rejected" });
+            stopVoicePlayback();
+            if (browserSpeechReady()) return speakBrowserReply(spoken);
+            throw error;
+          }
+        }
+        if (neuralTtsReady() && voiceStatus.tts_engine === "pocket_native" && hasRepeatedSpeechRun(spoken) && browserSpeechReady())
+          return speakBrowserReply(spoken);
+        if (neuralTtsReady()) {
+          try { return await speakKokoroReply(spoken); }
+          catch (error) {
+            voiceTraceEvent("tts_safety_fallback", null, { reason: "native_output_rejected" });
+            stopVoicePlayback();
+            if (browserSpeechReady()) return speakBrowserReply(spoken);
+            throw error;
+          }
+        }
+        return speakBrowserReply(spoken);
+      }
+      function startVoiceStream(run, turnId = null) {
+        voicePlaybackLastEndTime = 0;
+        const ttsEngine = voiceStatus.tts_engine;
+        const defaultVoice = ttsEngine === "pocket_native" ? "pocket:caro" :
+          ttsEngine === "moss_browser" ? "moss:Junhao" : ttsEngine === "kitten_browser" ? "kitten:Jasper" : "kokoro:bella";
+        voiceStream = { run, turnId, ttsEngine, voiceSelection: els.voiceSelect.value || defaultVoice,
+          phraseIndex: 0, fragmentIndex: 0, buffer: "", pendingPhrases: [], inputComplete: false,
+          workerActive: false, chain: Promise.resolve(), synthesis: Promise.resolve(), playback: Promise.resolve(), appendChain: Promise.resolve() };
+      }
+      function pendingVoiceBatch(pending, maxCharacters, maxParts = 5) {
+        const parts = [];
+        let characters = 0;
+        for (const text of pending) {
+          const nextCharacters = characters + (parts.length ? 1 : 0) + text.length;
+          if (parts.length && nextCharacters > maxCharacters) break;
+          parts.push(text); characters = nextCharacters;
+          if (parts.length >= maxParts) break;
+        }
+        return { parts, characters };
+      }
+      function pocketVoiceBatchReady({ first, characters, inputComplete, playbackLeadSeconds, waitedMs }) {
+        if (inputComplete) return true;
+        /* A normal first sentence starts with no added delay. Only tiny
+           openers are held briefly so "Sure." does not become its own new
+           generative voice. */
+        if (first) return characters >= 96 || waitedMs >= 360;
+        /* Once playback has begun, use already-queued audio as the latency
+           budget for collecting coherent text. Never wait long enough to
+           risk an audible gap. */
+        return characters >= 280 || playbackLeadSeconds <= 4.5 || waitedMs >= 1800;
+      }
+      function pocketPlaybackLeadSeconds() {
+        if (!voicePlaybackContext || !voicePlaybackLastEndTime) return 0;
+        return Math.max(0, voicePlaybackLastEndTime - voicePlaybackContext.currentTime);
+      }
+      async function waitForPocketVoiceBatch(state, run) {
+        const started = performance.now();
+        while (voiceStream === state && state.run === run && state.pendingPhrases.length) {
+          const batch = pendingVoiceBatch(state.pendingPhrases, 460);
+          const lead = pocketPlaybackLeadSeconds();
+          const waited = performance.now() - started;
+          if (pocketVoiceBatchReady({ first: state.phraseIndex === 0, characters: batch.characters,
+                                      inputComplete: state.inputComplete, playbackLeadSeconds: lead,
+                                      waitedMs: waited }))
+            return { waitedMs: waited, playbackLeadSeconds: lead };
+          await new Promise(resolve => setTimeout(resolve, 60));
+        }
+        return { waitedMs: performance.now() - started, playbackLeadSeconds: pocketPlaybackLeadSeconds() };
+      }
+      function pumpKokoroSynthesis(run) {
+        const state = voiceStream;
+        if (!state || state.run !== run || state.workerActive || !state.pendingPhrases.length) return;
+        state.workerActive = true;
+        state.synthesis = state.synthesis.catch(() => null).then(async () => {
+          while (voiceStream === state && state.pendingPhrases.length) {
+            let batchWait = { waitedMs: 0, playbackLeadSeconds: pocketPlaybackLeadSeconds() };
+            if (state.ttsEngine === "pocket_native") {
+              /* state.chain resolves after prior audio is scheduled, not
+                 after it finishes playing. This makes the lead measurement
+                 accurate without serializing synthesis behind playback. */
+              if (state.phraseIndex > 0) await state.chain;
+              batchWait = await waitForPocketVoiceBatch(state, run);
+              if (voiceStream !== state || !state.pendingPhrases.length) break;
+            }
+            const phraseIndex = state.phraseIndex++;
+            const maxCharacters = state.ttsEngine === "pocket_native" ? 460 : 320;
+            const queued = pendingVoiceBatch(state.pendingPhrases, maxCharacters);
+            const parts = state.pendingPhrases.splice(0, queued.parts.length);
+            const spoken = parts.join(" ");
+            voiceTraceEvent("tts_batch_started", state.turnId, {
+              phrase_index: phraseIndex, phrase_count: parts.length, phrase_chars: spoken.length,
+              batch_wait_ms: batchWait.waitedMs, playback_lead_ms: batchWait.playbackLeadSeconds * 1000
+            });
+            const trace = { turnId: state.turnId, phraseIndex, phraseCount: parts.length, voiceSelection: state.voiceSelection };
+            const browserAudio = isBrowserTtsModelId(voiceStatus.tts_model_id);
+            const audio = browserAudio ? await browserTtsSynthesize(spoken, trace) : await prepareKokoroReply(spoken, trace);
+            state.chain = state.chain.then(async () => {
+              if (!voiceStream || voiceStream.run !== run) return;
+              setVoiceStage("speaking", "Speaking", "Samosa is replying as the answer arrives.");
+              const playback = browserAudio ? await playBrowserTtsReply(audio) : await playKokoroReply(audio);
+              state.playback = playback.ended;
+            }).catch(error => {
+              if (voiceStream && voiceStream.run === run) {
+                voiceConversationActive = false;
+                setVoiceStage("idle", "Voice playback failed", error?.message || "Samosa could not play that local reply.");
+              }
+            });
+            if (browserAudio) await audio.finished;
+            else await audio.synthesisDone;
+            if (audio.error) throw audio.error;
+          }
+        }).catch(error => {
+          if (voiceStream && voiceStream.run === run) {
+            voiceConversationActive = false;
+            setVoiceStage("idle", "Voice playback failed", error?.message || "Samosa could not create that local reply.");
+          }
+        }).finally(() => {
+          if (voiceStream === state) {
+            state.workerActive = false;
+            if (state.pendingPhrases.length) pumpKokoroSynthesis(run);
+          }
+        });
+      }
+      function queueVoicePhrase(run, phrase, final = false) {
         const state = voiceStream, clean = voiceText(phrase);
         if (!state || state.run !== run || !clean) return;
         state.spoke = true;
-        if (neuralTtsReady()) {
-          /* Synthesis for the following phrase begins while this one is being
-             spoken. That removes the dead air caused by serial fetch → play →
-             fetch cycles without ever overlapping two audible phrases. */
-          const prepared = state.synthesis = state.synthesis.catch(() => null).then(async () => {
-            if (!voiceStream || voiceStream.run !== run) return null;
-            return prepareKokoroReply(clean);
-          });
+        if (neuralTtsReady() && hasRepeatedSpeechRun(clean) && browserSpeechReady()) {
           state.chain = state.chain.then(async () => {
-            const audio = await prepared;
-            if (!audio || !voiceStream || voiceStream.run !== run) return;
-            setVoiceStage("speaking", "Speaking", "Samosa is replying as the answer arrives.");
-            await playKokoroReply(audio);
+            if (!voiceStream || voiceStream.run !== run) return;
+            setVoiceStage("speaking", "Speaking", "Samosa is using the system voice for a safer reading of this repetition.");
+            const speech = speakBrowserReply(clean);
+            state.playback = speech;
+            await speech;
           }).catch(error => {
             if (voiceStream && voiceStream.run === run) {
               voiceConversationActive = false;
               setVoiceStage("idle", "Voice playback failed", error?.message || "Samosa could not play that local reply.");
             }
           });
+          return;
+        }
+        if (neuralTtsReady()) {
+          const spoken = /[.!?,;:]["')\]]*$/.test(clean) ? clean : `${clean}${final ? "." : ","}`;
+          const fragmentIndex = state.fragmentIndex++;
+          voiceTraceEvent("tts_phrase_queued", state.turnId, { phrase_index: fragmentIndex, phrase_chars: spoken.length });
+          state.pendingPhrases.push(spoken);
+          pumpKokoroSynthesis(run);
           return;
         }
         state.chain = state.chain.then(async () => {
@@ -2309,54 +3219,106 @@
           }
         });
       }
-      function appendVoiceStream(run, text, flush = false) {
+      async function appendVoiceStreamNow(run, text, flush = false) {
         const state = voiceStream;
         if (!state || state.run !== run) return;
+        if (flush) state.inputComplete = true;
         if (text) state.buffer += text;
         let match;
         while ((match = state.buffer.match(/^\s*([\s\S]*?[.!?](?:["')\]]*)?)(?=\s|$)/))) {
           state.buffer = state.buffer.slice(match[0].length);
-          queueVoicePhrase(run, match[1]);
+          queueVoicePhrase(run, match[1], true);
         }
-        /* Do not wait for a long first sentence. Once a phrase is intelligible
-           on its own, begin preparing it while more model text arrives. */
-        const target = state.spoke ? 130 : 72;
-        while (state.buffer.length >= target) {
-          const windowEnd = Math.min(state.buffer.length, state.spoke ? 190 : 112);
-          const head = state.buffer.slice(0, windowEnd);
-          let cut = Math.max(head.lastIndexOf(","), head.lastIndexOf(";"), head.lastIndexOf(":"));
-          if (cut < target - 24) cut = Math.max(head.lastIndexOf(" "), head.lastIndexOf("\n"));
-          if (cut < target - 24) break;
-          const phrase = state.buffer.slice(0, cut); state.buffer = state.buffer.slice(cut + 1);
+        /* Feed complete clauses as model deltas arrive. We wait for a few
+           following words after a comma/colon so list punctuation is not
+           mistaken for an endpoint. The long-text fallback is deliberately
+           much larger than the old 44-character cut that split proper nouns. */
+        const minimumClause = 36, lookahead = 12;
+        while (state.buffer.length >= minimumClause + lookahead) {
+          const searchable = state.buffer.slice(0, state.buffer.length - lookahead);
+          let cut = Math.max(searchable.lastIndexOf(","), searchable.lastIndexOf(";"),
+                             searchable.lastIndexOf(":"), searchable.lastIndexOf("\n"));
+          if (cut >= minimumClause) {
+            const phrase = state.buffer.slice(0, cut + 1);
+            state.buffer = state.buffer.slice(cut + 1);
+            queueVoicePhrase(run, phrase);
+            continue;
+          }
+          if (state.buffer.length < 190) break;
+          cut = state.buffer.slice(0, 165).lastIndexOf(" ");
+          if (cut < 125) break;
+          const phrase = state.buffer.slice(0, cut);
+          state.buffer = state.buffer.slice(cut + 1);
           queueVoicePhrase(run, phrase);
         }
-        if (flush && state.buffer.trim()) { queueVoicePhrase(run, state.buffer); state.buffer = ""; }
+        if (flush && state.buffer.trim()) { queueVoicePhrase(run, state.buffer, true); state.buffer = ""; }
+      }
+      function appendVoiceStream(run, text, flush = false) {
+        const state = voiceStream;
+        if (!state || state.run !== run) return Promise.resolve();
+        /* consumeEvent() receives SSE deltas synchronously but TTS draining
+           is asynchronous. Serialize the text boundary work so two deltas
+           can never flush/requeue the same repeated-word clause at once. */
+        state.appendChain = state.appendChain.catch(() => null).then(() => {
+          if (!voiceStream || voiceStream !== state || state.run !== run) return;
+          return appendVoiceStreamNow(run, text, flush);
+        });
+        return state.appendChain;
       }
       async function finishVoiceStream(run, fallbackText) {
         const state = voiceStream;
         if (!state || state.run !== run) return;
-        appendVoiceStream(run, "", true);
+        await appendVoiceStream(run, "", true);
         if (!state.buffer && fallbackText && !state.spoke) queueVoicePhrase(run, fallbackText);
+        /* A flush can arrive just as a worker hands off to a follow-up batch.
+           Follow the current synthesis promise until both the worker and its
+           queue are genuinely drained. */
+        while (state.workerActive || state.pendingPhrases.length) {
+          const synthesis = state.synthesis;
+          await synthesis;
+          if (synthesis === state.synthesis && !state.workerActive && !state.pendingPhrases.length) break;
+        }
         await state.chain;
+        await state.playback;
         if (voiceStream && voiceStream.run === run) voiceStream = null;
       }
       function refreshVoices() {
         if (neuralTtsReady()) {
           els.voiceSettings.hidden = false;
           els.voiceSelect.textContent = "";
-          const wanted = state.settings?.voiceURI || els.voiceSelect.value || "kokoro:bella";
-          const kokoroVoices = [
+          const pocket = voiceStatus.tts_engine === "pocket_native";
+          const moss = voiceStatus.tts_engine === "moss_browser";
+          const kitten = voiceStatus.tts_engine === "kitten_browser";
+          const prefix = pocket ? "pocket" : moss ? "moss" : kitten ? "kitten" : "kokoro";
+          const neuralVoices = pocket ? [
+            ["caro", "Caro — natural English"], ["stuart", "Stuart — natural English"],
+          ] : moss ? [
+            ["Junhao", "Junhao — MOSS built-in voice"],
+          ] : kitten ? [
+            ["Bella", "Bella — warm American English"], ["Jasper", "Jasper — clear American English"],
+            ["Luna", "Luna — gentle English"], ["Bruno", "Bruno — steady English"],
+            ["Rosie", "Rosie — bright English"], ["Hugo", "Hugo — measured English"],
+            ["Kiki", "Kiki — light English"], ["Leo", "Leo — natural English"],
+          ] : [
             ["bella", "Bella — warm American English"], ["nicole", "Nicole — calm American English"],
             ["sarah", "Sarah — bright American English"], ["adam", "Adam — steady American English"],
             ["michael", "Michael — clear American English"], ["emma", "Emma — British English"],
           ];
-          for (const [id, label] of kokoroVoices) {
-            const option = document.createElement("option"); option.value = `kokoro:${id}`; option.textContent = label;
+          const fallback = `${prefix}:${neuralVoices[0][0]}`;
+          const wanted = state.settings?.voiceURI || els.voiceSelect.value || fallback;
+          for (const [id, label] of neuralVoices) {
+            const option = document.createElement("option"); option.value = `${prefix}:${id}`; option.textContent = label;
             els.voiceSelect.appendChild(option);
           }
-          els.voiceSelect.value = kokoroVoices.some(([id]) => `kokoro:${id}` === wanted) ? wanted : "kokoro:bella";
+          els.voiceSelect.value = neuralVoices.some(([id]) => `${prefix}:${id}` === wanted) ? wanted : fallback;
           els.voiceSelect.disabled = false; els.voicePreview.disabled = false;
-          els.voiceHelp.textContent = "Kokoro runs locally in Samosa's native engine. No Python, pip, or cloud voice service.";
+          els.voiceHelp.textContent = pocket
+            ? "Pocket streams local neural audio as it is generated. No Python, pip, or cloud voice service."
+            : moss
+              ? "MOSS runs in this browser with downloaded ONNX files. It uses deterministic decoding and a hard audio limit for safer number-heavy speech."
+              : kitten
+                ? "Kitten runs in this browser with downloaded ONNX files. It is small and quick, with a hard audio limit for safer playback."
+                : "Kokoro runs locally but prepares each phrase before playback. Upgrade to Pocket in Settings for streaming audio.";
           if (typeof updateVoiceAvailability === "function") updateVoiceAvailability();
           return;
         }
@@ -2418,8 +3380,7 @@
         const attachmentIds = attachments.map(a => a.id);
         // Captured before clearAttachments() empties the composer below.
         const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
-        if (!webContext.some(w => w.kind === "search") && shouldContinueWebResearch(chat, text))
-          webContext.push({ kind: "search", url: null });
+        applyAutomaticWebContext(chat, text, webContext);
         const researching = webContext.some(w => w.kind === "search");
         const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
           activity:"",sources:[]};
@@ -2475,16 +3436,24 @@
         // document text server-side; the browser never builds either.
         if (attachmentIds.length) payload.attachment_ids = attachmentIds;
         // Web access is controlled per turn. A pasted page reads only that
-        // page. `web:true` follows a visible Web-search chip, an explicit
-        // natural-language request to use the internet, or a freshness
-        // follow-up to a conversation that already shows public sources.
-        // Merely having a configured provider never lets the model initiate a
-        // search on its own.
+        // page. `web:true` follows the persistent Web-search preference, an
+        // explicit natural-language request to use the internet, or a
+        // freshness follow-up to a conversation that already shows public
+        // sources. Merely having a configured provider never lets the model
+        // initiate a search on its own.
         applyPendingWebContext(payload, webContext);
         if (chat.directory_context) payload.directory_context = chat.directory_context;
         const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
+        const voiceTurn = sendPrompt.voiceTurnId || null;
+        if (voiceTurn) voiceTraceEvent("llm_request_started", voiceTurn, {
+          backend: backend.id, prompt_messages: payload.messages?.length || 0,
+          prompt_chars: (payload.messages || []).reduce((sum, message) => sum + String(message.content || "").length, 0)
+        });
         try {
-          const response=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+          const requestHeaders={"Content-Type":"application/json"};
+          if (voiceTurn) requestHeaders["X-Samosa-Voice-Turn"]=voiceTurn;
+          const response=await fetch("/v1/chat/completions",{method:"POST",headers:requestHeaders,body:JSON.stringify(payload)});
+          if (voiceTurn) voiceTraceEvent("llm_response_headers", voiceTurn, { http_status: response.status });
           if (!response.ok) { let detail=`Request failed (${response.status})`; try { const j=await response.json(); detail=j.error?.message||detail; } catch(_){} throw new Error(detail); }
           if (!response.body) throw new Error("Streaming is not available in this browser.");
           const reader=response.body.getReader(), decoder=new TextDecoder();
@@ -2503,6 +3472,8 @@
         } catch (error) {
           assistant.error=error.message||String(error);
         } finally {
+          if (voiceTurn) voiceTraceEvent("llm_stream_complete", voiceTurn, { outcome: assistant.error ? "failed" : "complete", response_chars: assistant.content.length });
+          delete assistant._voiceTracedFirstReasoning; delete assistant._voiceTracedFirstContent;
           assistant.streaming=false; chat.updated=Date.now(); activeAssistant=null; setGenerating(false); saveState(); updateAssistantNode(assistant); renderList(); health();
           // Typed chat is always silent. The visible Listen control remains
           // available on each completed reply; automatic playback belongs
@@ -2537,7 +3508,71 @@
         }
         refreshVoices();
         updateVoiceAvailability();
+        updateWakeWordUi();
+        if (wakeListeningRequested && wakeProfile) startWakeWordListener();
         if (renderVoiceCards && els.settings.classList.contains("open")) renderVoiceModelCards();
+      }
+      function updateVoiceTraceUi() {
+        if (!els.voiceTraceToggle) return;
+        els.voiceTraceToggle.textContent = voiceTraceStatus.active ? "Stop and save log" : "Start timing log";
+        els.voiceTraceToggle.classList.toggle("primary", !voiceTraceStatus.active);
+        els.voiceTraceStatus.textContent = voiceTraceStatus.active ? "Recording timing events" : "Off";
+        els.voiceTraceStatus.classList.toggle("active", !!voiceTraceStatus.active);
+        els.voiceTracePath.hidden = !voiceTraceStatus.path;
+        els.voiceTracePath.textContent = voiceTraceStatus.path
+          ? `${voiceTraceStatus.active ? "Saving to" : "Saved at"}: ${voiceTraceStatus.path}` : "";
+      }
+      async function refreshVoiceTraceStatus() {
+        try {
+          const response = await authFetch("/v1/voice/diagnostics", { cache: "no-store" });
+          if (!response.ok) throw new Error("voice_trace_status_failed");
+          voiceTraceStatus = await response.json();
+        } catch (_) {
+          voiceTraceStatus = { active: false, session_id: null, path: null };
+        }
+        updateVoiceTraceUi();
+      }
+      function voiceTurnId() {
+        const random = self.crypto?.randomUUID?.().replaceAll("-", "") || Math.random().toString(16).slice(2);
+        return `voice-${Date.now().toString(36)}-${random}`.slice(0, 63);
+      }
+      function voiceTraceEvent(event, turnId = null, fields = null) {
+        if (!voiceTraceStatus.active) return Promise.resolve();
+        const safeFields = {};
+        for (const [key, value] of Object.entries(fields || {})) {
+          if (typeof value === "number" && Number.isFinite(value)) safeFields[key] = value;
+          else if (typeof value === "string" && value.length <= 64) safeFields[key] = value;
+        }
+        const pending = authFetch("/v1/voice/diagnostics/event", {
+          method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event, turn_id: turnId || undefined, browser_mono_ms: performance.now(), fields: safeFields })
+        }).catch(() => null);
+        voiceTracePending.add(pending);
+        pending.finally(() => voiceTracePending.delete(pending));
+        return pending;
+      }
+      async function toggleVoiceTrace() {
+        els.voiceTraceToggle.disabled = true;
+        let errorMessage = "";
+        try {
+          if (voiceTraceStatus.active) {
+            await Promise.allSettled([...voiceTracePending]);
+            const response = await authFetch("/v1/voice/diagnostics/stop", { method: "POST" });
+            if (!response.ok) throw new Error("The timing log could not be stopped.");
+            voiceTraceStatus = await response.json();
+          } else {
+            const response = await authFetch("/v1/voice/diagnostics/start", { method: "POST" });
+            const body = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(body?.error?.message || "The timing log could not be started.");
+            voiceTraceStatus = body;
+          }
+        } catch (error) {
+          errorMessage = error?.message || "Voice timing diagnostics failed.";
+        } finally {
+          els.voiceTraceToggle.disabled = false;
+          updateVoiceTraceUi();
+          if (errorMessage) els.voiceTraceStatus.textContent = errorMessage;
+        }
       }
       function setVoiceStage(mode, title, detail) {
         voiceVisualMode = mode;
@@ -2668,11 +3703,670 @@
         for (const sample of samples) power += sample * sample;
         return Math.min(1, Math.sqrt(power / Math.max(1, samples.length)) * 7);
       }
+      function voiceSpeechThreshold(noiseFloor) {
+        return Math.max(.03, Math.min(.09, (Number(noiseFloor) || .012) * 1.8 + .01));
+      }
+      function voiceEndpointPauseMs(capture) {
+        const speechMs = Math.max(0, (capture.lastSpeechAt || 0) - (capture.speechStartedAt || 0));
+        if ((capture.noiseFloor || 0) > .032) return 720;
+        if (speechMs < 650) return 700;
+        if (speechMs > 2200) return 520;
+        return 600;
+      }
+      /*
+       * Local wake words use a deliberately small, dependency-free acoustic
+       * template backend. It follows Method A's important invariants: multiple
+       * user references, a bounded 2-second rolling window, speech trimming,
+       * sequence features, cosine DTW, consensus, and a refractory period.
+       * The browser owns Samosa's microphone, so keeping this first backend in
+       * the same Web Audio graph avoids a second recorder or a cloud STT call.
+       * Feature templates and optional local playback copies are persisted;
+       * enrollment audio never leaves the browser or this Mac.
+      */
+      function normalizeWakeWord(text) { return String(text || "").trim().replace(/\s+/g, " ").slice(0, 48); }
+      function wakeDecodeRecording(dataUrl) {
+        try {
+          const encoded = String(dataUrl || "").split(",", 2)[1], binary = atob(encoded || "");
+          const bytes = Uint8Array.from(binary, character => character.charCodeAt(0)), view = new DataView(bytes.buffer);
+          const tag = at => String.fromCharCode(...bytes.subarray(at, at + 4));
+          if (bytes.length < 44 || tag(0) !== "RIFF" || tag(8) !== "WAVE" || view.getUint16(20, true) !== 1 ||
+              view.getUint16(22, true) !== 1 || view.getUint16(34, true) !== 16) return null;
+          const sampleRate = view.getUint32(24, true), sampleBytes = Math.min(view.getUint32(40, true), bytes.length - 44);
+          if (sampleRate !== 16000 || sampleBytes < 2) return null;
+          const samples = new Float32Array(Math.floor(sampleBytes / 2));
+          for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(44 + i * 2, true) / 32768;
+          return samples;
+        } catch (_) { return null; }
+      }
+      function loadWakeProfile() {
+        try {
+          let raw = JSON.parse(localStorage.getItem(WAKE_PROFILE_KEY) || "null");
+          const recordingsValid = raw && Array.isArray(raw.recordings) && raw.recordings.length === raw.templates?.length &&
+            raw.recordings.every(recording => typeof recording === "string" && recording.startsWith("data:audio/wav;base64,") && recording.length <= 2000000);
+          /* v1 accidentally included a zero-valued spectral coefficient and
+             repeatedly scored overlapping windows as independent evidence.
+             Rebuild existing profiles from their local playback copies so a
+             user does not have to re-record solely because the extractor was
+             corrected. Profiles without those copies fail closed. */
+          if (raw?.version === 1 && raw.backend === "acoustic-template-v1" && recordingsValid) {
+            const templates = raw.recordings.map(recording => {
+              const decoded = wakeDecodeRecording(recording);
+              const trimmed = decoded && wakeTrimSpeech(decoded, 16000, { minSeconds: .16, maxSeconds: 2.2, paddingSeconds: .04 });
+              return trimmed?.samples ? Array.from(wakeExtractFeatures(trimmed.samples, 16000), vector => Array.from(vector)) : null;
+            });
+            if (templates.every(Boolean)) {
+              raw = { ...raw, version: 2, backend: "acoustic-template-v2", templates, feature_dimensions: 12,
+                threshold: Math.min(.14, Math.max(.08, Number(raw.threshold) || .14)), migrated_at: new Date().toISOString() };
+              localStorage.setItem(WAKE_PROFILE_KEY, JSON.stringify(raw));
+            }
+          }
+          if (!raw || raw.version !== 2 || raw.backend !== "acoustic-template-v2" || !Array.isArray(raw.templates) || raw.templates.length < 3 || raw.templates.length > 6) return null;
+          if (!raw.wake_word || !raw.sample_rate || !raw.feature_dimensions || raw.feature_dimensions !== 12 || raw.templates.some(template => !Array.isArray(template) || !template.length || template.length > 400 || template.some(vector => !Array.isArray(vector) || vector.length !== raw.feature_dimensions || vector.some(value => !Number.isFinite(value))))) return null;
+          if (raw.recordings !== undefined && !recordingsValid) return null;
+          return raw;
+        } catch (_) { return null; }
+      }
+      function saveWakeProfile(profile) {
+        const cohesion = Number.isFinite(profile?.cohesion) ? profile.cohesion : wakeTemplateCohesion(profile?.templates || []);
+        wakeProfile = { ...profile, cohesion };
+        localStorage.setItem(WAKE_PROFILE_KEY, JSON.stringify(wakeProfile));
+      }
+      function setWakeWordStatus(text, kind = "") {
+        if (!els.wakeWordStatus) return;
+        els.wakeWordStatus.textContent = text;
+        els.wakeWordStatus.className = `wake-word-status${kind ? ` ${kind}` : ""}`;
+      }
+      function wakeResample(samples, sourceRate, targetRate = 16000) {
+        if (!samples?.length || !sourceRate || sourceRate === targetRate) return samples instanceof Float32Array ? samples : new Float32Array(samples || []);
+        const length = Math.max(1, Math.floor(samples.length * targetRate / sourceRate));
+        const output = new Float32Array(length), scale = sourceRate / targetRate;
+        for (let i = 0; i < length; i++) {
+          const at = i * scale, left = Math.floor(at), right = Math.min(samples.length - 1, left + 1), mix = at - left;
+          output[i] = samples[left] * (1 - mix) + samples[right] * mix;
+        }
+        return output;
+      }
+      function wakeTrimSpeech(samples, sampleRate = 16000, options = {}) {
+        const minSeconds = options.minSeconds ?? .16, maxSeconds = options.maxSeconds ?? 3.2, paddingSeconds = options.paddingSeconds ?? .04;
+        if (!samples?.length) return { error: "no audio" };
+        let peak = 0, clipped = 0;
+        for (const sample of samples) { const level = Math.abs(sample); peak = Math.max(peak, level); if (level > .995) clipped++; }
+        if (peak < .015) return { error: "too quiet" };
+        if (clipped / samples.length > .025) return { error: "clipped" };
+        const frame = Math.max(160, Math.round(sampleRate * .02)), hop = Math.max(80, Math.round(sampleRate * .01));
+        const levels = [];
+        for (let start = 0; start < samples.length; start += hop) {
+          let power = 0, count = Math.min(frame, samples.length - start);
+          for (let i = 0; i < count; i++) power += samples[start + i] * samples[start + i];
+          levels.push(Math.sqrt(power / Math.max(1, count)));
+        }
+        const sortedLevels = [...levels].sort((a, b) => a - b);
+        const noiseFloor = sortedLevels[Math.floor(Math.max(0, sortedLevels.length - 1) * .25)] || 0;
+        const peakLevel = Math.max(...levels);
+        // A fan or room tone can have enough raw amplitude to pass the old
+        // silence check. Require a real energy rise above the local noise
+        // floor before comparing it with the enrolled templates.
+        if (peakLevel < .025 || (noiseFloor > .008 && peakLevel < noiseFloor * 1.5)) return { error: "not speech" };
+        const threshold = Math.max(.012, peakLevel * .085, noiseFloor * 1.4, levels.reduce((a, b) => a + b, 0) / Math.max(1, levels.length) * 2.2);
+        let first = levels.findIndex(level => level >= threshold), last = levels.length - 1;
+        while (last >= 0 && levels[last] < threshold) last--;
+        if (first < 0 || last < first) return { error: "no speech" };
+        const activeFrames = levels.filter(level => level >= threshold).length;
+        if (activeFrames < 3 || (noiseFloor > .008 && activeFrames > levels.length * .94)) return { error: "not speech" };
+        const padding = Math.round(sampleRate * paddingSeconds), start = Math.max(0, first * hop - padding), end = Math.min(samples.length, Math.min(samples.length, (last + 1) * hop + padding));
+        const duration = (end - start) / sampleRate;
+        if (duration < minSeconds) return { error: "too short" };
+        if (duration > maxSeconds) return { error: "too long" };
+        return { samples: samples.slice(start, end), duration };
+      }
+      let wakeSpectrumTable = null;
+      function wakeExtractFeatures(samples, sampleRate = 16000) {
+        const frameSize = 256, hop = 160, bins = 32, bands = 16, dimensions = 12;
+        if (!wakeSpectrumTable) {
+          wakeSpectrumTable = Array.from({ length: bins }, (_, k) => ({
+            cos: Float32Array.from({ length: frameSize }, (_, n) => Math.cos(2 * Math.PI * k * n / frameSize)),
+            sin: Float32Array.from({ length: frameSize }, (_, n) => Math.sin(2 * Math.PI * k * n / frameSize)),
+          }));
+        }
+        const features = [];
+        const frameCount = Math.max(1, Math.ceil(Math.max(1, samples.length - frameSize) / hop) + 1);
+        for (let frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+          const start = frameIndex * hop, energy = new Float64Array(bins);
+          for (let k = 1; k < bins; k++) {
+            let real = 0, imag = 0;
+            for (let n = 0; n < frameSize; n++) {
+              const sample = start + n < samples.length ? samples[start + n] : 0;
+              const window = .54 - .46 * Math.cos(2 * Math.PI * n / (frameSize - 1));
+              real += sample * window * wakeSpectrumTable[k].cos[n];
+              imag -= sample * window * wakeSpectrumTable[k].sin[n];
+            }
+            energy[k] = real * real + imag * imag;
+          }
+          const logBands = new Float64Array(bands);
+          for (let band = 0; band < bands; band++) {
+            const from = 1 + band * 2, to = Math.min(bins, from + 2);
+            let total = 0; for (let k = from; k < to; k++) total += energy[k];
+            logBands[band] = Math.log(total / Math.max(1, to - from) + 1e-8);
+          }
+          let mean = 0; for (const value of logBands) mean += value; mean /= bands;
+          const vector = new Float32Array(dimensions);
+          /* Start at DCT coefficient 1. The old coefficient 0 was always zero
+             after per-frame mean removal, making unrelated sounds appear
+             artificially close under cosine distance. */
+          for (let coefficient = 1; coefficient <= dimensions; coefficient++) {
+            let total = 0;
+            for (let band = 0; band < bands; band++) total += (logBands[band] - mean) * Math.cos(Math.PI * coefficient * (band + .5) / bands);
+            vector[coefficient - 1] = total / bands;
+          }
+          features.push(vector);
+        }
+        return features;
+      }
+      function wakeCosineDistance(a, b) {
+        const length = Math.min(a?.length || 0, b?.length || 0);
+        if (!length) return a?.length === b?.length ? 0 : 1;
+        let dot = 0, aa = 0, bb = 0;
+        for (let i = 0; i < length; i++) { dot += a[i] * b[i]; aa += a[i] * a[i]; bb += b[i] * b[i]; }
+        const denominator = Math.sqrt(aa * bb);
+        if (denominator < 1e-12) return aa < 1e-12 && bb < 1e-12 ? 0 : 1;
+        return Math.max(0, Math.min(2, 1 - dot / denominator));
+      }
+      function wakeDtw(sequenceA, sequenceB) {
+        const rows = sequenceA?.length || 0, columns = sequenceB?.length || 0;
+        if (!rows || !columns) return rows === columns ? 0 : Infinity;
+        let previous = new Float64Array(columns + 1), current = new Float64Array(columns + 1);
+        previous.fill(Infinity); previous[0] = 0;
+        for (let row = 1; row <= rows; row++) {
+          current.fill(Infinity);
+          for (let column = 1; column <= columns; column++) {
+            current[column] = wakeCosineDistance(sequenceA[row - 1], sequenceB[column - 1]) + Math.min(previous[column], current[column - 1], previous[column - 1]);
+          }
+          const swap = previous; previous = current; current = swap;
+        }
+        return previous[columns] / Math.max(1, rows + columns);
+      }
+      function wakeDecision(scores, threshold = .22, mode = "consensus") {
+        const sorted = [...scores].sort((a, b) => a - b), required = mode === "reference" ? 1 : Math.min(2, scores.length);
+        return { detected: sorted.filter(score => score < threshold).length >= required, score: sorted[Math.max(0, required - 1)] ?? Infinity, scores: sorted, required };
+      }
+      function wakeEffectiveThreshold(profile) {
+        return Math.min(.18, Math.max(.08, Number(profile?.threshold) || .14));
+      }
+      function wakeThresholdLabel(value) {
+        const threshold = Number(value);
+        return threshold <= .10 ? "Strict" : threshold <= .14 ? "Balanced" : "More relaxed";
+      }
+      function wakeTemplateCohesion(templates) {
+        const pairScores = [];
+        for (let i = 0; i < templates.length; i++) for (let j = i + 1; j < templates.length; j++) {
+          const a = templates[i], b = templates[j];
+          pairScores.push(wakeDtw(a, b) + Math.abs(Math.log(Math.max(.01, a.length / Math.max(1, b.length)))) * .11);
+        }
+        pairScores.sort((a, b) => a - b);
+        return pairScores[Math.floor(pairScores.length / 2)] ?? .08;
+      }
+      function wakeProfileDecision(profile, features) {
+        const templateLengths = profile.templates.map(template => template.length).sort((a, b) => a - b);
+        const medianLength = templateLengths[Math.floor(templateLengths.length / 2)] || 1;
+        const durationRatio = features.length / medianLength;
+        const scoreFor = template => wakeDtw(features, template) + Math.abs(Math.log(Math.max(.01, features.length / Math.max(1, template.length)))) * .11;
+        const scores = profile.templates.map(scoreFor);
+        /* Reference-to-reference DTW is invariant for an enrolled profile and
+           can be far more expensive than matching one candidate. It is
+           computed once during enrollment, never on the audio/UI callback.
+           Older profiles use the conservative historical median fallback. */
+        const cohesion = Number.isFinite(profile.cohesion) ? profile.cohesion : .08;
+        const configuredThreshold = wakeEffectiveThreshold(profile);
+        const threshold = Math.min(configuredThreshold, Math.max(.065, cohesion * 1.35 + .02));
+        const decision = wakeDecision(scores, threshold, profile.aggregation || "consensus");
+        const durationMatch = durationRatio >= .62 && durationRatio <= 1.60;
+        return { ...decision, detected: decision.detected && durationMatch, durationRatio, durationMatch,
+          threshold, configuredThreshold, cohesion, agreementCount: scores.filter(score => score < threshold).length };
+      }
+      function wakeRingPush(capture, chunk) {
+        const ring = capture.wakeRing;
+        for (const sample of chunk) { ring[capture.wakeWrite] = sample; capture.wakeWrite = (capture.wakeWrite + 1) % ring.length; capture.wakeCount = Math.min(ring.length, capture.wakeCount + 1); }
+      }
+      function wakeRingSnapshot(capture) {
+        const output = new Float32Array(capture.wakeCount), start = (capture.wakeWrite - capture.wakeCount + capture.wakeRing.length) % capture.wakeRing.length;
+        for (let i = 0; i < output.length; i++) output[i] = capture.wakeRing[(start + i) % capture.wakeRing.length];
+        return output;
+      }
+      function setWakeListeningRequested(enabled) {
+        wakeListeningRequested = !!enabled;
+        if (wakeListeningRequested && wakeProfile) localStorage.setItem(WAKE_ENABLED_KEY, "1");
+        else localStorage.removeItem(WAKE_ENABLED_KEY);
+      }
+      function wakeActivateConversation(capture, result) {
+        if (handsfreeCapture !== capture || capture.mode !== "wake") return;
+        capture.mode = "conversation"; capture.turnId = voiceTurnId(); capture.chunks = []; capture.speechStartedAt = 0; capture.lastSpeechAt = 0; capture.speechFrames = 0; capture.autoStopPending = false; capture.limitTimer = null; capture.wakeRing = null; capture.noiseFloor = .012;
+        voiceTraceEvent("wake_word_accepted", capture.turnId, {
+          score: result?.score, threshold: result?.threshold, configured_threshold: result?.configuredThreshold,
+          duration_ratio: result?.durationRatio, agreement_count: result?.agreementCount, sample_rate: capture.sourceRate
+        });
+        voiceTraceEvent("microphone_ready", capture.turnId, { mode: "wake", sample_rate: capture.sourceRate });
+        /* A wake match consumes this capture, not the armed setting. Keep the
+           preference on so the completed Voice turn returns to wake mode. */
+        setWakeListeningRequested(true);
+        capture.onAudio = chunk => processConversationAudio(capture, chunk);
+        voiceConversationActive = true; voiceConversationGreeted = true; voiceGreetingContext = "";
+        els.voiceToggle.classList.add("listening"); els.voiceMic.classList.add("listening"); updateVoiceAvailability(); updateWakeListeningUi(); setWakeWordStatus("Voice is ready — speak your message.", "ready"); stopVoicePlayback();
+        setVoiceStage("listening", "Listening", "Speak naturally. I’ll respond when you pause.");
+      }
+      function wakeResetCandidate(capture, quietUntil = 0) {
+        capture.wakeSpeechActive = false; capture.wakeSpeechFrames = 0; capture.wakeSpeechStartedAt = 0;
+        capture.wakeLastSpeechAt = 0; capture.wakeSpeechPeak = 0; capture.wakeIgnoreUntil = quietUntil;
+        if (capture.wakeRing) capture.wakeRing.fill(0);
+        capture.wakeWrite = 0; capture.wakeCount = 0;
+      }
+      function wakeEvaluateCandidate(capture, candidateDurationMs, pcm) {
+        const trimmed = wakeTrimSpeech(pcm, 16000, { minSeconds: .16, maxSeconds: 1.8, paddingSeconds: .04 });
+        if (!trimmed?.samples) {
+          voiceTraceEvent("wake_candidate_evaluated", null, { candidate_duration_ms: candidateDurationMs, outcome: "rejected_audio" });
+          return;
+        }
+        const result = wakeProfileDecision(wakeProfile, wakeExtractFeatures(trimmed.samples, 16000));
+        wakeDetectionStats.checks++; wakeDetectionStats.lastScore = result.score;
+        voiceTraceEvent("wake_candidate_evaluated", null, {
+          score: result.score, threshold: result.threshold, configured_threshold: result.configuredThreshold,
+          duration_ratio: result.durationRatio, candidate_duration_ms: candidateDurationMs,
+          agreement_count: result.agreementCount, reference_count: wakeProfile.templates.length,
+          outcome: result.detected ? "accepted" : result.durationMatch ? "rejected_match" : "rejected_duration"
+        });
+        if (result.detected) {
+          capture.wakeCooldownUntil = Date.now() + 2500; wakeDetectionStats.detections++;
+          wakeActivateConversation(capture, result);
+        } else {
+          setWakeWordStatus(`Listening for “${wakeProfile.wake_word}”… say it whenever you’re ready.`, "ready");
+        }
+      }
+      function queueWakeCandidateEvaluation(capture, candidateDurationMs) {
+        if (capture.wakeEvaluationPending) {
+          wakeResetCandidate(capture, performance.now() + 280);
+          return;
+        }
+        /* Snapshot quickly inside the audio callback, then yield before the
+           spectral/DTW work. Running that work directly in ScriptProcessor's
+           main-thread callback could starve clicks and trigger Chromium's
+           Page Unresponsive dialog on a noisy microphone. */
+        const pcm = wakeResample(wakeRingSnapshot(capture), capture.context.sampleRate, 16000);
+        wakeResetCandidate(capture, performance.now() + 280);
+        capture.wakeEvaluationPending = true;
+        setTimeout(() => {
+          try {
+            if (handsfreeCapture === capture && capture.mode === "wake" && wakeProfile)
+              wakeEvaluateCandidate(capture, candidateDurationMs, pcm);
+          } finally {
+            capture.wakeEvaluationPending = false;
+          }
+        }, 0);
+      }
+      function wakeSpeechBoundary(state, level, now, chunkLength, sampleRate) {
+        if (!state.wakeSpeechActive && level < .16)
+          state.wakeNoiseFloor = (state.wakeNoiseFloor || .012) * .92 + level * .08;
+        if (now < (state.wakeIgnoreUntil || 0)) return null;
+        const speechThreshold = Math.max(.035, voiceSpeechThreshold(state.wakeNoiseFloor));
+        if (level > speechThreshold) {
+          state.wakeSpeechFrames++;
+          if (!state.wakeSpeechActive && state.wakeSpeechFrames >= 2) {
+            state.wakeSpeechActive = true;
+            state.wakeSpeechStartedAt = now - chunkLength / sampleRate * 1000;
+          }
+          if (state.wakeSpeechActive) {
+            state.wakeLastSpeechAt = now;
+            state.wakeSpeechPeak = Math.max(state.wakeSpeechPeak || 0, level);
+          }
+          return null;
+        }
+        state.wakeSpeechFrames = 0;
+        if (!state.wakeSpeechActive || now - state.wakeLastSpeechAt < 260) return null;
+        const durationMs = state.wakeLastSpeechAt - state.wakeSpeechStartedAt;
+        const result = { durationMs, validShape: durationMs >= 160 && durationMs <= 1800 &&
+          state.wakeSpeechPeak >= Math.max(.045, (state.wakeNoiseFloor || .012) * 1.45) };
+        state.wakeSpeechActive = false; state.wakeIgnoreUntil = now + 280;
+        return result;
+      }
+      function processWakeAudio(capture, chunk) {
+        if (capture.mode !== "wake" || !wakeProfile) return;
+        wakeRingPush(capture, chunk);
+        if (Date.now() < (capture.wakeCooldownUntil || 0)) return;
+        const now = performance.now(), level = voiceFrameLevel(chunk);
+        const boundary = wakeSpeechBoundary(capture, level, now, chunk.length, capture.context.sampleRate);
+        if (!boundary) return;
+        if (boundary.validShape) {
+          queueWakeCandidateEvaluation(capture, boundary.durationMs);
+        } else {
+          voiceTraceEvent("wake_candidate_evaluated", null, { candidate_duration_ms: boundary.durationMs, outcome: "rejected_shape" });
+          wakeResetCandidate(capture, now + 280);
+        }
+      }
+      function processConversationAudio(capture, chunk) {
+        const now = performance.now(), level = voiceFrameLevel(chunk);
+        const threshold = voiceSpeechThreshold(capture.noiseFloor), speech = level > threshold;
+        if (!capture.speechStartedAt && level < .16)
+          capture.noiseFloor = (capture.noiseFloor || .012) * .94 + level * .06;
+        else if (capture.speechStartedAt && !speech && level < threshold)
+          capture.noiseFloor = (capture.noiseFloor || .012) * .995 + level * .005;
+        if (speech) {
+          capture.speechFrames++;
+          if (!capture.speechStartedAt && capture.speechFrames >= 2) {
+            capture.speechStartedAt = now;
+            capture.speechPeak = level;
+            voiceTraceEvent("speech_started", capture.turnId, { audio_level: level, noise_floor: capture.noiseFloor, sample_rate: capture.sourceRate });
+            capture.limitTimer = setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 115000);
+          }
+          if (capture.speechStartedAt) capture.chunks.push(chunk);
+          capture.speechPeak = Math.max(capture.speechPeak || 0, level);
+          capture.lastSpeechAt = now;
+        } else {
+          capture.speechFrames = 0;
+          if (capture.speechStartedAt) {
+            capture.chunks.push(chunk);
+            const endpointMs = voiceEndpointPauseMs(capture), silenceMs = now - capture.lastSpeechAt;
+            if (!capture.autoStopPending && now - capture.speechStartedAt > 300 && silenceMs > endpointMs) {
+              voiceTraceEvent("speech_ended", capture.turnId, {
+                silence_ms: silenceMs, speech_duration_ms: capture.lastSpeechAt - capture.speechStartedAt,
+                endpoint_ms: endpointMs, noise_floor: capture.noiseFloor, audio_level: capture.speechPeak || 0
+              });
+              capture.autoStopPending = true; setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 0);
+            }
+          }
+        }
+      }
+      async function openMicrophoneCapture(mode = "conversation") {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext, context = new AudioContextClass();
+          const source = context.createMediaStreamSource(stream), analyser = context.createAnalyser(), processor = context.createScriptProcessor(4096, 1, 1), mute = context.createGain();
+          mute.gain.value = 0;
+          const capture = { mode, turnId: null, chunks: [], sourceRate: context.sampleRate, stream, context, source, analyser, processor, mute, limitTimer: null, speechStartedAt: 0, lastSpeechAt: 0, speechFrames: 0, speechPeak: 0, noiseFloor: .012, autoStopPending: false, onAudio: null, wakeRing: null, wakeWrite: 0, wakeCount: 0, wakeCooldownUntil: 0, wakeNoiseFloor: .012, wakeSpeechActive: false, wakeSpeechFrames: 0, wakeSpeechStartedAt: 0, wakeLastSpeechAt: 0, wakeSpeechPeak: 0, wakeIgnoreUntil: 0, wakeEvaluationPending: false };
+          analyser.fftSize = 256;
+          processor.onaudioprocess = event => {
+            const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+            if (capture.onAudio) capture.onAudio(chunk);
+          };
+          source.connect(analyser); analyser.connect(processor); processor.connect(mute); mute.connect(context.destination);
+          for (const track of stream.getTracks()) track.onended = () => {
+            if (handsfreeCapture !== capture) return;
+            if (capture.mode === "wake") { handsfreeCapture = null; setWakeListeningRequested(false); releaseHandsfreeCapture(capture); setWakeWordStatus("Microphone stopped. Click Listen for wake word to resume.", "error"); updateVoiceAvailability(); updateWakeListeningUi(); return; }
+            voiceConversationActive = false; stopHandsfree(false);
+          };
+          return capture;
+        } catch (error) {
+          for (const track of stream.getTracks()) track.stop();
+          throw error;
+        }
+      }
+      async function stopWakeWordListener() {
+        const capture = handsfreeCapture;
+        if (!capture || capture.mode !== "wake") return;
+        handsfreeCapture = null; releaseHandsfreeCapture(capture); updateVoiceAvailability(); updateWakeListeningUi();
+      }
+      function updateWakeListeningUi() {
+        const active = wakeListeningRequested && handsfreeCapture?.mode === "wake";
+        const conversation = wakeListeningRequested && voiceConversationActive && handsfreeCapture?.mode === "conversation";
+        const busy = voiceConversationActive || handsfreeInFlight || wakeEnrollment;
+        els.wakeWordListen.disabled = (!wakeProfile && !active && !conversation) || !!busy && !active && !conversation;
+        els.wakeWordListen.textContent = conversation ? "Voice is active" : active ? "Stop listening" : wakeListeningRequested ? "Starting…" : "Listen for wake word";
+        els.wakeWordListen.classList.toggle("primary", !active && !conversation);
+        els.wakeWordListenStatus.textContent = conversation
+          ? "Voice is active."
+          : active
+          ? `Listening now — say “${wakeProfile.wake_word}” to start Voice.`
+          : wakeListeningRequested
+            ? "Starting the microphone…"
+            : wakeProfile
+              ? "Off — click Listen for wake word when you’re ready."
+              : "Record a wake word first.";
+      }
+      async function toggleWakeWordListening() {
+        if (wakeListeningRequested || handsfreeCapture?.mode === "wake") {
+          setWakeListeningRequested(false);
+          if (handsfreeCapture?.mode === "conversation" || handsfreeInFlight) {
+            updateWakeListeningUi();
+            setWakeWordStatus("Wake word listening is off. The current Voice reply can finish normally.");
+            return;
+          }
+          await stopWakeWordListener();
+          hideVoiceStage();
+          updateWakeListeningUi();
+          setWakeWordStatus("Wake word listening is off.");
+          return;
+        }
+        if (!wakeProfile) { setWakeWordStatus("Record a wake word before listening for it.", "error"); return; }
+        if (voiceConversationActive || handsfreeInFlight || wakeEnrollment) return;
+        setWakeListeningRequested(true);
+        updateWakeListeningUi();
+        await startWakeWordListener();
+      }
+      async function startWakeWordListener() {
+        if (!wakeListeningRequested || !wakeProfile || wakeListenerStarting || handsfreeCapture || handsfreeInFlight || wakeEnrollment || generating) return;
+        if (!voiceStatus.stt_ready || !browserTtsReady() || !backend.ready) {
+          updateWakeListeningUi();
+          setWakeWordStatus("Wake listening is on and will start when the local model and voice are ready.");
+          return;
+        }
+        wakeListenerStarting = true;
+        try {
+          const capture = await openMicrophoneCapture("wake");
+          if (!wakeListeningRequested || wakeProfile === null) { releaseHandsfreeCapture(capture); updateWakeListeningUi(); return; }
+          capture.wakeRing = new Float32Array(Math.ceil(capture.context.sampleRate * 2.05));
+          capture.onAudio = chunk => processWakeAudio(capture, chunk);
+          handsfreeCapture = capture; wakeDetectionStats = { checks: 0, lastScore: null, detections: wakeDetectionStats.detections };
+          hideVoiceStage();
+          setWakeWordStatus(`Listening for “${wakeProfile.wake_word}”… local audio stays on this Mac.`, "ready"); updateVoiceAvailability(); updateWakeListeningUi();
+        } catch (error) {
+          setWakeListeningRequested(false); updateWakeListeningUi(); setWakeWordStatus(error?.message || "Microphone permission is needed for wake listening.", "error");
+        } finally {
+          wakeListenerStarting = false;
+          updateWakeListeningUi();
+        }
+      }
+      function updateWakeSoundIndicator(level, remaining = null) {
+        const active = level > .035;
+        els.wakeWordLevel.style.width = `${Math.min(100, Math.round(level * 180))}%`;
+        els.wakeWordSoundDot.classList.toggle("active", active);
+        els.wakeWordSoundStatus.textContent = active ? "Sound detected" : "Listening for your voice…";
+        els.wakeWordSoundHint.textContent = active ? "Good — keep saying your word" : "Say your word now";
+        if (remaining !== null) els.wakeWordTimer.textContent = `${remaining.toFixed(1)}s left`;
+      }
+      function wakeWavDataUrl(samples) {
+        const bytes = new Uint8Array(encodeVoiceWav([samples], 16000));
+        let binary = "";
+        for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, Math.min(bytes.length, at + 0x8000)));
+        return `data:audio/wav;base64,${btoa(binary)}`;
+      }
+      function stopWakeRecordingPlayback() {
+        if (!activeWakeRecordingAudio) return;
+        activeWakeRecordingAudio.audio.pause(); activeWakeRecordingAudio.audio.currentTime = 0;
+        if (activeWakeRecordingAudio.button) activeWakeRecordingAudio.button.textContent = "Play";
+        activeWakeRecordingAudio = null;
+      }
+      function playWakeRecording(data, button) {
+        if (!data) return;
+        if (activeWakeRecordingAudio?.data === data) { stopWakeRecordingPlayback(); return; }
+        stopWakeRecordingPlayback();
+        const audio = new Audio(data); activeWakeRecordingAudio = { data, audio, button };
+        button.textContent = "Pause";
+        audio.onended = () => { if (activeWakeRecordingAudio?.audio === audio) { button.textContent = "Play"; activeWakeRecordingAudio = null; } };
+        audio.onerror = () => { if (activeWakeRecordingAudio?.audio === audio) { button.textContent = "Play"; activeWakeRecordingAudio = null; } };
+        audio.play().catch(() => { if (activeWakeRecordingAudio?.audio === audio) { button.textContent = "Play"; activeWakeRecordingAudio = null; } });
+      }
+      function updateWakeRecordingsUi() {
+        const enrollment = wakeEnrollment, recordings = enrollment?.recordings || wakeProfile?.recordings || [];
+        const total = enrollment?.total || wakeProfile?.templates?.length || Number(els.wakeWordCount.value) || 3;
+        els.wakeWordRecordings.textContent = "";
+        if (!recordings.length) { els.wakeWordRecordings.hidden = true; return; }
+        els.wakeWordRecordings.hidden = false;
+        const title = document.createElement("div"); title.className = "wake-word-recordings-title"; title.textContent = "Your recordings — click Play to check them"; els.wakeWordRecordings.appendChild(title);
+        for (let index = 0; index < total; index++) {
+          const row = document.createElement("div"); row.className = "wake-word-recording";
+          const label = document.createElement("span"); label.textContent = recordings[index] ? `Recording ${index + 1}` : `Recording ${index + 1} — not recorded yet`; row.appendChild(label);
+          const button = document.createElement("button"); button.className = "close-settings"; button.type = "button"; button.textContent = "Play"; button.disabled = !recordings[index];
+          if (recordings[index]) button.onclick = () => playWakeRecording(recordings[index], button);
+          row.appendChild(button); els.wakeWordRecordings.appendChild(row);
+        }
+      }
+      function updateWakeEnrollmentUi() {
+        const enrollment = wakeEnrollment;
+        els.wakeWordCount.disabled = !!enrollment;
+        els.wakeWordInput.disabled = !!enrollment;
+        els.wakeWordForget.disabled = !!enrollment || !wakeProfile;
+        els.wakeWordThreshold.disabled = !!enrollment || !wakeProfile;
+        if (!enrollment) {
+          const listening = handsfreeCapture?.mode === "wake";
+          const total = wakeProfile?.templates?.length || Number(els.wakeWordCount.value) || 3;
+          els.wakeWordStep.textContent = listening ? `Listening for “${wakeProfile.wake_word}”` : wakeProfile ? "Wake word is ready" : `Record your word ${total} times`;
+          els.wakeWordTimer.textContent = listening ? "Listening now" : "3 seconds each";
+          els.wakeWordSoundDot.classList.toggle("active", listening); els.wakeWordSoundStatus.textContent = listening ? "Listening now" : "Microphone is off";
+          els.wakeWordSoundHint.textContent = listening ? "Say it to start Voice" : wakeProfile ? "Click Listen for wake word when you’re ready" : "Press Start recording first";
+          els.wakeWordLevel.style.width = "0%";
+          els.wakeWordEnroll.textContent = wakeProfile ? "Record again" : "Start recording";
+          els.wakeWordEnroll.hidden = false; els.wakeWordEnroll.disabled = false;
+          els.wakeWordNext.hidden = true; els.wakeWordCancel.hidden = true;
+          updateWakeRecordingsUi(); updateWakeListeningUi();
+          return;
+        }
+        const number = enrollment.index + 1;
+        els.wakeWordStep.textContent = `Recording ${number} of ${enrollment.total}`;
+        els.wakeWordCancel.hidden = false;
+        if (enrollment.phase === "recording") {
+          els.wakeWordEnroll.textContent = "Recording…"; els.wakeWordEnroll.disabled = true;
+          els.wakeWordNext.hidden = true;
+        } else if (enrollment.phase === "captured") {
+          els.wakeWordEnroll.textContent = "Record again"; els.wakeWordEnroll.disabled = false;
+          els.wakeWordNext.hidden = enrollment.index >= enrollment.total - 1; els.wakeWordNext.disabled = false;
+        } else {
+          els.wakeWordEnroll.textContent = enrollment.phase === "retry" ? "Try again" : "Start recording"; els.wakeWordEnroll.disabled = false; els.wakeWordNext.hidden = true;
+        }
+        els.wakeWordSoundDot.classList.remove("active"); els.wakeWordSoundStatus.textContent = enrollment.phase === "recording" ? "Listening for your voice…" : "Microphone is off";
+        els.wakeWordSoundHint.textContent = enrollment.phase === "recording" ? `Say “${enrollment.word}” now` : enrollment.phase === "retry" ? "Press Try again when you’re ready" : "Press Start recording when you’re ready";
+        els.wakeWordLevel.style.width = "0%";
+        updateWakeRecordingsUi(); updateWakeListeningUi();
+      }
+      async function recordWakeEnrollmentSample() {
+        let capture = null, settled = false, timer = null, clockTimer = null;
+        const finish = (resolve, reject, error, value) => {
+          if (settled) return; settled = true; clearTimeout(timer); clearInterval(clockTimer);
+          if (wakeEnrollment?.capture === capture) { wakeEnrollment.capture = null; wakeEnrollment.finish = null; }
+          if (capture) releaseHandsfreeCapture(capture);
+          error ? reject(error) : resolve(value);
+        };
+        return new Promise(async (resolve, reject) => {
+          try {
+            const chunks = [];
+            capture = await openMicrophoneCapture("enrollment");
+            if (!wakeEnrollment || wakeEnrollment.cancelled) { finish(resolve, reject, new Error("Recording cancelled.")); return; }
+            wakeEnrollment.capture = capture; wakeEnrollment.startedAt = performance.now(); wakeEnrollment.finish = () => finish(resolve, reject, new Error("Recording cancelled."));
+            capture.onAudio = chunk => {
+              chunks.push(chunk);
+              const level = voiceFrameLevel(chunk), remaining = Math.max(0, 3 - (performance.now() - wakeEnrollment.startedAt) / 1000);
+              wakeEnrollment.peak = Math.max(wakeEnrollment.peak || 0, level); updateWakeSoundIndicator(level, remaining);
+            };
+            clockTimer = setInterval(() => {
+              if (wakeEnrollment?.startedAt) updateWakeSoundIndicator(0, Math.max(0, 3 - (performance.now() - wakeEnrollment.startedAt) / 1000));
+            }, 100);
+            timer = setTimeout(() => {
+              const prepared = wakeTrimSpeech(wakeResample(concatenateVoiceChunks(chunks), capture.sourceRate, 16000));
+              if (prepared.samples) finish(resolve, reject, null, { samples: prepared.samples, audio: wakeWavDataUrl(prepared.samples) });
+              else finish(resolve, reject, new Error("I didn’t hear enough sound. Press Try again and say your word clearly."));
+            }, 3000);
+          } catch (error) { finish(resolve, reject, error); }
+        });
+      }
+      async function enrollWakeWord() {
+        if (handsfreeInFlight || handsfreeCapture?.mode === "conversation") return;
+        if (!wakeEnrollment) {
+          const word = normalizeWakeWord(els.wakeWordInput?.value);
+          if (!word) { setWakeWordStatus("Type the word you want Samosa to listen for.", "error"); els.wakeWordInput?.focus(); return; }
+          setWakeListeningRequested(false); stopWakeRecordingPlayback();
+          await stopWakeWordListener();
+          wakeEnrollment = { word, index: 0, total: Math.min(6, Math.max(3, Number(els.wakeWordCount.value) || 3)), samples: [], recordings: [], phase: "ready", cancelled: false };
+          updateWakeListeningUi();
+        }
+        if (wakeEnrollment.phase === "recording") return;
+        const enrollment = wakeEnrollment;
+        stopWakeRecordingPlayback();
+        enrollment.phase = "recording"; enrollment.peak = 0; updateWakeEnrollmentUi();
+        setWakeWordStatus(`Say “${enrollment.word}” after the recording starts. You have 3 seconds.`);
+        try {
+          const recording = await recordWakeEnrollmentSample();
+          if (enrollment.cancelled) return;
+          const features = wakeExtractFeatures(recording.samples, 16000);
+          if (features.length < 2) throw new Error("That recording was too short. Press Try again and say the whole word.");
+          enrollment.samples[enrollment.index] = Array.from(features, vector => Array.from(vector));
+          enrollment.recordings[enrollment.index] = recording.audio;
+          updateWakeRecordingsUi();
+          if (enrollment.index >= enrollment.total - 1) {
+            const oldThreshold = Number(wakeProfile?.threshold) || .14;
+            saveWakeProfile({ version: 2, backend: "acoustic-template-v2", wake_word: enrollment.word, sample_rate: 16000, feature_dimensions: 12, templates: enrollment.samples, recordings: enrollment.recordings, threshold: oldThreshold, aggregation: "consensus", enrolled_at: new Date().toISOString() });
+            wakeEnrollment = null; setWakeListeningRequested(false);
+            setWakeWordStatus("Your wake word is ready. Click Listen for wake word when you want to use it.", "ready");
+          } else {
+            enrollment.phase = "captured";
+            setWakeWordStatus(`Recording ${enrollment.index + 1} of ${enrollment.total} saved. Choose Next recording to continue.`, "ready");
+          }
+        } catch (error) {
+          if (enrollment.cancelled) { wakeEnrollment = null; setWakeWordStatus(wakeProfile ? `Wake word “${wakeProfile.wake_word}” is ready.` : "No wake word set up yet.", wakeProfile ? "ready" : ""); }
+          else { enrollment.phase = "retry"; setWakeWordStatus(error?.message || "That recording did not work. Press Try again.", "error"); }
+        }
+        updateWakeEnrollmentUi(); updateWakeListeningUi(); updateVoiceAvailability();
+      }
+      function nextWakeRecording() {
+        if (!wakeEnrollment || wakeEnrollment.phase !== "captured" || wakeEnrollment.index >= wakeEnrollment.total - 1) return;
+        stopWakeRecordingPlayback(); wakeEnrollment.index++; wakeEnrollment.phase = "ready"; updateWakeEnrollmentUi(); setWakeWordStatus(`Ready for recording ${wakeEnrollment.index + 1} of ${wakeEnrollment.total}. Press Start recording when you’re ready.`);
+      }
+      function cancelWakeEnrollment() {
+        if (!wakeEnrollment) return;
+        const enrollment = wakeEnrollment; enrollment.cancelled = true;
+        if (enrollment.finish) enrollment.finish();
+        else { wakeEnrollment = null; updateWakeWordUi(); setWakeWordStatus(wakeProfile ? `Wake word “${wakeProfile.wake_word}” is ready.` : "No wake word set up yet.", wakeProfile ? "ready" : ""); }
+      }
+      function forgetWakeWord() {
+        setWakeListeningRequested(false); stopWakeWordListener(); stopWakeRecordingPlayback(); wakeProfile = null; wakeDetectionStats = { checks: 0, lastScore: null, detections: 0 }; localStorage.removeItem(WAKE_PROFILE_KEY);
+        els.wakeWordInput.value = ""; els.wakeWordForget.disabled = true; els.wakeWordThreshold.disabled = true; updateWakeEnrollmentUi(); updateWakeListeningUi(); setWakeWordStatus("No wake word enrolled."); updateVoiceAvailability();
+      }
+      function updateWakeWordUi() {
+        wakeProfile = wakeProfile || loadWakeProfile();
+        const hasProfile = !!wakeProfile;
+        const enrolling = !!wakeEnrollment;
+        if (hasProfile && !els.wakeWordInput.value) els.wakeWordInput.value = wakeProfile.wake_word;
+        if (!els.wakeWordCount.dataset.loaded) {
+          els.wakeWordCount.value = hasProfile ? String(wakeProfile.templates.length) : els.wakeWordCount.value;
+          els.wakeWordCount.dataset.loaded = "1";
+        }
+        els.wakeWordForget.disabled = !hasProfile || enrolling;
+        els.wakeWordThreshold.disabled = !hasProfile || enrolling;
+        els.wakeWordCount.disabled = enrolling;
+        els.wakeWordThreshold.value = String(wakeEffectiveThreshold(wakeProfile));
+        els.wakeWordThresholdValue.textContent = wakeThresholdLabel(els.wakeWordThreshold.value);
+        els.wakeWordThreshold.setAttribute("aria-valuetext", wakeThresholdLabel(els.wakeWordThreshold.value));
+        if (enrolling) { updateWakeEnrollmentUi(); return; }
+        if (!hasProfile) setWakeWordStatus("No wake word set up yet.");
+        else if (!handsfreeCapture && wakeListeningRequested) setWakeWordStatus(`Wake listening stays on — say “${wakeProfile.wake_word}” whenever you need Samosa.`, "ready");
+        else if (!handsfreeCapture) setWakeWordStatus(`Wake word “${wakeProfile.wake_word}” is ready. Click Listen for wake word when you’re ready.`, "ready");
+        updateWakeEnrollmentUi(); updateWakeListeningUi();
+      }
       function blankVoiceTranscript(text) {
         const normalized = String(text || "").trim().toLowerCase().replace(/[\[\]()<>_\-\s]/g, "");
         return !normalized || ["blankaudio", "silence", "nospeech", "nospeechdetected", "inaudible", "noise", "music"].includes(normalized);
       }
+      function resumeArmedWakeListener(delay = 180) {
+        if (!wakeListeningRequested || !wakeProfile) return false;
+        voiceConversationActive = false;
+        voiceConversationGreeted = false;
+        voiceGreetingContext = "";
+        hideVoiceStage();
+        setWakeWordStatus(`Wake listening is on — say “${wakeProfile.wake_word}” whenever you need Samosa.`, "ready");
+        updateVoiceAvailability(); updateWakeListeningUi();
+        setTimeout(() => {
+          if (!wakeListeningRequested || !wakeProfile || handsfreeCapture || handsfreeInFlight || wakeEnrollment || generating) return;
+          startWakeWordListener();
+        }, delay);
+        return true;
+      }
       async function startHandsfree({ greet = !voiceConversationGreeted } = {}) {
+        if (handsfreeCapture?.mode === "wake") await stopWakeWordListener();
         if (handsfreeCapture || handsfreeInFlight) return;
         if (!voiceStatus.stt_ready || !browserTtsReady() || !backend.ready) return;
         if (!navigator.mediaDevices?.getUserMedia || !(window.AudioContext || window.webkitAudioContext)) {
@@ -2694,50 +4388,17 @@
           try { await speakReply(greeting); } catch (_) {}
           if (!voiceConversationActive) return;
         }
-        const capture = { requesting: true, chunks: [], sourceRate: 48000, stream: null, context: null, source: null, analyser: null, processor: null, mute: null, limitTimer: null, speechStartedAt: 0, lastSpeechAt: 0, speechFrames: 0, autoStopPending: false };
-        handsfreeCapture = capture;
         els.voiceToggle.classList.add("listening"); els.voiceMic.classList.add("listening"); updateVoiceAvailability();
         setVoiceStage("listening", "Listening", "Speak naturally. I’ll respond when you pause.");
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-          if (handsfreeCapture !== capture) { for (const track of stream.getTracks()) track.stop(); return; }
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          const context = new AudioContextClass();
-          const source = context.createMediaStreamSource(stream), analyser = context.createAnalyser(), processor = context.createScriptProcessor(4096, 1, 1), mute = context.createGain();
-          mute.gain.value = 0;
-          capture.requesting = false; capture.stream = stream; capture.context = context; capture.source = source; capture.analyser = analyser; capture.processor = processor; capture.mute = mute; capture.sourceRate = context.sampleRate;
-          analyser.fftSize = 256;
-          processor.onaudioprocess = event => {
-            const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
-            const now = performance.now(), level = voiceFrameLevel(chunk);
-            if (level > .035) {
-              capture.speechFrames++;
-              if (!capture.speechStartedAt && capture.speechFrames >= 2) {
-                capture.speechStartedAt = now;
-                /* No silent lead-in is retained. Waiting for the first words is
-                   unlimited and does not create a growing blank recording. */
-                capture.limitTimer = setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 115000);
-              }
-              if (capture.speechStartedAt) capture.chunks.push(chunk);
-              capture.lastSpeechAt = now;
-            } else {
-              capture.speechFrames = 0;
-              if (capture.speechStartedAt) {
-                capture.chunks.push(chunk);
-                if (!capture.autoStopPending && now - capture.speechStartedAt > 350 && now - capture.lastSpeechAt > 1050) {
-                  capture.autoStopPending = true;
-                  setTimeout(() => { if (handsfreeCapture === capture) stopHandsfree(true); }, 0);
-                }
-              }
-            }
-          };
-          source.connect(analyser); analyser.connect(processor); processor.connect(mute); mute.connect(context.destination);
-          for (const track of stream.getTracks()) track.onended = () => { if (handsfreeCapture === capture) { voiceConversationActive = false; stopHandsfree(false); } };
+          const capture = await openMicrophoneCapture("conversation");
+          capture.turnId = voiceTurnId();
+          voiceTraceEvent("microphone_ready", capture.turnId, { mode: "voice", sample_rate: capture.sourceRate });
+          capture.onAudio = chunk => processConversationAudio(capture, chunk);
+          handsfreeCapture = capture;
         } catch (error) {
-          if (handsfreeCapture === capture) {
-            handsfreeCapture = null; voiceConversationActive = false; voiceConversationGreeted = false; els.voiceToggle.classList.remove("listening"); els.voiceMic.classList.remove("listening"); updateVoiceAvailability();
-            setVoiceStage("idle", "Microphone permission is needed", error?.message || "Allow microphone access, then try again.");
-          }
+          voiceConversationActive = false; voiceConversationGreeted = false; els.voiceToggle.classList.remove("listening"); els.voiceMic.classList.remove("listening"); updateVoiceAvailability();
+          setVoiceStage("idle", "Microphone permission is needed", error?.message || "Allow microphone access, then try again.");
         }
       }
       async function stopHandsfree(send) {
@@ -2746,56 +4407,83 @@
         handsfreeCapture = null; els.voiceToggle.classList.remove("listening"); els.voiceMic.classList.remove("listening"); updateVoiceAvailability();
         releaseHandsfreeCapture(capture);
         if (!send || capture.requesting) { if (!voiceConversationActive) voiceConversationGreeted = false; hideVoiceStage(); return; }
+        const encodeStartedAt = performance.now();
         const wav = encodeVoiceWav(capture.chunks, capture.sourceRate);
         if (wav.byteLength <= 44 || !capture.speechStartedAt) { if (voiceConversationActive) startHandsfree({ greet: false }); return; }
+        voiceTraceEvent("audio_encoded", capture.turnId, {
+          wav_bytes: wav.byteLength, audio_duration_ms: Math.max(0, capture.lastSpeechAt - capture.speechStartedAt),
+          source_rate: capture.sourceRate, encode_duration_ms: performance.now() - encodeStartedAt
+        });
         handsfreeInFlight = true; updateVoiceAvailability();
         const run = Symbol("voice-run"), controller = new AbortController();
         let completed = false;
         stopHandsfree.activeRun = run; stopHandsfree.abort = controller;
         setVoiceStage("transcribing", "Understanding", "Whisper is processing your words locally.");
         try {
-          const r = await authFetch("/v1/voice/transcriptions", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav, signal: controller.signal });
+          voiceTraceEvent("stt_request_started", capture.turnId, { wav_bytes: wav.byteLength });
+          const r = await authFetch("/v1/voice/transcriptions", { method: "POST", headers: { "Content-Type": "audio/wav", "X-Samosa-Voice-Turn": capture.turnId }, body: wav, signal: controller.signal });
           const result = await r.json().catch(() => null);
+          voiceTraceEvent("stt_response_received", capture.turnId, { http_status: r.status, transcript_chars: String(result?.text || "").length });
           if (!r.ok) throw new Error(result?.error?.message || "Local speech recognition could not transcribe that recording.");
           const text = (result?.text || "").trim();
-          if (blankVoiceTranscript(text)) { completed = true; setVoiceStage("listening", "Listening", "I’m here — take your time."); return; }
+          if (blankVoiceTranscript(text)) { voiceTraceEvent("voice_turn_complete", capture.turnId, { outcome: "blank_transcript" }); completed = true; setVoiceStage("listening", "Listening", "I’m here — take your time."); return; }
           if (stopHandsfree.activeRun !== run) return;
           els.prompt.value = text; resizePrompt();
           setVoiceStage("thinking", "Thinking", "Your selected local model is preparing a response.");
           // Start a queue before the model begins streaming. consumeEvent()
           // adds complete phrases to it, so the first spoken sentence needn't
           // wait for the full model response.
-          startVoiceStream(run);
+          startVoiceStream(run, capture.turnId);
           sendPrompt.voiceRun = run;
+          sendPrompt.voiceTurnId = capture.turnId;
           const assistant = await sendPrompt(text);
           if (stopHandsfree.activeRun !== run) return;
           if (!assistant || assistant.error) throw new Error(assistant?.error || "The local model could not answer that voice message.");
           await finishVoiceStream(run, assistant.content);
+          voiceTraceEvent("voice_turn_complete", capture.turnId, { outcome: "complete", response_chars: assistant.content.length });
           completed = true;
         } catch (error) {
+          voiceTraceEvent("voice_turn_failed", capture.turnId, { outcome: error?.name === "AbortError" ? "aborted" : "failed" });
           if (stopHandsfree.activeRun === run && error?.name !== "AbortError") { voiceConversationActive = false; setVoiceStage("idle", "Voice conversation stopped", error?.message || "Start Voice again to try once more."); }
         } finally {
           if (sendPrompt.voiceRun === run) sendPrompt.voiceRun = null;
+          if (sendPrompt.voiceTurnId === capture.turnId) sendPrompt.voiceTurnId = null;
           if (stopHandsfree.activeRun === run) {
             stopHandsfree.activeRun = null; stopHandsfree.abort = null; handsfreeInFlight = false; updateVoiceAvailability();
+            /* A wake word enters the same multi-turn Voice conversation as
+               the Voice button. Keep listening after every completed turn;
+               the armed wake preference matters only when Voice ends or a
+               failed turn has already closed the conversation. */
             if (completed && voiceConversationActive) {
               setVoiceStage("listening", "Listening", "Speak naturally. I’ll respond when you pause.");
-              setTimeout(() => { if (voiceConversationActive && !handsfreeCapture && !handsfreeInFlight) startHandsfree({ greet: false }); }, 180);
+              setTimeout(() => {
+                if (!voiceConversationActive || handsfreeCapture || handsfreeInFlight) return;
+                startHandsfree({ greet: false });
+              }, 180);
+            } else if (wakeListeningRequested && wakeProfile) {
+              resumeArmedWakeListener();
             }
           }
         }
       }
       function cancelHandsfree() {
+        if (handsfreeCapture?.mode === "wake") { setWakeListeningRequested(false); stopWakeWordListener(); updateWakeListeningUi(); hideVoiceStage(); return; }
+        const resumeWake = wakeListeningRequested && !!wakeProfile;
         voiceConversationActive = false;
         voiceConversationGreeted = false;
         voiceGreetingContext = "";
-        if (handsfreeCapture) { stopHandsfree(false); return; }
+        if (handsfreeCapture) {
+          stopHandsfree(false);
+          if (resumeWake) resumeArmedWakeListener();
+          return;
+        }
         if (stopHandsfree.abort) stopHandsfree.abort.abort();
         stopHandsfree.activeRun = null; handsfreeInFlight = false;
         voiceStream = null;
         stopVoicePlayback();
         if (generating) cancel();
-        updateVoiceAvailability(); hideVoiceStage();
+        if (!resumeWake) { updateVoiceAvailability(); updateWakeListeningUi(); hideVoiceStage(); }
+        else resumeArmedWakeListener();
       }
       function privateWebHostname(hostname) {
         const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -2858,6 +4546,10 @@
         const choice=event.choices?.[0], delta=choice?.delta||{};
         if (delta.reasoning||delta.reasoning_content) {
           assistant.reasoning+=delta.reasoning||delta.reasoning_content;
+          if (sendPrompt.voiceTurnId && !assistant._voiceTracedFirstReasoning) {
+            assistant._voiceTracedFirstReasoning = true;
+            voiceTraceEvent("llm_first_reasoning_delta", sendPrompt.voiceTurnId);
+          }
           if (sendPrompt.voiceRun) setVoiceStage("thinking", "Thinking", "I’m working through your question.");
         }
         // What Samosa is *doing* (searching, fetching), kept separate from what
@@ -2868,7 +4560,14 @@
           if (sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", delta.web_activity.trim() || "I’m checking a few sources.");
         }
         if (delta.web_source) mergeWebSource(assistant, delta.web_source);
-        if (delta.content) { assistant.content+=delta.content; if (sendPrompt.voiceRun) appendVoiceStream(sendPrompt.voiceRun, delta.content); }
+        if (delta.content) {
+          assistant.content+=delta.content;
+          if (sendPrompt.voiceTurnId && !assistant._voiceTracedFirstContent) {
+            assistant._voiceTracedFirstContent = true;
+            voiceTraceEvent("llm_first_content_delta", sendPrompt.voiceTurnId);
+          }
+          if (sendPrompt.voiceRun) appendVoiceStream(sendPrompt.voiceRun, delta.content);
+        }
         if (choice?.finish_reason) {
           const meta=event.samosa||{};
           const tokensPerSecond=meta.tokens_per_second||event.timings?.predicted_per_second;
@@ -2980,7 +4679,7 @@
         els.status.textContent = "Killing local Samosa processes…";
         els.dot.className = "status-dot offline";
         els.sideDot.className = "status-dot offline"; els.sideStatus.textContent = "Killed";
-        try { await fetch("/v1/kill", { method: "POST" }); }
+        try { await authFetch("/v1/kill", { method: "POST" }); }
         catch (_) {}
         generating = false; jobRunning = false;
         if (activeAssistant) { activeAssistant.streaming = false; activeAssistant.error = "Server killed."; updateAssistantNode(activeAssistant); }
@@ -3101,9 +4800,14 @@
         Promise.resolve().then(refreshWebConfig).then(applyCapabilities).catch(() => {});
       }
       async function health() {
+        let h;
         try {
-          const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); const h=await r.json();
-          appLifecycleOwned = !!h.app_owned;
+          const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); h=await r.json();
+        } catch (_) {
+          els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; els.sideDot.className="status-dot offline"; els.sideStatus.textContent="Unavailable"; updateVoiceAvailability();
+          return;
+        }
+        try {
           await refreshWebConfig();
           const previousBackend=backend.id;
           const previousReady=!!backend.ready;
@@ -3135,7 +4839,23 @@
           // turned a missing context_limit_tokens into a blank "Custom" value.
           if(previousBackend!==backend.id) refreshRuntimeSettings({force:true});
           updateVoiceAvailability();
-        } catch (_) { els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; els.sideDot.className="status-dot offline"; els.sideStatus.textContent="Unavailable"; updateVoiceAvailability(); }
+          if (wakeListeningRequested && wakeProfile) startWakeWordListener();
+        } catch (error) {
+          // A healthy gateway can still return a response that this older UI
+          // cannot fully hydrate (for example, a new optional health field or
+          // a temporarily unavailable settings route). Do not turn that UI
+          // parsing problem into the misleading server-unavailable state.
+          console.error("Samosa health UI refresh failed", error);
+          if (h.gateway) {
+            const modelLoading = !!h.loading || h.backend_state === "loading";
+            els.dot.className = h.ready ? "status-dot online" : "status-dot";
+            els.status.textContent = h.generating ? `${h.label} is generating` : h.ready ? `${h.label} ready` : modelLoading ? `Loading ${h.label}…` : "Model is not ready";
+            els.sideDot.className = els.dot.className; els.sideStatus.textContent = h.label || "Local model";
+          } else {
+            els.dot.className = "status-dot online"; els.status.textContent = "Local gateway ready"; els.sideDot.className = "status-dot online"; els.sideStatus.textContent = "Local gateway";
+          }
+          updateVoiceAvailability();
+        }
       }
       // Settings' "Models" section reuses the exact same catalog/install/select
       // pipeline the first-run setup screen uses (modelCatalog, setupInstalls,
@@ -3188,19 +4908,31 @@
           const result = await r.json().catch(() => null);
           if (!r.ok) throw new Error(result?.error?.message || "Could not prepare local speech recognition.");
           await refreshVoiceStatus(false);
-          if (!voiceStatus.stt_model_downloaded) await runModelCardAction("install", model, null, els.voiceModelError);
+          /* The status endpoint reports the selected STT model. The user may
+             be downloading a different catalog entry, so never use that
+             selected-model bit to skip Tiny after Base is already installed. */
+          if (model.install_state !== "ready") await runModelCardAction("install", model, null, els.voiceModelError);
         } catch (error) {
           els.voiceModelError.textContent = error.message || String(error);
           els.voiceModelError.hidden = false;
         }
         await refreshSettingsModels();
       }
-      async function prepareKokoroTts() {
+      async function prepareTtsModel(model) {
         els.voiceModelError.hidden = true;
         try {
-          const r = await authFetch("/v1/voice/tts/runtime", { method: "POST" });
+          if (isBrowserTtsModelId(model.id)) {
+            await prepareBrowserTtsModel(model.id);
+            await refreshVoiceStatus(false);
+            renderVoiceModelCards();
+            return;
+          }
+          const r = await authFetch("/v1/voice/tts/runtime", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_id: model.id })
+          });
           const result = await r.json().catch(() => null);
-          if (!r.ok) throw new Error(result?.error?.message || "Could not download the local neural voice.");
+          if (!r.ok) throw new Error(result?.error?.message || "Could not download this local neural voice.");
           await refreshVoiceStatus(false);
         } catch (error) {
           els.voiceModelError.textContent = error.message || String(error);
@@ -3208,6 +4940,7 @@
         }
         await refreshSettingsModels();
       }
+      async function preparePocketTts() { return prepareTtsModel({ id: "voice-tts-pocket" }); }
       function voiceCardButton(actions, label, primary, handler, focusKey = "") {
         const button = document.createElement("button"); button.type = "button"; button.textContent = label;
         if (primary) button.className = "primary";
@@ -3215,56 +4948,128 @@
         button.onclick = async () => { button.disabled = true; await handler(); };
         actions.appendChild(button);
       }
+      async function selectVoiceModel(kind, model) {
+        els.voiceModelError.hidden = true;
+        try {
+          if (kind === "tts" && isBrowserTtsModelId(model.id)) {
+            if (!browserTtsStateFor(model.id).ready) await prepareBrowserTtsModel(model.id);
+          }
+          const r = await authFetch("/v1/voice/select", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, model_id: model.id,
+              ...(kind === "tts" && isBrowserTtsModelId(model.id) ? { browser_ready: true } : {}) })
+          });
+          const result = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(result?.error?.message || "That voice model is not ready yet.");
+          await refreshVoiceStatus(false);
+        } catch (error) {
+          els.voiceModelError.textContent = error.message || String(error);
+          els.voiceModelError.hidden = false;
+        }
+        renderVoiceModelCards();
+      }
+      function appendVoiceTradeoffs(card, model) {
+        const wrap = document.createElement("div"); wrap.className = "voice-model-card-tradeoffs";
+        for (const [label, values] of [["Pros", model.pros], ["Cons", model.cons]]) {
+          const block = document.createElement("div");
+          const heading = document.createElement("strong"); heading.textContent = `${label}:`; block.appendChild(heading);
+          const list = document.createElement("ul");
+          for (const value of values || []) { const item = document.createElement("li"); item.textContent = value; list.appendChild(item); }
+          block.appendChild(list); wrap.appendChild(block);
+        }
+        card.appendChild(wrap);
+      }
       function renderVoiceModelCards() {
         const list = els.voiceModelList;
         if (!list) return;
+        /* Pocket streaming voice is catalog-driven so users can compare it
+           with Kokoro and the browser voice instead of getting one hidden
+           hard-coded choice. */
         list.textContent = "";
-        const stt = voiceCatalog.find(model => model.id === "voice-stt-whisper-base-en");
-        if (stt) {
-          const job = installForModel(stt.id, setupInstalls, null);
-          const card = document.createElement("div"); card.className = "voice-model-card" + (voiceStatus.stt_ready ? " ready" : "");
-          const head = document.createElement("div"); head.className = "voice-model-card-head";
-          const copy = document.createElement("div");
-          const title = document.createElement("strong"); title.textContent = stt.label;
-          const detail = document.createElement("p"); detail.textContent = stt.description || "Private, local speech recognition for hands-free Samosa.";
-          copy.appendChild(title); copy.appendChild(detail); head.appendChild(copy); card.appendChild(head);
-          const status = document.createElement("div"); status.className = "voice-model-card-status";
-          const actions = document.createElement("div"); actions.className = "voice-model-card-actions";
-          if (voiceStatus.stt_ready) {
-            status.classList.add("ready"); status.textContent = "Ready — the microphone is available in Chat.";
-          } else if (!stt.compatible) {
-            status.textContent = stt.compatibility_reason || "Speech recognition is not compatible with this machine.";
-          } else if (voiceStatus.runtime_preparing) {
-            status.textContent = "Setting up voice…";
-          } else if (job && ["queued", "downloading", "verifying", "installing", "paused", "failed"].includes(job.state)) {
-            const state = modelCardState(stt, job, false, true);
-            status.textContent = state.kind === "failed" ? state.message : state.kind === "paused" ? "Download paused." : `${job.current_artifact || "Downloading Whisper"} · ${formatBytes(job.completed_bytes || 0)} / ${formatBytes(job.total_bytes || 0)}`;
-            for (const action of modelCardActions(state)) voiceCardButton(actions, action.label, action.primary, () => runModelCardAction(action.action, stt, job, els.voiceModelError), `voice-stt:${action.action}`);
-          } else if (!voiceStatus.stt_runtime_ready) {
-            status.textContent = "Whisper Base English · 141 MB.";
-            voiceCardButton(actions, "Download", true, () => prepareVoiceRuntimeAndInstall(stt), "voice-stt:download-runtime");
-          } else {
-            status.textContent = "Whisper Base English · 141 MB.";
-            voiceCardButton(actions, "Download", true, () => runModelCardAction("install", stt, null, els.voiceModelError), "voice-stt:install");
+        const groups = [
+          ["Speech to text", voiceCatalog.filter(model => model.voice_role === "stt" || model.backend_kind === "whisper_cpp"), "stt"],
+          ["Text to speech", voiceCatalog.filter(model => model.voice_role === "tts"), "tts"]
+        ];
+        for (const [label, models, kind] of groups) {
+          if (!models.length) continue;
+          const heading = document.createElement("h4"); heading.textContent = label; heading.style.margin = "12px 0 0"; list.appendChild(heading);
+          for (const model of models) {
+            const selected = kind === "stt" ? voiceStatus.stt_model_id === model.id : voiceStatus.tts_model_id === model.id;
+            const browserModel = kind === "tts" && isBrowserTtsModelId(model.id);
+            const browserState = browserModel ? browserTtsStateFor(model.id) : null;
+            const browserReady = !!browserState?.ready;
+            const browserDownloaded = !!browserState?.downloaded || browserReady;
+            const ready = model.install_state === "ready" || browserReady;
+            const card = document.createElement("div"); card.className = "voice-model-card" + (ready ? " ready" : "") + (selected ? " selected" : "");
+            const head = document.createElement("div"); head.className = "voice-model-card-head";
+            const copy = document.createElement("div");
+            const title = document.createElement("strong"); title.textContent = model.label + (selected ? " · Selected" : "");
+            const detail = document.createElement("p"); detail.textContent = model.description || "Local voice model.";
+            copy.appendChild(title); copy.appendChild(detail); head.appendChild(copy); card.appendChild(head);
+            appendVoiceTradeoffs(card, model);
+            const status = document.createElement("div"); status.className = "voice-model-card-status" + (selected && ready ? " ready" : "");
+            const actions = document.createElement("div"); actions.className = "voice-model-card-actions";
+            const job = installForModel(model.id, setupInstalls, null);
+            if (!model.compatible) {
+              status.textContent = model.compatibility_reason || "This model is not compatible with this machine.";
+            } else if (kind === "stt") {
+              if (selected && voiceStatus.stt_ready) {
+                status.textContent = "Selected and ready — the microphone is available in Chat.";
+              } else if (voiceStatus.runtime_preparing && selected) {
+                status.textContent = "Setting up speech recognition…";
+              } else if (job && ["queued", "downloading", "verifying", "installing", "paused", "failed"].includes(job.state)) {
+                const state = modelCardState(model, job, false, true);
+                status.textContent = state.kind === "failed" ? state.message : state.kind === "paused" ? "Download paused." : `${job.current_artifact || "Downloading speech model"} · ${formatBytes(job.completed_bytes || 0)} / ${formatBytes(job.total_bytes || 0)}`;
+                for (const action of modelCardActions(state)) voiceCardButton(actions, action.label, action.primary, () => runModelCardAction(action.action, model, job, els.voiceModelError), `voice-stt:${model.id}:${action.action}`);
+              } else if (!ready) {
+                status.textContent = voiceStatus.stt_runtime_ready ? "Ready to download · private local recognition." : "Download the model and the local Whisper runtime.";
+                voiceCardButton(actions, "Download", true, () => voiceStatus.stt_runtime_ready ? runModelCardAction("install", model, null, els.voiceModelError) : prepareVoiceRuntimeAndInstall(model), `voice-stt:${model.id}:download`);
+              } else {
+                status.textContent = "Installed — choose this model to use it.";
+                voiceCardButton(actions, "Use this STT", true, () => selectVoiceModel("stt", model), `voice-stt:${model.id}:select`);
+              }
+            } else if (browserModel) {
+              const activeBrowser = selected && voiceStatus.tts_neural_ready &&
+                ((model.id === "voice-tts-moss-nano" && voiceStatus.tts_engine === "moss_browser") ||
+                 (model.id === "voice-tts-kitten-nano" && voiceStatus.tts_engine === "kitten_browser"));
+              if (activeBrowser && browserReady) {
+                status.textContent = "Selected and ready — Listen and Voice use this browser-local TTS choice.";
+              } else if (activeBrowser) {
+                status.textContent = browserTtsStateFor(model.id).preparing
+                  ? (browserTtsStateFor(model.id).progress || "Verifying the browser-local model…")
+                  : (browserDownloaded
+                    ? "Selected — the model is downloaded in this browser; verify it before listening."
+                    : "Selected — download the browser-local model before listening.");
+                voiceCardButton(actions, browserDownloaded ? "Verify and use" : "Download", true,
+                  () => browserDownloaded ? selectVoiceModel("tts", model) : prepareTtsModel(model),
+                  `voice-tts:${model.id}:download`);
+              } else if (browserReady) {
+                status.textContent = browserTtsStateFor(model.id).progress || "Downloaded and ready in this browser.";
+                voiceCardButton(actions, "Use this TTS", true, () => selectVoiceModel("tts", model), `voice-tts:${model.id}:select`);
+              } else if (browserDownloaded) {
+                status.textContent = "Downloaded in this browser — verify locally before using.";
+                voiceCardButton(actions, "Verify and use", true, () => selectVoiceModel("tts", model), `voice-tts:${model.id}:select`);
+              } else {
+                status.textContent = browserTtsStateFor(model.id).preparing
+                  ? (browserTtsStateFor(model.id).progress || "Preparing the browser-local TTS runtime…")
+                  : "Download once to this browser · runs locally · no Python runtime.";
+                voiceCardButton(actions, "Download", true, () => prepareTtsModel(model), `voice-tts:${model.id}:download`);
+              }
+            } else if (selected && voiceStatus.tts_neural_ready) {
+              status.textContent = "Selected and ready — Listen and Voice use this TTS choice.";
+            } else if (!ready && model.id === "voice-tts-pocket") {
+              status.textContent = voiceStatus.tts_preparing ? "Preparing the local TTS runtime…" : "Download once · local runtime · no cloud speech.";
+              if (!voiceStatus.tts_preparing) voiceCardButton(actions, "Download", true, () => prepareTtsModel(model), `voice-tts:${model.id}:download`);
+            } else if (!ready && model.id === "voice-tts-kokoro") {
+              status.textContent = "Existing-install only — this build does not ship a Kokoro download.";
+            } else if (!ready) {
+              status.textContent = "Not installed in this build.";
+            } else {
+              status.textContent = "Installed — choose this TTS model.";
+              voiceCardButton(actions, "Use this TTS", true, () => selectVoiceModel("tts", model), `voice-tts:${model.id}:select`);
+            }
+            card.appendChild(status); if (actions.children.length) card.appendChild(actions); list.appendChild(card);
           }
-          card.appendChild(status); if (actions.children.length) card.appendChild(actions); list.appendChild(card);
-        }
-        const tts = document.createElement("div"); tts.className = "voice-model-card" + (neuralTtsReady() ? " ready" : "");
-        const ttsTitle = document.createElement("strong"); ttsTitle.textContent = "Kokoro-82M";
-        const ttsDetail = document.createElement("p"); ttsDetail.textContent = "A natural local neural voice with six curated English voices. It runs directly in Samosa's native C engine and replaces the browser voice for spoken replies.";
-        const ttsStatus = document.createElement("div"); ttsStatus.className = "voice-model-card-status" + (neuralTtsReady() ? " ready" : "");
-        const ttsActions = document.createElement("div"); ttsActions.className = "voice-model-card-actions";
-        if (neuralTtsReady()) {
-          ttsStatus.textContent = "Ready — Kokoro runs locally in Samosa's native engine.";
-        } else if (voiceStatus.tts_preparing) {
-          ttsStatus.textContent = "Downloading the local neural voice…";
-        } else {
-          ttsStatus.textContent = "103 MB int8 model · native runtime · downloads once · no Python or cloud speech service.";
-          voiceCardButton(ttsActions, "Download", true, prepareKokoroTts, "voice-tts:download");
-        }
-        tts.appendChild(ttsTitle); tts.appendChild(ttsDetail); tts.appendChild(ttsStatus); if (ttsActions.children.length) tts.appendChild(ttsActions); list.appendChild(tts);
-        if (!stt) {
-          const notice = document.createElement("p"); notice.className = "voice-model-card-status"; notice.textContent = "This release has no speech-recognition model listed."; list.prepend(notice);
         }
       }
       let settingsPollTimer = null;
@@ -3503,8 +5308,55 @@
       // no server-side ID to issue, mark referenced, or delete. Entries are
       // {clientId, kind:"url"|"search", name, url}.
       let pendingWeb = [];
+      const WEB_SEARCH_PREFERENCE_KEY = "samosa-web-search-enabled-v1";
+      function readWebSearchPreference() {
+        try {
+          return typeof localStorage !== "undefined" && localStorage.getItem(WEB_SEARCH_PREFERENCE_KEY) === "1";
+        } catch (_) { return false; }
+      }
+      function storeWebSearchPreference(enabled) {
+        try {
+          if (typeof localStorage === "undefined") return;
+          if (enabled) localStorage.setItem(WEB_SEARCH_PREFERENCE_KEY, "1");
+          else localStorage.removeItem(WEB_SEARCH_PREFERENCE_KEY);
+        } catch (_) {}
+      }
+      // This is deliberately separate from the gateway's consent state. The
+      // browser remembers what the user wants to do when web access is
+      // available, while the gateway still decides whether network access is
+      // permitted for this installation.
+      let webSearchEnabled = readWebSearchPreference();
+      function webSearchCanRun() {
+        return !!web.available && !!web.search_configured && !web.offline && web.consent === "granted";
+      }
+      function applyWebSearchPreferenceUi() {
+        const button = els.attachWebSearch;
+        if (!button) return;
+        const label = button.querySelector(".attach-item-label");
+        if (label) label.textContent = `Web search${webSearchEnabled ? " · On" : ""}`;
+        button.classList.toggle("selected", webSearchEnabled);
+        button.setAttribute("role", "menuitemcheckbox");
+        button.setAttribute("aria-checked", webSearchEnabled ? "true" : "false");
+        const reason = els.attachWebSearchReason?.textContent || "";
+        const state = webSearchEnabled ? "on for future messages" : "off; click to turn on for future messages";
+        button.setAttribute("aria-label", button.disabled
+          ? `${label?.textContent || "Web search"} — ${reason}`
+          : `${label?.textContent || "Web search"} — ${state}`);
+      }
+      function setWebSearchEnabled(enabled) {
+        webSearchEnabled = !!enabled;
+        storeWebSearchPreference(webSearchEnabled);
+        if (!webSearchEnabled) pendingWeb = pendingWeb.filter(item => item.kind !== "search");
+        else if (webSearchCanRun() && !pendingWeb.some(item => item.kind === "search")) {
+          pendingWeb.push({ clientId: `w-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            kind: "search", name: "Web search", url: null });
+        }
+        applyWebSearchPreferenceUi();
+        renderAttachments();
+      }
+      function toggleWebSearch() { setWebSearchEnabled(!webSearchEnabled); }
       function shouldContinueWebResearch(chat, text) {
-        if (!web.available || !web.search_configured || web.offline || web.consent !== "granted") return false;
+        if (!webSearchCanRun()) return false;
         const request = String(text || "").trim();
         if (!request) return false;
         // Saying "check/search/browse the web" is itself an explicit request;
@@ -3518,6 +5370,13 @@
           message?.role === "assistant" && Array.isArray(message.sources) && message.sources.length);
         if (!sourced) return false;
         return /\b(?:latest|current|currently|today|tonight|yesterday|news|update|updated|new developments?|this (?:week|month|year)|as of|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(request);
+      }
+      function applyAutomaticWebContext(chat, text, context) {
+        if (!context.some(w => w.kind === "search") &&
+            ((webSearchEnabled && webSearchCanRun()) || shouldContinueWebResearch(chat, text))) {
+          context.push({ kind: "search", url: null });
+        }
+        return context;
       }
       function applyPendingWebContext(payload, context) {
         const webUrls = context.filter(w => w.kind === "url").map(w => w.url);
@@ -3552,8 +5411,9 @@
           !!web.search_configured && !!web.available,
           web.offline ? "Samosa is in offline mode."
             : consentDenied ? consentReason
-            : web.reason || "No search provider is configured in ~/.samosa/config.json.",
+          : web.reason || "No search provider is configured in ~/.samosa/config.json.",
           web.provider ? `The model may search using ${web.provider}.` : "The model may search the web.");
+        applyWebSearchPreferenceUi();
         setAttachItem(els.attachDirectory, els.attachDirectoryReason, readyChutniMemoryCount > 0,
           "Add and finish a folder memory in Chutni first.",
           readyChutniMemoryCount === 1 ? "Choose your folder memory for this conversation."
@@ -3764,13 +5624,7 @@
       }
       function addWebSearch() {
         setAttachError("");
-        if (!pendingWeb.some(w => w.kind === "search")) {
-          pendingWeb.push({
-            clientId: `w-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            kind: "search", name: "Web search", url: null
-          });
-          renderAttachments();
-        }
+        setWebSearchEnabled(true);
         return true;
       }
       function clearAttachments() {
@@ -5533,6 +7387,7 @@
         document.querySelectorAll("[data-settings-pane-content]").forEach(pane => { pane.hidden = pane.dataset.settingsPaneContent !== selected; });
         document.querySelectorAll("[data-settings-pane]").forEach(button => { const active = button.dataset.settingsPane === selected; button.classList.toggle("active", active); button.setAttribute("aria-current", active ? "page" : "false"); });
         if (selected === "advanced" && !runtimeSettings) refreshRuntimeSettings();
+        if (selected === "voice") refreshVoiceTraceStatus();
       }
       function applyAppearance(value) {
         const theme = ["light", "dark", "system"].includes(value) ? value : "light";
@@ -5566,7 +7421,7 @@
         const settingsWasOpen = els.settings.classList.contains("open");
         els.settings.classList.remove("open"); els.settings.setAttribute("aria-hidden","true");
         $("shell").inert = false;
-        els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); stopSettingsPolling(); saveState();
+        els.sidebar.classList.remove("open"); els.scrim.classList.remove("show"); stopSettingsPolling();
         if (settingsWasOpen && settingsReturnFocus?.focus) {
           const focusTarget = settingsReturnFocus; settingsReturnFocus = null;
           requestAnimationFrame(() => focusTarget.focus());
@@ -5589,7 +7444,7 @@
         const url = prompt("Public page to read for this message:");
         if (url !== null) addWebPage(url);
       };
-      els.attachWebSearch.onclick = () => { closeAttachMenu(true); addWebSearch(); };
+      els.attachWebSearch.onclick = () => { closeAttachMenu(true); toggleWebSearch(); };
       // WK2: both buttons are answers, and both are recorded server-side, so a
       // reload cannot re-ask a question the user has already settled.
       if (els.webConsentYes) els.webConsentYes.onclick = () => answerWebConsent(true);
@@ -5610,7 +7465,13 @@
         if (file) uploadAttachment(file, "document");
       };
 
-      $("newChat").onclick=newChat; $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
+      $("newChat").onclick=newChat; els.railNewChat.onclick=newChat;
+      els.collapseSidebar.onclick=collapseSidebar; els.expandSidebar.onclick=expandSidebar;
+      els.selectChats.onclick=()=>setChatSelectionMode(true);
+      els.cancelChatSelection.onclick=()=>setChatSelectionMode(false);
+      els.selectAllChats.onclick=toggleAllChats;
+      els.deleteSelectedChats.onclick=()=>requestDeleteChats([...selectedChatIds], els.deleteSelectedChats);
+      $("menuButton").onclick=()=>{els.sidebar.classList.add("open");els.scrim.classList.add("show")};
       $("settingsButton").onclick=()=>openSettings(); els.status.onclick=()=>{ if(!backend.ready) openModelSettings(); }; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
       els.settings.addEventListener("keydown", settingsKeydown);
       document.querySelectorAll("[data-settings-pane]").forEach(button => { button.onclick = () => selectSettingsPane(button.dataset.settingsPane); });
@@ -5619,6 +7480,8 @@
       chooserEls.select.onclick=chooserConfirmSelection; chooserEls.clearBtn.onclick=chooserClearSelection;
       els.mismatchFork.onclick=confirmForkMismatch; els.mismatchCancel.onclick=closeMismatchDialog; els.mismatchScrim.onclick=closeMismatchDialog;
       document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!els.mismatchDialog.hidden){e.preventDefault();closeMismatchDialog();}});
+      els.deleteChatsConfirm.onclick=confirmDeleteChats;
+      els.deleteChatsCancel.onclick=closeDeleteChatsDialog; els.deleteChatsCancelTop.onclick=closeDeleteChatsDialog; els.deleteChatsScrim.onclick=closeDeleteChatsDialog;
       els.migrationExport.onclick=exportMigrationRecovery; els.migrationReset.onclick=resetMigrationRecovery;
       if (migrationRecoveryRaw) showMigrationBanner();
       navEls.chat.onclick=()=>showView("chat"); navEls.chutni.onclick=()=>showView("chutni"); navEls.jobs.onclick=()=>showView("jobs");
@@ -5697,6 +7560,31 @@
       els.voiceToggle.onclick = () => startHandsfree();
       els.voiceMic.onclick = () => startHandsfree();
       els.voiceStageCancel.onclick = cancelHandsfree;
+      els.wakeWordEnroll.onclick = enrollWakeWord;
+      els.wakeWordNext.onclick = nextWakeRecording;
+      els.wakeWordCancel.onclick = cancelWakeEnrollment;
+      els.wakeWordForget.onclick = forgetWakeWord;
+      els.wakeWordListen.onclick = toggleWakeWordListening;
+      els.voiceTraceToggle.onclick = toggleVoiceTrace;
+      els.wakeWordCount.onchange = () => {
+        const total = Math.min(6, Math.max(3, Number(els.wakeWordCount.value) || 3));
+        els.wakeWordCount.value = String(total);
+        if (!wakeProfile) updateWakeEnrollmentUi();
+        setWakeWordStatus(`We’ll record your word ${total} times the next time you press Start recording.`);
+      };
+      els.wakeWordThreshold.oninput = () => {
+        els.wakeWordThresholdValue.textContent = wakeThresholdLabel(els.wakeWordThreshold.value);
+        els.wakeWordThreshold.setAttribute("aria-valuetext", wakeThresholdLabel(els.wakeWordThreshold.value));
+        if (!wakeProfile) return;
+        wakeProfile.threshold = Number(els.wakeWordThreshold.value); saveWakeProfile(wakeProfile);
+        setWakeWordStatus(`Voice matching updated. ${wakeListeningRequested ? `Listening for “${wakeProfile.wake_word}”…` : "Click Listen for wake word when you’re ready."}`, "ready");
+      };
+      els.wakeWordInput.oninput = () => {
+        if (wakeProfile && normalizeWakeWord(els.wakeWordInput.value) !== wakeProfile.wake_word) {
+          setWakeListeningRequested(false); wakeProfile = null; localStorage.removeItem(WAKE_PROFILE_KEY); stopWakeWordListener();
+          els.wakeWordForget.disabled = true; els.wakeWordThreshold.disabled = true; updateWakeEnrollmentUi(); updateWakeListeningUi(); setWakeWordStatus("The wake word changed. Enroll the new phrase to enable listening.");
+        }
+      };
       els.messages.addEventListener("scroll",()=>{followOutput=nearBottom();els.jump.hidden=followOutput},{passive:true});
       els.jump.onclick=()=>{followOutput=true;els.jump.hidden=true;scrollBottom(true,true)};
       els.prompt.oninput=resizePrompt; els.prompt.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.composer.requestSubmit()}};
@@ -5713,11 +7601,16 @@
       els.thinking.value=state.settings?.thinking||"off"; els.maxTokens.value=state.settings?.maxTokens||"2048"; els.seed.value=state.settings?.seed||"";
       els.composerThinking.value=els.thinking.value;
       syncContextCustom(); updateRuntimeControlAvailability();
+      restoreSidebarState();
+      wakeProfile = loadWakeProfile();
+      wakeListeningRequested = !!wakeProfile && localStorage.getItem(WAKE_ENABLED_KEY) === "1";
+      updateWakeWordUi();
       els.voiceEnabled.checked=!!state.settings?.voiceEnabled;
       els.voiceEnabled.onchange=saveState; els.voiceSelect.onchange=saveState;
       els.voicePreview.onclick=()=>speakReply("This is Samosa speaking with the selected voice.");
       refreshVoices(); if (voiceSupported()) window.speechSynthesis.onvoiceschanged=refreshVoices;
       refreshVoiceStatus();
+      refreshVoiceTraceStatus();
       resizePrompt();
       els.mode.textContent=els.thinking.options[els.thinking.selectedIndex].text;
       // The app always opens in Chat. Model discovery, download, and switching

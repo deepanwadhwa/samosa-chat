@@ -57,7 +57,21 @@ typedef struct {
     atomic_llong last_interactive_mono_ms;
     atomic_llong last_interactive_wall_ms;
     atomic_int stopping;
+    /* `stopping` alone cannot distinguish an intentional request from a
+       signal or listener failure. Keep the cause so shutdown diagnostics are
+       useful after the process is gone. */
+    atomic_int shutdown_reason;
+    atomic_int shutdown_signal;
     int app_owned;
+    pthread_mutex_t app_clients_mu;
+    struct {
+        char id[65];
+        long long seen_mono_ms;
+    } app_clients[16];
+    atomic_llong app_close_deadline_mono_ms;
+    atomic_int app_client_seen;
+    pthread_t app_lifecycle_thread;
+    int app_lifecycle_thread_started;
     int public_port;
     int backend_port;
     char home[PATH_MAX];
@@ -68,6 +82,7 @@ typedef struct {
     char backend[16];
     char app_html[PATH_MAX];
     char app_logo[PATH_MAX];
+    char voice_browser_root[PATH_MAX];
     char qwen_engine[PATH_MAX];
     char qwen_model[PATH_MAX];
     char maple_engine[PATH_MAX];
@@ -83,6 +98,7 @@ typedef struct {
     char voice_runtime_script[PATH_MAX];
     char whisper_cli[PATH_MAX];
     char whisper_model[PATH_MAX];
+    char whisper_tiny_model[PATH_MAX];
     char kokoro_runtime_script[PATH_MAX];
     char kokoro_library[PATH_MAX];
     char kokoro_model[PATH_MAX];
@@ -90,18 +106,36 @@ typedef struct {
     char kokoro_tokens[PATH_MAX];
     char kokoro_data_dir[PATH_MAX];
     char kokoro_ready[PATH_MAX];
+    char pocket_library[PATH_MAX];
+    char pocket_lm_flow[PATH_MAX];
+    char pocket_lm_main[PATH_MAX];
+    char pocket_encoder[PATH_MAX];
+    char pocket_decoder[PATH_MAX];
+    char pocket_text_conditioner[PATH_MAX];
+    char pocket_vocab[PATH_MAX];
+    char pocket_token_scores[PATH_MAX];
+    char pocket_voice_caro[PATH_MAX];
+    char pocket_voice_stuart[PATH_MAX];
+    char pocket_ready[PATH_MAX];
+    char voice_stt_selection_file[PATH_MAX];
+    char voice_tts_selection_file[PATH_MAX];
     void *kokoro_dylib;
     const SamosaSherpaOfflineTts *kokoro_tts;
     SamosaSherpaCreateTts kokoro_create;
     SamosaSherpaDestroyTts kokoro_destroy;
+    SamosaSherpaTtsSampleRate kokoro_sample_rate;
     SamosaSherpaGenerateTts kokoro_generate;
     SamosaSherpaDestroyAudio kokoro_destroy_audio;
+    int kokoro_threads;
+    int pocket_threads;
+    int neural_tts_is_pocket;
     char models_catalog[PATH_MAX];
     char models_dir[PATH_MAX]; /* T2.2: root for downloaded-model staging, e.g. ~/.samosa/models */
     char samosa_fs[PATH_MAX];
     char samosa_extract[PATH_MAX];
     char samosa_ocr[PATH_MAX];
     char backend_log[PATH_MAX];
+    char backend_pid_file[PATH_MAX];
     char selection_file[PATH_MAX];
     char reader_fingerprint[192]; /* lazily computed; see reader_fingerprint() */
     char ui_token[65]; /* per-launch random session token; see init_ui_token() */
@@ -138,6 +172,15 @@ typedef struct {
     int voice_runtime_installing;
     int kokoro_installing;
     int voice_transcribing;
+    /* Voice timing diagnostics are deliberately opt-in and session-scoped.
+       The browser starts one trace from Settings, every append is serialized
+       here, and a gateway restart always returns to tracing-off. */
+    pthread_mutex_t voice_trace_mu;
+    int voice_trace_active;
+    long long voice_trace_sequence;
+    long long voice_trace_started_mono_ms;
+    char voice_trace_session_id[40];
+    char voice_trace_path[PATH_MAX];
     /* Chutni is a gateway-owned durable job. Samosa keeps only UI/job metadata
        under its own home; the portable evidence store is owned by the bundled
        generic Chutni service and lives beside the selected folder. */
@@ -150,6 +193,23 @@ typedef struct {
     char chutni_root[PATH_MAX];
     char chutni_service[PATH_MAX];
 } Gateway;
+
+/* Voice catalog state is emitted by the generic model catalog code before the
+   voice handlers' implementation block, so keep these small cross-section
+   queries forward-declared here. */
+static int voice_catalog_artifact_present(Gateway *g, const char *model_id);
+static int voice_selected_stt_path(Gateway *g, char *out, size_t cap, char *model_id, size_t model_cap);
+static void voice_selected_tts_id(Gateway *g, char *out, size_t cap);
+
+enum {
+    GATEWAY_SHUTDOWN_NONE = 0,
+    GATEWAY_SHUTDOWN_API = 1,
+    GATEWAY_SHUTDOWN_KILL_API = 2,
+    GATEWAY_SHUTDOWN_SIGNAL = 3,
+    GATEWAY_SHUTDOWN_SERVER_ERROR = 4,
+    GATEWAY_SHUTDOWN_UNKNOWN = 5,
+    GATEWAY_SHUTDOWN_APP_CLOSED = 6
+};
 
 #define MAX_PUBLIC_JOB_URLS 20
 #define MAX_PUBLIC_FETCH_BYTES (5u << 20)
@@ -170,6 +230,11 @@ typedef struct {
    selection and sufficiency are model judgements; these are resource limits,
    not relevance or authority heuristics. */
 #define WEB_RESEARCH_MAX_PAGES 8
+/* Hands-free turns have a tighter latency budget: one readable answer plus
+   one corroborating page for ordinary facts. High-stakes questions get one
+   additional page because evidence quality matters more than the extra wait. */
+#define WEB_RESEARCH_VOICE_PAGE_CAP 2
+#define WEB_RESEARCH_VOICE_HIGH_STAKES_PAGE_CAP 3
 #define WEB_RESEARCH_PAGE_CHARS 6000
 #define WEB_REVIEW_PAGE_CHARS 3000
 #define WEB_RESEARCH_RAW_FALLBACK_PAGES 2
@@ -202,6 +267,8 @@ static const char *backend_model(const char *name);
 static int backend_supports_images(Gateway *g, const char *name);
 static int sse_json(int fd, const char *json);
 static int durable_job_id_generate(char out[40]);
+static void voice_trace_server_event(Gateway *g, const char *turn_id,
+                                     const char *event, const char *fields_json);
 typedef struct Profile Profile;
 /* T2.4: resolves setup/status's next_step against real T2.1-2.3 catalog/
    install/selection state (defined later in this file, after that state's
@@ -3007,10 +3074,19 @@ static int definition_interlock(Gateway *g, int fd, const char *job_id, int enab
     return ok && !atomic_load(&g->stopping);
 }
 
+static void backend_receive_timeout(int fd, int seconds) {
+    struct timeval timeout = {.tv_sec = seconds, .tv_usec = 0};
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+}
+
 static char *backend_json(Gateway *g, const char *payload) {
     if (!backend_probe(g)) return NULL;
     int fd = tcp_connect(g->backend_port);
     if (fd < 0) return NULL;
+    /* Planner/ranker/sufficiency calls are internal control turns. They must
+       fail closed after a bounded wait instead of holding a web request until
+       a broken local backend eventually notices a dead socket. */
+    backend_receive_timeout(fd, 60);
     pthread_mutex_lock(&g->mu); g->upstream_fd = fd; pthread_mutex_unlock(&g->mu);
     atomic_fetch_add(&g->generating, 1);
     char header[512];
@@ -3083,6 +3159,17 @@ static void summarizer_stop(Gateway *g) {
     pthread_mutex_unlock(&g->summarizer_mu);
 }
 
+/* The summarizer is forked from a live gateway request thread. Closing only
+   its two protocol pipes is not enough: the child would also inherit the
+   browser's HTTP socket (and the listener), keeping an otherwise-complete SSE
+   response alive forever after the gateway closes its own copy. Keep the
+   helper isolated from every gateway descriptor on both macOS and Linux. */
+static void summarizer_close_inherited_fds(void) {
+    long limit = sysconf(_SC_OPEN_MAX);
+    if (limit <= 0 || limit > 65536) limit = 65536;
+    for (int fd = 3; fd < limit; ++fd) close(fd);
+}
+
 static int summarizer_start_locked(Gateway *g) {
     if (g->summarizer_pid > 0) {
         int status = 0;
@@ -3111,6 +3198,7 @@ static int summarizer_start_locked(Gateway *g) {
             (log_fd >= 0 && dup2(log_fd, STDERR_FILENO) < 0)) _Exit(126);
         close(request_pipe[0]); close(request_pipe[1]);
         close(reply_pipe[0]); close(reply_pipe[1]);
+        summarizer_close_inherited_fds();
         if (log_fd > STDERR_FILENO) close(log_fd);
         const char *gpu = getenv("SAMOSA_SUMMARIZER_GPU_LAYERS");
 #if defined(__APPLE__)
@@ -5534,7 +5622,33 @@ static int tcp_connect(int port) {
     return fd;
 }
 
+/* A successful HTTP response on the private port is not sufficient proof of
+   readiness: after an abnormal gateway exit, an orphan from the previous
+   launch can still answer there. Reap and clear an exited child before any
+   readiness decision so an unrelated/stale listener cannot impersonate the
+   backend this gateway actually launched. */
+static int backend_child_running(Gateway *g) {
+    pthread_mutex_lock(&g->mu);
+    pid_t pid = g->backend_pid;
+    if (pid <= 0) {
+        pthread_mutex_unlock(&g->mu);
+        return 0;
+    }
+    int status = 0;
+    pid_t reaped = waitpid(pid, &status, WNOHANG);
+    if (reaped == pid || (reaped < 0 && errno == ECHILD)) {
+        g->backend_pid = 0;
+        g->backend_pgid = 0;
+        unlink(g->backend_pid_file);
+        pthread_mutex_unlock(&g->mu);
+        return 0;
+    }
+    pthread_mutex_unlock(&g->mu);
+    return reaped == 0;
+}
+
 static int backend_probe(Gateway *g) {
+    if (!backend_child_running(g)) return 0;
     int fd = tcp_connect(g->backend_port);
     if (fd < 0) return 0;
     /* A process can accept the TCP connection before its HTTP health handler
@@ -5567,6 +5681,7 @@ static void backend_stop(Gateway *g) {
     g->backend_pid = 0;
     g->backend_pgid = 0;
     g->upstream_fd = -1;
+    unlink(g->backend_pid_file);
     pthread_mutex_unlock(&g->mu);
     if (upstream >= 0) shutdown(upstream, SHUT_RDWR);
     if (pid <= 0) return;
@@ -5602,6 +5717,18 @@ static int backend_start(Gateway *g) {
     if (!backend_available(g, g->backend)) return 0;
     char chats[PATH_MAX];
     if (!path_join(chats, sizeof(chats), g->home, "chats") || !mkdirs(chats)) return 0;
+    /* Never launch into a port already owned by an untracked process. Before
+       this guard, the new child would fail its bind while backend_probe()
+       happily accepted the old process's /health response. That made every
+       model switch fail and then falsely reported Qwen as healthy. */
+    int occupied = tcp_connect(g->backend_port);
+    if (occupied >= 0) {
+        close(occupied);
+        fprintf(stderr, "samosa-gateway: refusing to start %s: private backend port %d "
+                        "is already occupied by an untracked process\n",
+                g->backend, g->backend_port);
+        return 0;
+    }
     RuntimeConfig runtime;
     RuntimeEffective effective;
     runtime_config_load(g, g->backend, &runtime);
@@ -5706,6 +5833,11 @@ static int backend_start(Gateway *g) {
     pthread_mutex_lock(&g->mu);
     g->backend_pid = pid;
     g->backend_pgid = grouped ? pid : 0;
+    char pid_text[32];
+    snprintf(pid_text, sizeof(pid_text), "%ld\n", (long)pid);
+    if (!write_small_file(g->backend_pid_file, pid_text))
+        fprintf(stderr, "samosa-gateway: could not persist backend pid marker %s\n",
+                g->backend_pid_file);
     pthread_mutex_unlock(&g->mu);
     return 1;
 }
@@ -5764,8 +5896,51 @@ static int proxy_stream_error(int client, const char *message, const char *code)
     return 0;
 }
 
+static int proxy_http_status(const char *headers) {
+    int status = 0;
+    if (!headers || sscanf(headers, "HTTP/%*d.%*d %d", &status) != 1) return 0;
+    return status;
+}
+
+/* The gateway owns the response head for researched SSE turns, so preserve a
+   short, JSON-safe hint from an upstream failure instead of hiding it behind
+   the generic post-web error. This is local backend output, not web evidence;
+   keep it bounded because a broken backend must not be able to fill the UI. */
+static void proxy_error_detail(const TextBuffer *head, char *out, size_t cap) {
+    if (!out || !cap) return;
+    out[0] = 0;
+    if (!head || !head->data || !head->len) return;
+    const char *body = strstr(head->data, "\r\n\r\n");
+    if (!body) return;
+    body += 4;
+    while (*body && isspace((unsigned char)*body)) ++body;
+    size_t used = 0;
+    while (*body && used + 1 < cap) {
+        unsigned char c = (unsigned char)*body++;
+        if (c == '\r' || c == '\n' || c == '\t') c = ' ';
+        out[used++] = (char)c;
+    }
+    while (used && isspace((unsigned char)out[used - 1])) --used;
+    out[used] = 0;
+}
+
+static int proxy_chunk_has_done(const char *data, size_t len) {
+    static const char marker[] = "data: [DONE]";
+    size_t marker_len = sizeof(marker) - 1;
+    if (!data || len < marker_len) return 0;
+    for (size_t i = 0; i + marker_len <= len; ++i)
+        if (!memcmp(data + i, marker, marker_len)) return 1;
+    return 0;
+}
+
 static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *request,
                             const char *sse_preamble, int client_stream_started) {
+    if (request->voice_turn_id[0]) {
+        char fields[160];
+        snprintf(fields, sizeof(fields), "\"backend\":\"%s\",\"request_bytes\":%zu",
+                 g->backend, request->body_len);
+        voice_trace_server_event(g, request->voice_turn_id, "llm_gateway_received", fields);
+    }
     /* T1.1/T1.0: distinguish "nothing installed at all" (409 model_required,
        a stable state the setup UI routes on) from "installed but this
        process isn't answering yet" (503, transient/retryable). Checked
@@ -5788,6 +5963,10 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
             return proxy_stream_error(client, "The model backend is unavailable.", "backend_unavailable");
         return samosa_http_json_error(client, 503, "backend_unavailable", "The model backend is unavailable.");
     }
+    /* The final answer is allowed more time than a routing judgement, but it
+       still needs a hard ceiling. A stalled backend must produce a visible
+       terminal SSE error, never an indefinitely active hands-free turn. */
+    backend_receive_timeout(upstream, 120);
     int interactive = !request->is_background && !strcmp(request->path, "/v1/chat/completions");
     if (interactive) interactive_start(g);
     pthread_mutex_lock(&g->mu); g->upstream_fd = upstream; pthread_mutex_unlock(&g->mu);
@@ -5800,6 +5979,8 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
     int ok = n > 0 && (size_t)n < sizeof(header) &&
              samosa_send_all(upstream, header, (size_t)n) &&
              (!request->body_len || samosa_send_all(upstream, request->body, request->body_len));
+    if (ok && request->voice_turn_id[0])
+        voice_trace_server_event(g, request->voice_turn_id, "llm_upstream_sent", NULL);
     if (ok && sse_preamble) {
         if (!client_stream_started) ok = samosa_http_stream_headers(client);
         if (ok && *sse_preamble)
@@ -5808,38 +5989,76 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
     char buffer[65536];
     TextBuffer head = {0};          /* only used while stripping upstream headers */
     int stripping = sse_preamble != NULL, upstream_ok = 1;
+    int upstream_status = 0, upstream_errno = 0, saw_done = 0, client_failed = 0;
+    size_t upstream_bytes = 0;
+    int traced_first_upstream_byte = 0;
     while (ok) {
         ssize_t got = recv(upstream, buffer, sizeof(buffer), 0);
         if (got == 0) break;
-        if (got < 0) { if (errno == EINTR) continue; ok = 0; break; }
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            upstream_errno = (errno == EAGAIN || errno == EWOULDBLOCK) ? ETIMEDOUT : errno;
+            /* Some local servers reset the socket immediately after sending
+               the complete SSE stream. A DONE marker means the answer made it
+               to the client; do not turn that normal close into a failure. */
+            if (sse_preamble && saw_done) { ok = 1; break; }
+            ok = 0; break;
+        }
+        upstream_bytes += (size_t)got;
+        if (!traced_first_upstream_byte && request->voice_turn_id[0]) {
+            traced_first_upstream_byte = 1;
+            voice_trace_server_event(g, request->voice_turn_id, "llm_upstream_first_byte", NULL);
+        }
         if (stripping) {
             if (!text_add_n(&head, buffer, (size_t)got)) { ok = 0; break; }
             char *end = strstr(head.data, "\r\n\r\n");
             if (!end) {
                 /* A header block this large is not a header block. */
-                if (head.len > SAMOSA_HTTP_MAX_HEADER) { ok = 0; upstream_ok = 0; break; }
+                if (head.len > SAMOSA_HTTP_MAX_HEADER) {
+                    ok = 0; upstream_ok = 0; upstream_errno = EPROTO; break;
+                }
                 continue;
             }
-            const char *status = strstr(head.data, " 200 ");
-            upstream_ok = status != NULL && status < end;
+            upstream_status = proxy_http_status(head.data);
+            upstream_ok = upstream_status == 200;
             stripping = 0;
             if (!upstream_ok) break;
             size_t offset = (size_t)(end - head.data) + 4;
-            if (head.len > offset && !samosa_send_all(client, head.data + offset, head.len - offset)) { ok = 0; break; }
+            if (head.len > offset) {
+                saw_done |= proxy_chunk_has_done(head.data + offset, head.len - offset);
+                if (!samosa_send_all(client, head.data + offset, head.len - offset)) {
+                    ok = 0; client_failed = 1; break;
+                }
+            }
             continue;
         }
-        if (!samosa_send_all(client, buffer, (size_t)got)) { ok = 0; break; }
+        saw_done |= proxy_chunk_has_done(buffer, (size_t)got);
+        if (!samosa_send_all(client, buffer, (size_t)got)) {
+            ok = 0; client_failed = 1; break;
+        }
     }
-    if (sse_preamble && (!upstream_ok || stripping)) {
+    if (sse_preamble && (!upstream_ok || stripping) && !client_failed) {
         /* Either the backend answered with an error status or it closed before
            finishing its headers. The response head is already 200, so the only
            honest place left to say so is the stream itself. */
-        static const char failed[] =
-            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},"
-            "\"finish_reason\":\"error\"}],\"error\":{\"message\":"
-            "\"The model backend failed after the web step.\",\"code\":\"backend_failed\"}}\n\n"
-            "data: [DONE]\n\n";
-        samosa_send_all(client, failed, sizeof(failed) - 1);
+        char detail[256], message[640], code[64];
+        proxy_error_detail(&head, detail, sizeof(detail));
+        if (upstream_status && upstream_status != 200) {
+            snprintf(message, sizeof(message),
+                     "The local model rejected the researched prompt (HTTP %d)%s%s",
+                     upstream_status, detail[0] ? ": " : "", detail);
+            snprintf(code, sizeof(code), "backend_http_%d", upstream_status);
+        } else if (upstream_errno) {
+            snprintf(message, sizeof(message),
+                     "The local model connection failed after web research (%s).",
+                     strerror(upstream_errno));
+            snprintf(code, sizeof(code), "backend_connection_failed");
+        } else {
+            snprintf(message, sizeof(message),
+                     "The local model closed before accepting the researched prompt.");
+            snprintf(code, sizeof(code), "backend_incomplete_response");
+        }
+        proxy_stream_error(client, message, code);
         ok = 0;
     }
     free(head.data);
@@ -5849,6 +6068,15 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
     close(upstream);
     atomic_fetch_sub(&g->generating, 1);
     if (interactive) interactive_finish(g);
+    if (request->voice_turn_id[0]) {
+        char fields[320];
+        snprintf(fields, sizeof(fields),
+                 "\"response_bytes\":%zu,\"upstream_status\":%d,"
+                 "\"upstream_errno\":%d,\"saw_done\":%s,\"outcome\":\"%s\"",
+                 upstream_bytes, upstream_status, upstream_errno, saw_done ? "true" : "false",
+                 ok ? "complete" : "failed");
+        voice_trace_server_event(g, request->voice_turn_id, "llm_gateway_complete", fields);
+    }
     return ok;
 }
 
@@ -6114,8 +6342,6 @@ static int v1_route_is_legacy_unauthenticated(const char *path) {
         "/v1/backends",
         "/v1/backends/select",
         "/v1/cancel",
-        "/v1/shutdown",
-        "/v1/kill",
         "/v1/chat/completions",
         "/v1/models",
         "/v1/jobsd/once",
@@ -6165,7 +6391,10 @@ static int serve_root_html(Gateway *g, int fd) {
     if (!ok) { free(out.data); return 0; }
     const char *headers =
         "Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; "
-        "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
+        "media-src 'self' data: blob:; "
+        "style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self'; "
+        "connect-src 'self' https://huggingface.co https://*.huggingface.co; "
         "object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n"
         "Referrer-Policy: no-referrer\r\n"
         "Cache-Control: no-store\r\n";
@@ -6173,6 +6402,33 @@ static int serve_root_html(Gateway *g, int fd) {
                (!out.len || samosa_send_all(fd, out.data, out.len));
     free(out.data);
     return sent;
+}
+
+static int serve_voice_browser_asset(Gateway *g, int fd, const char *path) {
+    const char *prefix = "/assets/voice/";
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(path, prefix, prefix_len) || !path[prefix_len]) return 0;
+    const char *relative = path + prefix_len;
+    /* This route serves only release-shipped browser runtime assets. Reject
+       traversal and platform separators before joining the path. */
+    if (strstr(relative, "..") || strchr(relative, '\\')) {
+        samosa_http_json_error(fd, 404, "voice_asset_not_found", "Voice browser asset not found.");
+        return 1;
+    }
+    char asset[PATH_MAX];
+    if (!path_join(asset, sizeof(asset), g->voice_browser_root, relative)) {
+        samosa_http_json_error(fd, 404, "voice_asset_not_found", "Voice browser asset not found.");
+        return 1;
+    }
+    const char *mime = "application/octet-stream";
+    const char *dot = strrchr(relative, '.');
+    if (dot && !strcasecmp(dot, ".js")) mime = "application/javascript; charset=utf-8";
+    else if (dot && !strcasecmp(dot, ".html")) mime = "text/html; charset=utf-8";
+    else if (dot && !strcasecmp(dot, ".wasm")) mime = "application/wasm";
+    else if (dot && !strcasecmp(dot, ".mjs")) mime = "application/javascript; charset=utf-8";
+    if (static_file(fd, asset, mime, NULL)) return 1;
+    samosa_http_json_error(fd, 404, "voice_asset_not_found", "Voice browser asset not found.");
+    return 1;
 }
 
 /* ============================================================================
@@ -8462,7 +8718,8 @@ static int web_tool_loop(Gateway *g, const char *question, TextBuffer *evidence,
    It plans several privacy-filtered searches first, rather than putting the
    complete message body into a search provider. */
 static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
-                               TextBuffer *evidence, WebProgress *progress) {
+                               TextBuffer *evidence, WebProgress *progress,
+                               int voice_turn) {
     WebStatus st; web_status(g, &st);
     if (st.offline) {
         web_sse_reasoning(progress, "Web access is off (offline mode). Answering without it.\n");
@@ -8518,8 +8775,17 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
     PublicPage fetched_pages[WEB_RESEARCH_MAX_PAGES] = {0};
     int fetched_count = 0;
     int native_summary_count = 0;
+    int early_sufficient = 0;
+    const int page_limit = voice_turn
+        ? (high_stakes ? WEB_RESEARCH_VOICE_HIGH_STAKES_PAGE_CAP : WEB_RESEARCH_VOICE_PAGE_CAP)
+        : WEB_RESEARCH_MAX_PAGES;
+    if (voice_turn) {
+        web_sse_reasoning(progress, high_stakes
+            ? "Voice research budget: up to three readable sources for this high-stakes question.\n"
+            : "Voice research budget: the first answer plus one corroborating source if needed.\n");
+    }
     TextBuffer article_digests = {0};
-    for (int q = 0; q < queries.len; ++q) {
+    for (int q = 0; q < queries.len && (!voice_turn || page_attempt_count < page_limit); ++q) {
         char line[384], err[192];
         WebResult results[WEB_SEARCH_MAX_RESULTS];
         int n = 0;
@@ -8562,7 +8828,7 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
         int ranked[WEB_RESEARCH_MAX_PAGES] = {0};
         int ranked_count = web_rank_results(g, resolved_question, queries.items[q],
                                             results, n, ranked, WEB_RESEARCH_MAX_PAGES);
-        for (int rank = 0; rank < ranked_count && page_attempt_count < WEB_RESEARCH_MAX_PAGES; ++rank) {
+        for (int rank = 0; rank < ranked_count && page_attempt_count < page_limit; ++rank) {
             int best = ranked[rank];
             if (best < 0 || best >= n ||
                 web_url_seen(page_attempts, page_attempt_count, results[best].url)) continue;
@@ -8587,7 +8853,9 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
                 int page_number = fetched_count + 1;
                 char number[32]; snprintf(number, sizeof(number), "%d", page_number);
                 text_add(&article_digests, "\n\n--- Fetched article digest ");
-                text_add(&article_digests, number); text_add(&article_digests, " ---\nTitle: ");
+                text_add(&article_digests, number); text_add(&article_digests, " ---\nSearch result title: ");
+                text_add(&article_digests, results[best].title);
+                text_add(&article_digests, "\nFetched page title: ");
                 text_add(&article_digests, page.title); text_add(&article_digests, "\nURL: ");
                 text_add(&article_digests, page.url);
                 if (summarized) {
@@ -8607,6 +8875,18 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
                 text_add(&article_digests, "\n--- end fetched article digest ---");
                 free(summary.data);
                 fetched_pages[fetched_count++] = page; /* ownership retained for raw fallback */
+                if (voice_turn && fetched_count == 1 && summarized) {
+                    int early_raw_indices[WEB_RESEARCH_RAW_FALLBACK_PAGES] = {0};
+                    int early_raw_count = 0;
+                    early_sufficient = web_summaries_sufficient(
+                        g, resolved_question, &article_digests, fetched_count,
+                        early_raw_indices, WEB_RESEARCH_RAW_FALLBACK_PAGES,
+                        &early_raw_count);
+                    if (early_sufficient) {
+                        web_sse_reasoning(progress,
+                            "The first readable source directly answers the question; stopping the lookup.\n");
+                    }
+                }
             } else {
                 web_sse_source(progress, source_id.data, results[best].title,
                                results[best].url, "page", "failed");
@@ -8617,8 +8897,10 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
                 text_add(evidence, "\nDo not treat its search snippet as confirmed.\n--- end verification failure ---");
             }
             free(source_id.data);
+            if (early_sufficient) break;
         }
         web_results_free(results, n); used = 1;
+        if (early_sufficient) break;
     }
 
     if (fetched_count) {
@@ -8631,10 +8913,11 @@ static int web_explicit_search(Gateway *g, const WebExplicitRequest *request,
 
         int raw_indices[WEB_RESEARCH_RAW_FALLBACK_PAGES] = {0};
         int raw_count = 0;
-        int sufficient = native_summary_count == fetched_count &&
-            web_summaries_sufficient(g, resolved_question, &article_digests,
-                                     fetched_count, raw_indices,
-                                     WEB_RESEARCH_RAW_FALLBACK_PAGES, &raw_count);
+        int sufficient = early_sufficient;
+        if (!sufficient && native_summary_count == fetched_count)
+            sufficient = web_summaries_sufficient(g, resolved_question, &article_digests,
+                                                   fetched_count, raw_indices,
+                                                   WEB_RESEARCH_RAW_FALLBACK_PAGES, &raw_count);
         if (!sufficient) {
             if (!raw_count) {
                 raw_count = fetched_count < WEB_RESEARCH_RAW_FALLBACK_PAGES ?
@@ -9132,7 +9415,8 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         WebExplicitRequest research_request = {0};
         web_explicit_request_build(messages, last_idx, &research_request);
         if (web_research_high_stakes(research_request.planner_input)) web_high_stakes = 1;
-        web_explicit_search(g, &research_request, &web_evidence, &web_progress);
+        web_explicit_search(g, &research_request, &web_evidence, &web_progress,
+                            request->voice_turn_id[0] != 0);
         web_explicit_request_free(&research_request);
     }
     /* Reserve the tail for the grounding contract. If evidence consumes the
@@ -9184,17 +9468,26 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             mwrote = 1;
         }
         if (mwrote) text_add(&payload, ",");
-        text_add(&payload, "\"content\":[{\"type\":\"text\",\"text\":");
         TextBuffer full_text = {0};
         text_add(&full_text, original_text);
         if (doc_evidence.data) text_add(&full_text, doc_evidence.data);
         if (chutni_evidence.data) text_add(&full_text, chutni_evidence.data);
         if (web_evidence.data) text_add(&full_text, web_evidence.data);
-        text_json_string(&payload, full_text.data ? full_text.data : "");
+        /* Keep the ordinary text-only OpenAI shape for local backends that do
+           not implement multimodal content arrays. Use an array only when an
+           image actually needs one; web evidence alone is still plain text. */
+        if (image_blocks.data) {
+            text_add(&payload, "\"content\":[{\"type\":\"text\",\"text\":");
+            text_json_string(&payload, full_text.data ? full_text.data : "");
+            text_add(&payload, "}");
+            text_add(&payload, image_blocks.data);
+            text_add(&payload, "]");
+        } else {
+            text_add(&payload, "\"content\":");
+            text_json_string(&payload, full_text.data ? full_text.data : "");
+        }
         free(full_text.data);
         text_add(&payload, "}");
-        if (image_blocks.data) text_add(&payload, image_blocks.data);
-        text_add(&payload, "]}");
     }
     text_add(&payload, "]}");
     free(doc_evidence.data); free(image_blocks.data); free(chutni_evidence.data);
@@ -9668,7 +9961,10 @@ static int catalog_validate(jval *root, char *reason, size_t reason_cap) {
         jval *backend_kind = json_get(entry, "backend_kind");
         if (!backend_kind || backend_kind->t != J_STR ||
             (strcmp(backend_kind->str, "qwen_native") && strcmp(backend_kind->str, "llama_cpp") &&
-             strcmp(backend_kind->str, "whisper_cpp") && strcmp(backend_kind->str, "mlx_native")))
+             strcmp(backend_kind->str, "whisper_cpp") && strcmp(backend_kind->str, "mlx_native") &&
+             strcmp(backend_kind->str, "pocket_tts") && strcmp(backend_kind->str, "kokoro_tts") &&
+             strcmp(backend_kind->str, "browser_tts") && strcmp(backend_kind->str, "moss_tts") &&
+             strcmp(backend_kind->str, "kitten_tts")))
             REJECT("unknown backend_kind");
 
         jval *req_abi = json_get(entry, "required_runtime_abi");
@@ -9757,6 +10053,9 @@ static int resolve_installed_artifact(Gateway *g, const char *model_id,
     if (!strcmp(model_id, "voice-stt-whisper-base-en") &&
         !strcmp(artifact_name, "ggml-base.en.bin"))
         return path_copy(out, cap, g->whisper_model);
+    if (!strcmp(model_id, "voice-stt-whisper-tiny-en") &&
+        !strcmp(artifact_name, "ggml-tiny.en.bin"))
+        return path_copy(out, cap, g->whisper_tiny_model);
     return 0;
 }
 
@@ -9770,6 +10069,8 @@ static int artifact_is_present(Gateway *g, const char *model_id, jval *artifact)
     jval *name = json_get(artifact, "name");
     jval *bytes = json_get(artifact, "bytes");
     if (!name || name->t != J_STR || !bytes) return 0;
+    if (!strncmp(model_id, "voice-tts-", 10))
+        return voice_catalog_artifact_present(g, model_id);
     char resolved[PATH_MAX];
     if (!resolve_installed_artifact(g, model_id, name->str, resolved, sizeof(resolved))) return 0;
     struct stat st;
@@ -9821,7 +10122,8 @@ static int emit_catalog_entry(TextBuffer *out, Gateway *g, jval *entry) {
         "id", "family", "version", "preferred_for_backend", "label", "description",
         "backend_kind", "supported_platforms",
         "required_runtime_abi", "minimum_ram_bytes", "launch_profile_id",
-        "runtime_dependencies", "tokenization", "license", "artifacts", NULL
+        "runtime_dependencies", "tokenization", "license", "artifacts",
+        "voice_role", "pros", "cons", NULL
     };
     jval *id = json_get(entry, "id");
     jval *artifacts = json_get(entry, "artifacts");
@@ -10438,6 +10740,420 @@ static int durable_job_id_generate(char out[40]) {
     return 1;
 }
 
+/* -------------------------------------------------------------------------
+   Local Voice timing diagnostics.
+
+   A trace contains timing metadata only: event names, monotonic/wall clocks,
+   byte/character/sample counts, and model/runtime labels. Microphone samples,
+   transcripts, prompts, and generated reply text are never accepted by these
+   handlers. Release builds keep tracing opt-in. Local development installs
+   set SAMOSA_VOICE_TRACE_AUTO=1 so every debug run is captured without the
+   tester having to remember a Settings toggle. */
+
+static int voice_trace_token_valid(const char *value, size_t cap) {
+    size_t n = value ? strlen(value) : 0;
+    if (!n || n >= cap) return 0;
+    for (size_t i = 0; i < n; ++i)
+        if (!isalnum((unsigned char)value[i]) && value[i] != '_' && value[i] != '-') return 0;
+    return 1;
+}
+
+static int voice_trace_write_line(const char *path, const char *line, size_t len) {
+    int fd = open(path, O_WRONLY | O_APPEND | O_CLOEXEC);
+    if (fd < 0) return 0;
+    size_t at = 0;
+    while (at < len) {
+        ssize_t n = write(fd, line + at, len - at);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { close(fd); return 0; }
+        at += (size_t)n;
+    }
+    int ok = write(fd, "\n", 1) == 1;
+    close(fd);
+    return ok;
+}
+
+static const char *gateway_shutdown_reason_name(int reason) {
+    switch (reason) {
+        case GATEWAY_SHUTDOWN_API: return "api_shutdown";
+        case GATEWAY_SHUTDOWN_KILL_API: return "api_kill";
+        case GATEWAY_SHUTDOWN_SIGNAL: return "signal";
+        case GATEWAY_SHUTDOWN_SERVER_ERROR: return "listener_error";
+        case GATEWAY_SHUTDOWN_UNKNOWN: return "unknown";
+        case GATEWAY_SHUTDOWN_APP_CLOSED: return "app_closed";
+        default: return "running";
+    }
+}
+
+static void gateway_shutdown_reason_set(Gateway *g, int reason, int signal_number) {
+    int expected = GATEWAY_SHUTDOWN_NONE;
+    int recorded = atomic_compare_exchange_strong(&g->shutdown_reason, &expected, reason);
+    /* Preserve the initiating cause. launchd may send SIGTERM while it
+       unregisters a gateway that already accepted an authenticated API stop;
+       that cleanup signal must not make the journal imply a signal-led exit. */
+    if (signal_number > 0 && (recorded || expected == GATEWAY_SHUTDOWN_SIGNAL))
+        atomic_store(&g->shutdown_signal, signal_number);
+}
+
+/* A small process-lifecycle journal, separate from per-conversation Voice
+   diagnostics. It records only starts/stops and their cause. A marker left by
+   SIGKILL, a crash, or power loss is reported on the next successful start. */
+static void gateway_lifecycle_event(Gateway *g, const char *event,
+                                    const char *fields_json) {
+    if (!g || !g->home[0] || !voice_trace_token_valid(event, 64)) return;
+    char log_dir[PATH_MAX], path[PATH_MAX];
+    if (!path_join(log_dir, sizeof(log_dir), g->home, "logs") ||
+        !mkdirs(log_dir) ||
+        !path_join(path, sizeof(path), log_dir, "gateway-lifecycle.jsonl")) return;
+    TextBuffer line = {0};
+    char number[128];
+    snprintf(number, sizeof(number),
+             ",\"wall_ms\":%lld,\"pid\":%ld,\"port\":%d",
+             wall_millis(), (long)getpid(), g->public_port);
+    int ok = text_add(&line, "{\"schema\":\"samosa.gateway.lifecycle.v1\",\"event\":") &&
+             text_json_string(&line, event) && text_add(&line, number);
+    if (ok && fields_json && *fields_json)
+        ok = text_add(&line, ",\"fields\":{") && text_add(&line, fields_json) && text_add(&line, "}");
+    ok = ok && text_add(&line, "}");
+    pthread_mutex_lock(&g->voice_trace_mu);
+    if (ok) {
+        int fd = open(path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd >= 0) {
+            size_t at = 0;
+            while (at < line.len) {
+                ssize_t n = write(fd, line.data + at, line.len - at);
+                if (n < 0 && errno == EINTR) continue;
+                if (n <= 0) break;
+                at += (size_t)n;
+            }
+            if (at == line.len && write(fd, "\n", 1) != 1) {
+                /* The lifecycle trace is best effort; the payload is already written. */
+            }
+            close(fd);
+        }
+    }
+    pthread_mutex_unlock(&g->voice_trace_mu);
+    free(line.data);
+}
+
+static int gateway_lifecycle_marker_path(Gateway *g, char out[PATH_MAX]) {
+    char run_dir[PATH_MAX];
+    char filename[64];
+    snprintf(filename, sizeof(filename), "gateway-active-%d.json", g->public_port);
+    return path_join(run_dir, sizeof(run_dir), g->home, "run") &&
+           mkdirs(run_dir) &&
+           path_join(out, PATH_MAX, run_dir, filename);
+}
+
+static void gateway_lifecycle_mark_ready(Gateway *g) {
+    char marker[PATH_MAX];
+    if (!gateway_lifecycle_marker_path(g, marker)) return;
+    if (access(marker, F_OK) == 0)
+        gateway_lifecycle_event(g, "previous_exit_unrecorded",
+                                "\"cause\":\"crash_sigkill_or_power_loss\"");
+    char body[256];
+    snprintf(body, sizeof(body),
+             "{\"pid\":%ld,\"wall_ms\":%lld,\"port\":%d,\"backend\":\"%s\"}\n",
+             (long)getpid(), wall_millis(), g->public_port, g->backend);
+    if (!write_small_file(marker, body))
+        gateway_lifecycle_event(g, "marker_write_failed", NULL);
+    char fields[160];
+    snprintf(fields, sizeof(fields), "\"backend\":\"%s\",\"app_owned\":%s",
+             g->backend, g->app_owned ? "true" : "false");
+    gateway_lifecycle_event(g, "gateway_ready", fields);
+}
+
+static void gateway_lifecycle_mark_exited(Gateway *g) {
+    char marker[PATH_MAX];
+    if (gateway_lifecycle_marker_path(g, marker)) unlink(marker);
+}
+
+/* Browser-owned app lifecycle. A page close cannot synchronously kill the
+   gateway because refresh emits the same pagehide event. Each document
+   registers a random client id; pagehide removes only that id and schedules
+   cleanup after a short grace period. A refreshed document registers its new
+   id before the deadline, canceling cleanup. Multiple tabs are safe because
+   the gateway exits only when the active-client set is empty. */
+#define APP_CLIENT_STALE_MS 90000
+#define APP_CLOSE_GRACE_MS 2500
+#define APP_STALE_CLOSE_GRACE_MS 30000
+
+static int app_clients_prune_and_count_locked(Gateway *g, long long now) {
+    int count = 0;
+    for (size_t i = 0; i < sizeof(g->app_clients) / sizeof(g->app_clients[0]); ++i) {
+        if (g->app_clients[i].id[0] && now - g->app_clients[i].seen_mono_ms > APP_CLIENT_STALE_MS)
+            g->app_clients[i].id[0] = 0;
+        if (g->app_clients[i].id[0]) count++;
+    }
+    return count;
+}
+
+static void app_client_upsert_locked(Gateway *g, const char *id, long long now) {
+    size_t slot = sizeof(g->app_clients) / sizeof(g->app_clients[0]);
+    size_t oldest = 0;
+    for (size_t i = 0; i < sizeof(g->app_clients) / sizeof(g->app_clients[0]); ++i) {
+        if (!strcmp(g->app_clients[i].id, id)) { slot = i; break; }
+        if (!g->app_clients[i].id[0] && slot == sizeof(g->app_clients) / sizeof(g->app_clients[0])) slot = i;
+        if (g->app_clients[i].seen_mono_ms < g->app_clients[oldest].seen_mono_ms) oldest = i;
+    }
+    if (slot == sizeof(g->app_clients) / sizeof(g->app_clients[0])) slot = oldest;
+    path_copy(g->app_clients[slot].id, sizeof(g->app_clients[slot].id), id);
+    g->app_clients[slot].seen_mono_ms = now;
+}
+
+static void app_client_remove_locked(Gateway *g, const char *id) {
+    for (size_t i = 0; i < sizeof(g->app_clients) / sizeof(g->app_clients[0]); ++i) {
+        if (!strcmp(g->app_clients[i].id, id)) {
+            g->app_clients[i].id[0] = 0;
+            g->app_clients[i].seen_mono_ms = 0;
+            return;
+        }
+    }
+}
+
+static int app_lifecycle_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (strcmp(request->method, "POST"))
+        return samosa_http_json_error(fd, 405, "method_not_allowed", "Only POST is supported.");
+    char *arena = NULL;
+    jval *root = json_parse(request->body, &arena);
+    jval *action_v = root && root->t == J_OBJ ? json_get(root, "action") : NULL;
+    jval *client_v = root && root->t == J_OBJ ? json_get(root, "client_id") : NULL;
+    jval *token_v = root && root->t == J_OBJ ? json_get(root, "token") : NULL;
+    /* sendBeacon cannot attach the X-Samosa-Token header. It carries the same
+       per-launch token in the JSON body; regular fetches and CLI tests may
+       continue to use the header. Origin validation remains identical. */
+    SamosaHttpRequest authenticated = *request;
+    if (!authenticated.ui_token[0] && token_v && token_v->t == J_STR)
+        path_copy(authenticated.ui_token, sizeof(authenticated.ui_token), token_v->str);
+    if (!require_ui_session(g, fd, &authenticated)) {
+        json_free(root); free(arena);
+        return 1;
+    }
+    if (!action_v || action_v->t != J_STR || !client_v || client_v->t != J_STR ||
+        !voice_trace_token_valid(client_v->str, 65) ||
+        (strcmp(action_v->str, "open") && strcmp(action_v->str, "heartbeat") && strcmp(action_v->str, "close"))) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_lifecycle_event", "A valid action and client_id are required.");
+    }
+    char action[16], client_id[65];
+    path_copy(action, sizeof(action), action_v->str);
+    path_copy(client_id, sizeof(client_id), client_v->str);
+    json_free(root); free(arena);
+    if (!g->app_owned)
+        return samosa_http_response(fd, 200, "application/json", "{\"app_owned\":false,\"active_clients\":0}", NULL);
+
+    long long now = monotonic_millis();
+    pthread_mutex_lock(&g->app_clients_mu);
+    app_clients_prune_and_count_locked(g, now);
+    if (!strcmp(action, "close")) app_client_remove_locked(g, client_id);
+    else app_client_upsert_locked(g, client_id, now);
+    int active = app_clients_prune_and_count_locked(g, now);
+    if (active > 0) atomic_store(&g->app_close_deadline_mono_ms, 0);
+    else if (!strcmp(action, "close")) atomic_store(&g->app_close_deadline_mono_ms, now + APP_CLOSE_GRACE_MS);
+    pthread_mutex_unlock(&g->app_clients_mu);
+    if (!strcmp(action, "open")) atomic_store(&g->app_client_seen, 1);
+
+    if (strcmp(action, "heartbeat")) {
+        char fields[128];
+        snprintf(fields, sizeof(fields), "\"action\":\"%s\",\"active_clients\":%d", action, active);
+        gateway_lifecycle_event(g, "browser_lifecycle", fields);
+    }
+    char response[96];
+    snprintf(response, sizeof(response), "{\"app_owned\":true,\"active_clients\":%d}", active);
+    return samosa_http_response(fd, 200, "application/json", response, NULL);
+}
+
+static void *app_lifecycle_watchdog(void *opaque) {
+    Gateway *g = opaque;
+    while (!atomic_load(&g->stopping)) {
+        sleep_millis(100);
+        long long now = monotonic_millis();
+        pthread_mutex_lock(&g->app_clients_mu);
+        int active = app_clients_prune_and_count_locked(g, now);
+        long long deadline = atomic_load(&g->app_close_deadline_mono_ms);
+        if (atomic_load(&g->app_client_seen) && active == 0 && deadline == 0) {
+            /* A missing heartbeat may just be a sleeping Mac or a heavily
+               throttled background tab. Explicit pagehide/beacon closes use
+               the fast grace above; stale clients get enough time to resume
+               and heartbeat before cleanup. */
+            deadline = now + APP_STALE_CLOSE_GRACE_MS;
+            atomic_store(&g->app_close_deadline_mono_ms, deadline);
+        }
+        pthread_mutex_unlock(&g->app_clients_mu);
+        if (active || deadline <= 0 || now < deadline) continue;
+        gateway_shutdown_reason_set(g, GATEWAY_SHUTDOWN_APP_CLOSED, 0);
+        gateway_lifecycle_event(g, "browser_clients_closed", "\"active_clients\":0");
+        atomic_store(&g->stopping, 1);
+        if (g->server) samosa_http_server_stop(g->server);
+        break;
+    }
+    return NULL;
+}
+
+/* voice_trace_mu must be held. fields_json is produced either by trusted
+   server code or by the browser-event handler's allow-list serializer. */
+static int voice_trace_append_locked(Gateway *g, const char *source,
+                                     const char *turn_id, const char *event,
+                                     double browser_mono_ms,
+                                     const char *fields_json) {
+    if (!g->voice_trace_active || !g->voice_trace_path[0]) return 0;
+    TextBuffer line = {0};
+    char number[96];
+    long long wall = wall_millis(), elapsed = monotonic_millis() - g->voice_trace_started_mono_ms;
+    snprintf(number, sizeof(number), "%lld", ++g->voice_trace_sequence);
+    int ok = text_add(&line, "{\"schema\":\"samosa.voice.trace.v1\",\"session_id\":") &&
+             text_json_string(&line, g->voice_trace_session_id) &&
+             text_add(&line, ",\"sequence\":") && text_add(&line, number) &&
+             text_add(&line, ",\"source\":") && text_json_string(&line, source) &&
+             text_add(&line, ",\"event\":") && text_json_string(&line, event);
+    if (ok && turn_id && *turn_id)
+        ok = text_add(&line, ",\"turn_id\":") && text_json_string(&line, turn_id);
+    if (ok) {
+        snprintf(number, sizeof(number), ",\"wall_ms\":%lld,\"session_elapsed_ms\":%lld", wall, elapsed);
+        ok = text_add(&line, number);
+    }
+    if (ok && browser_mono_ms >= 0) {
+        snprintf(number, sizeof(number), ",\"browser_mono_ms\":%.3f", browser_mono_ms);
+        ok = text_add(&line, number);
+    }
+    if (ok && fields_json && *fields_json)
+        ok = text_add(&line, ",\"fields\":{") && text_add(&line, fields_json) && text_add(&line, "}");
+    ok = ok && text_add(&line, "}") && voice_trace_write_line(g->voice_trace_path, line.data, line.len);
+    free(line.data);
+    return ok;
+}
+
+static void voice_trace_server_event(Gateway *g, const char *turn_id,
+                                     const char *event, const char *fields_json) {
+    if (!voice_trace_token_valid(event, 64)) return;
+    if (turn_id && *turn_id && !voice_trace_token_valid(turn_id, 64)) turn_id = NULL;
+    pthread_mutex_lock(&g->voice_trace_mu);
+    voice_trace_append_locked(g, "gateway", turn_id, event, -1, fields_json);
+    pthread_mutex_unlock(&g->voice_trace_mu);
+}
+
+static int voice_trace_status_response(Gateway *g, int fd) {
+    TextBuffer body = {0};
+    pthread_mutex_lock(&g->voice_trace_mu);
+    int active = g->voice_trace_active;
+    int ok = text_add(&body, active ? "{\"active\":true" : "{\"active\":false");
+    if (ok && g->voice_trace_session_id[0])
+        ok = text_add(&body, ",\"session_id\":") && text_json_string(&body, g->voice_trace_session_id);
+    if (ok && g->voice_trace_path[0])
+        ok = text_add(&body, ",\"path\":") && text_json_string(&body, g->voice_trace_path);
+    ok = ok && text_add(&body, "}");
+    pthread_mutex_unlock(&g->voice_trace_mu);
+    int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
+    free(body.data);
+    return sent;
+}
+
+static int voice_pocket_tts_ready(Gateway *g);
+static int voice_kokoro_tts_ready(Gateway *g);
+static const char *voice_neural_tts_engine(Gateway *g);
+
+/* voice_trace_mu must be held. */
+static int voice_trace_start_locked(Gateway *g, const char *mode) {
+    if (g->voice_trace_active) return 1;
+    char trace_dir[PATH_MAX], id[40], filename[96], path[PATH_MAX];
+    int ready = path_join(trace_dir, sizeof(trace_dir), g->home, "logs/voice") &&
+                mkdirs(trace_dir) && durable_job_id_generate(id);
+    if (ready) {
+        snprintf(filename, sizeof(filename), "voice-trace-%s.jsonl", id);
+        ready = path_join(path, sizeof(path), trace_dir, filename);
+    }
+    int trace_fd = ready ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600) : -1;
+    if (trace_fd >= 0) close(trace_fd); else ready = 0;
+    if (!ready) return 0;
+    path_copy(g->voice_trace_session_id, sizeof(g->voice_trace_session_id), id);
+    path_copy(g->voice_trace_path, sizeof(g->voice_trace_path), path);
+    g->voice_trace_active = 1;
+    g->voice_trace_sequence = 0;
+    g->voice_trace_started_mono_ms = monotonic_millis();
+    const char *tts_engine = voice_neural_tts_engine(g);
+    int tts_threads = tts_engine && !strcmp(tts_engine, "pocket_native")
+                    ? g->pocket_threads : tts_engine ? g->kokoro_threads : 0;
+    char fields[256];
+    snprintf(fields, sizeof(fields),
+             "\"backend\":\"%s\",\"tts_engine\":\"%s\",\"tts_threads\":%d,\"mode\":\"%s\"",
+             g->backend, tts_engine ? tts_engine : "none", tts_threads, mode ? mode : "manual");
+    voice_trace_append_locked(g, "gateway", NULL, "trace_started", -1, fields);
+    return 1;
+}
+
+static int voice_trace_start_handler(Gateway *g, int fd) {
+    pthread_mutex_lock(&g->voice_trace_mu);
+    int ready = voice_trace_start_locked(g, "manual");
+    pthread_mutex_unlock(&g->voice_trace_mu);
+    if (!ready)
+        return samosa_http_json_error(fd, 500, "voice_trace_start_failed", "The local Voice timing log could not be created.");
+    return voice_trace_status_response(g, fd);
+}
+
+static int voice_trace_stop_handler(Gateway *g, int fd) {
+    pthread_mutex_lock(&g->voice_trace_mu);
+    if (g->voice_trace_active) {
+        voice_trace_append_locked(g, "gateway", NULL, "trace_stopped", -1, NULL);
+        g->voice_trace_active = 0;
+    }
+    pthread_mutex_unlock(&g->voice_trace_mu);
+    return voice_trace_status_response(g, fd);
+}
+
+static int voice_trace_event_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (!request->body_len || request->body_len > 4096)
+        return samosa_http_json_error(fd, 400, "invalid_voice_trace_event", "Voice trace events must be small JSON objects.");
+    char *arena = NULL;
+    jval *root = json_parse(request->body, &arena);
+    jval *event = root ? json_get(root, "event") : NULL;
+    jval *turn = root ? json_get(root, "turn_id") : NULL;
+    jval *mono = root ? json_get(root, "browser_mono_ms") : NULL;
+    jval *fields = root ? json_get(root, "fields") : NULL;
+    if (!root || root->t != J_OBJ || !event || event->t != J_STR ||
+        !voice_trace_token_valid(event->str, 64) ||
+        (turn && (turn->t != J_STR || !voice_trace_token_valid(turn->str, 64))) ||
+        (mono && mono->t != J_NUM) || (fields && fields->t != J_OBJ)) {
+        json_free(root); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_voice_trace_event", "The Voice timing event is invalid.");
+    }
+    static const char *const numeric_keys[] = {
+        "audio_duration_ms", "silence_ms", "speech_duration_ms", "wav_bytes",
+        "transcript_chars", "prompt_messages", "prompt_chars", "response_chars",
+        "phrase_index", "phrase_count", "phrase_chars", "chunk_bytes", "sample_count", "sample_rate",
+        "source_rate", "audio_level", "noise_floor", "endpoint_ms", "encode_duration_ms",
+        "request_bytes", "response_bytes", "server_duration_ms", "progress", "http_status",
+        "score", "threshold", "configured_threshold", "duration_ratio", "candidate_duration_ms",
+        "agreement_count", "reference_count", "kokoro_threads", "tts_threads", "speech_speed", "gap_ms",
+        "callback_count", "warmup_ms", NULL
+    };
+    static const char *const string_keys[] = {"backend", "voice", "outcome", "mode", "tts_engine", NULL};
+    TextBuffer safe = {0}; int wrote = 0;
+    if (fields) {
+        for (int i = 0; numeric_keys[i]; ++i) {
+            jval *value = json_get(fields, numeric_keys[i]);
+            if (!value || value->t != J_NUM) continue;
+            char number[64]; snprintf(number, sizeof(number), "%.6g", value->num);
+            if ((wrote++ && !text_add(&safe, ",")) || !text_json_string(&safe, numeric_keys[i]) ||
+                !text_add(&safe, ":") || !text_add(&safe, number)) goto event_fail;
+        }
+        for (int i = 0; string_keys[i]; ++i) {
+            jval *value = json_get(fields, string_keys[i]);
+            if (!value || value->t != J_STR || strlen(value->str) > 64) continue;
+            if ((wrote++ && !text_add(&safe, ",")) || !text_json_string(&safe, string_keys[i]) ||
+                !text_add(&safe, ":") || !text_json_string(&safe, value->str)) goto event_fail;
+        }
+    }
+    pthread_mutex_lock(&g->voice_trace_mu);
+    voice_trace_append_locked(g, "browser", turn ? turn->str : NULL, event->str,
+                              mono ? mono->num : -1, safe.data);
+    pthread_mutex_unlock(&g->voice_trace_mu);
+    free(safe.data); json_free(root); free(arena);
+    return samosa_http_response(fd, 204, "application/json", "", NULL);
+event_fail:
+    free(safe.data); json_free(root); free(arena);
+    return samosa_http_json_error(fd, 500, "voice_trace_write_failed", "The Voice timing event could not be recorded.");
+}
+
 static int models_install_created_response(int fd, const InstallJob *job, int status) {
     TextBuffer body = {0};
     char status_url[128], events_url[160];
@@ -10934,29 +11650,116 @@ static int models_installs_dispatch(Gateway *g, int fd, const SamosaHttpRequest 
 /* ============================================================================
    Local hands-free voice. STT is a bounded raw-WAV request to the local
    gateway, sent to a pinned Whisper.cpp CLI and discarded immediately after
-   transcription. TTS is native Kokoro inference through Sherpa-ONNX's C ABI:
-   the gateway dlopens the pinned local runtime after an explicit download.
-   No Python process, package manager, cloud request, or public voice server
-   is involved. */
+   transcription. TTS is native Pocket (or legacy Kokoro) inference through
+   Sherpa-ONNX's C ABI: the gateway dlopens the pinned local runtime after an
+   explicit download. Pocket emits PCM progress chunks while it synthesizes,
+   so playback starts before the complete clause has been generated.
+   MOSS and Kitten use the browser-local ONNX runtime shipped as JavaScript
+   and WASM assets. Their model weights are downloaded by the browser and
+   never loaded by this C gateway. */
 
 #define VOICE_STT_MODEL_ID "voice-stt-whisper-base-en"
-#define VOICE_STT_MODEL_BYTES 147964211LL
+#define VOICE_STT_TINY_MODEL_ID "voice-stt-whisper-tiny-en"
+#define VOICE_TTS_POCKET_ID "voice-tts-pocket"
+#define VOICE_TTS_KOKORO_ID "voice-tts-kokoro"
+#define VOICE_TTS_BROWSER_ID "voice-tts-browser"
+#define VOICE_TTS_MOSS_ID "voice-tts-moss-nano"
+#define VOICE_TTS_KITTEN_ID "voice-tts-kitten-nano"
 #define VOICE_MAX_AUDIO_SECONDS 120.0
 
-static int voice_stt_model_present(Gateway *g) {
+static size_t voice_tts_max_samples(int sample_rate, size_t phrase_chars) {
+    double seconds = 8.0 + (double)phrase_chars / 8.0;
+    if (seconds < 12.0) seconds = 12.0;
+    if (seconds > 45.0) seconds = 45.0;
+    return sample_rate > 0 ? (size_t)((double)sample_rate * seconds) : 0;
+}
+
+static int voice_stt_model_path(Gateway *g, const char *model_id,
+                                char *out, size_t cap, long long *expected_bytes) {
+    if (!model_id || !strcmp(model_id, VOICE_STT_MODEL_ID)) {
+        if (expected_bytes) *expected_bytes = 147964211LL;
+        return path_copy(out, cap, g->whisper_model);
+    }
+    if (!strcmp(model_id, VOICE_STT_TINY_MODEL_ID)) {
+        if (expected_bytes) *expected_bytes = 77704715LL;
+        return path_copy(out, cap, g->whisper_tiny_model);
+    }
+    return 0;
+}
+
+static int voice_selected_stt_path(Gateway *g, char *out, size_t cap,
+                                   char *model_id, size_t model_cap) {
+    char selected[80] = {0};
+    if (!read_small_file(g->voice_stt_selection_file, selected, sizeof(selected)) ||
+        (strcmp(selected, VOICE_STT_MODEL_ID) && strcmp(selected, VOICE_STT_TINY_MODEL_ID)))
+        path_copy(selected, sizeof(selected), VOICE_STT_MODEL_ID);
+    if (model_id) path_copy(model_id, model_cap, selected);
+    return voice_stt_model_path(g, selected, out, cap, NULL);
+}
+
+static int voice_stt_model_present(Gateway *g, const char *model_id) {
+    char path[PATH_MAX]; long long expected = 0;
+    if (!voice_stt_model_path(g, model_id, path, sizeof(path), &expected)) return 0;
     struct stat st;
-    return !stat(g->whisper_model, &st) && S_ISREG(st.st_mode) &&
-           (long long)st.st_size == VOICE_STT_MODEL_BYTES;
+    return !stat(path, &st) && S_ISREG(st.st_mode) && (long long)st.st_size == expected;
 }
 
 static int voice_stt_ready(Gateway *g) {
-    return regular_file(g->whisper_cli, 1) && voice_stt_model_present(g);
+    char path[PATH_MAX], model_id[80];
+    return regular_file(g->whisper_cli, 1) &&
+           voice_selected_stt_path(g, path, sizeof(path), model_id, sizeof(model_id)) &&
+           voice_stt_model_present(g, model_id);
 }
 
-static int voice_neural_tts_ready(Gateway *g) {
+static int voice_kokoro_tts_ready(Gateway *g) {
     return regular_file(g->kokoro_library, 0) && regular_file(g->kokoro_model, 0) &&
            regular_file(g->kokoro_voices, 0) && regular_file(g->kokoro_tokens, 0) &&
            directory_exists(g->kokoro_data_dir) && regular_file(g->kokoro_ready, 0);
+}
+
+static int voice_pocket_tts_ready(Gateway *g) {
+    return regular_file(g->pocket_library, 0) && regular_file(g->pocket_lm_flow, 0) &&
+           regular_file(g->pocket_lm_main, 0) && regular_file(g->pocket_encoder, 0) &&
+           regular_file(g->pocket_decoder, 0) && regular_file(g->pocket_text_conditioner, 0) &&
+           regular_file(g->pocket_vocab, 0) && regular_file(g->pocket_token_scores, 0) &&
+           regular_file(g->pocket_voice_caro, 0) && regular_file(g->pocket_voice_stuart, 0) &&
+           regular_file(g->pocket_ready, 0);
+}
+
+static int voice_catalog_artifact_present(Gateway *g, const char *model_id) {
+    if (!strcmp(model_id, VOICE_TTS_BROWSER_ID)) return 1;
+    if (!strcmp(model_id, VOICE_TTS_POCKET_ID)) return voice_pocket_tts_ready(g);
+    if (!strcmp(model_id, VOICE_TTS_KOKORO_ID)) return voice_kokoro_tts_ready(g);
+    return 0;
+}
+
+static void voice_selected_tts_id(Gateway *g, char *out, size_t cap) {
+    char selected[80] = {0};
+    if (read_small_file(g->voice_tts_selection_file, selected, sizeof(selected)) &&
+        (!strcmp(selected, VOICE_TTS_POCKET_ID) || !strcmp(selected, VOICE_TTS_KOKORO_ID) ||
+         !strcmp(selected, VOICE_TTS_BROWSER_ID) || !strcmp(selected, VOICE_TTS_MOSS_ID) ||
+         !strcmp(selected, VOICE_TTS_KITTEN_ID))) {
+        path_copy(out, cap, selected);
+        return;
+    }
+    path_copy(out, cap, voice_pocket_tts_ready(g) ? VOICE_TTS_POCKET_ID :
+                    voice_kokoro_tts_ready(g) ? VOICE_TTS_KOKORO_ID : VOICE_TTS_BROWSER_ID);
+}
+
+static int voice_neural_tts_ready(Gateway *g) {
+    char selected[80]; voice_selected_tts_id(g, selected, sizeof(selected));
+    return (!strcmp(selected, VOICE_TTS_POCKET_ID) && voice_pocket_tts_ready(g)) ||
+           (!strcmp(selected, VOICE_TTS_KOKORO_ID) && voice_kokoro_tts_ready(g)) ||
+           !strcmp(selected, VOICE_TTS_MOSS_ID) || !strcmp(selected, VOICE_TTS_KITTEN_ID);
+}
+
+static const char *voice_neural_tts_engine(Gateway *g) {
+    char selected[80]; voice_selected_tts_id(g, selected, sizeof(selected));
+    if (!strcmp(selected, VOICE_TTS_POCKET_ID) && voice_pocket_tts_ready(g)) return "pocket_native";
+    if (!strcmp(selected, VOICE_TTS_KOKORO_ID) && voice_kokoro_tts_ready(g)) return "kokoro_native";
+    if (!strcmp(selected, VOICE_TTS_MOSS_ID)) return "moss_browser";
+    if (!strcmp(selected, VOICE_TTS_KITTEN_ID)) return "kitten_browser";
+    return NULL;
 }
 
 static int voice_status_handler(Gateway *g, int fd) {
@@ -10970,16 +11773,20 @@ static int voice_status_handler(Gateway *g, int fd) {
 #else
     int system_tts = 0;
 #endif
+    char stt_model_id[80], stt_path[PATH_MAX], tts_model_id[80];
+    voice_selected_stt_path(g, stt_path, sizeof(stt_path), stt_model_id, sizeof(stt_model_id));
+    voice_selected_tts_id(g, tts_model_id, sizeof(tts_model_id));
     TextBuffer body = {0};
-    int ok = text_add(&body, "{\"stt_model_id\":") && text_json_string(&body, VOICE_STT_MODEL_ID) &&
-        text_add(&body, ",\"stt_model_downloaded\":") && text_add(&body, voice_stt_model_present(g) ? "true" : "false") &&
+    int ok = text_add(&body, "{\"stt_model_id\":") && text_json_string(&body, stt_model_id) &&
+        text_add(&body, ",\"stt_model_downloaded\":") && text_add(&body, voice_stt_model_present(g, stt_model_id) ? "true" : "false") &&
         text_add(&body, ",\"stt_runtime_ready\":") && text_add(&body, regular_file(g->whisper_cli, 1) ? "true" : "false") &&
         text_add(&body, ",\"stt_ready\":") && text_add(&body, voice_stt_ready(g) ? "true" : "false") &&
         text_add(&body, ",\"runtime_preparing\":") && text_add(&body, preparing ? "true" : "false") &&
         text_add(&body, ",\"transcribing\":") && text_add(&body, transcribing ? "true" : "false") &&
+        text_add(&body, ",\"tts_model_id\":") && text_json_string(&body, tts_model_id) &&
         text_add(&body, ",\"tts_neural_ready\":") && text_add(&body, voice_neural_tts_ready(g) ? "true" : "false") &&
         text_add(&body, ",\"tts_preparing\":") && text_add(&body, tts_preparing ? "true" : "false") &&
-        text_add(&body, ",\"tts_engine\":") && text_json_string(&body, voice_neural_tts_ready(g) ? "kokoro_native" : (system_tts ? "macos_speech" : "browser_speech")) &&
+        text_add(&body, ",\"tts_engine\":") && text_json_string(&body, voice_neural_tts_ready(g) ? voice_neural_tts_engine(g) : (system_tts ? "macos_speech" : "browser_speech")) &&
         text_add(&body, ",\"tts_ready\":") && text_add(&body, (voice_neural_tts_ready(g) || system_tts) ? "true" : "false") &&
         text_add(&body, "}");
     int sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
@@ -11027,11 +11834,40 @@ static int voice_runtime_install_handler(Gateway *g, int fd) {
     return voice_status_handler(g, fd);
 }
 
-static int voice_tts_runtime_install_handler(Gateway *g, int fd) {
-    if (voice_neural_tts_ready(g)) return voice_status_handler(g, fd);
-    if (!regular_file(g->kokoro_runtime_script, 1))
-        return samosa_http_json_error(fd, 503, "kokoro_runtime_missing",
-            "This Samosa release does not include the local neural voice installer.");
+static void kokoro_native_stop(Gateway *g);
+
+static int voice_tts_runtime_install_handler(Gateway *g, int fd,
+                                              const SamosaHttpRequest *request) {
+    char model_id[80];
+    path_copy(model_id, sizeof(model_id), VOICE_TTS_POCKET_ID);
+    if (request && request->body_len) {
+        if (request->body_len > 2048)
+            return samosa_http_json_error(fd, 400, "invalid_voice_selection", "Voice model selection is invalid.");
+        char *arena = NULL;
+        jval *body = json_parse(request->body, &arena);
+        jval *model = body ? json_get(body, "model_id") : NULL;
+        if (!model || model->t != J_STR || strcmp(model->str, VOICE_TTS_POCKET_ID)) {
+            int catalog_only = model && model->t == J_STR &&
+                (!strcmp(model->str, VOICE_TTS_MOSS_ID) || !strcmp(model->str, VOICE_TTS_KITTEN_ID));
+            json_free(body); free(arena);
+            if (catalog_only)
+                return samosa_http_json_error(fd, 409, "voice_model_unavailable",
+                    "This model is browser-local. Use its Download action in Voice settings; the gateway does not install it.");
+            return samosa_http_json_error(fd, 404, "voice_model_not_found",
+                "That downloadable TTS model is not in the catalog.");
+        }
+        path_copy(model_id, sizeof(model_id), model->str);
+        json_free(body); free(arena);
+    }
+
+    const char *script = NULL;
+    if (!strcmp(model_id, VOICE_TTS_POCKET_ID)) {
+        if (voice_pocket_tts_ready(g)) return voice_status_handler(g, fd);
+        script = g->kokoro_runtime_script;
+    }
+    if (!script || !regular_file(script, 1))
+        return samosa_http_json_error(fd, 503, "tts_runtime_missing",
+            "This Samosa release does not include the selected local TTS installer.");
 
     pthread_mutex_lock(&g->voice_mu);
     if (g->kokoro_installing || g->voice_runtime_installing || g->voice_transcribing) {
@@ -11042,21 +11878,22 @@ static int voice_tts_runtime_install_handler(Gateway *g, int fd) {
     pthread_mutex_unlock(&g->voice_mu);
 
     int status = 0;
-    char *argv[] = { g->kokoro_runtime_script, NULL };
-    char *output = run_capture_both(g, g->kokoro_runtime_script, argv, 1 << 20, &status);
+    char *argv[] = { (char *)script, NULL };
+    char *output = run_capture_both(g, script, argv, 1 << 20, &status);
     pthread_mutex_lock(&g->voice_mu);
     g->kokoro_installing = 0;
     pthread_mutex_unlock(&g->voice_mu);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) || !voice_neural_tts_ready(g)) {
-        const char *message = "Samosa couldn't download the local neural voice. Try Download again.";
+    if (!WIFEXITED(status) || WEXITSTATUS(status) || !voice_catalog_artifact_present(g, model_id)) {
+        const char *message = "Samosa couldn't download the selected local neural voice. Try Download again.";
         if (output && strstr(output, "No space"))
-            message = "There isn't enough free space to download the local neural voice.";
-        else if (output && strstr(output, "pinned checksum"))
-            message = "Samosa couldn't verify the native voice download. Try Download again.";
+            message = "There isn't enough free space to download this local neural voice.";
         free(output);
-        return samosa_http_json_error(fd, 500, "kokoro_runtime_failed", message);
+        return samosa_http_json_error(fd, 500, "tts_runtime_failed", message);
     }
     free(output);
+    /* A TTS selection change must discard any loaded Sherpa engine before the
+       next request. */
+    kokoro_native_stop(g);
     return voice_status_handler(g, fd);
 }
 
@@ -11069,50 +11906,129 @@ static void kokoro_native_stop(Gateway *g) {
     g->kokoro_dylib = NULL;
     g->kokoro_create = NULL;
     g->kokoro_destroy = NULL;
+    g->kokoro_sample_rate = NULL;
     g->kokoro_generate = NULL;
     g->kokoro_destroy_audio = NULL;
+    g->neural_tts_is_pocket = 0;
     pthread_mutex_unlock(&g->voice_mu);
     if (tts && destroy) destroy(tts);
     if (library) dlclose(library);
 }
 
+/* Voice model selection is deliberately one value per capability.  It is
+   persisted by the gateway, so every browser tab and every future launch sees
+   the same one STT choice and one TTS choice.  A model must be ready before it
+   can become active; downloading remains a separate catalog action. */
+static int voice_selection_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (request->body_len == 0 || request->body_len > 2048)
+        return samosa_http_json_error(fd, 400, "invalid_voice_selection", "Voice selection is invalid.");
+    char *arena = NULL;
+    jval *body = json_parse(request->body, &arena);
+    jval *kind = body ? json_get(body, "kind") : NULL;
+    jval *model = body ? json_get(body, "model_id") : NULL;
+    int ok = kind && kind->t == J_STR && model && model->t == J_STR;
+    if (!ok) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_voice_selection", "kind and model_id are required.");
+    }
+    const char *selection_file = NULL;
+    if (!strcmp(kind->str, "stt")) {
+        if (strcmp(model->str, VOICE_STT_MODEL_ID) && strcmp(model->str, VOICE_STT_TINY_MODEL_ID)) {
+            json_free(body); free(arena);
+            return samosa_http_json_error(fd, 404, "voice_model_not_found", "That speech-recognition model is not in the catalog.");
+        }
+        if (!regular_file(g->whisper_cli, 1) || !voice_stt_model_present(g, model->str)) {
+            json_free(body); free(arena);
+            return samosa_http_json_error(fd, 409, "voice_model_not_ready", "Download and prepare that speech-recognition model first.");
+        }
+        selection_file = g->voice_stt_selection_file;
+    } else if (!strcmp(kind->str, "tts")) {
+        if (strcmp(model->str, VOICE_TTS_POCKET_ID) && strcmp(model->str, VOICE_TTS_KOKORO_ID) &&
+            strcmp(model->str, VOICE_TTS_BROWSER_ID) && strcmp(model->str, VOICE_TTS_MOSS_ID) &&
+            strcmp(model->str, VOICE_TTS_KITTEN_ID)) {
+            json_free(body); free(arena);
+            return samosa_http_json_error(fd, 404, "voice_model_not_found", "That speech model is not in the catalog.");
+        }
+        jval *browser_ready = body ? json_get(body, "browser_ready") : NULL;
+        int browser_model = !strcmp(model->str, VOICE_TTS_MOSS_ID) || !strcmp(model->str, VOICE_TTS_KITTEN_ID);
+        int browser_ready_flag = browser_ready && browser_ready->t == J_BOOL && browser_ready->boolean;
+        if ((!browser_model && !voice_catalog_artifact_present(g, model->str)) ||
+            (browser_model && !browser_ready_flag)) {
+            json_free(body); free(arena);
+            return samosa_http_json_error(fd, 409, "voice_model_not_ready",
+                browser_model ? "Download and prepare that browser-local speech model first." :
+                                 "Download and prepare that speech model first.");
+        }
+        selection_file = g->voice_tts_selection_file;
+    } else {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_voice_selection", "kind must be stt or tts.");
+    }
+    char selected[80]; path_copy(selected, sizeof(selected), model->str);
+    json_free(body); free(arena);
+    if (!write_small_file(selection_file, selected))
+        return samosa_http_json_error(fd, 500, "voice_selection_failed", "The voice selection could not be saved.");
+    if (selection_file == g->voice_tts_selection_file || !strcmp(selection_file, g->voice_tts_selection_file))
+        kokoro_native_stop(g);
+    return voice_status_handler(g, fd);
+}
+
 static int kokoro_native_start_locked(Gateway *g) {
     if (!voice_neural_tts_ready(g)) return 0;
     if (g->kokoro_tts) return 1;
-    void *library = dlopen(g->kokoro_library, RTLD_NOW | RTLD_LOCAL);
+    char selected[80]; voice_selected_tts_id(g, selected, sizeof(selected));
+    int pocket = !strcmp(selected, VOICE_TTS_POCKET_ID);
+    const char *engine = pocket ? "Pocket" : "Kokoro";
+    const char *library_path = pocket ? g->pocket_library : g->kokoro_library;
+    void *library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
     if (!library) {
-        fprintf(stderr, "Samosa Kokoro: cannot load native runtime: %s\\n", dlerror());
+        fprintf(stderr, "Samosa %s: cannot load native runtime: %s\\n", engine, dlerror());
         return 0;
     }
     SamosaSherpaCreateTts create = (SamosaSherpaCreateTts)dlsym(library, "SherpaOnnxCreateOfflineTts");
     SamosaSherpaDestroyTts destroy = (SamosaSherpaDestroyTts)dlsym(library, "SherpaOnnxDestroyOfflineTts");
+    SamosaSherpaTtsSampleRate sample_rate = (SamosaSherpaTtsSampleRate)dlsym(library, "SherpaOnnxOfflineTtsSampleRate");
     SamosaSherpaGenerateTts generate = (SamosaSherpaGenerateTts)dlsym(library, "SherpaOnnxOfflineTtsGenerateWithConfig");
     SamosaSherpaDestroyAudio destroy_audio = (SamosaSherpaDestroyAudio)dlsym(library, "SherpaOnnxDestroyOfflineTtsGeneratedAudio");
-    if (!create || !destroy || !generate || !destroy_audio) {
-        fprintf(stderr, "Samosa Kokoro: the native runtime is missing a required C API symbol.\\n");
+    if (!create || !destroy || !sample_rate || !generate || !destroy_audio) {
+        fprintf(stderr, "Samosa %s: the native runtime is missing a required C API symbol.\\n", engine);
         dlclose(library); return 0;
     }
     SamosaSherpaTtsConfig config;
     memset(&config, 0, sizeof(config));
-    config.model.kokoro.model = g->kokoro_model;
-    config.model.kokoro.voices = g->kokoro_voices;
-    config.model.kokoro.tokens = g->kokoro_tokens;
-    config.model.kokoro.data_dir = g->kokoro_data_dir;
-    config.model.num_threads = 2;
+    if (pocket) {
+        config.model.pocket.lm_flow = g->pocket_lm_flow;
+        config.model.pocket.lm_main = g->pocket_lm_main;
+        config.model.pocket.encoder = g->pocket_encoder;
+        config.model.pocket.decoder = g->pocket_decoder;
+        config.model.pocket.text_conditioner = g->pocket_text_conditioner;
+        config.model.pocket.vocab_json = g->pocket_vocab;
+        config.model.pocket.token_scores_json = g->pocket_token_scores;
+        config.model.pocket.voice_embedding_cache_capacity = 4;
+        config.model.num_threads = g->pocket_threads;
+    } else {
+        config.model.kokoro.model = g->kokoro_model;
+        config.model.kokoro.voices = g->kokoro_voices;
+        config.model.kokoro.tokens = g->kokoro_tokens;
+        config.model.kokoro.data_dir = g->kokoro_data_dir;
+        config.model.num_threads = g->kokoro_threads;
+    }
     config.model.provider = "cpu";
     config.max_num_sentences = 1;
     config.silence_scale = 0.12f;
     const SamosaSherpaOfflineTts *tts = create(&config);
     if (!tts) {
-        fprintf(stderr, "Samosa Kokoro: native model initialization failed.\\n");
+        fprintf(stderr, "Samosa %s: native model initialization failed.\\n", engine);
         dlclose(library); return 0;
     }
     g->kokoro_dylib = library;
     g->kokoro_tts = tts;
     g->kokoro_create = create;
     g->kokoro_destroy = destroy;
+    g->kokoro_sample_rate = sample_rate;
     g->kokoro_generate = generate;
     g->kokoro_destroy_audio = destroy_audio;
+    g->neural_tts_is_pocket = pocket;
     return 1;
 }
 
@@ -11122,6 +12038,59 @@ static uint16_t voice_le16(const unsigned char *p) {
 
 static uint32_t voice_le32(const unsigned char *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static int voice_read_pcm16_mono(const char *path, float **samples_out,
+                                 int32_t *count_out, int32_t *rate_out) {
+    *samples_out = NULL; *count_out = 0; *rate_out = 0;
+    FILE *stream = fopen(path, "rb");
+    if (!stream) return 0;
+    if (fseek(stream, 0, SEEK_END)) { fclose(stream); return 0; }
+    long size = ftell(stream);
+    if (size < 44 || size > (16 << 20) || fseek(stream, 0, SEEK_SET)) {
+        fclose(stream); return 0;
+    }
+    unsigned char *bytes = malloc((size_t)size);
+    if (!bytes || fread(bytes, 1, (size_t)size, stream) != (size_t)size) {
+        free(bytes); fclose(stream); return 0;
+    }
+    fclose(stream);
+    if (memcmp(bytes, "RIFF", 4) || memcmp(bytes + 8, "WAVE", 4)) {
+        free(bytes); return 0;
+    }
+    uint16_t format = 0, channels = 0, bits = 0;
+    uint32_t rate = 0, data_size = 0;
+    const unsigned char *data = NULL;
+    for (size_t at = 12; at + 8 <= (size_t)size;) {
+        uint32_t chunk_size = voice_le32(bytes + at + 4);
+        size_t next = at + 8u + chunk_size + (chunk_size & 1u);
+        if (next > (size_t)size) break;
+        if (!memcmp(bytes + at, "fmt ", 4) && chunk_size >= 16) {
+            format = voice_le16(bytes + at + 8);
+            channels = voice_le16(bytes + at + 10);
+            rate = voice_le32(bytes + at + 12);
+            bits = voice_le16(bytes + at + 22);
+        } else if (!memcmp(bytes + at, "data", 4)) {
+            data = bytes + at + 8; data_size = chunk_size;
+        }
+        at = next;
+    }
+    if (format != 1 || (channels != 1 && channels != 2) || bits != 16 || rate < 8000 || rate > 96000 ||
+        !data || !data_size || data_size / 2u > INT32_MAX) {
+        free(bytes); return 0;
+    }
+    int32_t count = (int32_t)(data_size / (2u * channels));
+    float *samples = malloc((size_t)count * sizeof(*samples));
+    if (!samples) { free(bytes); return 0; }
+    for (int32_t i = 0; i < count; ++i) {
+        int32_t sum = 0;
+        for (uint16_t channel = 0; channel < channels; ++channel)
+            sum += (int16_t)voice_le16(data + ((size_t)i * channels + channel) * 2u);
+        samples[i] = (float)sum / (32768.0f * channels);
+    }
+    free(bytes);
+    *samples_out = samples; *count_out = count; *rate_out = (int32_t)rate;
+    return 1;
 }
 
 /* Accept exactly the browser-produced PCM WAV shape. This keeps the gateway
@@ -11173,26 +12142,61 @@ static int kokoro_voice_id(const jval *voice) {
     return 1;
 }
 
-static int kokoro_synthesize(Gateway *g, const char *text, int sid,
+#define KOKORO_SPEECH_SPEED 1.15f
+
+static int neural_generation_config_locked(Gateway *g, const jval *voice,
+                                           SamosaSherpaGenerationConfig *config,
+                                           float **reference_out) {
+    memset(config, 0, sizeof(*config));
+    *reference_out = NULL;
+    if (!g->neural_tts_is_pocket) {
+        config->silence_scale = 0.12f;
+        config->speed = KOKORO_SPEECH_SPEED;
+        config->sid = kokoro_voice_id(voice);
+        return 1;
+    }
+    const char *reference_path = voice && voice->t == J_STR && !strcmp(voice->str, "stuart")
+                               ? g->pocket_voice_stuart : g->pocket_voice_caro;
+    int32_t reference_count = 0, reference_rate = 0;
+    if (!voice_read_pcm16_mono(reference_path, reference_out, &reference_count, &reference_rate))
+        return 0;
+    config->reference_audio = *reference_out;
+    config->reference_audio_len = reference_count;
+    config->reference_sample_rate = reference_rate;
+    config->speed = 1.0f;
+    /* One flow-matching step is fast, but it is also the least stable Pocket
+       configuration.  Repeated words/numbers can make it fall into a long
+       phoneme loop (the audible "ghost" failure).  Five is Sherpa's normal
+       quality setting and still keeps the native path local and bounded. */
+    config->num_steps = 5;
+    config->extra = "{\"max_reference_audio_len\":10.0,\"seed\":42}";
+    return 1;
+}
+
+static int kokoro_synthesize(Gateway *g, const char *text, const jval *voice,
                              unsigned char **out, size_t *out_len) {
     *out = NULL; *out_len = 0;
     pthread_mutex_lock(&g->voice_mu);
     if (!kokoro_native_start_locked(g)) { pthread_mutex_unlock(&g->voice_mu); return 0; }
     SamosaSherpaGenerationConfig config;
-    memset(&config, 0, sizeof(config));
-    config.silence_scale = 0.12f;
-    config.speed = 1.0f;
-    config.sid = sid;
+    float *reference = NULL;
+    if (!neural_generation_config_locked(g, voice, &config, &reference)) {
+        pthread_mutex_unlock(&g->voice_mu); return 0;
+    }
     const SamosaSherpaGeneratedAudio *audio = g->kokoro_generate(g->kokoro_tts, text, &config, NULL, NULL);
+    size_t max_samples = audio && audio->sample_rate >= 8000 && audio->sample_rate <= 96000
+                       ? voice_tts_max_samples(audio->sample_rate, strlen(text)) : 0;
     if (!audio || !audio->samples || audio->n <= 0 || audio->sample_rate < 8000 || audio->sample_rate > 96000 ||
+        (max_samples && (size_t)audio->n > max_samples) ||
         audio->n > (int32_t)((16u << 20) / 2 - 22)) {
         if (audio) g->kokoro_destroy_audio(audio);
+        free(reference);
         pthread_mutex_unlock(&g->voice_mu);
         return 0;
     }
     size_t data_len = (size_t)audio->n * 2, wav_len = data_len + 44;
     unsigned char *wav = malloc(wav_len);
-    if (!wav) { g->kokoro_destroy_audio(audio); pthread_mutex_unlock(&g->voice_mu); return 0; }
+    if (!wav) { g->kokoro_destroy_audio(audio); free(reference); pthread_mutex_unlock(&g->voice_mu); return 0; }
     memcpy(wav, "RIFF", 4);
     uint32_t riff_len = (uint32_t)(wav_len - 8), rate = (uint32_t)audio->sample_rate, bytes = (uint32_t)data_len;
     memcpy(wav + 4, &riff_len, 4); memcpy(wav + 8, "WAVEfmt ", 8);
@@ -11209,6 +12213,7 @@ static int kokoro_synthesize(Gateway *g, const char *text, int sid,
         memcpy(wav + 44 + (size_t)i * 2, &pcm_sample, 2);
     }
     g->kokoro_destroy_audio(audio);
+    free(reference);
     pthread_mutex_unlock(&g->voice_mu);
     *out = wav; *out_len = wav_len;
     return 1;
@@ -11216,8 +12221,12 @@ static int kokoro_synthesize(Gateway *g, const char *text, int sid,
 
 static int voice_tts_speech_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
     if (!voice_neural_tts_ready(g))
-        return samosa_http_json_error(fd, 409, "kokoro_not_ready",
-            "Download Kokoro in Settings before using the native neural voice.");
+        return samosa_http_json_error(fd, 409, "neural_tts_not_ready",
+            "Download the local neural voice in Settings before using it.");
+    const char *engine = voice_neural_tts_engine(g);
+    if (engine && (!strcmp(engine, "moss_browser") || !strcmp(engine, "kitten_browser")))
+        return samosa_http_json_error(fd, 409, "browser_tts_only",
+            "The selected browser-local TTS model must be played by the app browser.");
     if (request->body_len == 0 || request->body_len > 16384)
         return samosa_http_json_error(fd, 400, "invalid_speech_text", "Speech text must be between 1 and 16,384 bytes.");
     char *arena = NULL;
@@ -11229,24 +12238,191 @@ static int voice_tts_speech_handler(Gateway *g, int fd, const SamosaHttpRequest 
         json_free(body); free(arena);
         return samosa_http_json_error(fd, 400, "invalid_speech_text", "Speech text must be valid text under 2,400 characters.");
     }
-    int sid = kokoro_voice_id(voice);
     unsigned char *audio = NULL; size_t audio_len = 0;
-    int ok = kokoro_synthesize(g, text->str, sid, &audio, &audio_len);
+    int ok = kokoro_synthesize(g, text->str, voice, &audio, &audio_len);
     json_free(body); free(arena);
-    if (!ok) return samosa_http_json_error(fd, 503, "kokoro_unavailable", "The native Kokoro voice could not start.");
+    if (!ok) return samosa_http_json_error(fd, 503, "neural_tts_unavailable", "The selected local neural voice could not start.");
     int sent = samosa_http_headers(fd, 200, "audio/wav", audio_len, NULL) && samosa_send_all(fd, audio, audio_len);
     free(audio);
     return sent ? 1 : 0;
 }
 
+typedef struct {
+    Gateway *g;
+    int fd;
+    char turn_id[64];
+    long long started_ms;
+    size_t samples_sent;
+    int first_chunk_sent;
+    int callback_count;
+    int failed;
+    size_t max_samples;
+} KokoroPcmStream;
+
+static int voice_pcm_stream_headers(int fd, int sample_rate, int threads, const char *engine) {
+    char header[1024];
+    int n = snprintf(header, sizeof(header),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/vnd.samosa.pcm; format=s16le; channels=1; rate=%d\r\n"
+        "Cache-Control: no-store\r\n"
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Samosa-Sample-Rate: %d\r\n"
+        "X-Samosa-TTS-Engine: %s\r\n"
+        "X-Samosa-TTS-Threads: %d\r\n"
+        "X-Samosa-Kokoro-Threads: %d\r\n"
+        "Connection: close\r\n\r\n",
+        sample_rate, sample_rate, engine, threads, threads);
+    return n > 0 && (size_t)n < sizeof(header) && samosa_send_all(fd, header, (size_t)n);
+}
+
+/* Forward every Sherpa-ONNX progress chunk as stable little-endian PCM. Pocket
+   emits several chunks during one clause; legacy Kokoro generally emits only
+   after a complete phrase. The browser schedules each chunk immediately. */
+static int32_t kokoro_pcm_progress(const float *samples, int32_t n, float progress, void *arg) {
+    KokoroPcmStream *stream = arg;
+    if (!stream || stream->failed) return 0;
+    if (!samples || n <= 0) return 1;
+    stream->callback_count++;
+    if (stream->max_samples && ((size_t)n > stream->max_samples ||
+        stream->samples_sent > stream->max_samples - (size_t)n)) {
+        stream->failed = 1;
+        return 0;
+    }
+    unsigned char pcm[8192]; /* 4096 mono samples */
+    int32_t at = 0;
+    while (at < n) {
+        int32_t count = n - at > 4096 ? 4096 : n - at;
+        for (int32_t i = 0; i < count; ++i) {
+            float sample = samples[at + i];
+            if (sample > 1.0f) sample = 1.0f;
+            if (sample < -1.0f) sample = -1.0f;
+            int value = (int)(sample * 32767.0f + (sample >= 0.0f ? 0.5f : -0.5f));
+            int16_t value16 = (int16_t)value;
+            pcm[(size_t)i * 2] = (unsigned char)(value16 & 0xff);
+            pcm[(size_t)i * 2 + 1] = (unsigned char)(((uint16_t)value16 >> 8) & 0xff);
+        }
+        if (!samosa_send_all(stream->fd, pcm, (size_t)count * 2)) {
+            stream->failed = 1;
+            return 0;
+        }
+        stream->samples_sent += (size_t)count;
+        if (!stream->first_chunk_sent) {
+            stream->first_chunk_sent = 1;
+            if (stream->turn_id[0]) {
+                char fields[160];
+                snprintf(fields, sizeof(fields),
+                         "\"sample_count\":%d,\"progress\":%.6g,\"server_duration_ms\":%lld",
+                         count, progress, monotonic_millis() - stream->started_ms);
+                voice_trace_server_event(stream->g, stream->turn_id, "tts_first_pcm_sent", fields);
+            }
+        }
+        at += count;
+    }
+    return 1;
+}
+
+static int voice_tts_stream_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
+    if (!voice_neural_tts_ready(g))
+        return samosa_http_json_error(fd, 409, "neural_tts_not_ready",
+            "Download the local neural voice in Settings before using it.");
+    const char *engine = voice_neural_tts_engine(g);
+    if (engine && (!strcmp(engine, "moss_browser") || !strcmp(engine, "kitten_browser")))
+        return samosa_http_json_error(fd, 409, "browser_tts_only",
+            "The selected browser-local TTS model must be played by the app browser.");
+    if (request->body_len == 0 || request->body_len > 16384)
+        return samosa_http_json_error(fd, 400, "invalid_speech_text", "Speech text must be between 1 and 16,384 bytes.");
+    char *arena = NULL;
+    jval *body = json_parse(request->body, &arena);
+    jval *text = body ? json_get(body, "text") : NULL;
+    jval *voice = body ? json_get(body, "voice") : NULL;
+    jval *phrase_count_value = body ? json_get(body, "phrase_count") : NULL;
+    if (!text || text->t != J_STR || !text->str[0] || strlen(text->str) > 2400 ||
+        utf8_scalar_count((const unsigned char *)text->str, strlen(text->str)) < 0) {
+        json_free(body); free(arena);
+        return samosa_http_json_error(fd, 400, "invalid_speech_text", "Speech text must be valid text under 2,400 characters.");
+    }
+    int phrase_count = phrase_count_value && phrase_count_value->t == J_NUM &&
+                       phrase_count_value->num >= 1 && phrase_count_value->num <= 5
+                           ? (int)phrase_count_value->num : 1;
+    size_t phrase_chars = strlen(text->str);
+    long long started_ms = monotonic_millis();
+    pthread_mutex_lock(&g->voice_mu);
+    if (!kokoro_native_start_locked(g)) {
+        pthread_mutex_unlock(&g->voice_mu); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 503, "neural_tts_unavailable", "The native neural voice could not start.");
+    }
+    int is_pocket = g->neural_tts_is_pocket;
+    int tts_threads = is_pocket ? g->pocket_threads : g->kokoro_threads;
+    const char *tts_engine = is_pocket ? "pocket_native" : "kokoro_native";
+    SamosaSherpaGenerationConfig config;
+    float *reference = NULL;
+    if (!neural_generation_config_locked(g, voice, &config, &reference)) {
+        pthread_mutex_unlock(&g->voice_mu); json_free(body); free(arena);
+        return samosa_http_json_error(fd, 503, "neural_tts_voice_unavailable",
+            "The selected local neural voice could not be loaded.");
+    }
+    int sample_rate = g->kokoro_sample_rate ? g->kokoro_sample_rate(g->kokoro_tts) : 0;
+    if (sample_rate < 8000 || sample_rate > 96000 ||
+        !voice_pcm_stream_headers(fd, sample_rate, tts_threads, tts_engine)) {
+        free(reference);
+        pthread_mutex_unlock(&g->voice_mu); json_free(body); free(arena); return 0;
+    }
+    if (request->voice_turn_id[0]) {
+        char fields[320];
+        snprintf(fields, sizeof(fields),
+                 "\"phrase_chars\":%zu,\"phrase_count\":%d,\"sample_rate\":%d,"
+                 "\"tts_engine\":\"%s\",\"tts_threads\":%d,\"speech_speed\":%.2f",
+                 phrase_chars, phrase_count, sample_rate, tts_engine, tts_threads,
+                 is_pocket ? 1.0 : (double)KOKORO_SPEECH_SPEED);
+        voice_trace_server_event(g, request->voice_turn_id, "tts_generation_started", fields);
+    }
+    KokoroPcmStream stream;
+    memset(&stream, 0, sizeof(stream));
+    stream.g = g; stream.fd = fd; stream.started_ms = started_ms;
+    stream.max_samples = voice_tts_max_samples(sample_rate, phrase_chars);
+    if (request->voice_turn_id[0])
+        path_copy(stream.turn_id, sizeof(stream.turn_id), request->voice_turn_id);
+    const SamosaSherpaGeneratedAudio *audio = g->kokoro_generate(
+        g->kokoro_tts, text->str, &config, kokoro_pcm_progress, &stream);
+    /* A future compatible runtime may return valid audio without invoking its
+       progress callback. Preserve correctness by sending that final buffer as
+       a fallback, while never duplicating chunks from runtimes that stream. */
+    if (!stream.failed && stream.samples_sent == 0 && audio && audio->samples && audio->n > 0)
+        kokoro_pcm_progress(audio->samples, audio->n, 1.0f, &stream);
+    int valid_audio = audio && audio->samples && audio->n > 0 && audio->sample_rate == sample_rate;
+    if (audio) g->kokoro_destroy_audio(audio);
+    free(reference);
+    pthread_mutex_unlock(&g->voice_mu);
+    if (request->voice_turn_id[0]) {
+        char fields[256];
+        snprintf(fields, sizeof(fields),
+                 "\"sample_count\":%zu,\"sample_rate\":%d,\"server_duration_ms\":%lld,"
+                 "\"callback_count\":%d,\"outcome\":\"%s\"",
+                 stream.samples_sent, sample_rate, monotonic_millis() - started_ms,
+                 stream.callback_count,
+                 !stream.failed && valid_audio ? "complete" : "failed");
+        voice_trace_server_event(g, request->voice_turn_id, "tts_generation_complete", fields);
+    }
+    json_free(body); free(arena);
+    return !stream.failed && valid_audio ? 1 : 0;
+}
+
 static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpRequest *request) {
     if (!voice_stt_ready(g))
         return samosa_http_json_error(fd, 409, "voice_not_ready",
-            "Download Whisper Base English and prepare local speech recognition first.");
+            "Download the selected speech-recognition model and prepare local speech recognition first.");
     double duration = 0;
     if (!voice_wav_duration((const unsigned char *)request->body, request->body_len, &duration))
         return samosa_http_json_error(fd, 415, "invalid_voice_audio",
             "Voice input must be a mono 16 kHz, 16-bit PCM WAV recording under two minutes.");
+
+    long long trace_started_ms = monotonic_millis();
+    if (request->voice_turn_id[0]) {
+        char fields[160];
+        snprintf(fields, sizeof(fields), "\"wav_bytes\":%zu,\"audio_duration_ms\":%.3f",
+                 request->body_len, duration * 1000.0);
+        voice_trace_server_event(g, request->voice_turn_id, "stt_gateway_received", fields);
+    }
 
     pthread_mutex_lock(&g->voice_mu);
     if (g->voice_runtime_installing || g->voice_transcribing) {
@@ -11258,6 +12434,9 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
 
     int sent = 0, wav_fd = -1;
     char voice_dir[PATH_MAX], wav_path[PATH_MAX] = "", out_base[PATH_MAX] = "", out_text[PATH_MAX] = "";
+    char stt_model_path[PATH_MAX], stt_model_id[80];
+    if (!voice_selected_stt_path(g, stt_model_path, sizeof(stt_model_path), stt_model_id, sizeof(stt_model_id)))
+        goto transcribe_fail;
     if (!path_join(voice_dir, sizeof(voice_dir), g->home, "voice/tmp") || !mkdirs(voice_dir) ||
         snprintf(wav_path, sizeof(wav_path), "%s/transcribe-XXXXXX.wav", voice_dir) >= (int)sizeof(wav_path))
         goto write_fail;
@@ -11267,16 +12446,24 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
     close(wav_fd); wav_fd = -1;
     if (snprintf(out_base, sizeof(out_base), "%s.result", wav_path) >= (int)sizeof(out_base) ||
         snprintf(out_text, sizeof(out_text), "%s.txt", out_base) >= (int)sizeof(out_text)) goto write_fail;
+    if (request->voice_turn_id[0]) {
+        char fields[96];
+        snprintf(fields, sizeof(fields), "\"server_duration_ms\":%lld",
+                 monotonic_millis() - trace_started_ms);
+        voice_trace_server_event(g, request->voice_turn_id, "stt_audio_prepared", fields);
+    }
 
     pid_t pid = fork();
     if (pid < 0) goto transcribe_fail;
     if (pid == 0) {
         int devnull = open("/dev/null", O_WRONLY);
         if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
-        execl(g->whisper_cli, g->whisper_cli, "-m", g->whisper_model, "-f", wav_path,
+        execl(g->whisper_cli, g->whisper_cli, "-m", stt_model_path, "-f", wav_path,
               "-l", "en", "-nt", "-otxt", "-of", out_base, (char *)NULL);
         _exit(127);
     }
+    if (request->voice_turn_id[0])
+        voice_trace_server_event(g, request->voice_turn_id, "stt_process_started", NULL);
     int status = 0;
     if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) || WEXITSTATUS(status)) goto transcribe_fail;
     char *text = read_file_limit(out_text, 65536);
@@ -11288,9 +12475,16 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
     int ok = text_add(&body, "{\"text\":") && text_json_string(&body, text) &&
         text_add(&body, ",\"duration_seconds\":") && text_add(&body, seconds) &&
         text_add(&body, ",\"engine\":\"whisper.cpp\"}");
+    size_t transcript_chars = strlen(text);
     free(text);
     sent = ok && samosa_http_response(fd, 200, "application/json", body.data, NULL);
     free(body.data);
+    if (request->voice_turn_id[0]) {
+        char fields[192];
+        snprintf(fields, sizeof(fields), "\"transcript_chars\":%zu,\"server_duration_ms\":%lld,\"outcome\":\"%s\"",
+                 transcript_chars, monotonic_millis() - trace_started_ms, sent ? "complete" : "send_failed");
+        voice_trace_server_event(g, request->voice_turn_id, "stt_gateway_complete", fields);
+    }
     goto done;
 
 write_fail:
@@ -11298,6 +12492,12 @@ write_fail:
     sent = samosa_http_json_error(fd, 500, "voice_recording_write_failed", "The local audio recording could not be prepared.");
     goto done;
 transcribe_fail:
+    if (request->voice_turn_id[0]) {
+        char fields[128];
+        snprintf(fields, sizeof(fields), "\"server_duration_ms\":%lld,\"outcome\":\"failed\"",
+                 monotonic_millis() - trace_started_ms);
+        voice_trace_server_event(g, request->voice_turn_id, "stt_gateway_complete", fields);
+    }
     sent = samosa_http_json_error(fd, 500, "voice_transcription_failed", "Local speech recognition could not transcribe that recording.");
 done:
     if (wav_path[0]) unlink(wav_path);
@@ -11554,20 +12754,7 @@ static void *selection_watchdog(void *arg_) {
            work and a misleading job.json error. Checking g->stopping here
            short-circuits the whole thing honestly. */
         if (atomic_load(&g->stopping)) { shutting_down = 1; break; }
-        pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
-        if (pid <= 0) { crashed = 1; break; }
-        int wstatus = 0;
-        if (waitpid(pid, &wstatus, WNOHANG) == pid) {
-            /* Reaped here, not by backend_stop() -- clear backend_pid now so
-               the rollback's own backend_stop() call (via
-               selection_restore_previous()) sees pid<=0 and skips
-               signaling/reaping a pid that's already gone, instead of
-               operating on a stale value some unrelated process could have
-               since reused. */
-            crashed = 1;
-            pthread_mutex_lock(&g->mu); if (g->backend_pid == pid) g->backend_pid = 0; pthread_mutex_unlock(&g->mu);
-            break;
-        }
+        if (!backend_child_running(g)) { crashed = 1; break; }
         if (backend_probe(g)) { ready = 1; break; }
         sleep_millis(50);
     }
@@ -13675,6 +14862,11 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         if (serve_root_html(g, fd)) return 1;
         return samosa_http_json_error(fd, 404, "app_missing", "The app asset is missing.");
     }
+    /* The browser lifecycle route authenticates either the normal header or
+       sendBeacon's JSON-body token inside its handler. */
+    if (!strcmp(request->path, "/v1/app/lifecycle")) {
+        return app_lifecycle_handler(g, fd, request);
+    }
     /* Fail closed by default: any /v1/ route not on the closed legacy-
        exemption list requires a valid UI session token before route
        matching proceeds, so a new route added below without wiring its own
@@ -13713,11 +14905,26 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/voice/status")) {
         return voice_status_handler(g, fd);
     }
+    if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/voice/diagnostics")) {
+        return voice_trace_status_response(g, fd);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/diagnostics/start")) {
+        return voice_trace_start_handler(g, fd);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/diagnostics/stop")) {
+        return voice_trace_stop_handler(g, fd);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/diagnostics/event")) {
+        return voice_trace_event_handler(g, fd, request);
+    }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/runtime")) {
         return voice_runtime_install_handler(g, fd);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/tts/runtime")) {
-        return voice_tts_runtime_install_handler(g, fd);
+        return voice_tts_runtime_install_handler(g, fd, request);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/select")) {
+        return voice_selection_handler(g, fd, request);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/transcriptions")) {
         return voice_transcription_handler(g, fd, request);
@@ -13725,8 +14932,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/speech")) {
         return voice_tts_speech_handler(g, fd, request);
     }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/voice/speech/stream")) {
+        return voice_tts_stream_handler(g, fd, request);
+    }
     if (!strcmp(request->path, "/v1/runtime/settings")) {
         return runtime_settings_handler(g, fd, request);
+    }
+    if (!strcmp(request->method, "GET") && !strncmp(request->path, "/assets/voice/", 14)) {
+        return serve_voice_browser_asset(g, fd, request->path);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/assets/samosa-chat.png")) {
         if (static_file(fd, g->app_logo, "image/png", NULL)) return 1;
@@ -13924,6 +15137,15 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "POST") &&
         (!strcmp(request->path, "/v1/shutdown") || !strcmp(request->path, "/v1/kill"))) {
+        int forceful = !strcmp(request->path, "/v1/kill");
+        const char *mode = forceful ? "api_kill" : "api_shutdown";
+        gateway_shutdown_reason_set(g, forceful ? GATEWAY_SHUTDOWN_KILL_API : GATEWAY_SHUTDOWN_API, 0);
+        char fields[96];
+        snprintf(fields, sizeof(fields), "\"mode\":\"%s\"", mode);
+        gateway_lifecycle_event(g, "gateway_shutdown_requested", fields);
+        voice_trace_server_event(g, NULL, "gateway_shutdown_requested", fields);
+        fprintf(stderr, "[gateway] authenticated shutdown requested via %s\n", request->path);
+        fflush(stderr);
         atomic_store(&g->stopping, 1);
         samosa_http_response(fd, 200, "application/json", "{\"stopping\":true}", NULL);
         jobs_stop(g);
@@ -14010,8 +15232,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
 }
 
 static void on_signal(int number) {
-    (void)number;
     if (!signal_gateway) return;
+    gateway_shutdown_reason_set(signal_gateway, GATEWAY_SHUTDOWN_SIGNAL, number);
     atomic_store(&signal_gateway->stopping, 1);
     if (signal_gateway->server) samosa_http_server_stop(signal_gateway->server);
 }
@@ -14038,12 +15260,18 @@ static int load_config(Gateway *g) {
     pthread_mutex_init(&g->install_mu, NULL);
     pthread_mutex_init(&g->selection_mu, NULL);
     pthread_mutex_init(&g->voice_mu, NULL);
+    pthread_mutex_init(&g->voice_trace_mu, NULL);
     pthread_mutex_init(&g->chutni_mu, NULL);
+    pthread_mutex_init(&g->app_clients_mu, NULL);
     atomic_init(&g->generating, 0);
     atomic_init(&g->interactive_active, 0);
     atomic_init(&g->last_interactive_mono_ms, 0);
     atomic_init(&g->last_interactive_wall_ms, 0);
     atomic_init(&g->stopping, 0);
+    atomic_init(&g->shutdown_reason, GATEWAY_SHUTDOWN_NONE);
+    atomic_init(&g->shutdown_signal, 0);
+    atomic_init(&g->app_close_deadline_mono_ms, 0);
+    atomic_init(&g->app_client_seen, 0);
     g->app_owned = getenv("SAMOSA_APP_LIFECYCLE") &&
                    !strcmp(getenv("SAMOSA_APP_LIFECYCLE"), "1");
     atomic_init(&g->chutni_control, 0);
@@ -14067,6 +15295,7 @@ static int load_config(Gateway *g) {
     else { if (!path_join(g->field, sizeof(g->field), g->home, fallback)) return 0; } } while (0)
     ENV_PATH(app_html, "SAMOSA_APP_HTML", "current/app.html");
     ENV_PATH(app_logo, "SAMOSA_APP_LOGO", "current/samosa-chat.png");
+    ENV_PATH(voice_browser_root, "SAMOSA_VOICE_BROWSER_ROOT", "current/voice/browser");
     ENV_PATH(qwen_engine, "SAMOSA_QWEN_ENGINE", "current/bin/qwen36b");
     ENV_PATH(qwen_model, "SAMOSA_QWEN_MODEL", "models/qwen");
     ENV_PATH(maple_engine, "SAMOSA_MAPLE_ENGINE", "current/bin/samosa-maple");
@@ -14081,6 +15310,7 @@ static int load_config(Gateway *g) {
     ENV_PATH(voice_runtime_script, "SAMOSA_VOICE_RUNTIME", "current/bin/samosa-voice-runtime");
     ENV_PATH(whisper_cli, "SAMOSA_WHISPER_CLI", "voice/runtime/whisper-cli");
     ENV_PATH(whisper_model, "SAMOSA_WHISPER_MODEL", "voice/stt-whisper-base-en/ggml-base.en.bin");
+    ENV_PATH(whisper_tiny_model, "SAMOSA_WHISPER_TINY_MODEL", "voice/stt-whisper-tiny-en/ggml-tiny.en.bin");
     ENV_PATH(kokoro_runtime_script, "SAMOSA_KOKORO_RUNTIME", "current/bin/samosa-kokoro-runtime");
     ENV_PATH(kokoro_library, "SAMOSA_KOKORO_LIBRARY", "voice/kokoro/runtime/lib/libsherpa-onnx-c-api.dylib");
     ENV_PATH(kokoro_model, "SAMOSA_KOKORO_MODEL", "voice/kokoro/model/model.int8.onnx");
@@ -14088,6 +15318,29 @@ static int load_config(Gateway *g) {
     ENV_PATH(kokoro_tokens, "SAMOSA_KOKORO_TOKENS", "voice/kokoro/model/tokens.txt");
     ENV_PATH(kokoro_data_dir, "SAMOSA_KOKORO_DATA", "voice/kokoro/model/espeak-ng-data");
     ENV_PATH(kokoro_ready, "SAMOSA_KOKORO_READY", "voice/kokoro/ready");
+    ENV_PATH(pocket_library, "SAMOSA_POCKET_LIBRARY", "voice/pocket/runtime/lib/libsherpa-onnx-c-api.dylib");
+    ENV_PATH(pocket_lm_flow, "SAMOSA_POCKET_LM_FLOW", "voice/pocket/model/lm_flow.int8.onnx");
+    ENV_PATH(pocket_lm_main, "SAMOSA_POCKET_LM_MAIN", "voice/pocket/model/lm_main.int8.onnx");
+    ENV_PATH(pocket_encoder, "SAMOSA_POCKET_ENCODER", "voice/pocket/model/encoder.onnx");
+    ENV_PATH(pocket_decoder, "SAMOSA_POCKET_DECODER", "voice/pocket/model/decoder.int8.onnx");
+    ENV_PATH(pocket_text_conditioner, "SAMOSA_POCKET_TEXT_CONDITIONER", "voice/pocket/model/text_conditioner.onnx");
+    ENV_PATH(pocket_vocab, "SAMOSA_POCKET_VOCAB", "voice/pocket/model/vocab.json");
+    ENV_PATH(pocket_token_scores, "SAMOSA_POCKET_TOKEN_SCORES", "voice/pocket/model/token_scores.json");
+    ENV_PATH(pocket_voice_caro, "SAMOSA_POCKET_VOICE_CARO", "voice/pocket/model/voices/caro_davy.wav");
+    ENV_PATH(pocket_voice_stuart, "SAMOSA_POCKET_VOICE_STUART", "voice/pocket/model/voices/stuart_bell.wav");
+    ENV_PATH(pocket_ready, "SAMOSA_POCKET_READY", "voice/pocket/ready");
+    {
+        const char *threads = getenv("SAMOSA_KOKORO_THREADS");
+        long parsed = threads && *threads ? strtol(threads, NULL, 10) : 6;
+        g->kokoro_threads = parsed >= 1 && parsed <= 12 ? (int)parsed : 6;
+    }
+    {
+        const char *threads = getenv("SAMOSA_POCKET_THREADS");
+        long parsed = threads && *threads ? strtol(threads, NULL, 10) : 2;
+        /* Two threads is fastest on the reference M3; accepting a bounded
+           override keeps benchmarking possible without unsafe oversubscription. */
+        g->pocket_threads = parsed >= 1 && parsed <= 8 ? (int)parsed : 2;
+    }
     ENV_PATH(models_catalog, "SAMOSA_MODELS_CATALOG", "current/models.json");
     ENV_PATH(models_dir, "SAMOSA_MODELS_DIR", "models");
     ENV_PATH(samosa_fs, "SAMOSA_FS", "current/bin/samosa-fs");
@@ -14111,12 +15364,17 @@ static int load_config(Gateway *g) {
     if (jobs_root ? !path_copy(g->jobs_root, sizeof(g->jobs_root), jobs_root) :
                     !path_join(g->jobs_root, sizeof(g->jobs_root), g->home, "jobs")) return 0;
     if (!path_join(g->backend_log, sizeof(g->backend_log), g->home, "backend.log") ||
+        !path_join(g->backend_pid_file, sizeof(g->backend_pid_file), g->home, "run/backend.pid") ||
         !path_join(g->summarizer_log, sizeof(g->summarizer_log), g->home, "summarizer.log") ||
         !path_join(g->selection_file, sizeof(g->selection_file), g->home, "model-backend") ||
+        !path_join(g->voice_stt_selection_file, sizeof(g->voice_stt_selection_file), g->home, "voice/stt-selection") ||
+        !path_join(g->voice_tts_selection_file, sizeof(g->voice_tts_selection_file), g->home, "voice/tts-selection") ||
         !path_join(g->profile_path, sizeof(g->profile_path), g->home, "profile.json") ||
         !path_join(g->attachments_dir, sizeof(g->attachments_dir), g->home, "attachments") ||
         !path_join(g->chutni_root, sizeof(g->chutni_root), g->home, "chutni") ||
         !mkdirs(g->home) || !mkdirs(g->attachments_dir)) return 0;
+    char voice_state_dir[PATH_MAX];
+    if (!path_join(voice_state_dir, sizeof(voice_state_dir), g->home, "voice") || !mkdirs(voice_state_dir)) return 0;
     if (!mkdirs(g->chutni_root)) return 0;
     char selected[32] = {0};
     if (read_small_file(g->selection_file, selected, sizeof(selected)) &&
@@ -14142,6 +15400,7 @@ int main(int argc, char **argv) {
         int ok = jobsd_once_native(&gateway, -1, NULL);
         pthread_mutex_destroy(&gateway.mu);
         pthread_mutex_destroy(&gateway.summarizer_mu);
+        pthread_mutex_destroy(&gateway.app_clients_mu);
         return ok ? 0 : 1;
     }
     /* T1.1 (docs/TASKS_UI_CHUTNI.md): the control plane must serve setup,
@@ -14158,23 +15417,86 @@ int main(int argc, char **argv) {
     if (!backend_start(&gateway))
         fprintf(stderr, "samosa-gateway: backend %s is not installed or failed to start; "
                         "serving the control plane without an active model\n", gateway.backend);
+    const char *trace_auto = getenv("SAMOSA_VOICE_TRACE_AUTO");
+    if (trace_auto && !strcmp(trace_auto, "1")) {
+        pthread_mutex_lock(&gateway.voice_trace_mu);
+        int trace_ready = voice_trace_start_locked(&gateway, "automatic_dev");
+        pthread_mutex_unlock(&gateway.voice_trace_mu);
+        if (!trace_ready)
+            fprintf(stderr, "samosa-gateway: automatic Voice timing log could not be created\n");
+    }
+    /* Load the selected native voice at gateway startup so the first spoken
+       reply does not inherit model initialization. */
+    if (voice_neural_tts_ready(&gateway)) {
+        long long warm_started = monotonic_millis();
+        const char *engine = voice_neural_tts_engine(&gateway);
+        int warmed = 1;
+        int browser_tts = engine && (!strcmp(engine, "moss_browser") || !strcmp(engine, "kitten_browser"));
+        if (!browser_tts) {
+            pthread_mutex_lock(&gateway.voice_mu);
+            warmed = kokoro_native_start_locked(&gateway);
+            pthread_mutex_unlock(&gateway.voice_mu);
+        }
+        int threads = browser_tts ? 1 : (engine && !strcmp(engine, "pocket_native")
+                    ? gateway.pocket_threads : gateway.kokoro_threads);
+        char fields[192];
+        snprintf(fields, sizeof(fields),
+                 "\"warmup_ms\":%lld,\"outcome\":\"%s\",\"tts_engine\":\"%s\",\"tts_threads\":%d",
+                 monotonic_millis() - warm_started, warmed ? "complete" : "failed", engine, threads);
+        voice_trace_server_event(&gateway, NULL, "tts_model_warmed", fields);
+    }
     if (!init_ui_token(&gateway)) {
         fprintf(stderr, "samosa-gateway: could not create the UI session token\n");
         backend_stop(&gateway); return 2;
     }
     SamosaHttpServer server;
     if (!samosa_http_server_init(&server, gateway.public_port, gateway_handler, &gateway)) {
+        int bind_errno = errno;
+        char fields[160];
+        snprintf(fields, sizeof(fields), "\"mode\":\"bind_failed\",\"errno\":%d", bind_errno);
+        gateway_lifecycle_event(&gateway, "gateway_start_failed", fields);
         fprintf(stderr, "samosa-gateway: cannot bind 127.0.0.1:%d: %s\n",
-                gateway.public_port, strerror(errno)); backend_stop(&gateway); return 2;
+                gateway.public_port, strerror(bind_errno)); backend_stop(&gateway); return 2;
     }
     gateway.server = &server; signal_gateway = &gateway;
     signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
     fprintf(stderr, "[gateway] compiled ready http://127.0.0.1:%d backend=%s ready=%s\n",
             server.port, gateway.backend, backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
+    gateway_lifecycle_mark_ready(&gateway);
+    if (gateway.app_owned) {
+        if (pthread_create(&gateway.app_lifecycle_thread, NULL, app_lifecycle_watchdog, &gateway) == 0)
+            gateway.app_lifecycle_thread_started = 1;
+        else
+            fprintf(stderr, "samosa-gateway: browser lifecycle watchdog could not be started\n");
+    }
     int ok = samosa_http_server_run(&server);
+    atomic_store(&gateway.stopping, 1);
+    if (gateway.app_lifecycle_thread_started) pthread_join(gateway.app_lifecycle_thread, NULL);
+    int shutdown_reason = atomic_load(&gateway.shutdown_reason);
+    if (shutdown_reason == GATEWAY_SHUTDOWN_NONE) {
+        shutdown_reason = ok ? GATEWAY_SHUTDOWN_UNKNOWN : GATEWAY_SHUTDOWN_SERVER_ERROR;
+        gateway_shutdown_reason_set(&gateway, shutdown_reason, 0);
+    }
+    int shutdown_signal = atomic_load(&gateway.shutdown_signal);
+    char shutdown_fields[192];
+    snprintf(shutdown_fields, sizeof(shutdown_fields),
+             "\"mode\":\"%s\",\"signal_number\":%d,\"server_result\":%d",
+             gateway_shutdown_reason_name(shutdown_reason), shutdown_signal, ok);
+    gateway_lifecycle_event(&gateway, "gateway_exiting", shutdown_fields);
+    voice_trace_server_event(&gateway, NULL, "gateway_shutdown_observed", shutdown_fields);
+    fprintf(stderr, "[gateway] exiting cause=%s signal=%d server_result=%d\n",
+            gateway_shutdown_reason_name(shutdown_reason), shutdown_signal, ok);
+    fflush(stderr);
     jobs_stop(&gateway);
     chutni_stop_for_shutdown(&gateway);
     install_worker_stop_for_shutdown(&gateway);
+    pthread_mutex_lock(&gateway.voice_trace_mu);
+    if (gateway.voice_trace_active) {
+        voice_trace_append_locked(&gateway, "gateway", NULL, "trace_stopped", -1,
+                                  shutdown_fields);
+        gateway.voice_trace_active = 0;
+    }
+    pthread_mutex_unlock(&gateway.voice_trace_mu);
     kokoro_native_stop(&gateway);
     summarizer_stop(&gateway);
     backend_stop(&gateway);
@@ -14182,7 +15504,10 @@ int main(int argc, char **argv) {
     pthread_mutex_destroy(&gateway.mu);
     pthread_mutex_destroy(&gateway.summarizer_mu);
     pthread_mutex_destroy(&gateway.voice_mu);
+    pthread_mutex_destroy(&gateway.voice_trace_mu);
     pthread_mutex_destroy(&gateway.chutni_mu);
+    pthread_mutex_destroy(&gateway.app_clients_mu);
+    gateway_lifecycle_mark_exited(&gateway);
     signal_gateway = NULL;
     return ok ? 0 : 2;
 }

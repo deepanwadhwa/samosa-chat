@@ -5489,6 +5489,7 @@ static int samosa_serve_handler(SamosaHttpServer *server,int fd,
     SamosaServeContext *ctx=(SamosaServeContext *)opaque;
     if(!strcmp(request->method,"GET")&&!strcmp(request->path,"/")){
         const char *policy="Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; "
+            "media-src 'self' data: blob:; "
             "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n";
         if(serve_static_file(fd,ctx->app_html_path,"text/html; charset=utf-8",policy))return 1;

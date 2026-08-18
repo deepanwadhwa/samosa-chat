@@ -622,11 +622,12 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Web page:") || strstr(request->body, "--- Web search results")
+            (strstr(request->body, "--- Web page:") || strstr(request->body, "--- Web search results")) &&
+            !strstr(request->body, "\"content\":[{\"type\":\"text\"")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw web evidence\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing web evidence\"}}]}", NULL);
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing web evidence or incompatible content shape\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "\"seed\":424242"))
         return samosa_http_response(fd, 200, "application/json",

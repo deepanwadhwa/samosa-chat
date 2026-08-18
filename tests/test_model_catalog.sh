@@ -82,15 +82,20 @@ d = json.load(open('$TMP/r2.json'))
 assert d['schema_version'] == 1
 assert d['runtime_abi'] == 'samosa-model-runtime-v1'
 ids = sorted(m['id'] for m in d['models'])
-assert ids == ['bonsai', 'maple', 'ornith', 'qwen', 'voice-stt-whisper-base-en'], ids
+assert ids == ['bonsai', 'maple', 'ornith', 'qwen', 'voice-stt-whisper-base-en', 'voice-stt-whisper-tiny-en', 'voice-tts-browser', 'voice-tts-kitten-nano', 'voice-tts-kokoro', 'voice-tts-moss-nano', 'voice-tts-pocket'], ids
 by_id = {m['id']: m for m in d['models']}
 # Nothing is installed in this sandboxed \$HOME_DIR -- every model must
 # report not_installed, never a false 'ready'.
 for mid, m in by_id.items():
+    assert m['compatible'] is True, (mid, m['compatible'])  # reference machine is macOS arm64
+    if mid == 'voice-tts-browser':
+        assert m['install_state'] == 'ready'
+        assert m['download_bytes'] == 0
+        continue
     assert m['install_state'] == 'not_installed', (mid, m['install_state'])
     assert m['installed_bytes'] == 0, (mid, m['installed_bytes'])
-    assert m['download_bytes'] > 0, (mid, m['download_bytes'])
-    assert m['compatible'] is True, (mid, m['compatible'])  # reference machine is macOS arm64
+    if m['backend_kind'] not in ('pocket_tts', 'kokoro_tts', 'moss_tts', 'kitten_tts'):
+        assert m['download_bytes'] > 0, (mid, m['download_bytes'])
 # 'qwen' is the gateway's default selected backend even with nothing
 # installed (matches /healthz's own \"backend\":\"qwen\" in this state,
 # see test_zero_model_startup.sh) -- 'active' reflects current selection,
@@ -106,6 +111,17 @@ assert voice['active'] is False
 assert voice['install_state'] == 'not_installed'
 assert voice['download_bytes'] == 147964211
 assert voice['artifacts'][0]['sha256'] == 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002'
+tiny = by_id['voice-stt-whisper-tiny-en']
+assert tiny['backend_kind'] == 'whisper_cpp'
+assert tiny['artifacts'][0]['bytes'] == 77704715
+assert tiny['artifacts'][0]['sha256'] == '921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f'
+assert by_id['voice-tts-pocket']['pros'] and by_id['voice-tts-pocket']['cons']
+assert by_id['voice-tts-kokoro']['voice_role'] == 'tts'
+assert by_id['voice-tts-moss-nano']['backend_kind'] == 'moss_tts'
+assert by_id['voice-tts-moss-nano']['pros'] and by_id['voice-tts-moss-nano']['cons']
+assert by_id['voice-tts-kitten-nano']['backend_kind'] == 'kitten_tts'
+assert by_id['voice-tts-kitten-nano']['pros'] and by_id['voice-tts-kitten-nano']['cons']
+assert by_id['voice-tts-browser']['install_state'] == 'ready'
 # Spot-check the real, independently-verified Qwen artifact facts (bytes
 # and sha256 cross-checked against the actual hard-linked model and a
 # prior real release manifest -- see docs/regressions/ui-chutni/t2.1-evidence.md).

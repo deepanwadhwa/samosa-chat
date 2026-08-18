@@ -73,6 +73,19 @@ grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the local voice runtime builder"
 grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the native Kokoro installer"
+TAB=$(printf '\t')
+grep -q "${TAB}voice/browser/tts/moss/browser_onnx_runtime.js$" "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the browser-local MOSS runtime"
+grep -q "${TAB}voice/browser/tts/kitten/kitten-tts.browser.js$" "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the browser-local Kitten runtime"
+grep -q "${TAB}voice/browser/tts/kitten/worker.js$" "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the browser-local Kitten worker"
+for adapter_file in \
+  engine/samosa_moss_tts_runtime.sh engine/samosa_moss_tts_runner.sh engine/samosa_moss_tts_runner.py \
+  engine/samosa_kitten_tts_runtime.sh engine/samosa_kitten_tts_runner.sh engine/samosa_kitten_tts_runner.py; do
+  grep -q "$adapter_file" "$REMOTE/release-manifest.tsv" &&
+    fail "runtime-only manifest shipped forbidden Python-dependent TTS adapter '$adapter_file'"
+done
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   grep -q 'runtime/macos-arm64/samosa-maple$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing samosa-maple"
@@ -143,6 +156,12 @@ RECORDED_CHUTNI_VERSION=$(sqlite3 \
   fail "installed Chutni recorded producer version '$RECORDED_CHUTNI_VERSION', expected '$EXPECTED_CHUTNI_VERSION'"
 [ -x "$HOME_DIR/current/bin/qwen36b" ] || fail "engine binary missing after install"
 [ -f "$HOME_DIR/current/app.html" ] || fail "app shell missing after install"
+[ -f "$HOME_DIR/current/voice/browser/tts/moss/browser_onnx_runtime.js" ] ||
+  fail "runtime-only install did not stage the browser-local MOSS runtime"
+[ -f "$HOME_DIR/current/voice/browser/tts/kitten/kitten-tts.browser.js" ] ||
+  fail "runtime-only install did not stage the browser-local Kitten runtime"
+[ -f "$HOME_DIR/current/voice/browser/tts/kitten/worker.js" ] ||
+  fail "runtime-only install did not stage the browser-local Kitten worker"
 [ ! -e "$HOME_DIR/current/model" ] || fail "a model directory was created by a runtime-only install"
 [ -x "$HOME_DIR/current/bin/samosa-voice-runtime" ] ||
   fail "runtime-only install did not stage the local voice runtime builder"
@@ -150,6 +169,11 @@ RECORDED_CHUTNI_VERSION=$(sqlite3 \
   fail "runtime-only install did not stage the native Kokoro installer"
 [ ! -e "$HOME_DIR/current/bin/samosa-pocket-tts-runtime" ] ||
   fail "runtime-only install staged the obsolete Python voice runtime"
+for adapter_path in \
+  "$HOME_DIR/current/bin/samosa-moss-tts-runtime" "$HOME_DIR/current/bin/samosa-moss-tts-runner" "$HOME_DIR/current/bin/samosa-moss-tts-runner.py" \
+  "$HOME_DIR/current/bin/samosa-kitten-tts-runtime" "$HOME_DIR/current/bin/samosa-kitten-tts-runner" "$HOME_DIR/current/bin/samosa-kitten-tts-runner.py"; do
+  [ ! -e "$adapter_path" ] || fail "runtime-only install staged forbidden Python-dependent TTS adapter '$adapter_path'"
+done
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   [ -x "$HOME_DIR/current/bin/samosa-maple" ] ||
     fail "Apple-Silicon install did not stage samosa-maple"

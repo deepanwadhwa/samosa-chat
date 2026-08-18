@@ -29,6 +29,10 @@ typedef struct {
     int is_background;
     char range[128]; /* raw `Range:` header value, empty if absent */
     char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
+    /* Correlates the microphone, STT, model, TTS, and playback stages of one
+       explicitly traced Voice turn. It is opaque diagnostic metadata and is
+       never forwarded to a model backend. */
+    char voice_turn_id[64]; /* raw `X-Samosa-Voice-Turn:` value, empty if absent */
     char origin[256]; /* raw `Origin:` header value, empty if absent */
     char attachment_media_type[128]; /* raw `X-Samosa-Media-Type:` header value, empty if absent */
     char attachment_filename_b64[600]; /* raw `X-Samosa-Filename-B64:` header value, empty if absent */
@@ -211,6 +215,11 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             size_t n=strlen(value);
             if (n>=sizeof(request->ui_token)) n=sizeof(request->ui_token)-1;
             memcpy(request->ui_token,value,n); request->ui_token[n]=0;
+        } else if (!strncasecmp(cursor,"X-Samosa-Voice-Turn:",20)) {
+            char *value=cursor+20; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->voice_turn_id)) n=sizeof(request->voice_turn_id)-1;
+            memcpy(request->voice_turn_id,value,n); request->voice_turn_id[n]=0;
         } else if (!strncasecmp(cursor,"Origin:",7)) {
             char *value=cursor+7; while(*value==' '||*value=='\t')value++;
             size_t n=strlen(value);

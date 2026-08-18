@@ -23,6 +23,7 @@ SUMMARIZER_RUNTIME="$BUILD_DIR/native-summarizer-runtime"
 SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
 SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
 SUMMARIZER_LIBS="libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib"
+BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
@@ -30,7 +31,7 @@ SUMMARIZER_LIBS="libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-bl
 # snapshot here made a model-less install impossible, which is backwards.
 for path in "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
-  "$ROOT/dist/samosa"; do
+  "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
 
@@ -83,7 +84,9 @@ done
 
 set -- "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
-  "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" "$ROOT/dist/samosa"
+  "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
+  "$ROOT/dist/samosa"
+for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do set -- "$@" "$file"; done
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
 if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
 if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_BIN" "$EXTRACT_LIB"; fi
@@ -99,7 +102,7 @@ release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
 final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-mkdir -p "$stage/bin" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
+mkdir -p "$stage/bin" "$stage/voice/browser" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
 if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
   mkdir -p "$stage/lib" "$stage/models/native-summarizer"
@@ -134,6 +137,11 @@ cp "$ROOT/tools/samosa_kokoro_runtime.sh" "$stage/bin/samosa-kokoro-runtime"
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 cp "$ROOT/assets/models.json" "$stage/models.json"
+for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do
+  relative=${file#"$BROWSER_VOICE_ASSETS"/}
+  mkdir -p "$stage/voice/browser/$(dirname "$relative")"
+  cp "$file" "$stage/voice/browser/$relative"
+done
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime"
 chmod +x "$stage/bin/samosa-maple"
 
@@ -205,6 +213,8 @@ cat >"$HOME_DIR/bin/samosa" <<'EOF'
 #!/bin/sh
 set -eu
 HOME_DIR="${SAMOSA_HOME:-$HOME/.samosa}"
+SAMOSA_VOICE_TRACE_AUTO="${SAMOSA_VOICE_TRACE_AUTO:-1}"
+export SAMOSA_VOICE_TRACE_AUTO
 exec "$HOME_DIR/current/bin/samosa" "$@"
 EOF
 chmod +x "$HOME_DIR/bin/samosa"

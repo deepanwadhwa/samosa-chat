@@ -61,9 +61,12 @@ if [ -z "$SAMOSA_VERSION" ]; then
 fi
 [ -n "$SAMOSA_VERSION" ] || SAMOSA_VERSION="unknown"
 PORT="${SAMOSA_PORT:-8642}"
+BACKEND_PORT="${SAMOSA_BACKEND_PORT:-$((PORT + 1))}"
 PID_FILE="$HOME_DIR/server.pid"
+BACKEND_PID_FILE="$HOME_DIR/run/backend.pid"
 SERVER_LOG="$HOME_DIR/server.log"
 RUN_DIR="$HOME_DIR/run"
+UI_TOKEN_FILE="$RUN_DIR/ui-token"
 LAUNCHD_PLIST="$RUN_DIR/com.samosa.app.$PORT.plist"
 if [ "$PORT" = 8642 ]; then
   LAUNCH_LABEL="com.samosa.app"
@@ -84,6 +87,7 @@ THINKING_BUDGET=""
 RESUME=""
 SEED=""
 CONTEXT_TOKENS="${SAMOSA_CONTEXT_TOKENS:-auto}"
+VOICE_TRACE_AUTO="${SAMOSA_VOICE_TRACE_AUTO:-0}"
 APP_LIFECYCLE=0
 
 say()  { printf '\033[1;36m[samosa]\033[0m %s\n' "$*"; }
@@ -175,7 +179,7 @@ server_running() {
 
 port_owner_pid() {
   if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1
+    lsof -nP -tiTCP:"${1:-$PORT}" -sTCP:LISTEN 2>/dev/null | head -1
   else
     :
   fi
@@ -193,6 +197,62 @@ is_samosa_server_pid() {
     *samosa-gateway*|*qwen36b*" --serve "*|*qwen36b*" --serve") return 0 ;;
     *) return 1 ;;
   esac
+}
+
+is_samosa_backend_pid() {
+  pid=$1
+  command=$(process_command "$pid")
+  llama_server="${SAMOSA_BONSAI_SERVER:-$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server}"
+  maple_engine="${SAMOSA_MAPLE_ENGINE:-$HOME_DIR/current/bin/samosa-maple}"
+  case "$command" in
+    "$ENGINE"|"$ENGINE"*|"$llama_server"|"$llama_server"*|"$maple_engine"|"$maple_engine"*|\
+    "$HOME_DIR"/bin/qwen36b*|"$HOME_DIR"/current/bin/qwen36b*|"$HOME_DIR"/releases/*/bin/qwen36b*|\
+    "$HOME_DIR"/backends/*/llama-server*|"$HOME_DIR"/current/bin/samosa-maple*|\
+    "$HOME_DIR"/releases/*/bin/samosa-maple*|*qwen36b*" --serve "*|*qwen36b*" --serve") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cleanup_stale_backend() {
+  pid=""
+  if [ -s "$BACKEND_PID_FILE" ]; then
+    candidate=$(tr -d '[:space:]' <"$BACKEND_PID_FILE")
+    case "$candidate" in ''|*[!0-9]*) : ;; *) pid=$candidate ;; esac
+  fi
+  if [ -z "$pid" ]; then
+    pid=$(port_owner_pid "$BACKEND_PORT")
+  fi
+  if [ -z "$pid" ]; then
+    rm -f "$BACKEND_PID_FILE"
+    return 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$BACKEND_PID_FILE"
+    return 0
+  fi
+  if ! is_samosa_backend_pid "$pid"; then
+    command=$(process_command "$pid")
+    fail "private model port $BACKEND_PORT is occupied by process $pid: $command"
+  fi
+  say "recovering stale local model process $pid"
+  kill -TERM "$pid" 2>/dev/null || true
+  i=0
+  while [ -n "$(port_owner_pid "$BACKEND_PORT")" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  owner=$(port_owner_pid "$BACKEND_PORT")
+  if [ "$owner" = "$pid" ]; then
+    kill -KILL "$pid" 2>/dev/null || true
+    i=0
+    while [ -n "$(port_owner_pid "$BACKEND_PORT")" ] && [ "$i" -lt 20 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  rm -f "$BACKEND_PID_FILE"
+  owner=$(port_owner_pid "$BACKEND_PORT")
+  [ -z "$owner" ] || fail "private model port $BACKEND_PORT is still occupied by process $owner"
 }
 
 require_port_free_or_samosa_running() {
@@ -215,11 +275,13 @@ serve_foreground() {
   if require_port_free_or_samosa_running; then
     return 0
   fi
+  cleanup_stale_backend
   [ -x "$GATEWAY" ] || fail "the browser control plane (samosa-gateway) is missing - reinstall Samosa"
   mkdir -p "$HOME_DIR/chats"
   SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
     SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
     SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+    SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
     SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
     SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
     SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
@@ -249,6 +311,7 @@ write_launchd_plist() {
   x_html=$(xml_escape "$APP_HTML")
   x_logo=$(xml_escape "$APP_LOGO")
   x_context=$(xml_escape "$CONTEXT_TOKENS")
+  x_voice_trace_auto=$(xml_escape "$VOICE_TRACE_AUTO")
   x_version=$(xml_escape "$SAMOSA_VERSION")
   x_chutni=$(xml_escape "$RELEASE_DIR/bin/chutni-mcp")
   x_models_catalog=$(xml_escape "$MODELS_CATALOG")
@@ -272,6 +335,7 @@ write_launchd_plist() {
     <key>SAMOSA_APP_HTML</key><string>$x_html</string>
     <key>SAMOSA_APP_LOGO</key><string>$x_logo</string>
     <key>SAMOSA_CONTEXT_TOKENS</key><string>$x_context</string>
+    <key>SAMOSA_VOICE_TRACE_AUTO</key><string>$x_voice_trace_auto</string>
     <key>SAMOSA_APP_VERSION</key><string>$x_version</string>
     <key>SAMOSA_CHUTNI_SERVICE</key><string>$x_chutni</string>
     <key>SAMOSA_MODELS_CATALOG</key><string>$x_models_catalog</string>
@@ -303,6 +367,7 @@ start_server_detached() {
       SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
       SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+      SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
       SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
       SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
       SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
@@ -312,6 +377,7 @@ start_server_detached() {
       SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
       SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
+      SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
       SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
       SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
       SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
@@ -352,6 +418,7 @@ start_server() {
     echo "Samosa server process exists but is not healthy; see $SERVER_LOG" >&2
     return 1
   fi
+  cleanup_stale_backend
   if [ "$APP_LIFECYCLE" = 1 ]; then
     start_server_detached
   elif launchd_available; then
@@ -380,11 +447,19 @@ start_server() {
 }
 
 stop_server() {
+  if server_running && [ -s "$UI_TOKEN_FILE" ]; then
+    ui_token=$(tr -d '\r\n' <"$UI_TOKEN_FILE")
+    if [ -n "$ui_token" ]; then
+      "$CURL" -fsS --max-time 5 -X POST -H "X-Samosa-Token: $ui_token" \
+        "http://127.0.0.1:$PORT/v1/shutdown" >/dev/null || true
+    fi
+  fi
+  # Boot out only after giving the gateway an authenticated graceful-stop
+  # request. Doing this first hid the shutdown cause as a generic SIGTERM.
   if launchd_available; then
     launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
   fi
   if server_running; then
-    "$CURL" -fsS --max-time 5 -X POST "http://127.0.0.1:$PORT/v1/shutdown" >/dev/null || true
     i=0
     while server_running && [ "$i" -lt 50 ]; do
       sleep 0.1
@@ -415,6 +490,7 @@ stop_server() {
       kill -KILL "$pid" 2>/dev/null || true
     fi
   fi
+  cleanup_stale_backend
   echo "Samosa server stopped."
 }
 

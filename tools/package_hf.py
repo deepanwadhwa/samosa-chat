@@ -304,6 +304,20 @@ def main() -> int:
                                encoding="utf-8")
         staged.append(dst)
 
+    # Browser-local TTS runtimes are application assets, not Python packages.
+    # Ship their JS/WASM adapters and tokenizer host, but keep the large model
+    # weights out of the release; the app downloads those into browser-managed
+    # storage only after the user chooses a model.
+    browser_root = ROOT / "assets" / "voice" / "browser"
+    if not browser_root.is_dir():
+        print(f"missing browser voice assets: {browser_root}", file=sys.stderr)
+        return 1
+    for src in sorted(path for path in browser_root.rglob("*") if path.is_file()):
+        relative = src.relative_to(browser_root)
+        destination = out / "voice" / "browser" / relative
+        place(src, destination, link=False)
+        staged.append(destination)
+
     lines = []
     release_lines = []
     for path in sorted(staged):

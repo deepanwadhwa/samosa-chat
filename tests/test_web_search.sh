@@ -711,6 +711,25 @@ printf '%s' "$R" | grep -q 'native summarizer compressed 8 of 8 fetched articles
 [ "$(sort -u "$TMP/summarizer-calls.log" | wc -l | tr -d ' ')" = "1" ] \
   || fail "the gateway restarted the summarizer instead of keeping one resident process"
 
+# Voice turns use the same evidence contract but must not make a hands-free
+# user wait through the full eight-page research cap when the first readable
+# source already answers the question. The source list remains visible, while
+# only the first page is fetched and summarized.
+: >"$TMP/summarizer-calls.log"
+VOICE_R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' -H 'X-Samosa-Voice-Turn: voice-fixture' \
+  --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+           "messages":[{"role":"user","content":"web tool probe eight articles"}]}')
+printf '%s' "$VOICE_R" | grep -q 'first readable source directly answers' \
+  || fail "a voice turn did not stop after its first sufficient source"
+printf '%s' "$VOICE_R" | grep -q 'native summarizer compressed 1 of 1 fetched article' \
+  || fail "a voice turn read beyond its first sufficient source"
+if printf '%s' "$VOICE_R" | grep -q 'page:https://articles.example/two'; then
+  fail "a voice turn fetched a second page after the first source was sufficient"
+fi
+[ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "1" ] \
+  || fail "the voice early-stop path did not use exactly one native summary"
+
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
 # is authoritative and must not be back-filled with mechanical variants.
 : >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
@@ -748,7 +767,11 @@ while [ "$i" -lt 100 ]; do
   sleep 0.05; i=$((i + 1))
 done
 grep -q '"web_source"' "$LIVE_OUT" || fail "a source link did not stream before research finished"
-kill -0 "$LIVE_PID" 2>/dev/null || fail "the research turn finished before its source link became visible"
+if ! kill -0 "$LIVE_PID" 2>/dev/null; then
+  echo "--- live web stream ---" >&2
+  sed -n '1,80p' "$LIVE_OUT" >&2
+  fail "the research turn finished before its source link became visible"
+fi
 rm -f "$FAKE_CURL_BLOCK_AFTER_FIRST"
 wait "$LIVE_PID"; LIVE_PID=""
 

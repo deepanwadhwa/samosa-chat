@@ -18,11 +18,14 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/model_selection_test.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=18994
 GW_PID=""
+ORPHAN_PID=""
 
 cleanup() {
   chmod 0700 "$HOME_DIR" 2>/dev/null || true
   [ -z "$GW_PID" ] || kill "$GW_PID" 2>/dev/null || true
   [ -z "$GW_PID" ] || wait "$GW_PID" 2>/dev/null || true
+  [ -z "$ORPHAN_PID" ] || kill "$ORPHAN_PID" 2>/dev/null || true
+  [ -z "$ORPHAN_PID" ] || wait "$ORPHAN_PID" 2>/dev/null || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT HUP INT TERM
@@ -102,6 +105,38 @@ wait_terminal() { # wait_terminal <job_id> -> prints final status JSON
   printf '%s' "$status_json"
 }
 healthz() { curl -sS "http://127.0.0.1:$PORT/healthz"; }
+
+# --- 0. An old backend listener must never be mistaken for the child this
+#        gateway launched. This is the exact failure that made Ornith/Bonsai
+#        switches die with EADDRINUSE while healthz still claimed Qwen ready. ---
+"$BACKEND" --port $((PORT + 1)) >"$TMP/orphan.log" 2>&1 &
+ORPHAN_PID=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  curl -fsS "http://127.0.0.1:$((PORT + 1))/healthz" >/dev/null 2>&1 && break
+  sleep 0.05; i=$((i + 1))
+done
+[ "$i" -lt 100 ] || { echo "FAIL: orphan fixture did not start"; exit 1; }
+env \
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" SAMOSA_BACKEND_PORT=$((PORT + 1)) \
+  SAMOSA_APP_HTML="$TMP/app.html" SAMOSA_APP_LOGO="$TMP/logo.png" \
+  SAMOSA_QWEN_ENGINE="$BACKEND" SAMOSA_QWEN_MODEL="$HOME_DIR/qwen-model" \
+  SAMOSA_TOKENIZER="$TMP/tokenizer.json" SAMOSA_BONSAI_SERVER="$BACKEND" \
+  SAMOSA_BONSAI_MODEL="$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf" \
+  "$GATEWAY" >"$TMP/orphan-gateway.out" 2>"$TMP/orphan-gateway.err" &
+GW_PID=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  H=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
+  printf '%s' "$H" | grep -q '"gateway":true' && break
+  sleep 0.05; i=$((i + 1))
+done
+[ "$i" -lt 100 ] || { echo "FAIL: control plane did not start beside orphan"; exit 1; }
+printf '%s' "$H" | grep -q '"ready":false' || { echo "FAIL: orphan was falsely reported as this gateway's ready backend"; echo "$H"; exit 1; }
+grep -q 'already occupied by an untracked process' "$TMP/orphan-gateway.err" || { echo "FAIL: occupied private port was not diagnosed"; cat "$TMP/orphan-gateway.err"; exit 1; }
+kill "$GW_PID" 2>/dev/null || true; wait "$GW_PID" 2>/dev/null || true; GW_PID=""
+kill "$ORPHAN_PID" 2>/dev/null || true; wait "$ORPHAN_PID" 2>/dev/null || true; ORPHAN_PID=""
+echo "orphan listener is rejected as backend readiness: PASS"
 
 # --- 1. Auth: the new selection routes require the session token ---
 start_gateway

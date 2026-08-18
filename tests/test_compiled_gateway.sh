@@ -141,7 +141,10 @@ launch_main_gateway() {
   i=0
   while [ "$i" -lt 100 ]; do
     health=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
-    printf '%s' "$health" | /usr/bin/grep -q '"ready":true' && return 0
+    if printf '%s' "$health" | /usr/bin/grep -q '"ready":true'; then
+      MAIN_TOKEN=$(/bin/cat "$HOME_DIR/run/ui-token")
+      return 0
+    fi
     kill -0 "$PID" 2>/dev/null || { /bin/cat "$TMP/gateway.log" >&2; return 1; }
     /bin/sleep 0.05
     i=$((i + 1))
@@ -729,6 +732,7 @@ while [ "$i" -lt 100 ]; do
   kill -0 "$PID2" 2>/dev/null || { /bin/cat "$TMP/gateway-stub.log" >&2; exit 1; }
   /bin/sleep 0.05; i=$((i + 1))
 done
+STUB_TOKEN=$(/bin/cat "$HOME_DIR/run/ui-token")
 spub() { /usr/bin/curl -fsS -X POST "http://127.0.0.1:$STUB_PORT/v1/jobs/public-inputs/update" \
   -H 'Content-Type: application/json' --data-binary "$1"; }
 # first fetch: new, exactly one changed unit, HTML script/style stripped, entity decoded
@@ -751,7 +755,8 @@ printf '%s' "$(spub '{"job_id":"watch","urls":["http://example.com/jobs"]}')" | 
 # robots.txt disallows /private
 printf '%s' "$(spub '{"job_id":"watch","urls":["http://example.com/private/listing"]}')" \
   | /usr/bin/grep -q 'robots.txt disallows'
-/usr/bin/curl -fsS -X POST "http://127.0.0.1:$STUB_PORT/v1/shutdown" >/dev/null
+/usr/bin/curl -fsS -H "X-Samosa-Token: $STUB_TOKEN" -X POST \
+  "http://127.0.0.1:$STUB_PORT/v1/shutdown" >/dev/null
 wait "$PID2"; PID2=""
 
 /usr/bin/curl -sS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
@@ -763,7 +768,8 @@ i=0
 while [ "$i" -lt 100 ] && [ ! -s "$TMP/slow-sidecar.pid" ]; do /bin/sleep 0.02; i=$((i + 1)); done
 [ -s "$TMP/slow-sidecar.pid" ]
 SIDE_PID=$(/bin/cat "$TMP/slow-sidecar.pid")
-/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/kill" >/dev/null
+/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" -X POST \
+  "http://127.0.0.1:$PORT/v1/kill" >/dev/null
 wait "$SLOW_CURL" 2>/dev/null || true
 if kill -0 "$SIDE_PID" 2>/dev/null; then
   echo "kill route left a Jobs sidecar running" >&2

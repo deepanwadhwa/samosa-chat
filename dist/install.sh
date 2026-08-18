@@ -113,6 +113,7 @@ destination() { # destination <remote-path>
     app.html|samosa-chat.png|models.json) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/samosa_voice_runtime.sh) printf '%s/bin/samosa-voice-runtime\n' "$STAGE" ;;
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
+    voice/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     runtime/macos-arm64/samosa-maple) printf '%s/bin/samosa-maple\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
@@ -130,7 +131,7 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
+INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and

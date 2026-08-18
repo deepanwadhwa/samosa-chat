@@ -18,6 +18,11 @@ class ClassList {
   _set() { return new Set((this.owner.className || "").split(/\s+/).filter(Boolean)); }
   add(...v) { const s = this._set(); v.forEach(x => s.add(x)); this.owner.className = [...s].join(" "); }
   remove(...v) { const s = this._set(); v.forEach(x => s.delete(x)); this.owner.className = [...s].join(" "); }
+  toggle(v, force) {
+    const shouldAdd = force === undefined ? !this.contains(v) : !!force;
+    if (shouldAdd) this.add(v); else this.remove(v);
+    return shouldAdd;
+  }
   contains(v) { return this._set().has(v); }
 }
 
@@ -111,7 +116,7 @@ function attachItem() {
   return b;
 }
 
-function loadComposer({ authFetch } = {}) {
+function loadComposer({ authFetch, storage = new Map() } = {}) {
   const els = {
     attachMenu: new Element("div"),
     attachBtn: new Element("button"),
@@ -140,6 +145,11 @@ function loadComposer({ authFetch } = {}) {
   globalThis.web = { offline: false, fetch_available: false, search_configured: false,
                      available: false, consent: "granted", provider: "", reason: "" };
   globalThis.pendingAttachments = [];
+  globalThis.localStorage = {
+    getItem: key => storage.has(key) ? storage.get(key) : null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: key => storage.delete(key),
+  };
   globalThis.authFetch = authFetch || (async () => ({ ok: true, json: async () => ({}) }));
   globalThis.resizePrompt = () => {};
 
@@ -147,7 +157,10 @@ function loadComposer({ authFetch } = {}) {
     return { applyCapabilities, setAttachItem, openAttachMenu, closeAttachMenu,
              attachMenuKeydown, setAttachError, removeAttachment, renderAttachments,
              uploadAttachment, pickAttachment, clearAttachments,
-             addWebPage, addWebSearch, applyPendingWebContext, shouldContinueWebResearch,
+             addWebPage, addWebSearch, applyPendingWebContext, applyAutomaticWebContext,
+             shouldContinueWebResearch, setWebSearchEnabled, toggleWebSearch,
+             get webSearchEnabled() { return webSearchEnabled; },
+             preferenceKey: WEB_SEARCH_PREFERENCE_KEY,
              get pending() { return pendingAttachments; },
              set pending(v) { pendingAttachments = v; },
              get pendingWebContext() { return pendingWeb; },
@@ -171,10 +184,12 @@ function loadComposer({ authFetch } = {}) {
   assert.equal(fns.shouldContinueWebResearch({ messages: [] }, "What is a closure?"), false);
 }
 
-// --- Phase W: visible chip remains the direct per-turn web-search control --
+// --- Phase W: Web search is a visible persistent preference ---------------
 {
-  const { fns } = loadComposer();
-  // A configured provider does not grant automatic per-turn use.
+  const storage = new Map();
+  const { fns } = loadComposer({ storage });
+  // A configured provider does not grant automatic use until the user turns
+  // the preference on.
   globalThis.web = { offline: false, fetch_available: true, search_configured: true,
                      available: true, consent: "granted", provider: "brave", reason: "" };
   assert.deepEqual(fns.applyPendingWebContext({ model: "test" }, []), { model: "test" });
@@ -186,6 +201,21 @@ function loadComposer({ authFetch } = {}) {
     fns.applyPendingWebContext({ model: "test" }, [{ kind: "url", url: "https://example.com/a" }]),
     { model: "test", web_urls: ["https://example.com/a"] },
     "adding a page must not also enable Web search");
+  assert.equal(fns.webSearchEnabled, false);
+  const context = fns.applyAutomaticWebContext({}, "What is happening?", []);
+  assert.deepEqual(context, [], "web search stays off until the user enables it");
+  fns.toggleWebSearch();
+  assert.equal(fns.webSearchEnabled, true);
+  assert.equal(storage.get(fns.preferenceKey), "1", "the preference is persisted");
+  assert.deepEqual(fns.applyAutomaticWebContext({}, "What is happening?", []), [{ kind: "search", url: null }]);
+  // A new page load restores the preference and keeps it active for the next
+  // message; this is the regression that the old one-turn chip lacked.
+  const reloaded = loadComposer({ storage });
+  assert.equal(reloaded.fns.webSearchEnabled, true, "the preference survives a reload");
+  reloaded.fns.applyCapabilities();
+  assert.equal(reloaded.els.attachWebSearch.getAttribute("aria-checked"), "true");
+  reloaded.fns.toggleWebSearch();
+  assert.equal(storage.get(fns.preferenceKey), undefined, "turning it off clears the stored preference");
 }
 
 const uploadOk = id => async () => ({ ok: true, json: async () => ({ id, filename: "photo.png" }) });

@@ -1,0 +1,24 @@
+kitten-tts-js
+Copyright 2026 Algiras
+
+This product is a JavaScript/TypeScript port of KittenTTS:
+  https://github.com/KittenML/KittenTTS
+  Copyright 2026 KittenML / Stellon Labs
+  Licensed under the Apache License, Version 2.0
+
+The original KittenTTS Python library, ONNX model architecture, voice embeddings
+(voices.npz), symbol table, and phoneme tokenization logic are the work of
+KittenML (https://github.com/KittenML) and are used here in accordance with the
+Apache 2.0 License.
+
+Pre-trained ONNX models are hosted on Hugging Face Hub:
+  https://huggingface.co/KittenML
+
+This port includes independent JavaScript implementations of:
+  - Text preprocessing (number/currency/time normalization)
+  - NPZ file parsing
+  - WAV encoding
+  - ONNX Runtime integration for Node.js and browser
+
+Licensed under the Apache License, Version 2.0.
+See LICENSE for the full license text.

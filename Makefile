@@ -172,12 +172,22 @@ test-model-manager: samosa-gateway test_fake_openai_backend fake_model_download_
 test-voice-ui: tests/test_voice_ui.mjs assets/app.html
 	node tests/test_voice_ui.mjs
 
+# Pure local wake-word feature, DTW, enrollment-validation, and bounded-ring
+# fixtures. The test evaluates the exact shipped browser algorithm block.
+test-wake-word-ui: tests/test_wake_word_ui.mjs assets/app.html
+	node tests/test_wake_word_ui.mjs
+
+# Persistent desktop sidebar collapse, multi-select conversation management,
+# and the in-app deletion confirmation (no browser-native confirm box).
+test-sidebar-ui: tests/test_sidebar_ui.mjs assets/app.html
+	node tests/test_sidebar_ui.mjs
+
 test-kokoro-native: samosa-gateway tests/test_kokoro_native_gateway.sh tests/fake_kokoro_native.c src/samosa_kokoro.h
 	sh tests/test_kokoro_native_gateway.sh
 
 # Local hands-free voice: actual token-gated WAV validation and Whisper CLI
 # invocation through the compiled gateway, plus the browser UI fixture.
-test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-kokoro-native
+test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-wake-word-ui test-kokoro-native
 	sh tests/test_voice_gateway.sh
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
