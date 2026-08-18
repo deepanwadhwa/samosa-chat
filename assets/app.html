@@ -4556,7 +4556,10 @@
         // the model is thinking. It is the only sign of life on a turn that can
         // run for minutes, so it must never be folded away.
         if (delta.web_activity) {
-          assistant.activity=(assistant.activity||"")+delta.web_activity;
+          // Activity is a live status, not a transcript. Replacing it keeps
+          // one sentence in one piece of screen real estate while the search
+          // moves through planning, reading, and answer generation.
+          assistant.activity=String(delta.web_activity).trim();
           if (sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", delta.web_activity.trim() || "I’m checking a few sources.");
         }
         if (delta.web_source) mergeWebSource(assistant, delta.web_source);
@@ -4580,36 +4583,38 @@
         updateAssistantNode(assistant); scrollBottom(false);
         return !!choice?.finish_reason;
       }
-      // Steps are shown as a list rather than one replaced line, so a slow turn
-      // reads as visible progress and the finished turn still shows what was
-      // done and which pages were used.
+      // Web activity occupies one stable row. Older saved chats may contain an
+      // accumulated newline-delimited transcript, so use only the final line.
       function renderWebActivity(row, msg) {
         const box = row.querySelector(".web-activity");
         if (!box) return;
         const steps = (msg.activity || "").split("\n").map(t => t.trim()).filter(Boolean);
+        const latestStep = steps.length ? steps[steps.length - 1] : "";
         const sourceSet = { sources: [] };
         for (const raw of (Array.isArray(msg.sources) ? msg.sources : [])) mergeWebSource(sourceSet, raw);
         const sources = sourceSet.sources;
-        box.hidden = steps.length === 0 && sources.length === 0;
+        box.hidden = !latestStep && sources.length === 0;
         let stepsBox = box.querySelector(".web-steps");
         if (!stepsBox) { stepsBox = document.createElement("div"); stepsBox.className = "web-steps"; box.appendChild(stepsBox); }
-        const signature = `${msg.streaming ? 1 : 0}:${steps.join("\n")}`;
+        const signature = `${msg.streaming ? 1 : 0}:${latestStep}`;
         if (stepsBox.dataset.signature !== signature) {
           stepsBox.dataset.signature = signature;
-          stepsBox.textContent = "";
-          steps.forEach((text, i) => {
-            const line = document.createElement("div");
-            const active = msg.streaming && i === steps.length - 1;
-            const failed = /could not|couldn’t|failed|offline|not configured|not read|unavailable/i.test(text);
-            line.className = "web-step" + (active ? " active" : failed ? " failed" : " done");
-            const mark = document.createElement("span");
-            mark.className = "web-step-mark";
-            mark.textContent = active ? "·" : failed ? "!" : "✓";
-            const label = document.createElement("span"); label.textContent = text;
+          let line = stepsBox.querySelector(".web-step");
+          if (latestStep && !line) {
+            line = document.createElement("div"); line.className = "web-step";
+            const mark = document.createElement("span"); mark.className = "web-step-mark";
+            const label = document.createElement("span"); label.className = "web-step-label";
             line.appendChild(mark); line.appendChild(label); stepsBox.appendChild(line);
-          });
+          }
+          if (line && latestStep) {
+            const active = !!msg.streaming;
+            const failed = /could not|couldn’t|failed|offline|not configured|not read|unavailable/i.test(latestStep);
+            line.className = "web-step" + (active ? " active" : failed ? " failed" : " done");
+            line.querySelector(".web-step-mark").textContent = active ? "·" : failed ? "!" : "✓";
+            line.querySelector(".web-step-label").textContent = latestStep;
+          } else if (!latestStep) stepsBox.textContent = "";
         }
-        stepsBox.hidden = steps.length === 0;
+        stepsBox.hidden = !latestStep;
 
         let sourcesBox = box.querySelector(".web-sources");
         if (!sourcesBox) {

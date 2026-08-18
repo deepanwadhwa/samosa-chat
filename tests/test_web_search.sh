@@ -75,6 +75,9 @@ printf '<html><head><title>Article five</title></head><body><p>Article five repo
 printf '<html><head><title>Article six</title></head><body><p>Article six reports the sixth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-six.html"
 printf '<html><head><title>Article seven</title></head><body><p>Article seven reports the seventh current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-seven.html"
 printf '<html><head><title>Article eight</title></head><body><p>Article eight reports the eighth current fixture fact.</p></body></html>' >"$TMP/stub/https-articles-example-eight.html"
+printf '<html><head><title>Walmart earnings calendar</title></head><body><main><p>Walmart is expected to release its next quarterly earnings on Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-one-example-walmart.html"
+printf '<html><head><title>WMT expected earnings date</title></head><body><main><p>The expected date for Walmart WMT next earnings is Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-two-example-wmt.html"
+printf '<html><head><title>Walmart quarterly report schedule</title></head><body><main><p>Walmart next quarterly results are scheduled for Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-three-example-schedule.html"
 printf 'User-agent: *\nAllow: /\n' >"$TMP/stub/robots.txt"
 
 # --- fake curl -------------------------------------------------------------
@@ -627,8 +630,9 @@ R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: 
                 {"role":"user","content":"check the internet dumbass"}]}')
 printf '%s' "$R" | grep -q 'saw verified authority' \
   || fail "gateway did not turn an explicit internet request from a stale client into grounded research"
-printf '%s' "$R" | grep -q 'Note: 2 selected pages could not be read' \
-  || fail "the final answer omitted the concise unreadable-page disclosure"
+if printf '%s' "$R" | grep -Eqi 'selected pages? could not be read|selected search result page could be read'; then
+  fail "partial page failures leaked into the final answer"
+fi
 printf '%s' "$R" | grep -q 'Reading the most relevant sources' \
   || fail "the ranked source batch was not reported before synthesis"
 [ "$(printf '%s' "$R" | grep -o 'Reading the most relevant sources' | wc -l | tr -d ' ')" = "1" ] \
@@ -747,6 +751,55 @@ fi
 [ "$(wc -l <"$TMP/summarizer-calls.log" | tr -d ' ')" = "0" ] \
   || fail "the voice raw-text batch invoked the native summarizer"
 
+# A simple future-date question is answerable from two independent agreeing
+# pages with an honest "expected" qualifier. It must not trigger a generic
+# paraphrased second search merely because no official confirmation was found.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Walmart earnings calendar","url":"https://earnings-one.example/walmart","description":"Expected Thursday, August 20, 2026."},
+  {"title":"WMT expected earnings date","url":"https://earnings-two.example/wmt","description":"Expected Thursday, August 20, 2026."},
+  {"title":"Walmart quarterly report schedule","url":"https://earnings-three.example/schedule","description":"Scheduled Thursday, August 20, 2026."},
+  {"title":"Unreadable duplicate lead","url":"https://earnings-four.example/unreadable","description":"Another lead."}
+]}}
+JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' -H 'X-Samosa-Voice-Turn: walmart-fixture' \
+  --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+           "messages":[{"role":"user","content":"web tool probe Walmart earnings consensus: When is Walmart going to release their next earnings?"}]}')
+printf '%s' "$R" | grep -q 'Walmart is expected to report earnings on Thursday, August 20, 2026' \
+  || fail "agreeing earnings-date sources were not accepted as a qualified answer"
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "1" ] \
+  || fail "an answerable earnings-date batch triggered a redundant second search"
+if printf '%s' "$R" | grep -Eqi 'first source batch left a gap|Looking up 2 of|selected pages? could not be read'; then
+  fail "the earnings-date turn exposed a false evidence gap or partial page failure"
+fi
+printf '%s' "$R" | grep -q 'https://earnings-two.example/wmt' \
+  || fail "the voice earnings batch omitted its corroborating source"
+if printf '%s' "$R" | grep -q 'https://earnings-three.example/schedule'; then
+  fail "the ordinary voice earnings batch read beyond two pages"
+fi
+
+# Retrieval failure is disclosed only when every selected page was unreadable.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Unavailable one","url":"https://unreadable-one.example/fact","description":"lead"},
+  {"title":"Unavailable two","url":"https://unreadable-two.example/fact","description":"lead"}
+]}}
+JSON
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"web tool probe no readable pages"}]}')
+printf '%s' "$R" | grep -q "no selected search result page could be read" \
+  || fail "an all-unreadable search did not disclose that no page could be verified"
+if printf '%s' "$R" | grep -Eqi 'fetch failed|HTTP 403|requires JavaScript|"state":"failed"'; then
+  fail "technical page failures leaked from an all-unreadable search"
+fi
+if printf '%s' "$R" | grep -q '"web_source"'; then
+  fail "an all-unreadable search emitted a source card"
+fi
+
 # Dynamic planning can legitimately choose zero searches. A valid empty plan
 # is authoritative and must not be back-filled with mechanical variants.
 : >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
@@ -772,6 +825,12 @@ printf '%s' "$R" | grep -q 'nothing vague was sent to the web' \
 
 # The first search-result link must reach the browser while later research is
 # still running, not as a replayed preamble after every provider call ends.
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"Careers at Example","url":"http://example.com/jobs","description":"Open roles."},
+  {"title":"Second readable lead","url":"https://example.org/two","description":"Another result."}
+]}}
+JSON
 rm -f "$FAKE_CURL_CALL_COUNT"; : >"$FAKE_CURL_BLOCK_AFTER_FIRST"
 LIVE_OUT="$TMP/live-web-stream.txt"
 auth -N -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \

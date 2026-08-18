@@ -137,6 +137,11 @@ assert.equal(message.sources[1].state, "read");
 const row = new Element("article");
 const activity = new Element("div"); activity.className = "web-activity"; row.appendChild(activity);
 fns.renderWebActivity(row, message);
+assert.equal(activity.querySelectorAll(".web-step").length, 1,
+  "web progress occupies exactly one status row");
+const originalStepRow = activity.querySelector(".web-step");
+assert.equal(originalStepRow.querySelector(".web-step-label").textContent,
+  "Working out what needs checking…");
 const sourcesDetails = activity.querySelector(".web-sources");
 assert.equal(sourcesDetails.tagName, "details", "the source list is collapsible");
 assert.equal(sourcesDetails.querySelector(".web-sources-head").tagName, "summary");
@@ -165,6 +170,12 @@ assert.equal(hostileActivity.querySelectorAll("img").length, 0, "remote titles r
 const originalResultRow = sourceRows[0];
 message.activity += "Looking up 1 of 3…\n";
 fns.renderWebActivity(row, message);
+assert.equal(activity.querySelectorAll(".web-step").length, 1,
+  "old accumulated activity is compacted to one status row");
+assert.equal(activity.querySelector(".web-step"), originalStepRow,
+  "progress updates reuse the same status row");
+assert.equal(originalStepRow.querySelector(".web-step-label").textContent, "Looking up 1 of 3…",
+  "the newest status replaces the prior sentence in place");
 assert.equal(activity.querySelectorAll(".web-source")[0], originalResultRow,
   "activity updates preserve existing link nodes and keyboard focus");
 message.streaming = false;
@@ -173,6 +184,12 @@ assert.equal(sourcesDetails.open, false, "sources collapse when the completed an
 sourcesDetails.open = true;
 fns.renderWebActivity(row, message);
 assert.equal(sourcesDetails.open, true, "completed renders preserve the user's open/closed choice");
+
+const liveActivity = { content: "", reasoning: "", activity: "", sources: [] };
+fns.consumeEvent('{"choices":[{"delta":{"web_activity":"First live status.\\n"}}]}', liveActivity);
+fns.consumeEvent('{"choices":[{"delta":{"web_activity":"Second live status.\\n"}}]}', liveActivity);
+assert.equal(liveActivity.activity, "Second live status.",
+  "streamed activity replaces rather than accumulates a progress transcript");
 
 const failed = { streaming: true, activity: "Could not read that page.\n", sources: [] };
 fns.mergeWebSource(failed, { id: "bad-page", kind: "page", state: "failed", url: "https://example.net/missing" });

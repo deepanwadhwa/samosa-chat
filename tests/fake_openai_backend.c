@@ -503,6 +503,18 @@ static int handler(SamosaHttpServer *server, int fd,
                 "\"message\":{\"role\":\"assistant\",\"content\":"
                 "\"{\\\"resolved_question\\\":\\\"What do eight current article fixtures report?\\\","
                 "\\\"queries\\\":[\\\"eight current article fixtures\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe Walmart earnings consensus"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"resolved_question\\\":\\\"When is Walmart expected to release its next quarterly earnings?\\\","
+                "\\\"queries\\\":[\\\"Walmart WMT next quarterly earnings expected date 2026\\\"]}\"}}]}", NULL);
+        if (strstr(request->body, "web tool probe no readable pages"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"resolved_question\\\":\\\"What is the current unreadable fixture fact?\\\","
+                "\\\"queries\\\":[\\\"current unreadable fixture fact\\\"]}\"}}]}", NULL);
         if (strstr(request->body, "check the internet dumbass"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -536,6 +548,18 @@ static int handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Decide whether this batch of fetched web sources contains enough evidence")) {
+        if (strstr(request->body, "When is Walmart expected to release its next quarterly earnings")) {
+            int contract_ok = strstr(request->body, "two independent sources that agree are sufficient") != NULL &&
+                              strstr(request->body, "missing_evidence") != NULL;
+            return samosa_http_response(fd, 200, "application/json", contract_ok ?
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"sufficient\\\":true,\\\"missing_evidence\\\":\\\"\\\",\\\"followup_query\\\":\\\"\\\"}\"}}]}" :
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"sufficient\\\":false,\\\"missing_evidence\\\":\\\"generic confirmation\\\","
+                "\\\"followup_query\\\":\\\"Walmart WMT next quarterly earnings release date 2026\\\"}\"}}]}", NULL);
+        }
         int insufficient = strstr(request->body, "What changed in recent SQLite releases") != NULL ||
                            strstr(request->body, "Which museum exhibitions and events") != NULL ||
                            (strstr(request->body, "How many cyclosporiasis cases are in South Carolina in 2026") != NULL &&
@@ -543,10 +567,11 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json", insufficient ?
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"{\\\"sufficient\\\":false,\\\"followup_query\\\":\\\"official source for the missing current fact\\\"}\"}}]}" :
+            "\"{\\\"sufficient\\\":false,\\\"missing_evidence\\\":\\\"a requested current fact is absent\\\","
+            "\\\"followup_query\\\":\\\"official source for the missing current fact\\\"}\"}}]}" :
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":"
-            "\"{\\\"sufficient\\\":true,\\\"followup_query\\\":\\\"\\\"}\"}}]}", NULL);
+            "\"{\\\"sufficient\\\":true,\\\"missing_evidence\\\":\\\"\\\",\\\"followup_query\\\":\\\"\\\"}\"}}]}", NULL);
     }
     /* Phase W (docs/TASKS_WEB_SEARCH.md W5): the model-decided web tool loop.
        Planner rounds are recognised by their system prompt; the second round
@@ -598,14 +623,34 @@ static int handler(SamosaHttpServer *server, int fd,
             strstr(request->body, "\\\"source\\\":{\\\"name\\\"") &&
             strstr(request->body, "\\\"text_content\\\"") &&
             strstr(request->body, "HIGH-STAKES TURN:") &&
-            strstr(request->body, "selected pages could not be read") &&
+            !strstr(request->body, "selected pages could not be read") &&
             strstr(request->body, "Do not claim that you cannot browse") &&
             !strstr(request->body, "I cannot browse the internet") &&
             !strstr(request->body, "999,999 alleged deaths from an unverified snippet")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority. Note: 2 selected pages could not be read.\"}}]}"
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"saw verified authority\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"unsafe web grounding\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe Walmart earnings consensus"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "Thursday, August 20, 2026") &&
+            strstr(request->body, "Walmart earnings calendar") &&
+            strstr(request->body, "WMT expected earnings date") &&
+            !strstr(request->body, "bounded source batches did not fully establish") &&
+            !strstr(request->body, "selected pages could not be read")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"Walmart is expected to report earnings on Thursday, August 20, 2026.\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"Walmart evidence contract failed\"}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "web tool probe no readable pages"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "No selected search result page could be read")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"I couldn't verify that because no selected search result page could be read.\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"missing zero-readable disclosure\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe state count followup"))
         return samosa_http_response(fd, 200, "application/json",
