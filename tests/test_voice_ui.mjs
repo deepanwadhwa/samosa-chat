@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 const app = readFileSync(new URL("../assets/app.html", import.meta.url), "utf8");
 const begin = app.indexOf("      function voiceSupported() {");
-const end = app.indexOf("      async function sendPrompt(text) {");
+const end = app.indexOf("      async function sendPrompt(", begin);
 assert.ok(begin >= 0 && end > begin, "voice controls must remain extractable");
 const wavBegin = app.indexOf("      function concatenateVoiceChunks(chunks) {");
 const wavEnd = app.indexOf("      function releaseHandsfreeCapture(capture) {");

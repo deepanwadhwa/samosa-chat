@@ -20,6 +20,9 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snap
   --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa \
   --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
+  --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 
@@ -33,6 +36,7 @@ grep -q 'engine/samosa_kokoro.h' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv"
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   grep -q 'runtime/macos-arm64/samosa-summarizer' "$REMOTE/release-manifest.tsv"
+  grep -q 'runtime/macos-arm64/samosa-visionpsy' "$REMOTE/release-manifest.tsv"
   grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf' "$REMOTE/release-manifest.tsv"
 fi
 
@@ -49,6 +53,7 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ]
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   [ -x "$HOME_DIR/current/bin/samosa-summarizer" ]
+  [ -x "$HOME_DIR/current/bin/samosa-visionpsy" ]
   [ -f "$HOME_DIR/current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf" ]
 fi
 # The launchd scheduler's plist runs current/bin/samosa-jobsd, so the installer

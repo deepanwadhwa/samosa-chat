@@ -218,10 +218,10 @@ overlap, preferring page, paragraph, function/class, and line boundaries. Each
 chunk keeps attachment ID, filename, page/line anchors, offsets, token count,
 and extraction fingerprint.
 
-Use local lexical retrieval; no embedding model exists. Reuse or extract the
-existing tokenizer/chunker and FTS/BM25 work in `src/samosa_chutni_db.c` rather
-than creating an unrelated retrieval definition. Keep individual attachment
-indexes separate from folder-memory summaries.
+Use local lexical retrieval; no embedding model exists. Reuse the maintained
+Chutni lexical retrieval contract where its semantics fit rather than reviving
+the removed private `samosa_chutni_db` implementation. Keep individual
+attachment indexes separate from folder-memory summaries.
 
 Ranking should combine:
 
@@ -367,8 +367,8 @@ not satisfy these gates.
   page/line structure, errors, and extractor fingerprint.
 - `src/qwen36b.c`: pinned-context identity, preflight accounting, session resume,
   and exact preservation during compaction.
-- `src/samosa_chutni_db.c` or a factored document-index module: reuse of the
-  deterministic chunker and lexical index without folder-summary behavior.
+- A factored document-index module: deterministic chunking and lexical indexing
+  without coupling document attachments to folder-summary behavior.
 - `tests/test_attachments.sh`, `tests/test_samosa_extract.sh`, the fake backend,
   UI contract tests, and new compaction/retrieval fixtures.
 - `docs/SERVE_API.md`, `docs/USAGE.md`, and capability/installer documentation

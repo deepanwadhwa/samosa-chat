@@ -4,13 +4,104 @@ The Samosa app can run any of these local backends:
 
 - **Bonsai 27B 1-bit** through Prism's Metal-enabled `llama-server`
 - **Ornith 9B** (DeepReinforce Ornith-1.0-9B, Q4_K_M GGUF) through the same `llama-server`
+- **Maple** (2-bit MoE) through Samosa's native Metal engine
 - **Qwen3.6 35B A3B** through Samosa's streaming expert engine
+- **VisionPsy-Nano 460M** (auxiliary vision model, macOS arm64) through Samosa's native MLX C++ helper (`samosa-visionpsy`)
+- **Molmo2 4B Native Q4** (optional auxiliary image/video model, macOS arm64)
+  through the on-demand MLX/AVFoundation helper (`samosa-molmo2`)
 
-Choose the model under **Settings → Model**. Samosa unloads the old backend
-before starting the new one, so both models are never resident at once. A switch
-starts a new conversation because the models use different tokenizers and
-conversation-state formats. Bonsai is text-only unless a compatible vision
-projector is installed; Qwen retains the app's existing image support.
+Choose the model under **Settings → Models**. Samosa unloads the old chat backend
+before starting the new one, so two chat models are never resident at once.
+VisionPsy-Nano 460M operates as the compatibility/fallback image specialist when
+Molmo2 is not installed, loaded on demand for visual turns and evicted immediately after synthesis. It is
+pinned to commit `ca7a1bad19a08fe8e474bee24275a2e377bbabba` from
+[`KaedeTai/VisionPsy-Nano-460M-MLX`](https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX)
+and runs in the bundled `samosa-visionpsy` MLX C++ helper. The application does
+not install or invoke Python, `mlx-vlm`, Transformers, Pillow, or PyTorch.
+
+### VisionPsy artifact identity
+
+The first release uses the standard model, not VisionPsy Flash, and the BF16
+precision actually published in that conversion. The verified download is
+1,018,322,795 bytes across these files:
+
+| File | SHA-256 |
+|---|---|
+| `model.safetensors` | `0cc93c1027a58aec26c4350115b5eca02a836aba06277fe700de854ff078572f` |
+| `config.json` | `f25b85a4aef0df1867e0221310b86d87058de9ea6fadc50e993a2de5b08851a8` |
+| `preprocessor_config.json` | `7d039134cbf96a4daa956e1aa256b604975cc6184bfdce9911105fddabbb39da` |
+| `processor_config.json` | `a09a8dd0ad8e9ef92b5e2f2a1f78df1aee12f40ff87c3e0f7d3c7877a26e718d` |
+| `tokenizer.json` | `9da3f64c3f7b940520c48fc81dc203149080934d4c7f52201883d24d0cd390a8` |
+| `tokenizer_config.json` | `926bab5b0063ec24731caa635cc60df8d76ad3efa1b92dbc4a82912aca96a63d` |
+| `chat_template.jinja` | `153280e3ff55d19da1398bdb3914ee2a51b80429bfaedde11d7d216c39db80f3` |
+
+The upstream model is [`qvac/VisionPsy-Nano-460M`](https://huggingface.co/qvac/VisionPsy-Nano-460M)
+and its catalogue licence is Apache-2.0. Samosa records both the upstream model
+and KaedeTai conversion identities; a mutable `main` URL is never used for an
+install.
+
+### VisionPsy network and repair behavior
+
+Samosa contacts Hugging Face only after the user chooses **Download** or
+**Download and continue**. The model manager supports resumable `.partial`
+files, verifies every size and hash, and atomically promotes only the complete
+set. After installation, visual inference is fully local and works with model
+downloads/network access disabled. Ordinary text and OCR-only turns neither
+download nor start VisionPsy.
+
+If verification or installation fails, the pending chat turn and attachments
+remain available. Use **Retry** in the inline card or the Vision model card in
+**Settings → Models**; Samosa reuses verified files and repairs only missing or
+invalid artifacts. A corrupt staged file is never reported as installed and
+never replaces an already verified model.
+
+### Molmo2 native package identity
+
+Molmo2 is pinned to `allenai/Molmo2-4B` commit
+`042abfa7a38879a376cec03d949eff0aefaa0600` under Apache-2.0. Samosa does not
+install the upstream 19,403,574,432-byte FP32 checkpoint. The native
+`molmo2-pack` tool accepts only these source shards:
+
+| Source shard | Bytes | SHA-256 |
+|---|---:|---|
+| `model-00001-of-00004.safetensors` | 4,891,799,000 | `065ed844edb74cc3f3992415dc412cfae4c2f6e324de76dc84fffe3a652f6fd3` |
+| `model-00002-of-00004.safetensors` | 4,844,690,992 | `ac1506897468e69d5af2f46127d30274eecb71c60745e7d27ea0319a27addbb4` |
+| `model-00003-of-00004.safetensors` | 4,844,691,024 | `da71a15c961f92361b64c3b45f5465d370c9992f032f0f4adf544d0b208ed573` |
+| `model-00004-of-00004.safetensors` | 4,822,393,416 | `519e694862a7d6d82e539424733f6f55fd8118c3c37e328c2dd942a6d4a16120` |
+
+The pinned source `config.json` SHA-256 is
+`17e072e3c3b29d9be7a348c74b88658e67ccce094c31b21f87646f6cecd2a76f`;
+the pinned `tokenizer.json` SHA-256 is
+`95e80901c901584f416b8fd4349fd60022774b89ba4377626511f0562cc599f7`.
+The package contract validates all 706 tensor names, FP32 source dtypes, and
+exact shapes before conversion. Packages use stable Samosa tensor names, Q4
+group-64 for large language matrices, BF16 for the vision tower/connector, a
+4 GiB total ceiling, per-file hashes, and processor fingerprint
+`808de9add76144a557348c5f5180a8408b12ca83592c7a6a257ae69c968e51df`.
+The locally qualified package is 3,372,298,903 bytes, has manifest SHA-256
+`a07230dd952e97969921223328e7812020bb58711728450cdfb2205e3a15b770`,
+and passed real image, video, and Ornith handoff gates with zero swap growth on
+the 16 GiB reference Mac. See
+[`regressions/molmo2-4b-q4-2026-08-26.md`](regressions/molmo2-4b-q4-2026-08-26.md).
+
+### Molmo2 network and lifecycle behavior
+
+The catalog intentionally has no Molmo2 artifact URL because the qualified
+3.37 GB package has not been uploaded to an authorized public release location.
+Clicking install returns `native_pack_required`; it does not begin a hidden FP32
+download. A locally installed verified package appears as Ready. Follow the
+reviewed local conversion procedure in [INSTALL.md](INSTALL.md).
+
+After a valid package is installed, inference is offline. Text-only work never
+starts Molmo2. Every admitted visual image task, plus video, multi-image
+comparison, temporal tracking, and localization, prefers Molmo2 and acquires
+the global specialist lease. VisionPsy remains the standard-image fallback on
+installations without Molmo2. On constrained Macs the primary backend is stopped first.
+The gateway decodes bounded timestamp windows sequentially, terminates Molmo2,
+then restarts the primary model for a greedy, non-thinking grounded evidence synthesis.
+That synthesis is explicitly told that the local specialist inspected the
+attachment bytes, so it must answer from the observation rather than claim it
+cannot see the image or infer from its filename.
 
 The gateway discovers Bonsai at:
 

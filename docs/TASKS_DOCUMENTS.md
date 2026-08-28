@@ -1,5 +1,15 @@
 # Issue #5 — Document intelligence
 
+> **Ordinary Chat update (2026-08-23).** The PDFium text/rendering decision in
+> this card remains in force and still requires no runtime Python. Chat
+> attachments now layer automatic evidence routing on top of it: the active LLM
+> selects embedded text/PP-OCRv6, auxiliary standard VisionPsy-Nano 460M, or
+> both; visual PDF pages are hardware/task-selected with no fixed page cap and
+> are rendered sequentially through one on-demand native MLX C++ helper. This
+> does not extend the feature into Jobs or Chutni. See
+> [VISIONPSY_CHAT_ATTACHMENTS_SPEC.md](VISIONPSY_CHAT_ATTACHMENTS_SPEC.md) and
+> the [dated regression report](regressions/visionpsy-460m-2026-08-23.md).
+
 **Read [APP_TASKS.md](APP_TASKS.md) Phase A2 first.** A plan already exists
 (A2.1 extraction, A2.2 full-document ingestion, A2.3 retrieval, A2.4
 limitation surfacing). This document does not replace it. It resolves a

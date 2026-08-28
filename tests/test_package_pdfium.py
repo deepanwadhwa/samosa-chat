@@ -41,6 +41,9 @@ class PackagePdfiumTest(unittest.TestCase):
                 "--pdfium-dir", str(pdfium),
                 "--maple-runtime", str(MAPLE_RUNTIME),
                 "--maple-metallib", str(MAPLE_METALLIB),
+                "--visionpsy-runtime", str(MAPLE_RUNTIME),
+                "--molmo2-runtime", str(MAPLE_RUNTIME),
+                "--molmo2-pack", str(MAPLE_RUNTIME),
                 "--summarizer-model", str(SUMMARIZER / "model.gguf"),
                 "--summarizer-runtime-dir", str(SUMMARIZER)]
 

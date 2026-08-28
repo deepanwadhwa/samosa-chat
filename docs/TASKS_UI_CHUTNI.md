@@ -1,21 +1,27 @@
 # Samosa browser UI overhaul and Chutni — implementation task program
 
-**Status:** planned
+**Status:** superseded historical design
 
 **Product surface:** local browser application + headless local server
 
 **Last scoped:** 2026-07-25
 
-This document is the standalone source of truth for three connected pieces of
-work:
+> **Historical document.** The shipped folder-memory architecture is defined by
+> [CHUTNI_PROTOCOL.md](CHUTNI_PROTOCOL.md) and uses the generic bundled
+> `chutni-mcp` service. The standalone Gigatoken adapter described below was a
+> tested prototype but was never connected to the gateway or packaged runtime;
+> it has been removed. The remaining text is retained as design history, not as
+> a current implementation contract.
+
+This document originally proposed three connected pieces of work:
 
 1. Replace the current interface with a minimal, clean Samosa UI.
 2. Add first-run profile and model-download onboarding.
 3. Build **Chutni**, Samosa's durable, local memory for explicitly selected
    folders, drives, or readable user-document locations.
 
-Gigatoken is the pinned bulk-tokenization engine for Chutni. The audited
-upstream baseline is `marcelroed/gigatoken` v0.10.0 at commit
+The historical proposal used Gigatoken as Chutni's pinned bulk-tokenization
+engine. The audited upstream baseline was `marcelroed/gigatoken` v0.10.0 at commit
 `34a1599f0c0ae7d7cd0d1c530e6522320158b360`. That pin is a source and behavior
 reference, not permission to ship its Python package or enable its network
 loader. T0.5 defines the native, local-only integration and its adoption gates.
@@ -1269,8 +1275,8 @@ previous generation is an ordinary miss, never a build failure. Covered by
 `tests/test_chutni_extraction_cache.sh`, which counts sidecar invocations
 directly.
 
-**Implementation handoff (2026-07-28):** a minimized local adapter is present
-at `third_party/gigatoken-adapter` and is covered by
+**Historical implementation handoff (2026-07-28):** a minimized local adapter
+was prototyped at `third_party/gigatoken-adapter` and was covered by
 `make test-gigatoken-adapter`. It supports the pinned Qwen `tokenizer.json` and
 Kimi's `tiktoken.model` sidecar format. It is not yet activated by the Chutni
 gateway: the production request-ID, fingerprint, cancellation, supervision,
@@ -1282,8 +1288,9 @@ commit, unmodified MIT license, Samosa patch set, build toolchain, target, and
 complete transitive SBOM in release evidence. The pin changes only through a
 reviewed dependency update.
 
-Production Samosa ships a precompiled `samosa-gigatoken` child process built
-from a minimized, local-only Rust adapter. It must:
+The historical production proposal would have shipped a precompiled
+`samosa-gigatoken` child process built from a minimized, local-only Rust
+adapter. It would have needed to:
 
 - require no Python, NumPy, Awkward, Typer, Rust, Cargo, or nightly toolchain on
   the user's machine;

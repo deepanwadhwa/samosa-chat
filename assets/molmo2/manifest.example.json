@@ -1,0 +1,17 @@
+{
+  "format": "samosa.molmo2.mlx.v1",
+  "package_id": "molmo2-4b-mlx-q4-v1",
+  "model_id": "allenai/Molmo2-4B",
+  "upstream_revision": "042abfa7a38879a376cec03d949eff0aefaa0600",
+  "processor_fingerprint": "808de9add76144a557348c5f5180a8408b12ca83592c7a6a257ae69c968e51df",
+  "quantization": {"mode": "affine", "bits": 4, "group_size": 64},
+  "estimated_resident_bytes": 0,
+  "files": [
+    {
+      "name": "weights-00001.safetensors",
+      "role": "weights",
+      "bytes": 0,
+      "sha256": "REPLACED_BY_MOLMO2_PACK"
+    }
+  ]
+}

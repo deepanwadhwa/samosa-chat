@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Default limits (for Python components/fixtures)
-MAX_FOOTPRINT_MB=${MAX_FOOTPRINT_MB:-6144} # 6 GB hard kill
+# Generic process-tree guard. The historical variable name is retained for
+# compatibility; the sampled value is resident set size (RSS), in MiB.
+MAX_FOOTPRINT_MB=${MAX_FOOTPRINT_MB:-6144} # 6 GiB process-tree RSS hard kill
 MAX_SWAP_DELTA_MB=${MAX_SWAP_DELTA_MB:-256}
 
 get_swap_mb() {
@@ -33,7 +34,7 @@ get_memory_pressure() {
 BASELINE_SWAP=$(get_swap_mb)
 PEAK_RSS_MB=0
 echo "[Memory Guard] Baseline swap: ${BASELINE_SWAP} MB"
-echo "[Memory Guard] Limits: ${MAX_FOOTPRINT_MB} MB footprint, ${MAX_SWAP_DELTA_MB} MB swap delta"
+echo "[Memory Guard] Limits: ${MAX_FOOTPRINT_MB} MiB process-tree RSS, ${MAX_SWAP_DELTA_MB} MiB swap delta"
 
 # Start requested process
 "$@" &
@@ -71,13 +72,13 @@ while kill -0 "$CHILD_PID" 2>/dev/null; do
     fi
 
     if [ "$RSS_MB" -ge "$MAX_FOOTPRINT_MB" ]; then
-        echo "[Memory Guard] ABORT: Process tree exceeded footprint limit (${RSS_MB} MB >= ${MAX_FOOTPRINT_MB} MB)" >&2
+        echo "[Memory Guard] ABORT: Process tree exceeded RSS limit (${RSS_MB} MiB >= ${MAX_FOOTPRINT_MB} MiB)" >&2
         kill -9 "$CHILD_PID" 2>/dev/null
         exit 1
     fi
 
-    if [ "$SWAP_DELTA" -ge "$MAX_SWAP_DELTA_MB" ]; then
-        echo "[Memory Guard] ABORT: Process exceeded swap delta limit (${SWAP_DELTA} MB >= ${MAX_SWAP_DELTA_MB} MB)" >&2
+    if [ "$SWAP_DELTA" -gt "$MAX_SWAP_DELTA_MB" ]; then
+        echo "[Memory Guard] ABORT: Process exceeded swap delta limit (${SWAP_DELTA} MB > ${MAX_SWAP_DELTA_MB} MB)" >&2
         kill -9 "$CHILD_PID"
         exit 1
     fi

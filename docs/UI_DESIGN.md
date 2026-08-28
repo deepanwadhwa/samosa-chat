@@ -323,3 +323,62 @@ normal operation — `--warn`), no truncated paths without full value in
 A working mockup of §3 lives at [mockups/jobs-view.html](mockups/jobs-view.html)
 (self-contained, zero JS, follows light/dark automatically — open it directly
 in a browser); treat it as the acceptance target for step 4.
+
+## 5. Models Settings & Vision Attachment States
+
+### 5.1 Grouped Models Settings
+
+The **Settings → Models** pane groups local capabilities by function:
+
+- **Text LLMs:** Chat conversation and reasoning models with active backend selection.
+- **Vision:** Auxiliary VisionPsy-Nano 460M with download/remove controls and the policy notice: *"Used automatically for chat attachments when the active LLM needs visual understanding. Loaded only for that turn."*
+- **OCR:** Native PP-OCRv6 document reader card explaining digital text layer priority. Its status comes from `/healthz`: **Ready** only when both the executable and detector/recognizer/charset pack exist, **Model pack missing** when only the executable exists, and **Unavailable** when the runtime is absent. The card must never say “always active.”
+- **Voice:** Speech-to-text and text-to-speech engines.
+
+Placement comes from catalogue `category`/`role`, not display-name matching.
+Auxiliary Vision models never receive **Use** or appear in setup/chat-model
+selection. A text-only active LLM still leaves **+ → Image** enabled when
+`supports_image_attachments` is true through the bundled auxiliary helper.
+
+### 5.2 In-Chat Vision Model Required Flow
+When an attached image or visual diagram is submitted while VisionPsy is not yet installed:
+- An inline card appears in the chat turn explaining that visual understanding is required (~1.01 GB download).
+- The user can click **Download and continue**.
+- A real-time progress bar reflects download and verification states.
+- Upon completion, the turn automatically resumes from the visual stage and streams the synthesized answer without duplicating the user's message.
+
+Polling uses the install job's returned status URL. Only one poll and one
+continuation may run at a time; a late timer callback cannot continue the turn
+again. Network or install failure leaves the exact pending payload in memory
+and exposes Retry.
+
+### 5.3 Hardware and partial-result states
+
+There is no maximum-pages field, resolution control, or RAM slider. The system
+automatically resizes oversized images and PDF renders to the current hardware
+tier. Under critical pressure, copy says that visual analysis needs more free
+memory or a cooler system and offers Retry; it does not ask the user to satisfy
+an arbitrary page count.
+
+When text/OCR succeeded but vision failed, the streamed assistant message is
+visibly prefixed **“Partial answer — visual analysis failed; this answer uses
+text/OCR only.”** When some required PDF pages completed, the prefix instead
+says visual analysis stopped before all required pages were inspected. The
+message must never style either state as a complete visual answer.
+
+### 5.4 Developer mode
+
+**Settings → Advanced** contains one full-width Developer mode card. It must:
+
+- say that capture includes prompts, replies, router decisions, OCR text, raw
+  VisionPsy observations, final evidence, errors, and local file paths;
+- warn before enablement that logs may contain private document contents;
+- explicitly say authentication tokens are never logged;
+- show whether capture is active, its event count, and the current/last path;
+- offer a path-copy action; and
+- allow clearing only when capture is off, with destructive confirmation.
+
+The checkbox reflects gateway state rather than browser storage because the
+mode persists across process restarts and may be changed by another tab. API
+errors are announced in the card's live status region and a failed toggle is
+reconciled from the gateway rather than leaving an optimistic state on screen.

@@ -115,6 +115,10 @@ destination() { # destination <remote-path>
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
     voice/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     runtime/macos-arm64/samosa-maple) printf '%s/bin/samosa-maple\n' "$STAGE" ;;
+    runtime/macos-arm64/samosa-visionpsy) printf '%s/bin/samosa-visionpsy\n' "$STAGE" ;;
+    runtime/macos-arm64/samosa-molmo2) printf '%s/bin/samosa-molmo2\n' "$STAGE" ;;
+    runtime/macos-arm64/molmo2-pack) printf '%s/bin/molmo2-pack\n' "$STAGE" ;;
+    runtime/common/molmo2-processor.json) printf '%s/share/molmo2/processor.json\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
     runtime/macos-arm64/lib/*) printf '%s/lib/%s\n' "$STAGE" "${1##*/}" ;;
@@ -131,25 +135,37 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
+INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_multimodal.c engine/samosa_multimodal.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
-CHUTNI_FILES="engine/sqlite/sqlite3.c engine/sqlite/sqlite3.h engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c"
+CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
 INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 
 # The native Maple executable and its colocated MLX Metal library are a paired
 # Apple-Silicon capability.  Never install one without the other.
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   maple_exe=runtime/macos-arm64/samosa-maple
+  visionpsy_exe=runtime/macos-arm64/samosa-visionpsy
+  molmo2_exe=runtime/macos-arm64/samosa-molmo2
+  molmo2_pack=runtime/macos-arm64/molmo2-pack
+  molmo2_processor=runtime/common/molmo2-processor.json
   maple_lib=runtime/macos-arm64/mlx.metallib
   if manifest_field "$maple_exe" 1 >/dev/null 2>&1 ||
+     manifest_field "$visionpsy_exe" 1 >/dev/null 2>&1 ||
+     manifest_field "$molmo2_exe" 1 >/dev/null 2>&1 ||
+     manifest_field "$molmo2_pack" 1 >/dev/null 2>&1 ||
+     manifest_field "$molmo2_processor" 1 >/dev/null 2>&1 ||
      manifest_field "$maple_lib" 1 >/dev/null 2>&1; then
     manifest_field "$maple_exe" 1 >/dev/null 2>&1 &&
+      manifest_field "$visionpsy_exe" 1 >/dev/null 2>&1 &&
+      manifest_field "$molmo2_exe" 1 >/dev/null 2>&1 &&
+      manifest_field "$molmo2_pack" 1 >/dev/null 2>&1 &&
+      manifest_field "$molmo2_processor" 1 >/dev/null 2>&1 &&
       manifest_field "$maple_lib" 1 >/dev/null 2>&1 ||
-      fail "release contains an incomplete Maple runtime"
-    INSTALL_FILES="$INSTALL_FILES $maple_exe $maple_lib"
+      fail "release contains an incomplete Apple-Silicon MLX runtime"
+    INSTALL_FILES="$INSTALL_FILES $maple_exe $visionpsy_exe $molmo2_exe $molmo2_pack $molmo2_processor $maple_lib"
   fi
 
   summarizer_exe=runtime/macos-arm64/samosa-summarizer
@@ -268,6 +284,15 @@ chmod 755 "$STAGE/bin/samosa" "$STAGE/bin/samosa-voice-runtime" "$STAGE/bin/samo
 if [ -f "$STAGE/bin/samosa-maple" ]; then
   chmod 755 "$STAGE/bin/samosa-maple"
 fi
+if [ -f "$STAGE/bin/samosa-visionpsy" ]; then
+  chmod 755 "$STAGE/bin/samosa-visionpsy"
+fi
+if [ -f "$STAGE/bin/samosa-molmo2" ]; then
+  chmod 755 "$STAGE/bin/samosa-molmo2"
+fi
+if [ -f "$STAGE/bin/molmo2-pack" ]; then
+  chmod 755 "$STAGE/bin/molmo2-pack"
+fi
 
 say "Compiling the staged engine..."
 COMPILER=""
@@ -290,7 +315,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
   done
 else
-  DL_FLAGS="-ldl"
+  # samosa_gateway.c uses dlopen and the multimodal resource policy uses
+  # floor/ceil; Linux needs both libraries explicitly at link time.
+  DL_FLAGS="-ldl -lm"
   LINUX_WARNING_FLAGS="-Werror -Wno-error=format-truncation"
   # Linux OpenMP support check
   if echo "int main() {}" | $COMPILER -fopenmp -x c - -o /dev/null >/dev/null 2>&1; then
@@ -315,7 +342,7 @@ CHUTNI_VERSION=$(cat "$STAGE/engine/chutni/VERSION" 2>/dev/null | tr -d ' \n')
 
 $COMPILER -std=gnu99 -D_GNU_SOURCE -O2 -pthread \
   -I"$STAGE/engine/chutni/include" -I"$STAGE/engine/chutni/src" \
-  -I"$STAGE/engine/chutni/third_party/blake3" -I"$STAGE/engine/sqlite" \
+  -I"$STAGE/engine/chutni/third_party/blake3" -I"$STAGE/engine/chutni/third_party/sqlite" \
   -DCHUTNI_VERSION="\"$CHUTNI_VERSION\"" \
   -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 \
   -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0 \
@@ -329,7 +356,7 @@ $COMPILER -std=gnu99 -D_GNU_SOURCE -O2 -pthread \
   "$STAGE/engine/chutni/third_party/blake3/blake3.c" \
   "$STAGE/engine/chutni/third_party/blake3/blake3_dispatch.c" \
   "$STAGE/engine/chutni/third_party/blake3/blake3_portable.c" \
-  "$STAGE/engine/sqlite/sqlite3.c" \
+  "$STAGE/engine/chutni/third_party/sqlite/sqlite3.c" \
   -o "$STAGE/bin/chutni-mcp" -lm ||
   fail "staged Chutni service compilation failed; live release was not changed"
 chmod +x "$STAGE/bin/chutni-mcp"
@@ -373,14 +400,14 @@ fi
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
@@ -404,8 +431,14 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   smoke_pid=""
   stop_smoke() {
     [ -n "$smoke_pid" ] || return 0
-    curl -fsS --max-time 5 -X POST \
-      "http://127.0.0.1:$SMOKE_PORT/v1/shutdown" >/dev/null 2>&1 || true
+    # `samosa serve` detaches the gateway, so smoke_pid is only the short-lived
+    # launcher. Use the staged launcher's authenticated stop path to target the
+    # real PID from SMOKE_HOME. The smoke explicitly disables launchd so a
+    # temporary KeepAlive service can never outlive a moved/deleted stage.
+    SAMOSA_RELEASE_DIR="$STAGE" SAMOSA_HOME="$SMOKE_HOME" \
+      SAMOSA_MODELS_CATALOG="$STAGE/models.json" SAMOSA_PORT="$SMOKE_PORT" \
+      SAMOSA_DISABLE_LAUNCHD=1 \
+      "$STAGE/bin/samosa" serve --stop >/dev/null 2>&1 || true
     kill -TERM "$smoke_pid" >/dev/null 2>&1 || true
     wait "$smoke_pid" >/dev/null 2>&1 || true
   }
@@ -419,6 +452,7 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   SMOKE_HOME="$STAGE/.smoke-home"
   SAMOSA_RELEASE_DIR="$STAGE" SAMOSA_HOME="$SMOKE_HOME" \
     SAMOSA_MODELS_CATALOG="$STAGE/models.json" SAMOSA_PORT="$SMOKE_PORT" \
+    SAMOSA_DISABLE_LAUNCHD=1 \
     "$STAGE/bin/samosa" serve >"$SMOKE_LOG" 2>&1 &
   smoke_pid=$!
   ready=0
@@ -495,6 +529,7 @@ if [ "${SAMOSA_INSTALL_TEST:-0}" != 1 ]; then
   stop_smoke
   smoke_pid=""
   trap - EXIT HUP INT TERM
+  rm -rf "$SMOKE_HOME"
   rm -f "$SMOKE_LOG"
 fi
 

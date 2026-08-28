@@ -199,6 +199,10 @@ assert.match(app, /els\.status\.onclick=.*openModelSettings\(\)/,
   assert.deepEqual(fns.modelCardActions({ kind: "failed", retryable: true }).map(a => a.action), ["retry"]);
   assert.deepEqual(fns.modelCardActions({ kind: "failed", retryable: false }).map(a => a.action), [], "a non-recoverable failure offers no Retry");
   assert.deepEqual(fns.modelCardActions({ kind: "ready" }).map(a => a.action), ["select"]);
+  assert.deepEqual(fns.modelCardActions({ kind: "ready" }, { role: "primary", category: "chat", provisioning: "native_pack" }).map(a => a.action), ["select"],
+    "a verified native-pack Molmo primary is directly selectable");
+  assert.deepEqual(fns.modelCardActions({ kind: "not_installed" }, { role: "primary", category: "chat", provisioning: "native_pack" }).map(a => a.action), [],
+    "an unpublished native pack must not expose a Download button that cannot work");
   assert.deepEqual(fns.modelCardActions({ kind: "active" }).map(a => a.action), []);
   assert.deepEqual(fns.modelCardActions({ kind: "activating" }).map(a => a.action), []);
 }

@@ -1,0 +1,31 @@
+{
+  "format": "samosa.molmo2.processor.v1",
+  "image": {
+    "width": 378,
+    "height": 378,
+    "patch_size": 14,
+    "resample": "bilinear_no_antialias",
+    "mean": [0.5, 0.5, 0.5],
+    "std": [0.5, 0.5, 0.5],
+    "max_crops": 8,
+    "overlap_margins_patches": [4, 4],
+    "pooling": [2, 2],
+    "include_global_crop": true,
+    "use_column_tokens": true,
+    "use_low_resolution_start_token": true
+  },
+  "video": {
+    "width": 378,
+    "height": 378,
+    "patch_size": 14,
+    "resample": "bilinear_no_antialias",
+    "mean": [0.5, 0.5, 0.5],
+    "std": [0.5, 0.5, 0.5],
+    "pooling": [3, 3],
+    "sample_mode": "uniform_last_frame",
+    "maximum_fps": 2,
+    "timestamp_format": "%.1f ",
+    "use_column_tokens": false,
+    "use_frame_special_tokens": false
+  }
+}

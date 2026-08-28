@@ -209,6 +209,25 @@
     .response pre code { padding: 0; background: transparent; }
     .response blockquote { margin: .8em 0; padding-left: 13px; border-left: 3px solid var(--accent); color: var(--ink-2); }
     .response a { color: var(--accent); text-underline-offset: 3px; }
+    .molmo-grounding { margin: 0 0 15px; }
+    .molmo-grounding-canvas {
+      position: relative; width: min(100%, 700px); overflow: hidden;
+      border: 1px solid var(--line); border-radius: var(--r-md); background: #fff;
+    }
+    .molmo-grounding-image { display: block; width: 100%; height: auto; }
+    .molmo-grounding-marker {
+      position: absolute; z-index: 2; width: 16px; height: 16px;
+      transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%;
+      background: #ef4a9b; box-shadow: 0 1px 5px rgba(66, 15, 43, .38);
+    }
+    .molmo-grounding figcaption {
+      display: flex; align-items: center; gap: 7px; margin-top: 7px;
+      color: var(--ink-2); font: 600 12px/1.45 var(--font-ui);
+    }
+    .molmo-grounding figcaption::before {
+      content: ""; width: 9px; height: 9px; flex: none; border-radius: 50%; background: #ef4a9b;
+    }
+    .molmo-grounding-answer:empty { display: none; }
     .thinking { margin-bottom: 11px; border: 1px solid var(--line); border-radius: var(--r-md); color: var(--ink-2); background: var(--inset); }
     .thinking summary { cursor: pointer; padding: 8px 11px; font-size: 12px; font-weight: 600; }
     .thinking-body { max-height: 260px; overflow: auto; padding: 0 11px 10px; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
@@ -382,6 +401,20 @@
       .web-step.active .web-step-mark { animation: web-pulse 1.1s ease-in-out infinite; }
     }
     @keyframes web-pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+    /* File activity is separate from Thinking: it describes local reader and
+       model-admission work the user can act on, not hidden model reasoning. */
+    .file-activity { display: grid; gap: 6px; margin: 0 0 12px; padding: 9px 11px;
+      border: 1px solid var(--line); border-radius: var(--r-md); background: var(--inset); }
+    .file-activity[hidden] { display: none; }
+    .file-activity-label { overflow: hidden; color: var(--ink-2); font-size: 12px; line-height: 1.4;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .file-activity-label strong { color: var(--ink); font-weight: 650; }
+    .file-progress { height: 5px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .file-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent);
+      transition: width .25s ease; }
+    .file-progress.indeterminate span { width: 38%; animation: file-progress-slide 1.3s ease-in-out infinite; }
+    @keyframes file-progress-slide { 0% { transform: translateX(-110%); } 50% { transform: translateX(165%); } 100% { transform: translateX(270%); } }
+    @media (prefers-reduced-motion: reduce) { .file-progress.indeterminate span { animation: none; width: 100%; } }
     .web-sources { display: block; }
     .web-sources-head { display: flex; align-items: center; justify-content: space-between; cursor: pointer;
       color: var(--ink-3); font: 650 10px/1.3 var(--font-mono); letter-spacing: .07em; list-style: none; text-transform: uppercase; }
@@ -464,6 +497,8 @@
     .attach-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .attach-chip-thumb { width: 20px; height: 20px; border-radius: var(--r-sm); object-fit: cover; flex: 0 0 auto; }
     .attach-chip.pending { opacity: .6; }
+    .attach-chip-meter { width: 34px; height: 4px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .attach-chip-meter span { display: block; width: 42%; height: 100%; border-radius: inherit; background: var(--accent); animation: file-progress-slide 1.2s ease-in-out infinite; }
     .attach-chip.failed { border-color: var(--danger); color: var(--danger); }
     .attach-chip.failed svg { color: var(--danger); }
     .attach-chip-remove {
@@ -487,6 +522,15 @@
       display: block;
       margin-top: 8px;
       border: 1px solid var(--line);
+    }
+    .user-attached-video {
+      width: min(420px, 100%);
+      max-height: 260px;
+      display: block;
+      margin-top: 8px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--line);
+      background: #000;
     }
 
     .settings {
@@ -1129,6 +1173,15 @@
       border-color: var(--line); background: var(--surface);
       box-shadow: inset 3px 0 0 var(--accent);
     }
+    .chat-documents {
+      display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 9px;
+      padding: 9px 12px; border: 1px solid var(--line); border-radius: 14px;
+      background: var(--surface); box-shadow: inset 3px 0 0 var(--highlight);
+    }
+    .chat-documents[hidden] { display: none; }
+    .chat-documents .attach-chip { max-width: 100%; }
+    .chat-documents .attach-chip-name { max-width: min(520px, 62vw); }
+    .chat-documents .attach-chip-remove { margin-left: auto; }
     .attach-menu { bottom: calc(100% + 10px); min-width: 286px; padding: 7px; border-radius: 18px; }
     .attach-item { padding: 10px 11px; border-radius: 11px; }
     .attach-chip { border-radius: 10px; background: var(--inset); }
@@ -1261,7 +1314,7 @@
     }
     .preferences-pane[data-settings-pane-content="advanced"] > h3,
     .preferences-pane[data-settings-pane-content="advanced"] > .preferences-lead,
-    .runtime-apply-bar { grid-column: 1 / -1; }
+    .runtime-apply-bar, .developer-mode-card { grid-column: 1 / -1; }
     .preferences-card, .local-card, .troubleshoot-card {
       margin: 0 0 14px; padding: 20px; border: 1px solid var(--line);
       border-radius: 16px; background: var(--surface); box-shadow: none;
@@ -1523,6 +1576,7 @@
       </section>
 
       <div class="composer-wrap">
+        <div class="chat-documents" id="chatDocuments" hidden aria-label="Documents attached to this conversation"></div>
         <div class="chat-memory-context" id="chatMemoryContext" hidden>
           <div><strong id="chatMemoryTitle">Chutni memory is on</strong><span id="chatMemoryDetail">Answers will use this folder's remembered files.</span></div>
           <button type="button" id="chatMemoryChange">Change</button>
@@ -1555,6 +1609,10 @@
               <svg aria-hidden="true"><use href="#icon-image"></use></svg>
               <span><span class="attach-item-label">Image</span><span class="attach-item-reason" id="attachImageReason"></span></span>
             </button>
+            <button class="attach-item" id="attachVideo" type="button" role="menuitem" disabled>
+              <svg aria-hidden="true"><use href="#icon-image"></use></svg>
+              <span><span class="attach-item-label">Video</span><span class="attach-item-reason" id="attachVideoReason"></span></span>
+            </button>
             <button class="attach-item" id="attachDocument" type="button" role="menuitem" disabled>
               <svg aria-hidden="true"><use href="#icon-document"></use></svg>
               <span><span class="attach-item-label">Document</span><span class="attach-item-reason" id="attachDocumentReason"></span></span>
@@ -1574,7 +1632,8 @@
           </div>
           <form class="composer" id="composer">
             <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
-            <input type="file" id="documentInput" accept="application/pdf,.pdf" style="display: none;">
+            <input type="file" id="videoInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" style="display: none;">
+            <input type="file" id="documentInput" accept="application/pdf,text/plain,text/markdown,text/csv,text/xml,application/json,application/yaml,application/toml,application/xml,text/*,.pdf,.txt,.md,.csv,.json,.yaml,.yml,.toml,.xml,.py,.sh,.bash,.js,.mjs,.cjs,.ts,.tsx,.css,.c,.h,.cc,.cpp,.hpp,.log" style="display: none;">
             <div class="attach-error" id="attachError" role="alert"></div>
             <div class="attach-chips" id="attachChips"></div>
             <button class="attach-btn" id="attachBtn" type="button" aria-label="Add context" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
@@ -1736,7 +1795,32 @@
           </section>
           <section class="preferences-pane" data-settings-pane-content="models" hidden>
             <h3>Models</h3><p class="preferences-lead">Downloads verify before they activate.</p>
-            <div class="preferences-card"><h4 id="settingsModelLabel">Local models</h4><div class="setup-error" id="settingsModelError" role="alert" hidden></div><div class="model-list" id="settingsModelList" aria-live="polite"></div><small id="modelHelp">Switching starts a new conversation.</small></div>
+            <div class="setup-error" id="settingsModelError" role="alert" hidden></div>
+            <div class="preferences-card">
+              <h4 id="settingsTextModelsLabel">Text LLMs</h4>
+              <p class="voice-mode-intro">Conversation and reasoning models. Choose which model is active for chat.</p>
+              <div class="model-list" id="settingsModelList" aria-live="polite"></div>
+              <small id="modelHelp">Switching starts a new conversation.</small>
+            </div>
+            <div class="preferences-card">
+              <h4 id="settingsVisionModelsLabel">Vision</h4>
+              <p class="voice-mode-intro">On-demand visual specialists for photos, diagrams, scanned pages, and video. Molmo2 pauses the primary model on constrained Macs, processes bounded frame windows, then unloads before the answer is written.</p>
+              <div class="model-list" id="settingsVisionModelList" aria-live="polite"></div>
+            </div>
+            <div class="preferences-card">
+              <h4 id="settingsOcrLabel">OCR</h4>
+              <p class="voice-mode-intro">Native PP-OCRv6 document reader. Digital PDF text is used before OCR; OCR extracts text from scans and images.</p>
+              <div class="ocr-card" style="padding:12px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--bg-2,#f9fafb);margin-top:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <strong style="font-size:14px;color:var(--ink,#111827);">PP-OCRv6 Native Reader</strong>
+                    <div style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:2px;">Built-in C implementation · Detector &amp; Recognizer</div>
+                  </div>
+                  <span class="model-badge" id="settingsOcrBadge">Checking…</span>
+                </div>
+                <div id="settingsOcrDetail" style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:8px;">Checking the native reader and OCR model pack…</div>
+              </div>
+            </div>
           </section>
           <section class="preferences-pane" data-settings-pane-content="advanced" hidden>
             <h3>Advanced</h3><p class="preferences-lead">Tune how much of your Mac the active model can use. Samosa keeps the choices here tied to the model that is actually running.</p>
@@ -1748,6 +1832,13 @@
               <div class="runtime-card-head"><h4>Conversation memory</h4><span class="runtime-effective" id="contextEffective">Checking…</span></div>
               <div class="field"><label for="contextTokens">Context window</label><select id="contextTokens" aria-describedby="contextHelp" disabled><option value="auto">Auto (recommended)</option><option value="custom">Custom…</option></select><input id="contextCustom" inputmode="numeric" pattern="[0-9]*" placeholder="Custom token limit" aria-label="Custom context window in tokens" hidden disabled><small id="contextHelp">History, thinking, and the answer share this total.</small></div>
               <div class="field"><label><input id="autoCompact" type="checkbox" checked disabled> Compact conversations automatically</label><select id="compactThreshold" aria-label="Auto-compaction threshold" disabled><option value="70">At 70% projected use</option><option value="75">At 75% projected use</option><option value="80" selected>At 80% projected use</option><option value="85">At 85% projected use</option><option value="90">At 90% projected use</option></select><button class="close-settings" id="compactNow" type="button" disabled>Compact this conversation</button><small id="compactHelp">Checking whether this model supports compaction…</small></div>
+            </div>
+            <div class="preferences-card developer-mode-card">
+              <h4>Developer mode</h4>
+              <p class="voice-mode-intro"><strong>Full local diagnostic logging.</strong> Records prompts, replies, routing decisions, OCR text, raw VisionPsy observations, evidence sent to the chat model, timings, errors, and local attachment paths. Logs can contain private document contents. Authentication tokens are never logged.</p>
+              <div class="field"><label><input id="developerTraceEnabled" type="checkbox" disabled> Keep Developer mode enabled across restarts</label><small>Use this while reproducing a bad answer, then turn it off. Trace files are private to your macOS account.</small></div>
+              <div class="voice-diagnostics-row"><button class="close-settings" id="developerTraceCopy" type="button" disabled>Copy log path</button><button class="close-settings" id="developerTraceClear" type="button" disabled>Clear logs</button><span class="voice-diagnostics-status" id="developerTraceStatus" role="status" aria-live="polite">Checking…</span></div>
+              <div class="voice-diagnostics-path" id="developerTracePath" hidden></div>
             </div>
             <div class="runtime-apply-bar">
               <div class="runtime-apply-copy"><strong id="runtimeApplyTitle">Active model settings</strong><span class="runtime-status" id="runtimeSettingsStatus" role="status" aria-live="polite">Loading settings from this Mac…</span></div>
@@ -1946,7 +2037,7 @@
       let appLifecycleTimer = 0;
       function reportAppLifecycle(action) {
         if (!UI_TOKEN) return;
-        const body = JSON.stringify({ action, client_id: APP_CLIENT_ID, token: UI_TOKEN });
+        const body = JSON.stringify({ action, client_id: APP_CLIENT_ID, token: UI_TOKEN, hidden: document.hidden });
         // Beacon is the browser primitive specifically intended to survive
         // document teardown. Keepalive fetch remains the fallback and handles
         // ordinary open/heartbeat events where the response can be useful.
@@ -1971,6 +2062,7 @@
       }
       startAppLifecycle();
       window.addEventListener("pagehide", closeAppLifecycle);
+      document.addEventListener("visibilitychange", () => reportAppLifecycle("visibility"));
       window.addEventListener("pageshow", event => { if (event.persisted) startAppLifecycle(); });
       const $ = id => document.getElementById(id);
       const els = {
@@ -1986,12 +2078,13 @@
         contextTokens: $("contextTokens"), contextCustom: $("contextCustom"), contextEffective: $("contextEffective"),
         autoCompact: $("autoCompact"), compactThreshold: $("compactThreshold"), compactNow: $("compactNow"), compactHelp: $("compactHelp"),
         runtimeApply: $("runtimeApply"), runtimeApplyTitle: $("runtimeApplyTitle"), runtimeSettingsStatus: $("runtimeSettingsStatus"),
+        developerTraceEnabled: $("developerTraceEnabled"), developerTraceCopy: $("developerTraceCopy"), developerTraceClear: $("developerTraceClear"), developerTraceStatus: $("developerTraceStatus"), developerTracePath: $("developerTracePath"),
         speed: $("speedValue"), rss: $("rssValue"), context: $("contextValue"), contextHelp: $("contextHelp"), closure: $("closureValue"), jump: $("jumpLatest"),
-        imageInput: $("imageInput"), documentInput: $("documentInput"), attachBtn: $("attachBtn"),
+        imageInput: $("imageInput"), videoInput: $("videoInput"), documentInput: $("documentInput"), attachBtn: $("attachBtn"),
         attachMenu: $("attachMenu"), attachChips: $("attachChips"), attachError: $("attachError"),
-        attachImage: $("attachImage"), attachDocument: $("attachDocument"),
+        attachImage: $("attachImage"), attachVideo: $("attachVideo"), attachDocument: $("attachDocument"),
         attachWeb: $("attachWeb"), attachWebSearch: $("attachWebSearch"), attachDirectory: $("attachDirectory"),
-        attachImageReason: $("attachImageReason"), attachDocumentReason: $("attachDocumentReason"),
+        attachImageReason: $("attachImageReason"), attachVideoReason: $("attachVideoReason"), attachDocumentReason: $("attachDocumentReason"),
         attachWebReason: $("attachWebReason"), attachWebSearchReason: $("attachWebSearchReason"),
         attachDirectoryReason: $("attachDirectoryReason"), webStatus: $("webStatus"),
         webConsent: $("webConsent"), webConsentYes: $("webConsentYes"), webConsentNo: $("webConsentNo"),
@@ -1999,8 +2092,10 @@
         webToggle: $("webToggle"),
         chatMemoryContext: $("chatMemoryContext"), chatMemoryTitle: $("chatMemoryTitle"),
         chatMemoryDetail: $("chatMemoryDetail"), chatMemoryChange: $("chatMemoryChange"),
+        chatDocuments: $("chatDocuments"),
         kill: $("killButton"),
-        settingsModelList: $("settingsModelList"), settingsModelError: $("settingsModelError"), modelHelp: $("modelHelp"),
+        settingsModelList: $("settingsModelList"), settingsVisionModelList: $("settingsVisionModelList"), settingsModelError: $("settingsModelError"), modelHelp: $("modelHelp"),
+        settingsOcrBadge: $("settingsOcrBadge"), settingsOcrDetail: $("settingsOcrDetail"),
         voiceSettings: $("voiceSettings"), voiceEnabled: $("voiceEnabled"), voiceSelect: $("voiceSelect"), voicePreview: $("voicePreview"), voiceHelp: $("voiceHelp"),
         voiceTraceToggle: $("voiceTraceToggle"), voiceTraceStatus: $("voiceTraceStatus"), voiceTracePath: $("voiceTracePath"),
         wakeWordSettings: $("wakeWordSettings"), wakeWordInput: $("wakeWordInput"), wakeWordCount: $("wakeWordCount"), wakeWordListen: $("wakeWordListen"), wakeWordListenStatus: $("wakeWordListenStatus"), wakeWordEnroll: $("wakeWordEnroll"), wakeWordNext: $("wakeWordNext"), wakeWordCancel: $("wakeWordCancel"), wakeWordForget: $("wakeWordForget"), wakeWordStep: $("wakeWordStep"), wakeWordTimer: $("wakeWordTimer"), wakeWordSoundDot: $("wakeWordSoundDot"), wakeWordSoundStatus: $("wakeWordSoundStatus"), wakeWordSoundHint: $("wakeWordSoundHint"), wakeWordLevel: $("wakeWordLevel"), wakeWordRecordings: $("wakeWordRecordings"), wakeWordThreshold: $("wakeWordThreshold"), wakeWordThresholdValue: $("wakeWordThresholdValue"), wakeWordStatus: $("wakeWordStatus"),
@@ -2034,6 +2129,7 @@
       let deleteDialogOpener = null;
       let activeAssistant = null;
       let followOutput = true;
+      const conversationDocumentsLoaded = new Set();
       // T3.2 (docs/TASKS_UI_CHUTNI.md sec5.8): composer attachments are
       // server-issued content-addressed IDs, never Base64 inside the
       // localStorage record. Each entry is
@@ -2043,7 +2139,7 @@
       // `ready:false` is also reported for the short interval while a newly
       // selected backend is starting. Keep that distinct from a genuine
       // no-model state so a model switch never flashes the chooser in Chat.
-      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_documents:false,version:"",ready:false,loading:false};
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,version:"",ready:false,loading:false};
       // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config last
       // reported. Starts fully closed so no web action is ever offered before
       // the server has confirmed it -- the same rule the other capabilities
@@ -2117,6 +2213,7 @@
           created_at: new Date(raw.created || Date.now()).toISOString(),
           updated_at: new Date(raw.updated || Date.now()).toISOString(),
           directory_context: null,
+          documents: [],
         };
       }
       // Pure: parses and migrates without touching localStorage, so a caller
@@ -2141,6 +2238,8 @@
           const existing = JSON.parse(localStorage.getItem(STORAGE_KEY));
           if (existing && Array.isArray(existing.chats)) {
             existing.settings = normalizeLocalSettings(existing.settings);
+            for (const chat of existing.chats)
+              if (!Array.isArray(chat.documents)) chat.documents = [];
             return existing;
           }
         } catch (_) {}
@@ -2172,7 +2271,7 @@
           const now = new Date().toISOString();
           chat = { id: makeId(), title: "New conversation", created: Date.now(), updated: Date.now(), messages: [],
             schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
-            created_at: now, updated_at: now, directory_context: null };
+            created_at: now, updated_at: now, directory_context: null, documents: [] };
           state.chats.unshift(chat); currentId = chat.id; saveState();
         }
         return chat;
@@ -2192,7 +2291,7 @@
           id: makeId(), title: chat.title, created: Date.now(), updated: Date.now(),
           messages: chat.messages.map(m => ({ ...m })),
           schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
-          created_at: now, updated_at: now, directory_context: null,
+          created_at: now, updated_at: now, directory_context: null, documents: [],
         };
         state.chats.unshift(fork);
         return fork;
@@ -2430,15 +2529,235 @@
       function generationStatusHTML() {
         return `<span class="generation-status"><span class="generation-workmark" aria-hidden="true"><span></span><span></span><span></span></span><span>${GENERATION_LABEL}</span></span>`;
       }
+      function molmoGroundingAttribute(attributes, name) {
+        const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = String(attributes || "").match(new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*["']([^"']+)["']`, "i"));
+        return match ? match[1] : "";
+      }
+      // Molmo image checkpoints emit either the original percentage XML
+      // (<point x="12.3" y="45.6"> or x1/y1 pairs) or Molmo2's compact
+      // coords string. The latter stores x/y on a 0..1000 scale and may put a
+      // frame/image id before each run. Decode both without treating model
+      // output as HTML.
+      function parseMolmoGrounding(text) {
+        const source = String(text || "");
+        const points = [], labels = [];
+        const add = (x, y, label, objectId = "") => {
+          x = Number(x); y = Number(y);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100 || points.length >= 256) return;
+          points.push({ x, y, label: String(label || "").trim(), objectId: String(objectId || "") });
+        };
+        const tags = /<(point|points)\b([^>]*?)(?:>([\s\S]*?)<\/\1\s*>|\/\s*>)/gi;
+        let tag;
+        while ((tag = tags.exec(source))) {
+          const attributes = tag[2] || "";
+          const label = String(tag[3] || molmoGroundingAttribute(attributes, "alt") || "").replace(/<[^>]*>/g, "").trim();
+          if (label && !labels.includes(label)) labels.push(label);
+          const coords = molmoGroundingAttribute(attributes, "coords");
+          if (coords) {
+            for (const group of coords.split(/[;:\t]+/)) {
+              const values = (group.match(/[0-9]+(?:\.[0-9]+)?/g) || []).map(Number);
+              if (values.length < 3) continue;
+              // Multi-image/video output is: frame-id, object-id, x, y, ...
+              // A single-image run is simply: object-id, x, y, ...
+              let at = values.length % 3 === 1 ? 1 : 0;
+              for (; at + 2 < values.length; at += 3)
+                add(values[at + 1] / 10, values[at + 2] / 10, label, values[at]);
+            }
+            continue;
+          }
+          const xAttrs = [...attributes.matchAll(/(?:^|\s)x(\d*)\s*=\s*["']([0-9]+(?:\.[0-9]+)?)["']/gi)];
+          for (const xAttr of xAttrs) {
+            const suffix = xAttr[1] || "";
+            const y = molmoGroundingAttribute(attributes, `y${suffix}`);
+            if (y !== "") add(xAttr[2], y, label, suffix || "1");
+          }
+        }
+        const cleanText = source
+          .replace(/<(point|points)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "$2")
+          .replace(/<(?:point|points)\b[^>]*\/\s*>/gi, "")
+          .trim();
+        return { points, labels, cleanText };
+      }
+      function groundingVisualForAssistant(msg) {
+        const chat = activeChat();
+        if (!chat) return null;
+        let index = chat.messages.findIndex(candidate => candidate.id === msg.id);
+        if (index < 0) index = chat.messages.length;
+        for (let i = index - 1; i >= 0; i--) {
+          const candidate = chat.messages[i];
+          if (candidate.role !== "user") continue;
+          const image = [...(candidate.attachments || [])].reverse().find(attachment => attachment.kind === "image" && attachment.id);
+          if (image) return image;
+          if (candidate.image) return { kind: "image", name: "Attached image", legacySrc: candidate.image };
+        }
+        return null;
+      }
+      function molmoGroundingImageNode(attachment) {
+        const img = document.createElement("img");
+        img.className = "molmo-grounding-image";
+        img.alt = attachment.name || "Image analyzed by Molmo";
+        if (attachment.legacySrc) { img.src = attachment.legacySrc; return img; }
+        authFetch(`/v1/attachments/${encodeURIComponent(attachment.id)}`)
+          .then(response => response.ok ? response.blob() : Promise.reject(new Error("unavailable")))
+          .then(blob => {
+            const url = URL.createObjectURL(blob); img.src = url;
+            img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+          })
+          .catch(() => { img.alt = "The grounded image is no longer available."; });
+        return img;
+      }
+      function renderMolmoGrounding(node, msg, grounding) {
+        if (!grounding.points.length) {
+          node.removeAttribute("data-grounding-key");
+          node.innerHTML = markdown(grounding.cleanText);
+          return;
+        }
+        const attachment = groundingVisualForAssistant(msg);
+        if (!attachment) {
+          node.removeAttribute("data-grounding-key");
+          node.innerHTML = markdown(grounding.cleanText);
+          return;
+        }
+        const key = `${attachment.id || "legacy"}:` + grounding.points.map(point => `${point.x},${point.y},${point.objectId}`).join(";");
+        let answer = node.querySelector(".molmo-grounding-answer");
+        if (node.dataset.groundingKey !== key || !answer) {
+          node.innerHTML = "";
+          node.dataset.groundingKey = key;
+          const figure = document.createElement("figure"); figure.className = "molmo-grounding";
+          const canvas = document.createElement("div"); canvas.className = "molmo-grounding-canvas";
+          canvas.setAttribute("role", "img");
+          canvas.setAttribute("aria-label", `Molmo marked ${grounding.points.length} location${grounding.points.length === 1 ? "" : "s"} on the image.`);
+          canvas.appendChild(molmoGroundingImageNode(attachment));
+          grounding.points.forEach((point, index) => {
+            const marker = document.createElement("span"); marker.className = "molmo-grounding-marker";
+            marker.style.left = `${point.x}%`; marker.style.top = `${point.y}%`;
+            marker.setAttribute("aria-label", point.label ? `${point.label}, point ${index + 1}` : `Point ${index + 1}`);
+            marker.title = point.label ? `${point.label} · ${index + 1}` : `Point ${index + 1}`;
+            canvas.appendChild(marker);
+          });
+          const caption = document.createElement("figcaption");
+          const label = grounding.labels[0] || "Located items";
+          caption.textContent = `${label} (${grounding.points.length})`;
+          figure.append(canvas, caption); node.appendChild(figure);
+          answer = document.createElement("div"); answer.className = "molmo-grounding-answer"; node.appendChild(answer);
+        }
+        answer.innerHTML = markdown(grounding.cleanText);
+      }
       function renderAssistantResponse(node, msg) {
-        const waiting = !!msg.streaming && !String(msg.content || "").trim() && !msg.error;
-        // Reasoning and web events can update this row many times before the
-        // first answer token. Preserve the mark instead of restarting it.
+        const waiting = !!msg.streaming && !String(msg.content || "").trim() && !msg.error && !msg.visionRequired;
         if (waiting) {
           if (!node.querySelector(".generation-status")) node.innerHTML = generationStatusHTML();
           return;
         }
-        node.innerHTML = markdown(msg.content || "");
+        if (msg.visionRequired) {
+          const needsMolmo = msg.visionModelId === "molmo2-4b-mlx-q4-v1";
+          const requiredTitle = needsMolmo ? "Molmo2 4B Native Q4 required" : "VisionPsy-Nano 460M required";
+          const requiredCopy = needsMolmo
+            ? "This extended image or video task needs the native Molmo2 specialist. Samosa only accepts the pinned, locally verified Q4 package; it will not download the 19 GB FP32 checkpoint."
+            : "This attachment requires visual understanding (diagrams, layout, or photos). Download the local auxiliary vision model (~1.01 GB) to continue.";
+          node.innerHTML = `
+            <div class="vision-required-card" style="padding:14px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--bg-2,#f9fafb);margin-top:4px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 6C9 6 3 12 3 16s6 10 13 10 13-6 13-10-6-10-13-10zm0 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+                <strong style="font-size:14px;color:var(--ink,#111827);">${requiredTitle}</strong>
+              </div>
+              <p style="font-size:12px;color:var(--ink-2,#6b7280);margin:6px 0 10px 0;">${requiredCopy}</p>
+              <div class="vision-card-actions" style="display:flex;gap:8px;align-items:center;">
+                <button type="button" class="primary vision-download-btn" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;">${needsMolmo ? "Open model setup" : "Download and continue"}</button>
+                <span class="vision-install-status" style="font-size:12px;color:var(--ink-2,#6b7280);" hidden></span>
+              </div>
+              <div class="model-progress-bar vision-progress-bar" style="margin-top:10px;height:5px;background:var(--line,#e5e7eb);border-radius:3px;overflow:hidden;" hidden>
+                <div class="model-progress-fill" style="width:0%;height:100%;background:var(--accent,#0284c7);"></div>
+              </div>
+            </div>
+          `;
+          const btn = node.querySelector(".vision-download-btn");
+          const statusEl = node.querySelector(".vision-install-status");
+          const progressEl = node.querySelector(".vision-progress-bar");
+          const fillEl = node.querySelector(".model-progress-fill");
+
+          if (btn) {
+            btn.onclick = async () => {
+              if (needsMolmo) {
+                openModelSettings();
+                return;
+              }
+              btn.disabled = true;
+              statusEl.hidden = false;
+              statusEl.textContent = "Starting download…";
+              progressEl.hidden = false;
+              fillEl.classList.add("indeterminate");
+              try {
+                const r = await authFetch("/v1/models/install", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    model_id: "visionpsy-nano-460m-mlx-bf16",
+                    version: "ca7a1bad19a08fe8e474bee24275a2e377bbabba",
+                    client_request_id: `vision-resume-${msg.id}-${Date.now()}`
+                  })
+                });
+                if (!r.ok) {
+                  const errJson = await r.json().catch(() => null);
+                  throw new Error(errJson?.error?.message || "Could not start download.");
+                }
+                const accepted = await r.json();
+                if (!accepted?.status_url) throw new Error("The download did not return a status URL.");
+                let pollBusy = false;
+                let continuationStarted = false;
+                const pollInterval = setInterval(async () => {
+                  if (pollBusy || continuationStarted) return;
+                  pollBusy = true;
+                  try {
+                    const instR = await authFetch(accepted.status_url, { cache: "no-store" });
+                    if (!instR.ok) return;
+                    const vpJob = await instR.json();
+                    if (vpJob) {
+                      if (vpJob.state === "verifying") statusEl.textContent = "Verifying…";
+                      else if (vpJob.state === "installing") statusEl.textContent = "Installing…";
+                      else if (vpJob.state === "installed" || vpJob.state === "completed" || vpJob.state === "ready") {
+                        continuationStarted = true;
+                        clearInterval(pollInterval);
+                        statusEl.textContent = "Ready! Continuing conversation…";
+                        msg.visionRequired = false;
+                        msg.error = null;
+                        if (msg._pendingPayload) {
+                          await sendPrompt(null, msg._pendingPayload, msg);
+                        } else {
+                          statusEl.textContent = "Ready. Resend the attachment question to continue.";
+                        }
+                        return;
+                      } else if (vpJob.state === "failed") {
+                        clearInterval(pollInterval);
+                        statusEl.textContent = vpJob.error?.message || "Installation failed.";
+                        btn.disabled = false;
+                        btn.textContent = "Retry download";
+                        return;
+                      }
+                      if (vpJob.total_bytes > 0) {
+                        fillEl.classList.remove("indeterminate");
+                        const pct = Math.min(100, (vpJob.completed_bytes / vpJob.total_bytes) * 100);
+                        fillEl.style.width = `${pct.toFixed(1)}%`;
+                        statusEl.textContent = `${formatBytes(vpJob.completed_bytes)} / ${formatBytes(vpJob.total_bytes)}`;
+                      }
+                    }
+                  } catch (_) {
+                    statusEl.textContent = "Waiting for the local installer…";
+                  } finally {
+                    pollBusy = false;
+                  }
+                }, 1000);
+              } catch (e) {
+                statusEl.textContent = e.message || String(e);
+                btn.disabled = false;
+                btn.textContent = "Retry download";
+              }
+            };
+          }
+          return;
+        }
+        renderMolmoGrounding(node, msg, parseMolmoGrounding(msg.content || ""));
       }
       // T3.2 (sec4.4): the empty state greets the user by name when the
       // profile has one. escapeHTML() is mandatory here -- a name is
@@ -2458,11 +2777,11 @@
         chip.className = "attach-chip";
         const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-        use.setAttribute("href", attachment.kind === "image" ? "#icon-image" : "#icon-document");
+        use.setAttribute("href", attachment.kind === "image" || attachment.kind === "video" ? "#icon-image" : "#icon-document");
         icon.setAttribute("aria-hidden", "true"); icon.appendChild(use); chip.appendChild(icon);
         const name = document.createElement("span");
         name.className = "attach-chip-name";
-        name.textContent = attachment.name || (attachment.kind === "image" ? "Image" : "Document");
+        name.textContent = attachment.name || (attachment.kind === "image" ? "Image" : attachment.kind === "video" ? "Video" : "Document");
         chip.appendChild(name);
         return chip;
       }
@@ -2483,6 +2802,28 @@
           })
           .catch(() => { if (img.isConnected) img.replaceWith(attachmentChipNode(attachment)); });
         return img;
+      }
+      const MAX_INLINE_VIDEO_PREVIEW_BYTES = 64 * 1024 * 1024;
+      function attachmentVideoNode(attachment) {
+        /* Authenticated attachment URLs cannot be assigned directly to media
+           elements without leaking the session token. Keep browser memory
+           bounded: only modest clips become authenticated object URLs; large
+           videos remain a named transcript chip and are streamed server-side
+           to Molmo in bounded frame windows. */
+        if (!attachment.bytes || attachment.bytes > MAX_INLINE_VIDEO_PREVIEW_BYTES)
+          return attachmentChipNode(attachment);
+        const video = document.createElement("video");
+        video.className = "user-attached-video";
+        video.controls = true; video.preload = "metadata";
+        video.setAttribute("aria-label", attachment.name || "Attached video");
+        authFetch(`/v1/attachments/${encodeURIComponent(attachment.id)}`)
+          .then(r => (r.ok ? r.blob() : Promise.reject(new Error("unavailable"))))
+          .then(blob => {
+            const url = URL.createObjectURL(blob); video.src = url;
+            video.addEventListener("emptied", () => URL.revokeObjectURL(url), { once: true });
+          })
+          .catch(() => { if (video.isConnected) video.replaceWith(attachmentChipNode(attachment)); });
+        return video;
       }
       // T3.2 acceptance: a 1,000-message conversation must stay usable. Only
       // the most recent window is put in the DOM; older turns stay in state
@@ -2526,9 +2867,10 @@
       function appendMessageNode(msg) {
         const row = document.createElement("article"); row.className = `message ${msg.role}`; row.dataset.messageId = msg.id;
         if (msg.role === "assistant") {
-          row.innerHTML = `<div class="avatar">S</div><div class="bubble"><div class="web-activity" ${msg.activity ? "" : "hidden"}></div><details class="thinking" ${msg.streaming && msg.reasoning ? "open" : ""} ${msg.reasoning ? "" : "hidden"}><summary>Thinking</summary><div class="thinking-body"></div></details><div class="response"></div><div class="error-note" hidden></div></div>`;
+          row.innerHTML = `<div class="avatar">S</div><div class="bubble"><div class="file-activity" hidden></div><div class="web-activity" ${msg.activity ? "" : "hidden"}></div><details class="thinking" ${msg.streaming && msg.reasoning ? "open" : ""} ${msg.reasoning ? "" : "hidden"}><summary>Thinking</summary><div class="thinking-body"></div></details><div class="response"></div><div class="error-note" hidden></div></div>`;
           if (msg.streaming && !String(msg.content || "").trim()) row.setAttribute("aria-busy", "true");
           row.querySelector(".thinking-body").textContent = msg.reasoning || "";
+          renderFileActivity(row, msg);
           renderWebActivity(row, msg);
           renderAssistantResponse(row.querySelector(".response"), msg);
           const speak = document.createElement("button");
@@ -2555,6 +2897,7 @@
           }
           for (const attachment of msg.attachments || []) {
             if (attachment.kind === "image") bubble.appendChild(attachmentImageNode(attachment));
+            else if (attachment.kind === "video") bubble.appendChild(attachmentVideoNode(attachment));
             else bubble.appendChild(attachmentChipNode(attachment));
           }
         }
@@ -2587,7 +2930,17 @@
       // Switching or creating a conversation starts a fresh render window --
       // "show earlier" expansion belongs to the conversation you expanded,
       // not to the next one you open.
-      function render() { renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages(); const chat=activeChat(); els.name.textContent=chat?.title || "New conversation"; updateActiveMemoryContext(); }
+      function render() {
+        renderLimit = RENDER_WINDOW; ensureChat(); renderList(); renderMessages();
+        const chat = activeChat();
+        els.name.textContent = chat?.title || "New conversation";
+        updateActiveMemoryContext();
+        renderConversationDocuments(chat);
+        if (chat && !conversationDocumentsLoaded.has(chat.id)) {
+          conversationDocumentsLoaded.add(chat.id);
+          refreshConversationDocuments(chat);
+        }
+      }
       function nearBottom() { return els.messages.scrollHeight-els.messages.scrollTop-els.messages.clientHeight<110; }
       function scrollBottom(smooth=true,force=false) { if(!force&&!followOutput)return; requestAnimationFrame(() => els.messages.scrollTo({top:els.messages.scrollHeight,behavior:smooth?"smooth":"auto"})); }
       function resizePrompt() { const hasText=!!els.prompt.value.trim(); els.prompt.style.height="auto"; els.prompt.style.height=Math.min(els.prompt.scrollHeight,180)+"px"; els.composer.classList.toggle("has-text",hasText); els.send.disabled=!hasText||generating||!backend.ready; }
@@ -3346,8 +3699,8 @@
         if (typeof updateVoiceAvailability === "function") updateVoiceAvailability();
       }
 
-      async function sendPrompt(text) {
-        if (generating || !text.trim()) return;
+      async function sendPrompt(text, pendingPayload, existingAssistant) {
+        if (generating || (!pendingPayload && (!text || !text.trim()))) return;
         if (!backend.ready) {
           els.modelHelp.textContent="Install or wait for a model before starting a conversation.";
           openModelSettings();
@@ -3355,106 +3708,128 @@
         }
         const chat=ensureChat();
         if (chatNeedsExplicitAction(chat, backend)) { openMismatchDialog(chat); return; }
-        // T3.2: an attachment still uploading has no server ID yet, and one
-        // that failed has nothing to send. Block the turn rather than
-        // silently dropping a file the user can see attached.
-        if (pendingAttachments.some(a => a.status === "uploading")) {
-          setAttachError("One moment — an attachment is still being added.");
-          return;
-        }
-        if (pendingAttachments.some(a => a.status === "failed")) {
-          setAttachError("Remove the attachment that couldn't be added, then send.");
-          return;
-        }
-        // Create-once binding (sec5.2): the first send under a real backend
-        // stamps this conversation's model identity; the gateway records the
-        // matching canonical binding the same moment it admits the turn.
-        if (!chat.model_id && backend.id && backend.version) {
-          chat.model_id = backend.id; chat.model_version = backend.version; chat.model_binding_source = "explicit";
-        }
-        // The transcript records attachment identity only -- IDs, names, and
-        // kinds. Bytes live in the server's content-addressed store, so a
-        // long conversation full of images no longer inflates the single
-        // localStorage record (sec5.8).
-        const attachments = pendingAttachments.map(a => ({ id: a.id, name: a.name, kind: a.kind }));
-        const attachmentIds = attachments.map(a => a.id);
-        // Captured before clearAttachments() empties the composer below.
-        const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
-        applyAutomaticWebContext(chat, text, webContext);
-        const researching = webContext.some(w => w.kind === "search");
-        const user={id:makeId(),role:"user",content:text.trim(),attachments}, assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
-          activity:"",sources:[]};
-        chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
-
-        els.prompt.value=""; clearAttachments(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
-        if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
-        activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
-        if (researching && sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", "I’m checking a few focused sources, then I’ll help you make sense of them.");
-
-        // The model has no way to know today's date or who it is talking to
-        // unless it is told. Without this it answered "what is my name?" with
-        // "I don't know", after the user had entered it during setup, and
-        // labelled a search result three days out as "today".
-        //
-        // The date is the browser's local date, which is the one the user
-        // means. Qwen's --serve keeps the first system message and the last
-        // user message, so a single leading system message reaches every
-        // backend the same way.
-        const simpleGreeting = /^(hi|hello|hey|hiya|howdy)[.!? ]*$/i.test(text.trim());
-        const sysBits = [`Today is ${new Date().toLocaleDateString(undefined,
-          {weekday:"long", year:"numeric", month:"long", day:"numeric"})}.`,
-          "The date and any user name supplied here are silent system context. Do not mention, repeat, or volunteer them unless the user asks about them or they are directly relevant to the request.",
-          "For a simple greeting, respond naturally and briefly; do not comment on the date, your context, or the user's name."];
-        if (profileName && !simpleGreeting) sysBits.push(`The user's name is ${profileName}.`);
-        if (sendPrompt.voiceRun && voiceGreetingContext) {
-          sysBits.push(`You have already greeted the user by saying: "${voiceGreetingContext}". Treat this first voice message as their response to that greeting.`);
-          voiceGreetingContext = "";
-        }
-        const systemMessage = {role:"system", content:sysBits.join(" ")};
-
-        const history=chat.messages.filter(m=>m!==assistant&&!m.error)
-          .map(m=>({role:m.role,content:m.content||""}));
-        let payload;
-        if (backend.id !== "qwen") {
-          history.unshift(systemMessage);
-          payload={model:backend.model,messages:history,stream:true,max_tokens:Number(els.maxTokens.value),
-            conversation_id:chat.id,model_id:chat.model_id,model_version:chat.model_version,
-            chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
+        let payload, assistant;
+        if (pendingPayload && existingAssistant) {
+          payload = pendingPayload;
+          assistant = existingAssistant;
+          assistant.streaming = true;
+          assistant.content = "";
+          assistant.reasoning = "";
+          assistant.visionRequired = false;
+          delete assistant.error;
+          activeAssistant = assistant;
+          followOutput = true;
+          setGenerating(true);
+          scrollBottom(true, true);
+          els.closure.textContent = "Generating";
+          updateAssistantNode(assistant);
         } else {
-          // Qwen's native server intentionally consumes only the first system
-          // message and last user message. On Web-search turns, include a tiny
-          // recent transcript window anyway: the gateway's local query planner
-          // uses it to resolve "above"/"that one", while generation remains
-          // byte-for-byte the same last-user continuation. Plain turns keep the
-          // old minimal payload and its zero added work.
-          const qwenHistory=researching ? history.slice(-5) : [{role:"user",content:user.content}];
-          payload={model:backend.model,messages:[systemMessage,...qwenHistory],conversation_id:chat.id,
-            model_id:chat.model_id,model_version:chat.model_version,
-            stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
+          // T3.2: an attachment still uploading has no server ID yet, and one
+          // that failed has nothing to send. Block the turn rather than
+          // silently dropping a file the user can see attached.
+          if (pendingAttachments.some(a => a.status === "uploading")) {
+            setAttachError("One moment — an attachment is still being added.");
+            return;
+          }
+          if (pendingAttachments.some(a => a.status === "failed")) {
+            setAttachError("Remove the attachment that couldn't be added, then send.");
+            return;
+          }
+          // Create-once binding (sec5.2): the first send under a real backend
+          // stamps this conversation's model identity; the gateway records the
+          // matching canonical binding the same moment it admits the turn.
+          if (!chat.model_id && backend.id && backend.version) {
+            chat.model_id = backend.id; chat.model_version = backend.version; chat.model_binding_source = "explicit";
+          }
+          // The transcript records attachment identity only -- IDs, names, and
+          // kinds. Bytes live in the server's content-addressed store, so a
+          // long conversation full of images no longer inflates the single
+          // localStorage record (sec5.8).
+          const attachments = pendingAttachments.map(a => ({ id: a.id, name: a.name, kind: a.kind, bytes: a.bytes || 0 }));
+          let attachmentIds = attachments.map(a => a.id);
+          // Molmo is a visual chat backend rather than a resident text LLM.
+          // A follow-up with no new upload keeps talking about the most recent
+          // image/video in this conversation without copying its bytes into
+          // localStorage or showing a duplicate attachment chip.
+          if (backend.id === "molmo2-4b-mlx-q4-v1" && !attachmentIds.length) {
+            for (let i = chat.messages.length - 1; i >= 0 && !attachmentIds.length; i--) {
+              const priorVisual = [...(chat.messages[i].attachments || [])].reverse()
+                .find(a => a.kind === "image" || a.kind === "video");
+              if (priorVisual?.id) attachmentIds = [priorVisual.id];
+            }
+          }
+          // Captured before clearAttachments() empties the composer below.
+          const webContext = pendingWeb.map(w => ({ kind: w.kind, url: w.url || null }));
+          applyAutomaticWebContext(chat, text, webContext);
+          const researching = webContext.some(w => w.kind === "search");
+          const user={id:makeId(),role:"user",content:text.trim(),attachments};
+          assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
+            activity:"",sources:[],fileActivity:null};
+          chat.messages.push(user,assistant); chat.updated=Date.now(); chat.updated_at=new Date().toISOString(); if (chat.messages.length===2) chat.title=titleFor(user.content);
+
+          els.prompt.value=""; clearAttachments(); resizePrompt(); saveState(); renderList(); els.name.textContent=chat.title;
+          if (chat.messages.length===2) renderMessages(); else { appendMessageNode(user); appendMessageNode(assistant); }
+          activeAssistant=assistant; followOutput=true; els.jump.hidden=true; setGenerating(true); scrollBottom(true,true); els.closure.textContent="Generating";
+          if (researching && sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", "I’m checking a few focused sources, then I’ll help you make sense of them.");
+
+          const simpleGreeting = /^(hi|hello|hey|hiya|howdy)[.!? ]*$/i.test(text.trim());
+          const sysBits = [`Today is ${new Date().toLocaleDateString(undefined,
+            {weekday:"long", year:"numeric", month:"long", day:"numeric"})}.`,
+            "The date and any user name supplied here are silent system context. Do not mention, repeat, or volunteer them unless the user asks about them or they are directly relevant to the request.",
+            "For a simple greeting, respond naturally and briefly; do not comment on the date, your context, or the user's name."];
+          if (profileName && !simpleGreeting) sysBits.push(`The user's name is ${profileName}.`);
+          if (sendPrompt.voiceRun && voiceGreetingContext) {
+            sysBits.push(`You have already greeted the user by saying: "${voiceGreetingContext}". Treat this first voice message as their response to that greeting.`);
+            voiceGreetingContext = "";
+          }
+          const systemMessage = {role:"system", content:sysBits.join(" ")};
+
+          const history=chat.messages.filter(m=>m!==assistant&&!m.error)
+            .map(m=>({role:m.role,content:m.content||""}));
+          if (backend.id !== "qwen") {
+            history.unshift(systemMessage);
+            payload={model:backend.model,messages:history,stream:true,max_tokens:Number(els.maxTokens.value),
+              conversation_id:chat.id,model_id:chat.model_id,model_version:chat.model_version,
+              chat_template_kwargs:{enable_thinking:els.thinking.value!=="off"}};
+          } else {
+            const qwenHistory=researching ? history.slice(-5) : [{role:"user",content:user.content}];
+            payload={model:backend.model,messages:[systemMessage,...qwenHistory],conversation_id:chat.id,
+              model_id:chat.model_id,model_version:chat.model_version,
+              stream:true,thinking:els.thinking.value,max_tokens:Number(els.maxTokens.value)};
+          }
+          if (attachmentIds.length) payload.attachment_ids = attachmentIds;
+          applyPendingWebContext(payload, webContext);
+          if (chat.directory_context) payload.directory_context = chat.directory_context;
+          const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         }
-        // The gateway resolves these into image data URIs / extracted
-        // document text server-side; the browser never builds either.
-        if (attachmentIds.length) payload.attachment_ids = attachmentIds;
-        // Web access is controlled per turn. A pasted page reads only that
-        // page. `web:true` follows the persistent Web-search preference, an
-        // explicit natural-language request to use the internet, or a
-        // freshness follow-up to a conversation that already shows public
-        // sources. Merely having a configured provider never lets the model
-        // initiate a search on its own.
-        applyPendingWebContext(payload, webContext);
-        if (chat.directory_context) payload.directory_context = chat.directory_context;
-        const seed=els.seed.value.trim(); if (seed) payload.seed=Number(seed);
         const voiceTurn = sendPrompt.voiceTurnId || null;
         if (voiceTurn) voiceTraceEvent("llm_request_started", voiceTurn, {
           backend: backend.id, prompt_messages: payload.messages?.length || 0,
           prompt_chars: (payload.messages || []).reduce((sum, message) => sum + String(message.content || "").length, 0)
         });
+        assistant._activePayload = payload;
         try {
           const requestHeaders={"Content-Type":"application/json"};
           if (voiceTurn) requestHeaders["X-Samosa-Voice-Turn"]=voiceTurn;
           const response=await fetch("/v1/chat/completions",{method:"POST",headers:requestHeaders,body:JSON.stringify(payload)});
           if (voiceTurn) voiceTraceEvent("llm_response_headers", voiceTurn, { http_status: response.status });
-          if (!response.ok) { let detail=`Request failed (${response.status})`; try { const j=await response.json(); detail=j.error?.message||detail; } catch(_){} throw new Error(detail); }
+          if (!response.ok) {
+            let detail=`Request failed (${response.status})`;
+            let errCode = "";
+            try {
+              const j=await response.json();
+              detail=j.error?.message||detail;
+              errCode=j.error?.code||"";
+            } catch(_){}
+            if (errCode === "vision_model_required" || errCode === "molmo2_model_required") {
+              assistant.visionRequired = true;
+              assistant.visionModelId = errCode === "molmo2_model_required"
+                ? "molmo2-4b-mlx-q4-v1" : "visionpsy-nano-460m-mlx-bf16";
+              assistant._pendingPayload = payload;
+              delete assistant.error;
+            }
+            throw new Error(detail);
+          }
           if (!response.body) throw new Error("Streaming is not available in this browser.");
           const reader=response.body.getReader(), decoder=new TextDecoder();
           let pending="", done=false, streamFinished=false;
@@ -3470,11 +3845,14 @@
             throw new Error("The model connection ended before the response completed. Any partial answer was kept; please retry this turn.");
           }
         } catch (error) {
-          assistant.error=error.message||String(error);
+          if (!assistant.visionRequired) assistant.error=error.message||String(error);
         } finally {
           if (voiceTurn) voiceTraceEvent("llm_stream_complete", voiceTurn, { outcome: assistant.error ? "failed" : "complete", response_chars: assistant.content.length });
           delete assistant._voiceTracedFirstReasoning; delete assistant._voiceTracedFirstContent;
+          delete assistant._activePayload;
+          if (!assistant.visionRequired && !assistant.error) delete assistant._pendingPayload;
           assistant.streaming=false; chat.updated=Date.now(); activeAssistant=null; setGenerating(false); saveState(); updateAssistantNode(assistant); renderList(); health();
+          refreshConversationDocuments(chat);
           // Typed chat is always silent. The visible Listen control remains
           // available on each completed reply; automatic playback belongs
           // only to an active Voice conversation.
@@ -4539,7 +4917,15 @@
         if (raw === "[DONE]") return true;
         let event; try { event=JSON.parse(raw); } catch (_) { return false; }
         if (event?.error) {
-          assistant.error=event.error.message||String(event.error);
+          if (event.error.code === "vision_model_required" || event.error.code === "molmo2_model_required") {
+            assistant.visionRequired = true;
+            assistant.visionModelId = event.error.code === "molmo2_model_required"
+              ? "molmo2-4b-mlx-q4-v1" : "visionpsy-nano-460m-mlx-bf16";
+            assistant._pendingPayload = assistant._activePayload;
+            delete assistant.error;
+          } else {
+            assistant.error=event.error.message||String(event.error);
+          }
           updateAssistantNode(assistant); scrollBottom(false);
           return true;
         }
@@ -4562,9 +4948,26 @@
           assistant.activity=String(delta.web_activity).trim();
           if (sendPrompt.voiceRun) setVoiceStage("researching", "Looking things up", delta.web_activity.trim() || "I’m checking a few sources.");
         }
+        if (delta.file_activity && typeof delta.file_activity === "object") {
+          assistant.fileActivity = {
+            filename: String(delta.file_activity.filename || "Attached document"),
+            stage: String(delta.file_activity.stage || "working"),
+            message: String(delta.file_activity.message || "Working with the file…"),
+            progress: Number(delta.file_activity.progress) || 0,
+            indeterminate: !!delta.file_activity.indeterminate
+          };
+          if (sendPrompt.voiceRun)
+            setVoiceStage("thinking", "Working with the file", assistant.fileActivity.message);
+        }
         if (delta.web_source) mergeWebSource(assistant, delta.web_source);
         if (delta.content) {
           assistant.content+=delta.content;
+          if (assistant.fileActivity && assistant.fileActivity.stage === "preparing") {
+            assistant.fileActivity = {
+              ...assistant.fileActivity, stage: "answering", progress: 100,
+              indeterminate: false, message: "Answering from the attached document…"
+            };
+          }
           if (sendPrompt.voiceTurnId && !assistant._voiceTracedFirstContent) {
             assistant._voiceTracedFirstContent = true;
             voiceTraceEvent("llm_first_content_delta", sendPrompt.voiceTurnId);
@@ -4665,17 +5068,45 @@
           }
         }
       }
+      function renderFileActivity(row, msg) {
+        const box = row.querySelector(".file-activity");
+        if (!box) return;
+        const activity = msg.fileActivity;
+        box.hidden = !activity;
+        if (!activity) return;
+        let label = box.querySelector(".file-activity-label");
+        let track = box.querySelector(".file-progress");
+        let fill = track?.querySelector("span");
+        if (!label) {
+          label = document.createElement("div"); label.className = "file-activity-label";
+          box.appendChild(label);
+        }
+        if (!track) {
+          track = document.createElement("div"); track.className = "file-progress";
+          fill = document.createElement("span"); track.appendChild(fill); box.appendChild(track);
+        }
+        const filename = String(activity.filename || "Attached document");
+        const message = String(activity.message || "Working with the file…");
+        label.textContent = `${filename} · ${message}`;
+        const progress = Math.max(0, Math.min(100, Number(activity.progress) || 0));
+        fill.style.width = `${progress}%`;
+        track.classList.toggle("indeterminate", !!activity.indeterminate);
+        box.setAttribute("role", "status");
+        box.setAttribute("aria-live", "polite");
+      }
       function updateAssistantNode(msg) {
         const row=els.messages.querySelector(`[data-message-id="${CSS.escape(msg.id)}"]`); if(!row)return;
         const thinking=row.querySelector(".thinking"), response=row.querySelector(".response"), error=row.querySelector(".error-note");
         thinking.hidden=!msg.reasoning; thinking.querySelector(".thinking-body").textContent=msg.reasoning||"";
+        renderFileActivity(row, msg);
         renderWebActivity(row, msg);
         renderAssistantResponse(response, msg);
         if (msg.streaming && !String(msg.content || "").trim() && !msg.error) row.setAttribute("aria-busy", "true");
         else row.removeAttribute("aria-busy");
         const speak = row.querySelector(".message-speak");
         if (speak) speak.hidden = !voicePlaybackReady() || !msg.content;
-        error.hidden=!msg.error; error.textContent=msg.error||"";
+        error.hidden = !msg.error || !!msg.visionRequired;
+        error.textContent = msg.error || "";
       }
       async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
       async function killLocal() {
@@ -4819,7 +5250,7 @@
           const previousLoading=!!backend.loading;
           if(h.gateway) {
             const modelLoading = !!h.loading || h.backend_state === "loading";
-            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:h.supports_images,supports_documents:!!h.supports_documents,ready:h.ready,loading:modelLoading};
+            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:!!h.supports_images,supports_image_attachments:!!h.supports_image_attachments,supports_video_attachments:!!h.supports_video_attachments,supports_documents:!!h.supports_documents,ready:h.ready,loading:modelLoading};
             // T3.2: the `+` button itself stays enabled -- it opens a menu
             // that explains, per item, what is and isn't available. Disabling
             // the whole button would hide those reasons entirely.
@@ -4828,9 +5259,25 @@
             els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:modelLoading?`Loading ${h.label}…`:`Choose a model`;
             els.status.disabled=!!h.ready || !!h.generating;
           } else {
-            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_documents:false,ready:true,loading:false};
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,ready:true,loading:false};
             applyCapabilities();
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating":"Qwen3.6 ready";
+          }
+          if (els.settingsOcrBadge && els.settingsOcrDetail) {
+            const ocr = h.ocr || {};
+            if (ocr.ready) {
+              els.settingsOcrBadge.className = "model-badge active";
+              els.settingsOcrBadge.textContent = "Ready";
+              els.settingsOcrDetail.textContent = "Native detector, recognizer, and OCR model pack are ready. Digital PDF text is still preferred when available.";
+            } else if (ocr.runtime_available) {
+              els.settingsOcrBadge.className = "model-badge";
+              els.settingsOcrBadge.textContent = "Model pack missing";
+              els.settingsOcrDetail.textContent = "The native reader is installed, but scanned-page OCR is unavailable until the PP-OCR model pack is installed. Digital PDF text remains available.";
+            } else {
+              els.settingsOcrBadge.className = "model-badge";
+              els.settingsOcrBadge.textContent = "Unavailable";
+              els.settingsOcrDetail.textContent = "This build does not include the native OCR reader. Digital PDF text can still be read when the document contains a text layer.";
+            }
           }
           els.sideDot.className=els.dot.className; els.sideStatus.textContent=backend.label;
           els.prompt.disabled=!backend.ready || generating;
@@ -4875,14 +5322,21 @@
           ? (activeSettingsControl.getAttribute?.("data-settings-focus-key") || "") : "";
         let status = null;
         try { status = await fetchSetupStatus(); } catch (_) {}
+        let allModels = [];
         try {
           const [catalogResp, installsResp] = await Promise.all([
             authFetch("/v1/models/catalog", { cache: "no-store" }),
             authFetch("/v1/models/installs", { cache: "no-store" }),
           ]);
           if (!catalogResp.ok) throw new Error("catalog_failed");
-          const allModels = (await catalogResp.json()).models || [];
-          modelCatalog = allModels.filter(model => model.family !== "voice" && model.backend_kind !== "whisper_cpp");
+          allModels = (await catalogResp.json()).models || [];
+          modelCatalog = allModels.filter(model =>
+            model.family !== "voice" &&
+            model.backend_kind !== "whisper_cpp" &&
+            model.role !== "auxiliary" &&
+            model.category !== "vision" &&
+            !model.id.startsWith("visionpsy")
+          );
           if (typeof voiceCatalog !== "undefined") voiceCatalog = allModels.filter(model => model.family === "voice" || model.backend_kind === "whisper_cpp");
           setupInstalls = installsResp.ok ? (await installsResp.json()).jobs || [] : [];
         } catch (_) {
@@ -4891,7 +5345,11 @@
           return;
         }
         els.settingsModelError.hidden = true;
-        renderModelCards(els.settingsModelList, els.settingsModelError, status);
+        renderModelCards(els.settingsModelList, els.settingsModelError, status, modelCatalog);
+        if (els.settingsVisionModelList && typeof renderModelCards === "function") {
+          const visionModels = allModels.filter(m => m.category === "vision" || m.role === "auxiliary" || m.family === "vision" || m.id.startsWith("visionpsy"));
+          renderModelCards(els.settingsVisionModelList, els.settingsModelError, status, visionModels);
+        }
         // Kept as a guarded extension so this exact Settings orchestration
         // remains independently fixture-testable without loading the audio UI.
         if (typeof refreshVoiceStatus === "function") await refreshVoiceStatus(false);
@@ -5080,6 +5538,85 @@
       let settingsPollTimer = null;
       function stopSettingsPolling() { if (settingsPollTimer) { clearInterval(settingsPollTimer); settingsPollTimer = null; } }
       function startSettingsPolling() { stopSettingsPolling(); settingsPollTimer = setInterval(refreshSettingsModels, 1500); }
+
+      // Developer mode is gateway-owned and persistent. It intentionally
+      // captures full local model inputs/outputs; the browser only toggles it
+      // and shows where the private JSONL trace lives.
+      let developerTraceState = null;
+      let developerTraceUpdating = false;
+      function renderDeveloperTrace() {
+        if (!els.developerTraceEnabled) return;
+        const state = developerTraceState || {};
+        els.developerTraceEnabled.disabled = developerTraceUpdating || !developerTraceState;
+        els.developerTraceEnabled.checked = !!state.enabled;
+        els.developerTraceCopy.disabled = developerTraceUpdating || !state.path;
+        els.developerTraceClear.disabled = developerTraceUpdating || !!state.enabled;
+        els.developerTraceStatus.textContent = developerTraceUpdating
+          ? "Updating…" : state.enabled ? `Recording · ${(state.events || 0).toLocaleString()} events`
+          : developerTraceState ? "Off" : "Unavailable";
+        els.developerTraceStatus.classList.toggle("active", !!state.enabled);
+        els.developerTracePath.hidden = !state.path && !state.directory;
+        els.developerTracePath.textContent = state.path
+          ? `${state.enabled ? "Saving to" : "Last log"}: ${state.path}`
+          : state.directory ? `Logs folder: ${state.directory}` : "";
+      }
+      async function refreshDeveloperTrace() {
+        try {
+          const response = await authFetch("/v1/developer/trace", {cache:"no-store"});
+          const body = await response.json().catch(() => null);
+          if (!response.ok || !body) throw new Error(body?.error?.message || "Developer mode status is unavailable.");
+          developerTraceState = body;
+        } catch (error) {
+          developerTraceState = null;
+          if (els.developerTraceStatus) els.developerTraceStatus.textContent = error.message || "Developer mode status is unavailable.";
+        }
+        renderDeveloperTrace();
+        return developerTraceState;
+      }
+      async function setDeveloperTrace(enabled) {
+        if (developerTraceUpdating) return;
+        developerTraceUpdating = true; renderDeveloperTrace();
+        try {
+          const response = await authFetch("/v1/developer/trace", {
+            method:"PUT", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({enabled:!!enabled})
+          });
+          const body = await response.json().catch(() => null);
+          if (!response.ok || !body) throw new Error(body?.error?.message || "Developer mode could not be updated.");
+          developerTraceState = body;
+        } catch (error) {
+          if (els.developerTraceStatus) els.developerTraceStatus.textContent = error.message || "Developer mode could not be updated.";
+          await refreshDeveloperTrace();
+        } finally {
+          developerTraceUpdating = false; renderDeveloperTrace();
+        }
+      }
+      async function copyDeveloperTracePath() {
+        const path = developerTraceState?.path || developerTraceState?.directory;
+        if (!path) return;
+        try {
+          await navigator.clipboard.writeText(path);
+          els.developerTraceStatus.textContent = "Log path copied";
+        } catch (_) {
+          els.developerTraceStatus.textContent = "Could not copy the path";
+        }
+      }
+      async function clearDeveloperTraces() {
+        if (developerTraceUpdating || developerTraceState?.enabled) return;
+        if (!confirm("Delete all local Developer mode trace files? This cannot be undone.")) return;
+        developerTraceUpdating = true; renderDeveloperTrace();
+        try {
+          const response = await authFetch("/v1/developer/trace/clear", {method:"POST"});
+          const body = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(body?.error?.message || "Developer logs could not be cleared.");
+          await refreshDeveloperTrace();
+          els.developerTraceStatus.textContent = `Cleared ${body?.removed || 0} trace file${body?.removed === 1 ? "" : "s"}`;
+        } catch (error) {
+          els.developerTraceStatus.textContent = error.message || "Developer logs could not be cleared.";
+        } finally {
+          developerTraceUpdating = false; renderDeveloperTrace();
+        }
+      }
 
       // --- Advanced runtime settings BEGIN ---------------------------------
       // Inference settings belong to the gateway, not localStorage. A browser
@@ -5305,6 +5842,7 @@
       // (docs/TASKS_WEB_SEARCH.md W6) and are gated on GET /v1/web/config, so
       // "search is configured" is the server's answer, never a guess.
       const MAX_ATTACHMENTS = 6;
+      const MAX_VIDEO_ATTACHMENT_BYTES = 4 * 1024 * 1024 * 1024;
       // Kept as a count here so the composer capability block remains
       // independent of Chutni's larger view model (and its DOM-fixture gate).
       let readyChutniMemoryCount = 0;
@@ -5391,14 +5929,26 @@
         return payload;
       }
       function applyCapabilities() {
-        const imageReady = !!backend.supports_images && !!backend.ready;
+        // A text-only chat LLM can still accept an image: the automatic route
+        // prefers an installed Molmo2 package and falls back to VisionPsy (or
+        // the active model's native projector) when Molmo is absent. It offers
+        // required weights if needed, then resumes the preserved turn.
+        // supports_images is only the active backend's own projector;
+        // supports_image_attachments is the end-to-end composer capability.
+        const imageReady = !!backend.ready &&
+          (!!backend.supports_images || !!backend.supports_image_attachments);
         setAttachItem(els.attachImage, els.attachImageReason, imageReady,
           !backend.ready ? "Available once a model is ready."
-            : "This model was installed without a vision projector.",
+            : "This build has no native image path or auxiliary visual runtime.",
           "PNG, JPEG, WEBP, or GIF.");
+        const videoReady = !!backend.ready && !!backend.supports_video_attachments;
+        setAttachItem(els.attachVideo, els.attachVideoReason, videoReady,
+          !backend.ready ? "Available once a model is ready."
+            : "This build does not include the native Molmo2 video runtime.",
+          "MP4, MOV, or M4V · analyzed locally on demand.");
         setAttachItem(els.attachDocument, els.attachDocumentReason, !!backend.supports_documents,
           "The document reader isn't installed in this build.",
-          "PDF, read on this computer.");
+          "PDF, text, Markdown, code, or structured data.");
         // WK2: an unanswered consent question is its own reason, distinct from
         // "not configured" -- one is a question, the other is a broken setup,
         // and telling a new user to edit config.json for the first would be
@@ -5427,6 +5977,10 @@
         // the new backend cannot actually accept rather than sending it.
         if (!imageReady && pendingAttachments.some(a => a.kind === "image")) {
           pendingAttachments = pendingAttachments.filter(a => a.kind !== "image");
+          renderAttachments();
+        }
+        if (!videoReady && pendingAttachments.some(a => a.kind === "video")) {
+          pendingAttachments = pendingAttachments.filter(a => a.kind !== "video");
           renderAttachments();
         }
         // The same rule for web context: going offline, or losing a provider,
@@ -5504,7 +6058,7 @@
           } else {
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-            use.setAttribute("href", item.kind === "image" ? "#icon-image" : "#icon-document");
+            use.setAttribute("href", item.kind === "image" || item.kind === "video" ? "#icon-image" : "#icon-document");
             icon.setAttribute("aria-hidden", "true");
             icon.appendChild(use); chip.appendChild(icon);
           }
@@ -5515,9 +6069,15 @@
             : item.status === "failed" ? `${item.name} — ${item.error || "couldn't be added"}`
             : item.name;
           chip.appendChild(name);
+          if (item.status === "uploading") {
+            const meter = document.createElement("span");
+            meter.className = "attach-chip-meter";
+            const fill = document.createElement("span");
+            meter.appendChild(fill); chip.appendChild(meter);
+          }
           const remove = document.createElement("button");
           remove.type = "button"; remove.className = "attach-chip-remove";
-          remove.setAttribute("aria-label", `Remove ${item.kind === "image" ? "image" : "document"} ${item.name}`);
+          remove.setAttribute("aria-label", `Remove ${item.kind === "image" ? "image" : item.kind === "video" ? "video" : "document"} ${item.name}`);
           const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           const rUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
           rUse.setAttribute("href", "#icon-x"); rIcon.setAttribute("aria-hidden", "true");
@@ -5565,11 +6125,15 @@
           setAttachError(`You can attach up to ${MAX_ATTACHMENTS} files to one message.`);
           return;
         }
+        if (kind === "video" && file.size > MAX_VIDEO_ATTACHMENT_BYTES) {
+          setAttachError("Videos must be 4 GiB or smaller.");
+          return;
+        }
         setAttachError("");
         const entry = {
           clientId: `a-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          kind, name: file.name || (kind === "image" ? "image" : "document"),
-          id: null, status: "uploading", error: "", thumb: null
+          kind, name: file.name || (kind === "image" ? "image" : kind === "video" ? "video" : "document"),
+          id: null, bytes: file.size || 0, status: "uploading", error: "", thumb: null
         };
         pendingAttachments.push(entry);
         renderAttachments();
@@ -5587,6 +6151,8 @@
           if (!pendingAttachments.includes(entry)) return;
           entry.id = data.id;
           entry.name = data.filename || entry.name;
+          entry.bytes = Number(data.bytes || file.size || 0);
+          if (data.capabilities?.video) entry.kind = "video";
           entry.status = "ready";
           if (kind === "image") entry.thumb = URL.createObjectURL(file);
         } catch (error) {
@@ -5599,7 +6165,7 @@
       function pickAttachment(kind) {
         closeAttachMenu(false);
         setAttachError("");
-        (kind === "image" ? els.imageInput : els.documentInput).click();
+        (kind === "image" ? els.imageInput : kind === "video" ? els.videoInput : els.documentInput).click();
       }
       // Phase W (docs/TASKS_WEB_SEARCH.md W6). The scheme check here is a
       // courtesy so a typo fails instantly instead of after a round trip; it
@@ -5636,7 +6202,7 @@
         for (const item of pendingAttachments) if (item.thumb) URL.revokeObjectURL(item.thumb);
         pendingAttachments = [];
         pendingWeb = [];
-        els.imageInput.value = ""; els.documentInput.value = "";
+        els.imageInput.value = ""; if (els.videoInput) els.videoInput.value = ""; els.documentInput.value = "";
         renderAttachments(); setAttachError("");
       }
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
@@ -5771,7 +6337,27 @@
       // Pure: which action buttons a card should show for a given state. The
       // renderer turns this into real buttons; a DOM-fixture test can assert
       // on it directly without a DOM.
-      function modelCardActions(state) {
+      function modelCardActions(state, model) {
+        if (model?.provisioning === "native_pack" && model.role === "primary") {
+          if (state.kind === "ready") return [{ action: "select", label: "Use this model", primary: true }];
+          return [];
+        }
+        if (model && (model.role === "auxiliary" || model.category === "vision")) {
+          if (model.provisioning === "native_pack") return [];
+          switch (state.kind) {
+            case "not_installed": return [{ action: "install", label: "Download", primary: true }];
+            case "downloading": {
+              const actions = [];
+              if (["queued", "downloading"].includes(state.job.state)) actions.push({ action: "pause", label: "Pause" });
+              actions.push({ action: "cancel", label: "Cancel" });
+              return actions;
+            }
+            case "paused": return [{ action: "resume", label: "Resume", primary: true }, { action: "cancel", label: "Cancel" }];
+            case "failed": return state.retryable ? [{ action: "retry", label: "Retry", primary: true }] : [];
+            case "ready": return [];
+            default: return [];
+          }
+        }
         switch (state.kind) {
           case "not_installed": return [{ action: "install", label: "Download", primary: true }];
           case "downloading": {
@@ -5831,6 +6417,16 @@
           className: "deepreinforce",
           mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 21c6.5-1 10.4-4.6 14.4-13 2.5 2.4 5.7 6.5 7.6 12.5-6.2-1.7-10.2-.4-15.2 3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 22c5.4-.1 9.7 1.2 14.2 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".8"/></svg>',
         },
+        "visionpsy-nano-460m-mlx-bf16": {
+          provider: "KaedeTai · MLX",
+          className: "visionpsy",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 6C9 6 3 12 3 16s6 10 13 10 13-6 13-10-6-10-13-10zm0 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
+        },
+        "molmo2-4b-mlx-q4-v1": {
+          provider: "AllenAI · Native MLX",
+          className: "visionpsy",
+          mark: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c3.5-6 7.5-9 12-9s8.5 3 12 9c-3.5 6-7.5 9-12 9S7.5 22 4 16Z" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="16" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m23 6 3-3m-1 6h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        },
       };
       function modelBrandFor(model) {
         return MODEL_BRANDS[model.id] || {
@@ -5887,7 +6483,14 @@
         metaItem("Download", formatBytes(model.download_bytes));
         metaItem("Free space needed", formatBytes(model.required_free_bytes));
         const capsSpan = document.createElement("span");
-        capsSpan.textContent = (model.capabilities || []).map(c => c === "image" ? "Image" : "Text").join(", ");
+        const capabilityLabels = {
+          text: "Text", image: "Image", video: "Video",
+          image_to_text: "Image → text", video_to_text: "Video → text",
+          image_understanding: "Image understanding", multi_image_understanding: "Multi-image",
+          video_understanding: "Video understanding", temporal_localization: "Timestamps",
+          tracking: "Tracking", captioning: "Captioning", visual_qa: "Visual Q&A"
+        };
+        capsSpan.textContent = [...new Set((model.capabilities || []).map(c => capabilityLabels[c] || c.replaceAll("_", " ")))].join(", ");
         meta.appendChild(capsSpan);
         card.appendChild(meta);
 
@@ -5931,8 +6534,24 @@
           card.appendChild(status);
         }
 
+        if (model.role === "auxiliary" || model.category === "vision" || model.load_policy === "on_demand_per_turn") {
+          const policy = document.createElement("div");
+          policy.className = "model-card-policy";
+          policy.style.fontSize = "12px";
+          policy.style.color = "var(--ink-2, #6b7280)";
+          policy.style.marginTop = "6px";
+          policy.textContent = model.provisioning === "native_pack"
+            ? (model.install_state === "ready"
+                ? (model.role === "primary"
+                    ? "Verified native Q4 package ready. Select Molmo for direct visual chat: it loads for an image/video turn, returns its own text or grounding output, then unloads. No model stays resident."
+                    : "Verified native Q4 package ready. Molmo starts only for admitted image/video work and unloads before chat synthesis.")
+                : `No public package is published yet. Build the pinned package locally, then refresh Settings: ${model.setup_command || "~/.samosa/current/bin/molmo2-pack SOURCE PROCESSOR ~/.samosa/models/molmo2-4b-mlx-q4-v1"}`)
+            : "Used automatically for chat attachments when the active LLM needs visual understanding. Loaded only for that turn.";
+          card.appendChild(policy);
+        }
+
         const actionsWrap = document.createElement("div"); actionsWrap.className = "model-card-actions";
-        for (const spec of modelCardActions(state)) {
+        for (const spec of modelCardActions(state, model)) {
           const button = document.createElement("button");
           button.type = "button";
           button.textContent = spec.label;
@@ -5944,17 +6563,18 @@
         card.appendChild(actionsWrap);
         return card;
       }
-      function renderModelCards(container, errorEl, status) {
+      function renderModelCards(container, errorEl, status, customCatalog) {
         container.innerHTML = "";
         const activeInstallJobId = status?.active_install_job_id || null;
         const selectionInFlight = !!status?.active_selection_operation_id;
         const selectionModelId = status?.selected_model_id || "";
         const backendReady = status?.active_model_ready !== false;
-        for (const model of modelCatalog) {
+        const listToRender = customCatalog || modelCatalog;
+        for (const model of listToRender) {
           const job = installForModel(model.id, setupInstalls, activeInstallJobId);
           container.appendChild(buildModelCard(model, job, selectionInFlight, backendReady, errorEl, selectionModelId));
         }
-        if (!modelCatalog.length) {
+        if (!listToRender.length) {
           const empty = document.createElement("p"); empty.className = "setup-caption"; empty.textContent = "No models are available in this build.";
           container.appendChild(empty);
         }
@@ -5967,7 +6587,7 @@
           ]);
           if (!catalogResp.ok) throw new Error("catalog_failed");
           const allModels = (await catalogResp.json()).models || [];
-          modelCatalog = allModels.filter(model => model.family !== "voice" && model.backend_kind !== "whisper_cpp");
+          modelCatalog = allModels.filter(model => model.family !== "voice" && model.backend_kind !== "whisper_cpp" && model.role !== "auxiliary");
           if (typeof voiceCatalog !== "undefined") voiceCatalog = allModels.filter(model => model.family === "voice" || model.backend_kind === "whisper_cpp");
           setupInstalls = installsResp.ok ? (await installsResp.json()).jobs || [] : [];
         } catch (_) {
@@ -6177,6 +6797,73 @@
         els.chatMemoryDetail.textContent = "Answers use this folder’s indexed snapshot—not unrestricted filesystem access.";
         els.chatMemoryContext.hidden = false;
         els.prompt.placeholder = `Ask about ${name}…`;
+      }
+
+      function renderConversationDocuments(chat) {
+        const container = els.chatDocuments;
+        if (!container) return;
+        container.replaceChildren();
+        const documents = Array.isArray(chat?.documents) ? chat.documents : [];
+        container.hidden = documents.length === 0;
+        for (const item of documents) {
+          const chip = document.createElement("div");
+          chip.className = "attach-chip";
+          const icon = document.createElement("span");
+          icon.setAttribute("aria-hidden", "true");
+          icon.textContent = "▤";
+          const name = document.createElement("span");
+          name.className = "attach-chip-name";
+          const mode = item.mode === "retrieval" ? "Relevant passages" : "Full file";
+          const tokens = Number.isFinite(Number(item.tokens)) && Number(item.tokens) > 0
+            ? ` · ${Number(item.tokens).toLocaleString()} tokens` : "";
+          name.textContent = `${item.filename || "Attached document"} · ${mode}${tokens}`;
+          name.title = name.textContent;
+          const detach = document.createElement("button");
+          detach.type = "button";
+          detach.className = "attach-chip-remove";
+          detach.setAttribute("aria-label", `Detach ${item.filename || "document"}`);
+          detach.title = "Detach from this conversation";
+          detach.textContent = "×";
+          detach.onclick = () => detachConversationDocument(chat, item.attachment_id, detach);
+          chip.append(icon, name, detach);
+          container.appendChild(chip);
+        }
+      }
+
+      async function refreshConversationDocuments(chat) {
+        if (!chat) return;
+        try {
+          const response = await authFetch(`/v1/conversations/${encodeURIComponent(chat.id)}/documents`, { cache: "no-store" });
+          if (!response.ok) throw new Error("documents_refresh_failed");
+          const result = await response.json();
+          chat.documents = Array.isArray(result.documents) ? result.documents : [];
+          saveState();
+          if (activeChat() === chat) renderConversationDocuments(chat);
+        } catch (_) {
+          if (activeChat() === chat) renderConversationDocuments(chat);
+        }
+      }
+
+      async function detachConversationDocument(chat, attachmentId, button) {
+        if (!chat || !attachmentId || button?.disabled) return;
+        if (button) button.disabled = true;
+        try {
+          const response = await authFetch(
+            `/v1/conversations/${encodeURIComponent(chat.id)}/documents/${encodeURIComponent(attachmentId)}`,
+            { method: "DELETE" });
+          if (!response.ok) {
+            let message = "Could not detach that document.";
+            try { const result = await response.json(); message = result.error?.message || message; } catch (_) {}
+            throw new Error(message);
+          }
+          chat.documents = (chat.documents || []).filter(document => document.attachment_id !== attachmentId);
+          saveState();
+          renderConversationDocuments(chat);
+        } catch (error) {
+          setAttachError(error.message || "Could not detach that document.");
+        } finally {
+          if (button) button.disabled = false;
+        }
       }
 
       function renderJobMemoryAccess() {
@@ -7391,7 +8078,10 @@
         const selected = ["general", "models", "advanced", "voice", "privacy"].includes(name) ? name : "general";
         document.querySelectorAll("[data-settings-pane-content]").forEach(pane => { pane.hidden = pane.dataset.settingsPaneContent !== selected; });
         document.querySelectorAll("[data-settings-pane]").forEach(button => { const active = button.dataset.settingsPane === selected; button.classList.toggle("active", active); button.setAttribute("aria-current", active ? "page" : "false"); });
-        if (selected === "advanced" && !runtimeSettings) refreshRuntimeSettings();
+        if (selected === "advanced") {
+          if (!runtimeSettings) refreshRuntimeSettings();
+          refreshDeveloperTrace();
+        }
         if (selected === "voice") refreshVoiceTraceStatus();
       }
       function applyAppearance(value) {
@@ -7418,7 +8108,7 @@
         settingsReturnFocus = document.activeElement;
         els.settings.classList.add("open"); els.settings.setAttribute("aria-hidden","false");
         $("shell").inert = true;
-        selectSettingsPane(initialPane); refreshSettingsModels(); refreshRuntimeSettings({force:true}); startSettingsPolling();
+        selectSettingsPane(initialPane); refreshSettingsModels(); refreshRuntimeSettings({force:true}); refreshDeveloperTrace(); startSettingsPolling();
         requestAnimationFrame(() => $("closeSettings").focus());
       }
       function openModelSettings() { openSettings("models"); }
@@ -7440,6 +8130,7 @@
         if (els.attachMenu.hidden) openAttachMenu(); else closeAttachMenu(true);
       };
       els.attachImage.onclick = () => pickAttachment("image");
+      els.attachVideo.onclick = () => pickAttachment("video");
       els.attachDocument.onclick = () => pickAttachment("document");
       // Phase W (docs/TASKS_WEB_SEARCH.md W6). prompt() is the app's existing
       // idiom for one-line input and needs no new dialog chrome; the value is
@@ -7464,6 +8155,11 @@
         e.target.value = ""; // let the same file be picked again after removal
         if (file) uploadAttachment(file, "image");
       };
+      els.videoInput.onchange = (e) => {
+        const file = e.target.files[0];
+        e.target.value = "";
+        if (file) uploadAttachment(file, "video");
+      };
       els.documentInput.onchange = (e) => {
         const file = e.target.files[0];
         e.target.value = "";
@@ -7480,6 +8176,9 @@
       $("settingsButton").onclick=()=>openSettings(); els.status.onclick=()=>{ if(!backend.ready) openModelSettings(); }; $("closeSettings").onclick=closePanels; els.scrim.onclick=closePanels; els.stop.onclick=cancel; els.kill.onclick=killLocal;
       els.settings.addEventListener("keydown", settingsKeydown);
       document.querySelectorAll("[data-settings-pane]").forEach(button => { button.onclick = () => selectSettingsPane(button.dataset.settingsPane); });
+      els.developerTraceEnabled.onchange = () => setDeveloperTrace(els.developerTraceEnabled.checked);
+      els.developerTraceCopy.onclick = copyDeveloperTracePath;
+      els.developerTraceClear.onclick = clearDeveloperTraces;
       chooserEls.openBtn.onclick=openChooser; chooserEls.close.onclick=closeChooser; chooserEls.scrim.onclick=closeChooser;
       chooserEls.up.onclick=()=>{ if (chooser.parent) chooserOpenPath(chooser.parent); };
       chooserEls.select.onclick=chooserConfirmSelection; chooserEls.clearBtn.onclick=chooserClearSelection;

@@ -190,8 +190,10 @@ class ClosedEnums(unittest.TestCase):
     def test_scope_summary_tokenizer_and_enhancement_fields(self):
         scope = load("chutni_scope_summary")
         self.assertIn(scope["enhancement_state"], CHUTNI_ENHANCEMENT_STATES)
-        self.assertIn("engine", scope["tokenizer"])
-        self.assertIn("engine_commit", scope["tokenizer"])
+        # The generic Chutni service owns its index implementation. Samosa no
+        # longer advertises the removed standalone tokenizer prototype as a
+        # scope-level runtime dependency.
+        self.assertIsNone(scope["tokenizer"])
         # A scope can be Ready (evidence complete) while enhancement work is
         # still in progress -- the doc's core "improving summaries" claim.
         self.assertLessEqual(scope["chunks_summarized"], scope["chunks_total"])

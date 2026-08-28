@@ -1,5 +1,18 @@
 # Samosa Reader — `doc.read` tools contract + build card
 
+> **Chat attachment integration (2026-08-23).** This historical card still
+> defines the native PP-OCRv6 `doc.read`/Jobs contract. Ordinary Chat now has a
+> separate LLM-planned evidence path described in
+> [VISIONPSY_CHAT_ATTACHMENTS_SPEC.md](VISIONPSY_CHAT_ATTACHMENTS_SPEC.md):
+> embedded PDF text/PP-OCRv6 supplies literal text and the auxiliary standard
+> VisionPsy-Nano 460M supplies visual semantics. The `doc.read` transport window
+> of up to five pages below is not a Chat turn cap; Chat iterates as many
+> windows/pages as the task requires and runs visual pages sequentially. The
+> Jobs tier-2 Bonsai decisions in this card are unchanged and do not govern
+> ordinary Chat. `/healthz.ocr` now distinguishes the packaged executable from
+> the detector/recognizer/charset pack so the UI cannot claim OCR readiness
+> when the pack is missing.
+
 **Status: R1/E-R1, R2, R3, R4 (gateway doc.read + cache + Jobs review_required), E-R3 (Motto scenario test), and R5 (Tier-2 Bonsai crop escalation) RUN and PASSED (2026-07-23).** The
 run-first gate, C forward-pass port, content-addressed read cache, gateway tool handler, motto scenario acceptance test, and Tier-2 Bonsai crop escalation are built and verified with `make read-cache-test`, `make ocr-test`, `make doc-read-test`, `make motto-test`, and `make tier2-test` green. Thresholds calibrated (T_ACCEPT 0.84, T_DECIDE 0.99); render cap stays 768; decision 9 (Bonsai + mmproj only, no 24 GB Qwen tower) strictly enforced. Evidence:
 [E-R1](regressions/reader/report.md), [R2/R3](regressions/reader/r2r3-c-port.md).

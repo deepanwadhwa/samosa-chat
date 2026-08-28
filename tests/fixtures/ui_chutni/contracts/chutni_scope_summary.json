@@ -25,13 +25,7 @@
   "chunks_indexed": 420,
   "source_bytes_indexed": 1234,
   "extracted_text_bytes": 1000,
-  "tokenizer": {
-    "engine": "gigatoken",
-    "engine_version": "0.10.0",
-    "engine_commit": "34a1599f0c0ae7d7cd0d1c530e6522320158b360",
-    "tokenizer_sha256": "hex",
-    "chunker_fingerprint": "hex"
-  },
+  "tokenizer": null,
   "enhancement_state": "improving",
   "chunks_total": 420,
   "chunks_summarized": 180,

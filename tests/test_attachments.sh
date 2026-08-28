@@ -63,17 +63,28 @@ SAMOSA_OCR="$OCR" \
 GW_PID=$!
 i=0
 while [ "$i" -lt 100 ]; do
-  curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null | grep -q '"ready":true' && break
+  curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null | grep -q '"ready":true' &&
+    curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null | grep -q '"active_model_id":"qwen"' && break
   sleep 0.05; i=$((i + 1))
 done
 TOKEN=$(cat "$HOME_DIR/run/ui-token")
 HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
 field() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$2'))"; }
+# This fixture deliberately launches the qwen backend from this exact path;
+# health's probe-backed active identity can briefly be null while the fake
+# server is accepting its first connection, so use the fixture identity here.
+MODEL_ID=qwen
+MODEL_VERSION=qwen-model
 
 # --- fixtures ---
 printf '\211PNG\r\n\032\n' >"$TMP/probe.png"
 printf 'not-a-real-png-body-but-sniffing-only-checks-the-magic-header' >>"$TMP/probe.png"
 printf 'plain text, not an image or a pdf' >"$TMP/probe.txt"
+printf '\000binary' >"$TMP/probe.bin"
+printf '\000\000\000\030ftypisom\000\000\002\000isomiso2' >"$TMP/probe.mp4"
+dd if=/dev/zero bs=1048576 count=5 >>"$TMP/probe.mp4" 2>/dev/null
+printf '<html>unsupported large fixture' >"$TMP/large-unsupported.bin"
+dd if=/dev/zero bs=1048576 count=5 >>"$TMP/large-unsupported.bin" 2>/dev/null
 
 # --- 1. Auth: no token on any new route ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/v1/attachments" \
@@ -94,37 +105,156 @@ printf '%s' "$RESP" | grep -q '"document":false' || { echo "FAIL: expected capab
 RESP2=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe.png")
 [ "$(field "$RESP2" id)" = "$IMG_ID" ] || { echo "FAIL: re-uploading identical bytes should return the same id"; exit 1; }
 
-# --- 4. Reject an unsupported type ---
-STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" \
-  -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe.txt")
-[ "$STATUS" = "415" ] || { echo "FAIL: plain text upload should be 415, got $STATUS"; exit 1; }
+# --- 4. Plain UTF-8 text is a document, despite a misleading MIME header ---
+if [ -x "$EXTRACT" ]; then
+  python3 - "$TMP/late-notes.py" <<'PY'
+import sys
+with open(sys.argv[1], "w", encoding="utf-8", newline="") as f:
+    f.write("BEGIN_FILE\n")
+    f.write("A" * 7200)
+    f.write("\nLATE_FILE_SENTINEL\n")
+PY
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: image/png" \
+    -H "X-Samosa-Filename-B64: $(printf 'late-notes.py' | base64)" \
+    -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/late-notes.py")
+  TEXT_ID=$(field "$RESP" id)
+  [ ${#TEXT_ID} = 64 ] || { echo "FAIL: expected a text attachment id, got: $RESP"; exit 1; }
+  printf '%s' "$RESP" | grep -q '"media_type":"text/x-python"' || { echo "FAIL: text type was not inferred from the safe filename: $RESP"; exit 1; }
+  printf '%s' "$RESP" | grep -q '"document":true' || { echo "FAIL: text attachment was not marked as a document: $RESP"; exit 1; }
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment text probe\"}],\"attachment_ids\":[\"$TEXT_ID\"],\"stream\":false,\"max_tokens\":8192}")
+  printf '%s' "$RESP" | grep -q "saw the complete text attachment" || { echo "FAIL: complete text attachment did not reach the backend: $RESP"; exit 1; }
 
-# --- 5. GET without token -> 401; with token -> exact bytes back ---
+  # --- 4b. A document becomes durable conversation context, survives a
+  # later turn without re-uploading, and can be detached explicitly. ---
+  CONV_ID=deep-file-manifest-probe
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$CONV_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment text probe\"}],\"attachment_ids\":[\"$TEXT_ID\"],\"stream\":false}")
+  printf '%s' "$RESP" | grep -q "saw the complete text attachment" || { echo "FAIL: manifest turn did not reach the backend: $RESP"; exit 1; }
+  STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents")
+  [ "$STATUS" = "401" ] || { echo "FAIL: document manifest without token should be 401, got $STATUS"; exit 1; }
+  DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents")
+  printf '%s' "$DOCS" | grep -q "\"attachment_id\":\"$TEXT_ID\"" || { echo "FAIL: manifest did not persist the document: $DOCS"; exit 1; }
+  [ -s "$HOME_DIR/chats/$CONV_ID/documents.json" ] || { echo "FAIL: durable document manifest was not written to the conversation directory"; exit 1; }
+  printf '%s' "$DOCS" | grep -q '"filename":"late-notes.py"' || { echo "FAIL: manifest lost the document filename: $DOCS"; exit 1; }
+  printf '%s' "$DOCS" | grep -q '"mode":"full"' || { echo "FAIL: new document should begin in full mode: $DOCS"; exit 1; }
+
+  # The fake backend does not write a native Qwen KV session. Mark the
+  # conversation as resumable so this fixture exercises the gateway's saved-
+  # session follow-up path: the new user turn gets a continuity note while
+  # pinned_context retains the bounded local evidence for compaction.
+  mkdir -p "$HOME_DIR/chats/$CONV_ID"
+  touch "$HOME_DIR/chats/$CONV_ID/session.qws"
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$CONV_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment text followup probe\"}],\"stream\":false}")
+  printf '%s' "$RESP" | grep -q "saw the bound text document" || { echo "FAIL: bound document was not reused on a later turn: $RESP"; exit 1; }
+
+  STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X DELETE \
+    "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents/$TEXT_ID")
+  [ "$STATUS" = "200" ] || { echo "FAIL: detaching a bound document should be 200, got $STATUS"; exit 1; }
+  DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents")
+  [ "$(printf '%s' "$DOCS" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("documents", [])))')" = "0" ] || { echo "FAIL: detached document remained in the manifest: $DOCS"; exit 1; }
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$CONV_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment text detached probe\"}],\"stream\":false}")
+  printf '%s' "$RESP" | grep -q "detach removed document" || { echo "FAIL: detached document was still reused: $RESP"; exit 1; }
+
+  # A document above the full-context budget uses local ranked passages and
+  # source line citations, then remains reusable through its manifest.
+  python3 - "$TMP/retrieval-notes.md" <<'PY'
+import sys
+with open(sys.argv[1], "w", encoding="utf-8", newline="") as f:
+    for i in range(1800):
+        if i == 1700:
+            f.write("RETRIEVAL_SENTINEL: the deep file retrieval citation is here.\n")
+        else:
+            f.write(f"filler record {i} alpha beta gamma delta epsilon zeta eta theta\n")
+PY
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" \
+    -H "X-Samosa-Filename-B64: $(printf 'retrieval-notes.md' | base64)" \
+    -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/retrieval-notes.md")
+  RETRIEVAL_ID=$(field "$RESP" id)
+  RETRIEVAL_CONV=deep-file-retrieval-probe
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$RETRIEVAL_CONV\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment retrieval probe: where is RETRIEVAL_SENTINEL?\"}],\"attachment_ids\":[\"$RETRIEVAL_ID\"],\"stream\":false}")
+  printf '%s' "$RESP" | grep -q "saw cited retrieval passage" || { echo "FAIL: oversized document did not produce a cited retrieval passage: $RESP"; exit 1; }
+  DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$RETRIEVAL_CONV/documents")
+  printf '%s' "$DOCS" | grep -q '"mode":"retrieval"' || { echo "FAIL: oversized document was not recorded in retrieval mode: $DOCS"; exit 1; }
+  RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/compact" \
+    -H 'Content-Type: application/json' \
+    -d "{\"conversation_id\":\"$RETRIEVAL_CONV\"}")
+  printf '%s' "$RESP" | grep -q "saw pinned compaction context" || { echo "FAIL: manual compaction did not receive pinned document context: $RESP"; exit 1; }
+else
+  echo "test_attachments.sh: text document half SKIPPED (no samosa-extract build)"
+fi
+
+# --- 5. Reject an unsupported binary type ---
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" \
+  -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe.bin")
+[ "$STATUS" = "415" ] || { echo "FAIL: binary upload should be 415, got $STATUS"; exit 1; }
+
+# --- 6. GET without token -> 401; with token -> exact bytes back ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/attachments/$IMG_ID")
 [ "$STATUS" = "401" ] || { echo "FAIL: GET with no token should be 401, got $STATUS"; exit 1; }
 curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/attachments/$IMG_ID" -o "$TMP/roundtrip.png"
 cmp -s "$TMP/probe.png" "$TMP/roundtrip.png" || { echo "FAIL: GET did not return the exact uploaded bytes"; exit 1; }
 
-# --- 6. Invalid attachment_id shape -> 400 ---
+# --- 6b. A video larger than the ordinary 4 MiB request cap is streamed to
+# disk, sniffed from its container bytes, and served with browser byte ranges. ---
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: application/octet-stream" \
+  -H "X-Samosa-Filename-B64: $(printf 'long clip.mp4' | base64)" \
+  -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe.mp4")
+VIDEO_ID=$(field "$RESP" id)
+[ ${#VIDEO_ID} = 64 ] || { echo "FAIL: expected a video attachment id, got: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"media_type":"video/mp4"' || { echo "FAIL: MP4 was not sniffed from bytes: $RESP"; exit 1; }
+printf '%s' "$RESP" | grep -q '"video":true' || { echo "FAIL: expected capabilities.video:true: $RESP"; exit 1; }
+STATUS=$(curl -sS -D "$TMP/range.headers" -o "$TMP/range.bin" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -H 'Range: bytes=4-11' \
+  "http://127.0.0.1:$PORT/v1/attachments/$VIDEO_ID")
+[ "$STATUS" = "206" ] || { echo "FAIL: video byte range should return 206, got $STATUS"; exit 1; }
+[ "$(cat "$TMP/range.bin")" = "ftypisom" ] || { echo "FAIL: video byte range returned the wrong bytes"; exit 1; }
+grep -qi '^Content-Range: bytes 4-11/' "$TMP/range.headers" || { echo "FAIL: byte range response omitted Content-Range"; exit 1; }
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" \
+  -H 'Range: bytes=999999999-' "http://127.0.0.1:$PORT/v1/attachments/$VIDEO_ID")
+[ "$STATUS" = "416" ] || { echo "FAIL: invalid video byte range should return 416, got $STATUS"; exit 1; }
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X DELETE \
+  "http://127.0.0.1:$PORT/v1/attachments/$VIDEO_ID")
+[ "$STATUS" = "200" ] || { echo "FAIL: deleting the unused streamed video should be 200, got $STATUS"; exit 1; }
+
+# A streamed body that fails sniffing must inspect only its bounded prefix;
+# it must not index the full Content-Length through the prefix buffer.
+STATUS=$(curl -sS -o "$TMP/large-unsupported.json" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" \
+  --data-binary "@$TMP/large-unsupported.bin")
+[ "$STATUS" = "415" ] || { echo "FAIL: large unsupported upload should be 415, got $STATUS"; exit 1; }
+curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null || {
+  echo "FAIL: gateway did not survive a large unsupported streamed upload"; exit 1;
+}
+
+# --- 7. Invalid attachment_id shape -> 400 ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/attachments/not-a-hash")
 [ "$STATUS" = "400" ] || { echo "FAIL: malformed attachment id should be 400, got $STATUS"; exit 1; }
 
-# --- 7. Unknown but well-formed id -> 404 ---
+# --- 8. Unknown but well-formed id -> 404 ---
 FAKE_ID=$(printf '0%.0s' $(seq 1 64))
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/attachments/$FAKE_ID")
 [ "$STATUS" = "404" ] || { echo "FAIL: unknown attachment id should be 404, got $STATUS"; exit 1; }
 
-# --- 8. Chat completions with attachment_ids resolves into a real image_url ---
+# --- 9. Chat completions with attachment_ids resolves into a real image_url ---
 RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' \
   -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment image probe\"}],\"attachment_ids\":[\"$IMG_ID\"],\"stream\":false}")
 printf '%s' "$RESP" | grep -q "saw the image attachment" || { echo "FAIL: gateway did not inject the image attachment into the outgoing request: $RESP"; exit 1; }
 
-# --- 9. That attachment is now referenced: DELETE is refused ---
+# --- 10. That attachment is now referenced: DELETE is refused ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X DELETE "http://127.0.0.1:$PORT/v1/attachments/$IMG_ID")
 [ "$STATUS" = "409" ] || { echo "FAIL: deleting a referenced attachment should be 409, got $STATUS"; exit 1; }
 
-# --- 10. An attachment never sent in a chat turn can be deleted freely ---
+# --- 11. An attachment never sent in a chat turn can be deleted freely ---
 printf '\211PNG\r\n\032\n' >"$TMP/probe2.png"
 printf 'second-unused-attachment' >>"$TMP/probe2.png"
 RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe2.png")
@@ -134,13 +264,13 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X 
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/attachments/$UNUSED_ID")
 [ "$STATUS" = "404" ] || { echo "FAIL: a deleted attachment should 404 on GET, got $STATUS"; exit 1; }
 
-# --- 11. Chat completions naming an attachment that doesn't exist -> 404 ---
+# --- 12. Chat completions naming an attachment that doesn't exist -> 404 ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' \
   -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"x\"}],\"attachment_ids\":[\"$FAKE_ID\"],\"stream\":false}")
 [ "$STATUS" = "404" ] || { echo "FAIL: attachment_ids naming a missing attachment should be 404, got $STATUS"; exit 1; }
 
-# --- 12. Document attachment: real doc.read extraction, only when this
+# --- 13. Document attachment: real doc.read extraction, only when this
 #     machine actually has a working samosa-extract/samosa-ocr build. ---
 SUPPORTS_DOCS=$(field "$HEALTH" supports_documents)
 if [ "$SUPPORTS_DOCS" != "True" ]; then

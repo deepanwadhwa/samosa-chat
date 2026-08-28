@@ -21,11 +21,41 @@ Representative model-less response:
 {
   "gateway": true,
   "backend": "qwen",
+  "supports_images": false,
+  "supports_image_attachments": true,
+  "supports_video_attachments": true,
+  "supports_documents": true,
+  "vision": {
+    "auxiliary_runtime_available": true,
+    "visionpsy_runtime_available": true,
+    "molmo2_runtime_available": true,
+    "molmo2_model_ready": false,
+    "video_available": false
+  },
+  "ocr": {
+    "runtime_available": true,
+    "pack_ready": false,
+    "ready": false
+  },
   "installed": false,
   "ready": false,
   "loading": false
 }
 ```
+
+`supports_images` describes the active chat backend's native image input.
+`supports_image_attachments` describes the complete app path and can therefore
+be true for a text-only LLM when an auxiliary visual runtime is available.
+An installed valid Molmo2 package is preferred; VisionPsy is the fallback.
+`supports_video_attachments` reports that the installed app contains
+the native video runtime; `vision.video_available` additionally requires a
+structurally valid, pinned local Molmo2 package. The helper verifies every
+package file hash before mapping tensors. The composer can therefore accept a video and
+show actionable setup without pretending the model is ready. `ocr.runtime_available`
+reports the native executable, `ocr.pack_ready` reports the detector,
+recognizer, and charset files, and `ocr.ready` requires both; the UI must not
+claim scanned-page OCR is ready from the executable alone. Digital PDF text can
+still be available when the OCR pack is missing.
 
 When ready, the response also includes the active label/model, actual
 `context_limit_tokens`, context mode, generation state, and compaction status.
@@ -69,6 +99,11 @@ Content-Type: application/json
 
 Returns `202` with a background download snapshot. Only one download runs at a
 time. Poll `/v1/backends` or `/v1/downloads`.
+
+Molmo2 uses `provisioning: "native_pack"`. Until a reviewed public artifact is
+published, requesting its installation returns `409 native_pack_required` and
+does not download the upstream FP32 checkpoint. See
+[INSTALL.md](INSTALL.md#optional-molmo2-4b-package).
 
 ```http
 POST /v1/backends/install/cancel
@@ -147,6 +182,23 @@ For Bonsai and Ornith, `conversation_id` enables the durable per-model ledger.
 ```http
 POST /v1/cancel
 ```
+
+## Developer pipeline trace
+
+The authenticated `GET /v1/developer/trace` route reports whether full local
+pipeline capture is enabled and returns its current path, directory, bytes, and
+event count. `PUT /v1/developer/trace` with `{"enabled":true}` or `false`
+changes and persists the mode. `POST /v1/developer/trace/clear` removes prior
+trace files only while the mode is disabled; otherwise it returns `409
+developer_mode_active`.
+
+Trace JSONL correlates the incoming chat request, router prompt/raw decision,
+validated OCR/Vision plan, adaptive resource tier, document/OCR results,
+VisionPsy command/raw observation, exact final backend request, raw backend
+response, timings, process lifecycle, and errors using one `turn_id`. It can
+contain private document text and is therefore off by default and stored with
+mode `0600`. UI/authentication tokens are never captured. See
+[DEVELOPER_MODE.md](DEVELOPER_MODE.md) for the schema and diagnostic workflow.
 
 ## Optional public Internet sources
 
@@ -231,6 +283,102 @@ call, no added latency, byte-identical to a request that never asked. A
 because there the user explicitly asked for a specific page.
 
 See [MODELS_AND_INTERNET.md](MODELS_AND_INTERNET.md) for configuration.
+
+## Attachments and vision understanding
+
+```http
+POST /v1/attachments
+Content-Type: image/png (or image/jpeg, application/pdf, text/plain, video/mp4,
+              video/quicktime)
+X-Filename: example.png
+
+<binary bytes>
+```
+
+Returns `{id: "<sha256>", filename: "example.png", media_type: "image/png", size_bytes: 12345}`.
+
+The attachment route has a separate 4 GiB body ceiling. It streams the request
+into a private temporary file while hashing and enforcing the limit, then
+atomically publishes the content-addressed blob and metadata. MP4/MOV/M4V are
+accepted only when their container contains an `ftyp` signature; extension or
+client MIME alone is insufficient. Other ordinary API requests retain the 4
+MiB parser cap.
+
+`GET /v1/attachments/{sha256}` streams the private blob and supports one byte
+range, including suffix ranges. Valid ranges return `206`, `Accept-Ranges`, and
+`Content-Range`; unsatisfiable ranges return `416`. `DELETE` retains the
+existing attachment-reference safety checks.
+
+### Chat with Attachments
+
+In `POST /v1/chat/completions`:
+```json
+{
+  "messages": [{"role": "user", "content": "Explain this diagram"}],
+  "attachment_ids": ["<sha256>"]
+}
+```
+
+The gateway asks the active LLM for strict route JSON (`read_text`,
+`inspect_visual`, detail, visual scope, and explicit pages), validates it, and
+then acquires only the requested evidence. Deterministic visual classification
+is a floor; the planner cannot downgrade an obvious image/video task to
+text-only work. An installed Molmo2 package is the preferred visual provider,
+with VisionPsy and then resident native image input as fallbacks. A digital PDF text layer is preferred over
+OCR; a visual-only PDF route does not run OCR as an accidental side effect.
+
+For PDFs, explicit pages and whole-document scope are honored. Relevant-page
+selection scans the whole page inventory in internal extractor windows; the
+window size is not a turn cap. Required pages are rendered and processed
+sequentially through one helper session. Before load and before every page, the
+gateway selects a 2048/1536/1024/512 input tier from live hardware state and
+may downshift during the turn.
+
+Video attachments always route to the validated Molmo2 capability. The planner
+chooses `overview`, `temporal`, or `exhaustive`. Every inference request uses at
+most 16 uniformly timestamped frames. Temporal mode adds one 7.5-second dense
+refinement around a cited coarse timestamp (or the midpoint fallback).
+Exhaustive mode first takes a coarse pass, then walks 7.5-second windows with
+one-second overlap and no parallel frame batches, with at most eight dense
+windows per user turn. Evidence records actual decoded frame counts, source
+duration, covered intervals, the selected planner mode, and any unprocessed
+interval. Molmo2 is terminated before the primary backend synthesizes the final
+answer; on constrained Macs the primary backend is stopped before Molmo2 starts.
+Final visual synthesis runs greedily with model thinking disabled and a grounded system
+contract: answer from the specialist observation, never from the filename, and
+never claim that the image or video was inaccessible after successful inspection.
+
+Important attachment errors are:
+
+| HTTP/code | Meaning and recovery |
+|---|---|
+| `422 vision_model_required` | The validated route needs visual evidence but the weights are absent. Preserve the request, install `visionpsy-nano-460m-mlx-bf16`, then retry the same payload. |
+| `422 vision_resource_pressure` | Available memory or thermal state makes starting/continuing unsafe. Text/OCR evidence is returned as a partial when possible; otherwise free resources/cool the Mac and retry. |
+| `422 vision_page_selection_failed` | Required PDF pages could not be inventoried or selected. The client may retry after checking the file. |
+| `422 vision_inference_failed` and helper-provided vision codes | Visual inference failed after its bounded lower-resolution retry. Return a partial if text/completed-page evidence exists; otherwise do not synthesize an answer. |
+| `422 molmo2_model_required` | Video/extended vision needs the pinned native Q4 package. Preserve the request, follow native-pack setup, then retry. |
+| `422 molmo2_resource_pressure` | Starting or continuing Molmo2 would violate live memory/thermal admission. No higher-cost retry is attempted. |
+| `422 molmo2_video_analysis_failed` | Native media decode or Molmo2 generation failed; do not imply that the affected interval was inspected. |
+
+The browser's **Download and continue** action starts
+`POST /v1/models/install` with the exact model/version and an idempotency ID,
+then polls the returned per-job `status_url`. It keeps the exact pending chat
+payload and continues once after verified completion. Concurrent/late polls are
+collapsed so they cannot create duplicate answers. Installation or polling
+failure leaves a visible Retry action.
+
+For streaming text/OCR fallback, the gateway mechanically prepends this exact
+visible content before any model tokens:
+
+```text
+Partial answer — visual analysis failed; this answer uses text/OCR only.
+```
+
+It also inserts a trusted synthesis constraint that forbids claims about
+unseen images, layout, charts, colors, objects, or relationships. If earlier
+PDF pages completed before a later failure, the corresponding label says the
+required visual inspection is incomplete and evidence contains only completed
+pages. Vision-only failure returns an error instead of a fabricated answer.
 
 ## Shutdown
 

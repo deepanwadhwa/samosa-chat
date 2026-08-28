@@ -24,5 +24,21 @@ contributors, licensed under the MIT License. The encoder/decoder inference
 loop in src/samosa_summarizer.cpp is adapted from llama.cpp's `simple`
 example under that license.
 
+The optional VisionPsy-Nano 460M BF16 weights are the MLX conversion published
+by KaedeTai at KaedeTai/VisionPsy-Nano-460M-MLX, pinned by Samosa to revision
+ca7a1bad19a08fe8e474bee24275a2e377bbabba. The upstream model is
+qvac/VisionPsy-Nano-460M, licensed under the Apache License, Version 2.0.
+Samosa executes the conversion through its independent native MLX C++ adapter;
+the Python reference runtime is not distributed.
+
+The optional Molmo2 4B package is converted from allenai/Molmo2-4B revision
+042abfa7a38879a376cec03d949eff0aefaa0600, copyright the Allen Institute for
+AI and contributors, licensed under the Apache License, Version 2.0. Samosa's
+native conversion keeps the vision tower and connector in BF16 and converts
+large language matrices to affine Q4/group-64. The original FP32 checkpoint,
+Python reference runtime, Transformers, and PyTorch are not distributed by
+Samosa.
+
 Samosa Chat is not affiliated with or endorsed by the colibrì project,
-Alibaba Cloud, the Qwen team, Falcons.ai, or the llama.cpp project.
+Alibaba Cloud, the Qwen team, Falcons.ai, the llama.cpp project, qvac, KaedeTai,
+the VisionPsy project, AllenAI, or the Molmo project.

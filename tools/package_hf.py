@@ -51,18 +51,20 @@ SOURCE_FILES = [
     "samosa_kokoro.h",
     "samosa_extract.c",
     "samosa_ocr.c",
+    "visionpsy/samosa_visionpsy.cpp",
+    "visionpsy/visionpsy_model.cpp",
+    "visionpsy/visionpsy_model.h",
     # The compiled gateway and filesystem sidecar are the mandatory browser
     # control plane (docs/TASKS_UI_CHUTNI.md T1.0) -- every release includes
     # them unconditionally, not as an opt-in capability with a raw-Qwen
     # HTTP-serve fallback.
     "samosa_gateway.c",
+    "samosa_multimodal.c",
+    "samosa_multimodal.h",
     "samosa_summarizer.cpp",
     "samosa_fs.c",
     "read_cache.h",
     "durable_job.h",
-    # Chutni reuses the exact SQLite amalgamation already vendored by Samosa.
-    "sqlite/sqlite3.c",
-    "sqlite/sqlite3.h",
 ]
 
 CHUTNI_SOURCE_FILES = [
@@ -88,6 +90,8 @@ CHUTNI_SOURCE_FILES = [
     "third_party/blake3/blake3_dispatch.c",
     "third_party/blake3/blake3_impl.h",
     "third_party/blake3/blake3_portable.c",
+    "third_party/sqlite/sqlite3.c",
+    "third_party/sqlite/sqlite3.h",
 ]
 
 PDFIUM_ARCHIVES = [
@@ -175,6 +179,18 @@ def main() -> int:
                  "metal" / "kernels" / "mlx.metallib"),
         help="Metal library paired with --maple-runtime")
     ap.add_argument(
+        "--visionpsy-runtime", type=pathlib.Path,
+        default=ROOT / "build" / "samosa-visionpsy",
+        help="Apple-Silicon native VisionPsy helper (defaults to the production build)")
+    ap.add_argument(
+        "--molmo2-runtime", type=pathlib.Path,
+        default=ROOT / "build" / "samosa-molmo2",
+        help="Apple-Silicon native on-demand Molmo2 helper")
+    ap.add_argument(
+        "--molmo2-pack", type=pathlib.Path,
+        default=ROOT / "build" / "molmo2-pack",
+        help="native pinned Molmo2 Q4 package builder")
+    ap.add_argument(
         "--summarizer-model", type=pathlib.Path,
         default=ROOT / "build" / "samosa-text-summarization-Q8_0.gguf",
         help="verified Falconsai/text_summarization Q8_0 GGUF")
@@ -205,16 +221,27 @@ def main() -> int:
     # independent of the developer's build tree and its absolute CMake path.
     if sys.platform == "darwin" and platform.machine() == "arm64":
         for src, name in ((args.maple_runtime, "samosa-maple"),
+                          (args.visionpsy_runtime, "samosa-visionpsy"),
+                          (args.molmo2_runtime, "samosa-molmo2"),
+                          (args.molmo2_pack, "molmo2-pack"),
                           (args.maple_metallib, "mlx.metallib")):
             if not src.is_file():
                 print(f"missing Apple-Silicon Maple runtime: {src}", file=sys.stderr)
                 return 1
-            if name == "samosa-maple" and not os.access(src, os.X_OK):
-                print(f"Apple-Silicon Maple runtime is not executable: {src}",
+            if name in {"samosa-maple", "samosa-visionpsy", "samosa-molmo2", "molmo2-pack"} and not os.access(src, os.X_OK):
+                print(f"Apple-Silicon native runtime is not executable: {src}",
                       file=sys.stderr)
                 return 1
             place(src, out / "runtime" / "macos-arm64" / name, link=True)
             staged.append(out / "runtime" / "macos-arm64" / name)
+
+        molmo2_processor = ROOT / "assets" / "molmo2" / "processor.json"
+        if not molmo2_processor.is_file():
+            print(f"missing Molmo2 processor contract: {molmo2_processor}", file=sys.stderr)
+            return 1
+        processor_target = out / "runtime" / "common" / "molmo2-processor.json"
+        place(molmo2_processor, processor_target, link=False)
+        staged.append(processor_target)
 
         if not stage_native_summarizer(args, out, staged):
             return 1

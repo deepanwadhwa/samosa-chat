@@ -19,13 +19,8 @@ fi
 
 # 2. Check full model construction in fixtures
 echo -n "Full model construction in fixtures check: "
-# Ensure maple_ref.Model(args) isn't used in fixture generators unless carefully guarded,
-# or args comes from a synthetic config.
-# We'll just do a rough check.
-BAD_MODEL_INIT=$(grep -rn "maple_ref.Model(" tests/fixtures/maple/ 2>/dev/null | grep -v "361db")
-if [ -n "$BAD_MODEL_INIT" ]; then
-    echo "FAIL (investigate if safe)"
-    echo "$BAD_MODEL_INIT"
+if ! python3 tools/audit_maple_fixture_models.py tests/fixtures/maple; then
+    echo "FAIL"
     FAILED=1
 else
     echo "PASS"

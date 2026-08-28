@@ -227,7 +227,6 @@ make            # portable build
 make omp        # multithreaded (brew install libomp first, macOS)
 make test       # self-contained: stubs engine + network, tiny fixtures, no 24 GB model
                 # covers the compiled gateway, Chutni, and the Kimi preflight
-make test-all   # the above plus the Gigatoken adapter (needs `cargo +nightly`)
 ```
 
 - Model (24 GB, hard-linked, never copy): `~/Documents/samosa-models/qwen36_group32_i8`
