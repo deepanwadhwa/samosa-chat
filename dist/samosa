@@ -611,7 +611,12 @@ fi
 
 if [ "${1:-}" = "app" ]; then
   shift
-  APP_LIFECYCLE=1
+  # A normal app launch uses the same persistent supervisor as `serve`, so
+  # the local UI cannot disappear when a terminal or automation host reaps
+  # detached children after this short-lived launcher returns. Browser-owned
+  # shutdown remains available for lifecycle-specific integration tests and
+  # compatibility via an explicit environment override.
+  APP_LIFECYCLE="${SAMOSA_APP_LIFECYCLE:-0}"
   if [ "${1:-}" = "--context-tokens" ]; then
     shift
     [ "$#" = 1 ] && context_tokens_value "$1" || fail "--context-tokens requires auto or a positive integer"

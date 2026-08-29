@@ -7966,7 +7966,6 @@ typedef struct {
     int visual_evidence_emitted;
     int generation_gate_held;
     int backend_paused;
-    int skip_backend_ready_wait;
     int partial_notice_emitted;
     int incomplete_visual_notice_emitted;
 } VisionTurnContext;
@@ -7975,7 +7974,7 @@ static void vision_turn_release_runtime(Gateway *g, VisionTurnContext *turn) {
     if (!turn) return;
     visionpsy_session_close(g, &turn->session);
     if (turn->backend_paused && !atomic_load(&g->stopping)) {
-        if (backend_start(g) && !turn->skip_backend_ready_wait) {
+        if (backend_start(g)) {
             long long deadline = monotonic_millis() + 60000;
             while (!atomic_load(&g->stopping) && monotonic_millis() < deadline) {
                 if (backend_probe(g)) break;
@@ -12822,13 +12821,13 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     return ok;
 }
 
-/* Molmo2 direct chat deliberately bypasses the primary-model evidence and
-   synthesis path above. It is used both when Molmo is explicitly selected and
-   when a conversation under a text model begins with one visual attachment.
-   This function leases the verified Q4 specialist for exactly one visual turn
-   and returns its text verbatim in the ordinary OpenAI response shape. Molmo2
-   is an image/video-to-text model. Pointing or tracking markup may appear in
-   that text, but this route never claims to generate raster images. */
+/* When Molmo is explicitly selected as the conversation model, lease the
+   verified Q4 specialist for exactly one visual turn and return its text
+   verbatim in the ordinary OpenAI response shape. Text backends never use
+   this bypass: their attachments follow the evidence-and-synthesis path
+   above. Molmo2 is an image/video-to-text model. Pointing or tracking markup
+   may appear in that text, but this route never claims to generate raster
+   images. */
 static int molmo2_direct_error(int fd, int streaming, int status,
                                const char *code, const char *message) {
     if (streaming) {
@@ -12875,8 +12874,7 @@ static int molmo2_direct_prompt(jval *messages, TextBuffer *prompt) {
     return prompt->data != NULL;
 }
 
-static int molmo2_direct_chat(Gateway *g, int fd, jval *body,
-                              int delegated_from_text_model) {
+static int molmo2_direct_chat(Gateway *g, int fd, jval *body) {
     jval *stream_v = body && body->t == J_OBJ ? json_get(body, "stream") : NULL;
     int streaming = stream_v && stream_v->t == J_BOOL && stream_v->boolean;
     jval *ids = body && body->t == J_OBJ ? json_get(body, "attachment_ids") : NULL;
@@ -12938,11 +12936,6 @@ static int molmo2_direct_chat(Gateway *g, int fd, jval *body,
     turn.provider = 2;
     turn.plan.extended_visual = 1;
     turn.plan.detail_needed = 1;
-    /* For a first-turn visual delegation, return Molmo's answer as soon as
-       its helper is gone. Restart the selected text backend in parallel with
-       browser rendering; there is no synthesis call that needs to wait for
-       readiness. Direct Molmo selection has no text backend to restart. */
-    turn.skip_backend_ready_wait = delegated_from_text_model;
     turn.budget = vision_resource_budget(g, 1);
     char error_code[64] = {0};
     if (!vision_turn_start(g, &turn, error_code, sizeof(error_code))) {
@@ -13044,55 +13037,15 @@ static int molmo2_direct_chat(Gateway *g, int fd, jval *body,
    (T3.2) happens in chat_completions_forward() regardless of which branch
    below reaches it, so it applies equally to conversation-bound and
    stateless requests. */
-static int molmo2_initial_visual_turn(Gateway *g, jval *body) {
-    if (!g || !body || body->t != J_OBJ ||
-        !strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID) || !molmo2_available(g))
-        return 0;
-    /* This shortcut is deliberately conversation-scoped. Stateless API
-       attachment calls retain the evidence+synthesis contract, while the UI's
-       first visual chat turn gets Molmo's own answer and exact point markup. */
-    jval *conversation = json_get(body, "conversation_id");
-    if (!conversation || conversation->t != J_STR ||
-        !valid_conversation_id(conversation->str)) return 0;
-    jval *web = json_get(body, "web");
-    jval *web_urls = json_get(body, "web_urls");
-    jval *directory = json_get(body, "directory_context");
-    if ((web && web->t == J_BOOL && web->boolean) ||
-        (web_urls && web_urls->t == J_ARR && web_urls->len) ||
-        (directory && directory->t != J_NULL)) return 0;
-
-    jval *messages = json_get(body, "messages");
-    int users = 0, assistants = 0;
-    if (!messages || messages->t != J_ARR) return 0;
-    for (int i = 0; i < messages->len; ++i) {
-        jval *message = messages->kids[i];
-        jval *role = message && message->t == J_OBJ ? json_get(message, "role") : NULL;
-        if (!role || role->t != J_STR) continue;
-        if (!strcmp(role->str, "user")) users++;
-        else if (!strcmp(role->str, "assistant")) assistants++;
-    }
-    if (users != 1 || assistants != 0) return 0;
-
-    jval *ids = json_get(body, "attachment_ids");
-    if (!ids || ids->t != J_ARR || ids->len != 1 ||
-        !ids->kids[0] || ids->kids[0]->t != J_STR ||
-        !valid_attachment_id(ids->kids[0]->str)) return 0;
-    AttachmentMeta meta; char referenced_at[32];
-    return attachment_load_meta(g, ids->kids[0]->str, &meta,
-                                referenced_at, sizeof(referenced_at)) &&
-           (meta.image_cap || meta.video_cap);
-}
 
 static int chat_completions_request_inner(Gateway *g, int fd, const SamosaHttpRequest *request) {
     char *arena = NULL;
     jval *body = json_parse(request->body, &arena);
     int direct_molmo = body && body->t == J_OBJ &&
                        !strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID);
-    int delegated_molmo = molmo2_initial_visual_turn(g, body);
     jval *conv_id_v = (body && body->t == J_OBJ) ? json_get(body, "conversation_id") : NULL;
     if (!conv_id_v || conv_id_v->t != J_STR || !conv_id_v->str[0]) {
-        int result = direct_molmo ? molmo2_direct_chat(g, fd, body, 0)
-                                  : delegated_molmo ? molmo2_direct_chat(g, fd, body, 1)
+        int result = direct_molmo ? molmo2_direct_chat(g, fd, body)
                                   : chat_completions_forward(g, fd, request, body);
         json_free(body); free(arena);
         return result;
@@ -13147,8 +13100,7 @@ static int chat_completions_request_inner(Gateway *g, int fd, const SamosaHttpRe
     }
     /* No active/ready model: fall through so proxy_request() gives the
        clearer, pre-existing 409 model_required / 503 backend_loading. */
-    int result = direct_molmo ? molmo2_direct_chat(g, fd, body, 0)
-                              : delegated_molmo ? molmo2_direct_chat(g, fd, body, 1)
+    int result = direct_molmo ? molmo2_direct_chat(g, fd, body)
                               : chat_completions_forward(g, fd, request, body);
     json_free(body); free(arena);
     return result;

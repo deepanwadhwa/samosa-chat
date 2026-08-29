@@ -486,6 +486,23 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":\"There are 12 charts in a 3 by 4 grid.\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "what is this image?")) {
+        const char *system_message = strstr(request->body, "\"role\":\"system\"");
+        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts") ||
+            !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
+            !strstr(request->body, "UI context") ||
+            !strstr(request->body, "\"messages\":[{\"role\":\"system\"") ||
+            !system_message || strstr(system_message + 1, "\"role\":\"system\"") ||
+            !strstr(request->body, "\"thinking\":\"off\""))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing clean visual handoff\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"This is a black-and-white geometric pattern with repeated chart-like motifs.\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "what is this?")) {
         if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
             strstr(request->body, "POISONED_VAGUE_IMAGE_PROMPT"))
@@ -510,6 +527,19 @@ static int handler(SamosaHttpServer *server, int fd,
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":\"missing video evidence\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "What happens in this video?")) {
+        if (!strstr(request->body, "Attached video observation") ||
+            !strstr(request->body, "fixture timestamped video evidence") ||
+            !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
+            !strstr(request->body, "\"thinking\":\"off\""))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing clean video handoff\"}}]}", NULL);
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);

@@ -40,7 +40,8 @@ printf '#!/bin/sh\nexit 0\n' >"$TMP/open"
 chmod +x "$TMP/open"
 
 SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
-  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 sh "$ROOT/dist/samosa" app >/dev/null
+  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 SAMOSA_APP_LIFECYCLE=1 \
+  sh "$ROOT/dist/samosa" app >/dev/null
 
 GW_PID=$(tr -d '\n' <"$HOME_DIR/server.pid")
 [ -n "$GW_PID" ]

@@ -125,40 +125,37 @@ printf '%s' "$REPLY" | grep -q 'saw extended Molmo image evidence' || {
   echo "FAIL: extended multi-image work did not route through Molmo: $REPLY"; exit 1;
 }
 
-# A UI conversation that begins with one visual does not need a second text
-# model pass. Keep the conversation bound to the selected text model for later
-# text turns, but return Molmo's own answer and exact point markup now.
+# A UI conversation that begins with one visual must use Molmo only as the
+# evidence specialist, then hand the observation to the selected text model.
+# Returning Molmo directly here bypasses the selected model's system prompt
+# and can surface a generic "I cannot view images" answer in the app.
 DELEGATED=$(curl -sS --max-time 10 -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
-  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"system\",\"content\":\"UI context\"},{\"role\":\"user\",\"content\":\"How many charts? Point to each one.\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"conversation_id\":\"initial_visual_fixture\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"stream\":true}")
-printf '%s' "$DELEGATED" | grep -q 'fixture image evidence: a 3 by 4 grid containing 12 charts' || {
-  echo "FAIL: first visual turn was not answered directly by Molmo: $DELEGATED"; exit 1;
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"system\",\"content\":\"UI context\"},{\"role\":\"user\",\"content\":\"what is this image?\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"conversation_id\":\"initial_visual_fixture\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"stream\":false}")
+printf '%s' "$DELEGATED" | grep -q 'This is a black-and-white geometric pattern' || {
+  echo "FAIL: first visual turn did not reach primary-model synthesis: $DELEGATED"; exit 1;
 }
-printf '%s' "$DELEGATED" | grep -q 'points coords' || {
-  echo "FAIL: delegated Molmo point markup was lost: $DELEGATED"; exit 1;
-}
-printf '%s' "$DELEGATED" | grep -q '"provider":"molmo2_4b"' || {
-  echo "FAIL: delegated response omitted direct Molmo provenance: $DELEGATED"; exit 1;
-}
-# The delegated answer is returned without waiting for the selected text model
-# to finish restarting. Wait for the fixture backend before opening a second,
-# separately bound conversation so this test exercises the real UI contract
-# instead of racing active-model identity discovery.
-i=0
-while [ "$i" -lt 120 ]; do
-  HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
-  printf '%s' "$HEALTH" | grep -q '"ready":true' && break
-  sleep 0.05; i=$((i + 1))
-done
+if printf '%s' "$DELEGATED" | grep -q '"provider":"molmo2_4b"'; then
+  echo "FAIL: first visual turn bypassed primary synthesis: $DELEGATED"; exit 1;
+fi
+if printf '%s' "$DELEGATED" | grep -qi 'cannot .*\(view\|access\).*image\|upload it again'; then
+  echo "FAIL: first visual turn returned an image-access refusal: $DELEGATED"; exit 1;
+fi
+# The synthesis path waits for the selected text model to recover before it
+# forwards the observation, so readiness must already be restored here.
+HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
 printf '%s' "$HEALTH" | grep -q '"ready":true' || {
-  echo "FAIL: selected text model did not recover after delegated Molmo turn: $HEALTH"; exit 1;
+  echo "FAIL: selected text model was not ready after visual synthesis: $HEALTH"; exit 1;
 }
 DELEGATED_VIDEO=$(curl -sS --max-time 10 -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"What happens in this video?\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"conversation_id\":\"initial_video_fixture\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"stream\":false}")
-printf '%s' "$DELEGATED_VIDEO" | grep -q 'fixture timestamped video evidence' || {
-  echo "FAIL: first video turn was not answered directly by Molmo: $DELEGATED_VIDEO"; exit 1;
+printf '%s' "$DELEGATED_VIDEO" | grep -q 'saw bounded Molmo video evidence' || {
+  echo "FAIL: first video turn did not reach primary-model synthesis: $DELEGATED_VIDEO"; exit 1;
 }
+if printf '%s' "$DELEGATED_VIDEO" | grep -q '"provider":"molmo2_4b"'; then
+  echo "FAIL: first video turn bypassed primary synthesis: $DELEGATED_VIDEO"; exit 1;
+fi
 
 # The specialist lease must be released before synthesis. The only remaining
 # child is the restarted fake primary backend.
