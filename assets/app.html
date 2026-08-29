@@ -2139,7 +2139,7 @@
       // `ready:false` is also reported for the short interval while a newly
       // selected backend is starting. Keep that distinct from a genuine
       // no-model state so a model switch never flashes the chooser in Chat.
-      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,version:"",ready:false,loading:false};
+      let backend = {id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,version:"",ready:false,loading:false,installed:false,specialist_active:false};
       // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config last
       // reported. Starts fully closed so no web action is ever offered before
       // the server has confirmed it -- the same rule the other capabilities
@@ -2526,8 +2526,8 @@
         return out;
       }
       const GENERATION_LABEL = "Working through it";
-      function generationStatusHTML() {
-        return `<span class="generation-status"><span class="generation-workmark" aria-hidden="true"><span></span><span></span><span></span></span><span>${GENERATION_LABEL}</span></span>`;
+      function generationStatusHTML(label = GENERATION_LABEL) {
+        return `<span class="generation-status"><span class="generation-workmark" aria-hidden="true"><span></span><span></span><span></span></span><span class="generation-status-label">${escapeHTML(label)}</span></span>`;
       }
       function molmoGroundingAttribute(attributes, name) {
         const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -2647,7 +2647,9 @@
       function renderAssistantResponse(node, msg) {
         const waiting = !!msg.streaming && !String(msg.content || "").trim() && !msg.error && !msg.visionRequired;
         if (waiting) {
-          if (!node.querySelector(".generation-status")) node.innerHTML = generationStatusHTML();
+          const waitingLabel = msg.fileActivity?.message || GENERATION_LABEL;
+          if (!node.querySelector(".generation-status")) node.innerHTML = generationStatusHTML(waitingLabel);
+          else node.querySelector(".generation-status-label").textContent = waitingLabel;
           return;
         }
         if (msg.visionRequired) {
@@ -2838,7 +2840,7 @@
           // A backend that is loading is still a configured model. The
           // chooser is only meaningful when the gateway explicitly reports
           // that no model is available (or startup failed).
-          els.messages.innerHTML = backend.ready || backend.loading ? welcomeHTML() : chooseModelHTML();
+          els.messages.innerHTML = backend.ready || backend.loading || backend.installed ? welcomeHTML() : chooseModelHTML();
           els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); });
           els.messages.querySelector("[data-choose-model]")?.addEventListener("click", openModelSettings);
           return;
@@ -5235,6 +5237,18 @@
         // or failing refresh must not reopen or freeze the card.
         Promise.resolve().then(refreshWebConfig).then(applyCapabilities).catch(() => {});
       }
+      function modelHealthStatus(h, modelLoading, specialistActive) {
+        if (specialistActive) {
+          const specialist = String(h.vision?.specialist_model || "Local vision model");
+          const visionLabel = /vision/i.test(specialist) ? specialist : `${specialist} vision model`;
+          return `Using ${visionLabel} to process the image for ${h.label}…`;
+        }
+        if (h.generating) return `${h.label} is generating`;
+        if (h.ready) return `${h.label} ready`;
+        if (modelLoading) return `Loading ${h.label}…`;
+        if (h.installed && h.backend_state !== "none") return `${h.label} needs attention`;
+        return "Choose a model";
+      }
       async function health() {
         let h;
         try {
@@ -5248,18 +5262,20 @@
           const previousBackend=backend.id;
           const previousReady=!!backend.ready;
           const previousLoading=!!backend.loading;
+          const previousInstalled=!!backend.installed;
           if(h.gateway) {
             const modelLoading = !!h.loading || h.backend_state === "loading";
-            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:!!h.supports_images,supports_image_attachments:!!h.supports_image_attachments,supports_video_attachments:!!h.supports_video_attachments,supports_documents:!!h.supports_documents,ready:h.ready,loading:modelLoading};
+            const specialistActive = !!h.vision?.specialist_active || h.backend_state === "specialist";
+            backend={id:h.backend,label:h.label,model:h.model,version:h.model_version||"",supports_images:!!h.supports_images,supports_image_attachments:!!h.supports_image_attachments,supports_video_attachments:!!h.supports_video_attachments,supports_documents:!!h.supports_documents,ready:h.ready,loading:modelLoading,installed:!!h.installed,specialist_active:specialistActive};
             // T3.2: the `+` button itself stays enabled -- it opens a menu
             // that explains, per item, what is and isn't available. Disabling
             // the whole button would hide those reasons entirely.
             applyCapabilities();
-            els.dot.className=h.ready?"status-dot online":"status-dot";
-            els.status.textContent=h.generating?`${h.label} is generating`:h.ready?`${h.label} ready`:modelLoading?`Loading ${h.label}…`:`Choose a model`;
-            els.status.disabled=!!h.ready || !!h.generating;
+            els.dot.className=h.ready || specialistActive?"status-dot online":"status-dot";
+            els.status.textContent=modelHealthStatus(h, modelLoading, specialistActive);
+            els.status.disabled=!!h.ready || !!h.generating || specialistActive;
           } else {
-            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,ready:true,loading:false};
+            backend={id:"qwen",label:"Qwen3.6 35B A3B",model:"qwen3.6-35b-a3b",version:"",supports_images:true,supports_image_attachments:true,supports_video_attachments:false,supports_documents:false,ready:true,loading:false,installed:true,specialist_active:false};
             applyCapabilities();
             els.dot.className="status-dot online"; els.status.textContent=h.scheduler?.active?"Qwen is generating":"Qwen3.6 ready";
           }
@@ -5281,9 +5297,9 @@
           }
           els.sideDot.className=els.dot.className; els.sideStatus.textContent=backend.label;
           els.prompt.disabled=!backend.ready || generating;
-          els.prompt.placeholder=backend.ready?"Message your local model…":"Choose a model in Settings";
+          els.prompt.placeholder=backend.specialist_active?`${backend.label} will answer after local vision processing…`:backend.ready?"Message your local model…":backend.installed?`${backend.label} is temporarily unavailable`:"Choose a model in Settings";
           resizePrompt();
-          if((previousReady!==!!backend.ready || previousLoading!==!!backend.loading) && !(activeChat()?.messages || []).length) renderMessages();
+          if((previousReady!==!!backend.ready || previousLoading!==!!backend.loading || previousInstalled!==!!backend.installed) && !(activeChat()?.messages || []).length) renderMessages();
           if(h.rss_gb)els.rss.textContent=`${h.rss_gb.toFixed(2)} GB`; if(h.last_generation?.tokens_per_second)els.speed.textContent=`${h.last_generation.tokens_per_second.toFixed(2)} tok/s`;
           if(h.context_limit_tokens){const effective=h.context_limit_tokens.toLocaleString(), model=(h.model_context_limit_tokens||h.context_limit_tokens).toLocaleString(); els.context.textContent=`${effective} tokens`; els.contextHelp.textContent=`${h.context_limit_mode||"configured"} total context: ${effective} tokens (model maximum ${model}). History, thinking, and the answer share it.`;}
           // Runtime controls are hydrated from the gateway-owned settings API,

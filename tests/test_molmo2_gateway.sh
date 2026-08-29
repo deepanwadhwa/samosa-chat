@@ -60,6 +60,7 @@ SAMOSA_MOLMO2_ENGINE="$(CDPATH= cd -- "$(dirname "$MM_HELPER")" && pwd)/$(basena
 SAMOSA_MOLMO2_MODEL="$MODEL_DIR" \
 SAMOSA_FAKE_MM_FRAMED=1 \
 SAMOSA_FAKE_MM_LOG="$TMP/molmo-commands.jsonl" \
+SAMOSA_FAKE_MM_VISUAL_DELAY_MS=800 \
   "$GATEWAY" >"$TMP/stdout.log" 2>"$TMP/stderr.log" &
 GW_PID=$!
 i=0
@@ -129,9 +130,46 @@ printf '%s' "$REPLY" | grep -q 'saw extended Molmo image evidence' || {
 # evidence specialist, then hand the observation to the selected text model.
 # Returning Molmo directly here bypasses the selected model's system prompt
 # and can surface a generic "I cannot view images" answer in the app.
-DELEGATED=$(curl -sS --max-time 10 -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+DELEGATED_PATH="$TMP/delegated-visual.stream"
+curl -N -sS --max-time 10 -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
-  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"system\",\"content\":\"UI context\"},{\"role\":\"user\",\"content\":\"what is this image?\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"conversation_id\":\"initial_visual_fixture\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"stream\":false}")
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"system\",\"content\":\"UI context\"},{\"role\":\"user\",\"content\":\"what is this image?\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"conversation_id\":\"initial_visual_fixture\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"stream\":true}" \
+  >"$DELEGATED_PATH" &
+DELEGATED_PID=$!
+SPECIALIST_HEALTH=""
+i=0
+while kill -0 "$DELEGATED_PID" 2>/dev/null && [ "$i" -lt 100 ]; do
+  SPECIALIST_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
+  printf '%s' "$SPECIALIST_HEALTH" | grep -q '"backend_state":"specialist"' && break
+  sleep 0.02
+  i=$((i + 1))
+done
+printf '%s' "$SPECIALIST_HEALTH" | grep -q '"backend":"qwen"' || {
+  echo "FAIL: selected text model identity disappeared during visual handoff: $SPECIALIST_HEALTH"; exit 1;
+}
+printf '%s' "$SPECIALIST_HEALTH" | grep -q '"specialist_active":true' || {
+  echo "FAIL: health did not expose active visual specialist: $SPECIALIST_HEALTH"; exit 1;
+}
+printf '%s' "$SPECIALIST_HEALTH" | grep -q '"specialist_model":"Molmo2 4B"' || {
+  echo "FAIL: health did not name the active visual specialist: $SPECIALIST_HEALTH"; exit 1;
+}
+printf '%s' "$SPECIALIST_HEALTH" | grep -q '"installed":true' || {
+  echo "FAIL: selected text model looked unconfigured during visual handoff: $SPECIALIST_HEALTH"; exit 1;
+}
+wait "$DELEGATED_PID"
+DELEGATED=$(cat "$DELEGATED_PATH")
+printf '%s' "$DELEGATED" | grep -q 'Preparing this image for local visual analysis before Qwen3.6 35B A3B answers' || {
+  echo "FAIL: visual stream did not immediately explain the handoff: $DELEGATED"; exit 1;
+}
+printf '%s' "$DELEGATED" | grep -q 'Using Molmo2 4B vision model to process this image; Qwen3.6 35B A3B remains the selected answering model' || {
+  echo "FAIL: visual stream did not name both model roles: $DELEGATED"; exit 1;
+}
+printf '%s' "$DELEGATED" | grep -q 'Vision analysis is complete. Loading Qwen3.6 35B A3B to answer' || {
+  echo "FAIL: visual stream did not expose the specialist-to-text handoff: $DELEGATED"; exit 1;
+}
+printf '%s' "$DELEGATED" | grep -q 'Qwen3.6 35B A3B is answering from the local image analysis' || {
+  echo "FAIL: visual stream did not identify the answering model: $DELEGATED"; exit 1;
+}
 printf '%s' "$DELEGATED" | grep -q 'This is a black-and-white geometric pattern' || {
   echo "FAIL: first visual turn did not reach primary-model synthesis: $DELEGATED"; exit 1;
 }
@@ -141,6 +179,9 @@ fi
 if printf '%s' "$DELEGATED" | grep -qi 'cannot .*\(view\|access\).*image\|upload it again'; then
   echo "FAIL: first visual turn returned an image-access refusal: $DELEGATED"; exit 1;
 fi
+printf '%s' "$DELEGATED" | grep -q 'data: \[DONE\]' || {
+  echo "FAIL: delegated visual stream did not terminate cleanly: $DELEGATED"; exit 1;
+}
 # The synthesis path waits for the selected text model to recover before it
 # forwards the observation, so readiness must already be restored here.
 HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")

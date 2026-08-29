@@ -498,6 +498,11 @@ static int handler(SamosaHttpServer *server, int fd,
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":\"missing clean visual handoff\"}}]}", NULL);
+        if (strstr(request->body, "\"stream\":true"))
+            return samosa_http_response(fd, 200, "text/event-stream",
+                "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"This is a black-and-white geometric pattern with repeated chart-like motifs.\"},\"finish_reason\":null}]}\n\n"
+                "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                "data: [DONE]\n\n", "Cache-Control: no-cache\r\n");
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"This is a black-and-white geometric pattern with repeated chart-like motifs.\"}}]}", NULL);

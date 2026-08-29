@@ -36,7 +36,7 @@ class Element {
     this.children = [];
     // The renderer reads back .avatar/.bubble/.thinking-body/.response/
     // .error-note from markup it just set, so the fixture materializes those.
-    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note", "generation-status", "generation-workmark"]) {
+    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note", "generation-status", "generation-workmark", "generation-status-label"]) {
       if (v.includes(`class="${cls}`)) { const e = new Element("div"); e.className = cls; this.appendChild(e); }
     }
   }
@@ -160,6 +160,12 @@ function timeRender(fns, els, messages) {
     "the waiting state should use the active-work mark");
   assert.doesNotMatch(response.innerHTML, /typing/,
     "the retired terminal cursor class must not return");
+  const visionResponse = new Element("div");
+  fns.renderAssistantResponse(visionResponse, { streaming: true, content: "", fileActivity: {
+    message: "Using Molmo2 4B vision model to process this image; Maple remains selected…"
+  }});
+  assert.match(visionResponse.innerHTML, /Using Molmo2 4B vision model to process this image/,
+    "a visual handoff must replace the opaque waiting label with its live stage");
   const originalStatus = response.querySelector(".generation-status");
   fns.renderAssistantResponse(response, { streaming: true, content: "", reasoning: "A later SSE update" });
   assert.equal(response.querySelector(".generation-status"), originalStatus,

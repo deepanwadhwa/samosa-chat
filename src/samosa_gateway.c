@@ -102,6 +102,7 @@ typedef struct {
     SamosaMmSupervisor multimodal_supervisor;
     pthread_mutex_t generation_gate_mu;
     int specialist_generation_active;
+    int specialist_provider; /* 1 = VisionPsy, 2 = Molmo2 */
     char tokenizer[PATH_MAX];
     char llama_server[PATH_MAX];
     char summarizer_engine[PATH_MAX];
@@ -5839,7 +5840,9 @@ static int backend_supports_images(Gateway *g, const char *name) {
    pid/ready/generating separately. "none" means nothing is installed for
    the currently selected backend name at all -- distinct from "failed",
    where a model IS installed but no process is currently up. */
-static const char *backend_state_string(Gateway *g, int ready, pid_t pid) {
+static const char *backend_state_string(Gateway *g, int ready, pid_t pid,
+                                        int specialist_active) {
+    if (specialist_active) return "specialist";
     if (atomic_load(&g->generating)) return "generating";
     if (ready) return "ready";
     if (pid > 0) return "loading";
@@ -7986,6 +7989,7 @@ static void vision_turn_release_runtime(Gateway *g, VisionTurnContext *turn) {
     if (turn->generation_gate_held) {
         pthread_mutex_lock(&g->generation_gate_mu);
         g->specialist_generation_active = 0;
+        g->specialist_provider = 0;
         pthread_mutex_unlock(&g->generation_gate_mu);
         turn->generation_gate_held = 0;
     }
@@ -8027,6 +8031,7 @@ static int vision_turn_start(Gateway *g, VisionTurnContext *turn,
         return 0;
     }
     g->specialist_generation_active = 1;
+    g->specialist_provider = turn->provider;
     turn->generation_gate_held = 1;
     pthread_mutex_unlock(&g->generation_gate_mu);
 
@@ -12299,6 +12304,9 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     jval *stream = json_get(body, "stream");
     int streaming = stream && stream->t == J_BOOL && stream->boolean;
     int have_document_attachments = 0;
+    int have_visual_attachments = 0;
+    char visual_filename[256] = "Attached visual";
+    char visual_kind[16] = "image";
 
     /* Validate incoming IDs and identify document attachments before any
        extraction. Images remain turn-scoped; only document IDs become part of
@@ -12313,6 +12321,14 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         if (!attachment_load_meta(g, idv->str, &meta, referenced_at, sizeof(referenced_at)))
             return samosa_http_json_error(fd, 404, "attachment_not_found",
                 "One of the attached files no longer exists on this server.");
+        if (!have_visual_attachments && (meta.image_cap || meta.video_cap)) {
+            have_visual_attachments = 1;
+            path_copy(visual_filename, sizeof(visual_filename),
+                      meta.filename[0] ? meta.filename :
+                      meta.video_cap ? "Attached video" : "Attached image");
+            path_copy(visual_kind, sizeof(visual_kind),
+                      meta.video_cap ? "video" : "image");
+        }
         if (!meta.document_cap) continue;
         have_document_attachments = 1;
         int already_bound = 0, already_new = 0;
@@ -12332,10 +12348,38 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         rfc3339_now_to(dst->added_at, sizeof(dst->added_at));
     }
 
+    int visual_progress = streaming && have_visual_attachments;
+    if (visual_progress) {
+        if (!web_progress_begin(&web_progress, fd)) return 0;
+        char message[320];
+        snprintf(message, sizeof(message),
+                 "Preparing this %s for local visual analysis before %s answers…",
+                 visual_kind, backend_label(g->backend));
+        file_sse_activity(&web_progress, visual_filename, "vision_preparing",
+                          message, 5, 1);
+    }
+
     VisionTurnContext vision_turn = {0};
     vision_route_plan(g, original_text, attach_ids, &bound_documents,
                       &vision_turn.plan);
     vision_turn.budget = vision_resource_budget(g, vision_turn.plan.detail_needed);
+    if (visual_progress) {
+        char message[320];
+        if (vision_turn.plan.inspect_visual) {
+            const char *vision_label = molmo2_available(g) ? "Molmo2 4B" :
+                visionpsy_available(g) ? "VisionPsy-Nano 460M" :
+                backend_label(g->backend);
+            snprintf(message, sizeof(message),
+                     "Using %s vision model to process this %s; %s remains the selected answering model…",
+                     vision_label, visual_kind, backend_label(g->backend));
+        } else {
+            snprintf(message, sizeof(message),
+                     "Reading this %s locally before %s answers…",
+                     visual_kind, backend_label(g->backend));
+        }
+        file_sse_activity(&web_progress, visual_filename, "vision",
+                          message, 15, 1);
+    }
 
     int reuse_saved_document_context =
         !have_attachments && have_bound_documents && !strcmp(g->backend, "qwen") &&
@@ -12343,7 +12387,8 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         !vision_turn.plan.inspect_visual;
     int document_progress = streaming &&
         (have_document_attachments || have_bound_documents);
-    if (document_progress && !web_progress_begin(&web_progress, fd)) {
+    if (document_progress && !web_progress.started &&
+        !web_progress_begin(&web_progress, fd)) {
         vision_turn_close(g, &vision_turn);
         return 0;
     }
@@ -12440,6 +12485,15 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         path_copy(bound_documents.items[i].mode, sizeof(bound_documents.items[i].mode),
                   retrieval ? "retrieval" : "full");
     }
+    if (visual_progress) {
+        char message[320];
+        snprintf(message, sizeof(message),
+                 "%s analysis is complete. Loading %s to answer…",
+                 vision_turn.visual_evidence_emitted ? "Vision" : "Local image",
+                 backend_label(g->backend));
+        file_sse_activity(&web_progress, visual_filename, "vision_handoff",
+                          message, 75, 1);
+    }
     int ocr_only_partial = vision_turn.partial_notice_emitted;
     int incomplete_visual_partial = vision_turn.incomplete_visual_notice_emitted;
     int grounded_visual_synthesis = vision_turn.visual_evidence_emitted;
@@ -12449,6 +12503,14 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             ? "Partial answer — visual analysis stopped before all required pages were inspected."
             : NULL;
     vision_turn_close(g, &vision_turn);
+    if (visual_progress) {
+        char message[320];
+        snprintf(message, sizeof(message),
+                 "%s is answering from the local %s analysis…",
+                 backend_label(g->backend), visual_kind);
+        file_sse_activity(&web_progress, visual_filename, "vision_answering",
+                          message, 90, 1);
+    }
     if (doc_evidence.len > DEEP_FILE_MAX_EVIDENCE_CHARS) {
         free(doc_evidence.data); free(image_blocks.data);
         return chat_context_error(fd, &web_progress, 413, "document_context_too_large",
@@ -18750,6 +18812,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         int molmo2_ready = molmo2_available(g);
         int auxiliary_vision_runtime = visionpsy_runtime || molmo2_runtime;
         int direct_molmo = !strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID);
+        pthread_mutex_lock(&g->generation_gate_mu);
+        int specialist_active = g->specialist_generation_active;
+        int specialist_provider = g->specialist_provider;
+        pthread_mutex_unlock(&g->generation_gate_mu);
+        const char *specialist_label = specialist_provider == 2
+            ? "Molmo2 4B" : specialist_provider == 1
+                ? "VisionPsy-Nano 460M" : "Local vision model";
+        int inference_active = atomic_load(&g->generating) || specialist_active;
         int supports_image_attachments = direct_molmo
             ? molmo2_ready
             : backend_supports_images(g, g->backend) || auxiliary_vision_runtime;
@@ -18762,7 +18832,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "\"supports_documents\":%s,"
             "\"vision\":{\"auxiliary_runtime_available\":%s,"
             "\"visionpsy_runtime_available\":%s,\"molmo2_runtime_available\":%s,"
-            "\"molmo2_model_ready\":%s,\"video_available\":%s},"
+            "\"molmo2_model_ready\":%s,\"video_available\":%s,"
+            "\"specialist_active\":%s,\"specialist_model\":\"%s\"},"
             "\"ocr\":{\"runtime_available\":%s,\"pack_ready\":%s,\"ready\":%s},"
             "\"chutni\":{\"available\":%s,\"managed_by\":\"samosa\","
             "\"can_create_memory\":%s,\"protocol\":\"0.1\"},"
@@ -18784,6 +18855,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             molmo2_runtime ? "true" : "false",
             molmo2_ready ? "true" : "false",
             molmo2_ready ? "true" : "false",
+            specialist_active ? "true" : "false",
+            specialist_label,
             ocr_runtime_available ? "true" : "false",
             ocr_models_ready ? "true" : "false",
             ocr_runtime_available && ocr_models_ready ? "true" : "false",
@@ -18792,9 +18865,9 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             native_summary_available ? "true" : "false",
             summarizer_pid > 0 ? "true" : "false",
             ready ? "true" : "false", (!ready && pid > 0) ? "true" : "false",
-            atomic_load(&g->generating) ? "true" : "false", (long)pid,
+            inference_active ? "true" : "false", (long)pid,
             backend_available(g, g->backend) ? "true" : "false",
-            backend_state_string(g, ready, pid));
+            backend_state_string(g, ready, pid, specialist_active));
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/internal/v1/status")) {

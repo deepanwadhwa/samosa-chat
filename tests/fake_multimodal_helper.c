@@ -104,7 +104,19 @@ int main(void) {
         int poisoned_vague_prompt = image && strstr(message, "what is this?") &&
             (strstr(message, "For charts") ||
              strstr(message, "Transcribe every visible title"));
+        int delayed_visual_handoff = image && strstr(message, "what is this image?");
         free(message);
+        const char *delay_text = getenv("SAMOSA_FAKE_MM_VISUAL_DELAY_MS");
+        if (delayed_visual_handoff && delay_text && *delay_text) {
+            long delay_ms = strtol(delay_text, NULL, 10);
+            if (delay_ms > 0 && delay_ms <= 5000) {
+                struct timespec pause = {
+                    .tv_sec = delay_ms / 1000,
+                    .tv_nsec = (delay_ms % 1000) * 1000000L
+                };
+                while (nanosleep(&pause, &pause) && errno == EINTR) {}
+            }
+        }
         const char *response = poisoned_vague_prompt
             ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"POISONED_VAGUE_IMAGE_PROMPT\","
               "\"prompt_tokens\":3,\"generated_tokens\":4,\"frames\":0,\"duration_seconds\":0}"
