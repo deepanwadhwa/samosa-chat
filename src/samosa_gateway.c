@@ -12581,6 +12581,17 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         if (requested > DEEP_FILE_QWEN_MAX_RESPONSE_TOKENS)
             document_response_cap = DEEP_FILE_QWEN_MAX_RESPONSE_TOKENS;
     }
+    /* Maple-Preview rejects requests above its 4096-token API ceiling. The
+       browser shares response-length preferences across backends, so enforce
+       Maple's smaller contract at the gateway boundary. */
+    int maple_response_cap = 0;
+    if (!strcmp(g->backend, "maple")) {
+        jval *max_value = json_get(body, "max_tokens");
+        if (!max_value) max_value = json_get(body, "max_completion_tokens");
+        if (max_value && max_value->t == J_NUM && max_value->num > 4096 &&
+            max_value->num == (int)max_value->num)
+            maple_response_cap = 4096;
+    }
 
     TextBuffer payload = {0};
     text_add(&payload, "{");
@@ -12594,7 +12605,7 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
              (!strcmp(body->keys[i], "thinking") ||
               !strcmp(body->keys[i], "chat_template_kwargs") ||
               !strcmp(body->keys[i], "temperature"))) ||
-            ((document_response_cap || fast_web_synthesis) &&
+            ((document_response_cap || maple_response_cap || fast_web_synthesis) &&
              (!strcmp(body->keys[i], "max_tokens") ||
               !strcmp(body->keys[i], "max_completion_tokens")))) continue;
         if (wrote) text_add(&payload, ",");
@@ -12605,6 +12616,11 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     if (document_response_cap && !fast_web_synthesis) {
         if (wrote) text_add(&payload, ",");
         text_add(&payload, "\"max_tokens\":2048");
+        wrote = 1;
+    }
+    if (maple_response_cap && !fast_web_synthesis) {
+        if (wrote) text_add(&payload, ",");
+        text_add(&payload, "\"max_tokens\":4096");
         wrote = 1;
     }
     if (grounded_visual_synthesis || fast_web_synthesis) {
