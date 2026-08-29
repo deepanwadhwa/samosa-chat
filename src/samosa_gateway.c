@@ -632,14 +632,35 @@ static pid_t spawn_keep_awake(Gateway *g) {
 
 static int json_escape_to(char *out, size_t cap, size_t *used, const char *text) {
     static const char hex[] = "0123456789abcdef";
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+    for (const unsigned char *p = (const unsigned char *)text; *p; ) {
         char encoded[7]; const char *part = encoded; size_t length;
-        if (*p == '"' || *p == '\\') { encoded[0] = '\\'; encoded[1] = (char)*p; length = 2; }
-        else if (*p == '\n') { part = "\\n"; length = 2; }
-        else if (*p == '\r') { part = "\\r"; length = 2; }
-        else if (*p == '\t') { part = "\\t"; length = 2; }
-        else if (*p < 0x20) { memcpy(encoded, "\\u00", 4); encoded[4] = hex[*p >> 4]; encoded[5] = hex[*p & 15]; length = 6; }
-        else { encoded[0] = (char)*p; length = 1; }
+        unsigned char c = *p;
+        if (c == '"' || c == '\\') { encoded[0] = '\\'; encoded[1] = (char)c; length = 2; ++p; }
+        else if (c == '\n') { part = "\\n"; length = 2; ++p; }
+        else if (c == '\r') { part = "\\r"; length = 2; ++p; }
+        else if (c == '\t') { part = "\\t"; length = 2; ++p; }
+        else if (c < 0x20) { memcpy(encoded, "\\u00", 4); encoded[4] = hex[c >> 4]; encoded[5] = hex[c & 15]; length = 6; ++p; }
+        else if (c < 0x80) { encoded[0] = (char)c; length = 1; ++p; }
+        else {
+            /* JSON strings are UTF-8 on the wire. Replace malformed input
+               from fetched pages/files instead of emitting invalid JSON. */
+            size_t width = 0;
+            unsigned int codepoint = 0;
+            if (c >= 0xc2 && c <= 0xdf) { width = 2; codepoint = c & 0x1f; }
+            else if (c >= 0xe0 && c <= 0xef) { width = 3; codepoint = c & 0x0f; }
+            else if (c >= 0xf0 && c <= 0xf4) { width = 4; codepoint = c & 0x07; }
+            int valid = width != 0;
+            for (size_t i = 1; valid && i < width; ++i)
+                valid = p[i] && (p[i] & 0xc0) == 0x80;
+            if (valid) {
+                for (size_t i = 1; i < width; ++i) codepoint = (codepoint << 6) | (p[i] & 0x3f);
+                valid = (width == 2 && codepoint >= 0x80) ||
+                        (width == 3 && codepoint >= 0x800 && !(codepoint >= 0xd800 && codepoint <= 0xdfff)) ||
+                        (width == 4 && codepoint >= 0x10000 && codepoint <= 0x10ffff);
+            }
+            if (valid) { part = (const char *)p; length = width; ++p; for (size_t i = 1; i < width; ++i) ++p; }
+            else { encoded[0] = (char)0xef; encoded[1] = (char)0xbf; encoded[2] = (char)0xbd; length = 3; ++p; }
+        }
         if (*used + length >= cap) return 0;
         memcpy(out + *used, part, length); *used += length;
     }

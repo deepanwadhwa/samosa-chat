@@ -61,6 +61,9 @@ printf 'native-summarizer-model-fixture\n' >"$TMP/summarizer.gguf"
 # --- page fixtures for the SAMOSA_WEB_STUB_DIR transport seam ---------------
 printf '<html><head><title>Careers</title></head><body><script>secret()</script><h1>Roles</h1><p>Engineer &amp; Designer</p></body></html>' \
   >"$TMP/stub/http-example-com-jobs.html"
+# A fetched page may contain a lone high byte. The gateway must replace it
+# before embedding the extract in JSON sent to the local model.
+printf '\377' >>"$TMP/stub/http-example-com-jobs.html"
 printf '<html><head><title>CDC current surveillance</title></head><body><main><h1>Cyclosporiasis surveillance</h1><p>As of August 8, 2026, CDC reports 4,321 domestically acquired cases. No deaths have been reported.</p></main></body></html>' \
   >"$TMP/stub/https-www-cdc-gov-cyclosporiasis-current.html"
 printf '<html><head><title>Cyclosporiasis background</title></head><body><main><h1>Cyclosporiasis</h1><p>Generic CDC background page text without a South Carolina case count.</p></main></body></html>' \
@@ -298,6 +301,10 @@ F=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/fetch" -H 'Content-Type: applica
      --data '{"url":"http://example.com/jobs"}')
 printf '%s' "$F" | grep -q '"title":"Careers"' || fail "fetch did not extract the page title"
 printf '%s' "$F" | grep -q 'Engineer & Designer' || fail "fetch did not decode entities"
+python3 -c 'import json,sys; json.loads(sys.stdin.read())' <<EOF
+$F
+EOF
+printf '%s' "$F" | grep -q '�' || fail "fetch did not replace malformed UTF-8"
 if printf '%s' "$F" | grep -q 'secret'; then fail "fetch leaked <script> text into the extract"; fi
 
 # ===========================================================================
