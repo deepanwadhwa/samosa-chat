@@ -6125,6 +6125,28 @@ static int static_file(int fd, const char *path, const char *type, const char *e
 static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *request,
                             const char *sse_preamble, int client_stream_started);
 
+static char *maple_bounded_body(const char *body, size_t body_len, size_t *out_len) {
+    if (!body || !body_len || !out_len) return NULL;
+    char *copy = malloc(body_len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, body, body_len); copy[body_len] = 0;
+    char *arena = NULL; jval *root = json_parse(copy, &arena);
+    jval *max = root && root->t == J_OBJ ? json_get(root, "max_tokens") : NULL;
+    if (!max) max = root && root->t == J_OBJ ? json_get(root, "max_completion_tokens") : NULL;
+    int clamp = max && max->t == J_NUM && max->num > 4096 && max->num == (int)max->num;
+    if (!clamp) { json_free(root); free(arena); free(copy); return NULL; }
+    TextBuffer out = {0}; int wrote = 0;
+    text_add(&out, "{");
+    for (int i = 0; i < root->len; ++i) {
+        if (!strcmp(root->keys[i], "max_tokens") || !strcmp(root->keys[i], "max_completion_tokens")) continue;
+        if (wrote) text_add(&out, ",");
+        text_json_string(&out, root->keys[i]); text_add(&out, ":"); text_json_value(&out, root->kids[i]); wrote = 1;
+    }
+    if (wrote) text_add(&out, ",");
+    text_add(&out, "\"max_tokens\":4096}");
+    *out_len = out.len; json_free(root); free(arena); free(copy); return out.data;
+}
+
 static int proxy_request(Gateway *g, int client, const SamosaHttpRequest *request) {
     return proxy_request_ex(g, client, request, NULL, 0);
 }
@@ -6180,6 +6202,12 @@ static int proxy_chunk_has_done(const char *data, size_t len) {
 
 static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *request,
                             const char *sse_preamble, int client_stream_started) {
+    SamosaHttpRequest bounded = *request;
+    char *bounded_body = NULL; size_t bounded_len = 0;
+    if (!strcmp(g->backend, "maple")) {
+        bounded_body = maple_bounded_body(request->body, request->body_len, &bounded_len);
+        if (bounded_body) { bounded.body = bounded_body; bounded.body_len = bounded_len; request = &bounded; }
+    }
     long long developer_started = monotonic_millis();
     developer_trace_payload(g, "backend_request", g->backend,
                             request->body ? request->body : "", request->body_len);
@@ -6196,33 +6224,41 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
        fact, not a timing question. */
     if (!backend_available(g, g->backend)) {
         developer_trace_event(g, "backend_error", "\"code\":\"model_required\"");
-        if (client_stream_started)
-            return proxy_stream_error(client, "No model is installed or selected yet.", "model_required");
-        return samosa_http_json_error(client, 409, "model_required",
-                                      "No model is installed or selected yet.");
+        int result = client_stream_started
+            ? proxy_stream_error(client, "No model is installed or selected yet.", "model_required")
+            : samosa_http_json_error(client, 409, "model_required",
+                                     "No model is installed or selected yet.");
+        free(bounded_body);
+        return result;
     }
     if (!backend_probe(g)) {
         developer_trace_event(g, "backend_error", "\"code\":\"backend_loading\"");
-        if (client_stream_started)
-            return proxy_stream_error(client, "The model is still loading.", "backend_loading");
-        return samosa_http_json_error(client, 503, "backend_loading", "The model is still loading.");
+        int result = client_stream_started
+            ? proxy_stream_error(client, "The model is still loading.", "backend_loading")
+            : samosa_http_json_error(client, 503, "backend_loading", "The model is still loading.");
+        free(bounded_body);
+        return result;
     }
     int upstream = tcp_connect(g->backend_port);
     if (upstream < 0) {
         developer_trace_event(g, "backend_error", "\"code\":\"backend_unavailable\"");
-        if (client_stream_started)
-            return proxy_stream_error(client, "The model backend is unavailable.", "backend_unavailable");
-        return samosa_http_json_error(client, 503, "backend_unavailable", "The model backend is unavailable.");
+        int result = client_stream_started
+            ? proxy_stream_error(client, "The model backend is unavailable.", "backend_unavailable")
+            : samosa_http_json_error(client, 503, "backend_unavailable", "The model backend is unavailable.");
+        free(bounded_body);
+        return result;
     }
     pthread_mutex_lock(&g->generation_gate_mu);
     if (g->specialist_generation_active) {
         pthread_mutex_unlock(&g->generation_gate_mu);
         close(upstream);
-        if (client_stream_started)
-            return proxy_stream_error(client, "The on-demand visual specialist is active.",
-                                      "multimodal_specialist_active");
-        return samosa_http_json_error(client, 409, "multimodal_specialist_active",
-                                      "The on-demand visual specialist is active. Retry when this visual turn finishes.");
+        int result = client_stream_started
+            ? proxy_stream_error(client, "The on-demand visual specialist is active.",
+                                 "multimodal_specialist_active")
+            : samosa_http_json_error(client, 409, "multimodal_specialist_active",
+                                     "The on-demand visual specialist is active. Retry when this visual turn finishes.");
+        free(bounded_body);
+        return result;
     }
     atomic_fetch_add(&g->generating, 1);
     pthread_mutex_unlock(&g->generation_gate_mu);
@@ -6367,6 +6403,7 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
                  ok ? "complete" : "failed");
         developer_trace_event(g, "backend_complete", fields);
     }
+    free(bounded_body);
     return ok;
 }
 
