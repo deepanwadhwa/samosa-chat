@@ -6,8 +6,36 @@ Start the gateway:
 samosa serve
 ```
 
-It listens at `http://127.0.0.1:8642`. The gateway is healthy with no installed
+It listens at `http://127.0.0.1:8642` by default. `samosa serve --lan` is the
+explicit, password-protected mode for clients on the same local network;
+see [LAN_ACCESS.md](LAN_ACCESS.md). The gateway is healthy with no installed
 model so the app can provide onboarding and downloads.
+
+## LAN authentication
+
+LAN mode binds the authenticated gateway to `0.0.0.0` but forces the selected
+model backend to remain on `127.0.0.1`, normally on the next port. A remote
+browser first receives the password page from `GET /`, then authenticates with:
+
+```http
+POST /v1/lan/login
+Content-Type: application/json
+
+{"password":"password1234"}
+```
+
+Success returns `200 {"authenticated":true}` and sets the `samosa_lan`
+browser-session cookie with `HttpOnly`, `SameSite=Strict`, and `Path=/`.
+Incorrect passwords return `401 invalid_lan_password`. Other unauthenticated
+remote API calls return `401 lan_access_denied`. The authenticated app also
+uses its per-launch `X-Samosa-Token` for protected routes and the gateway
+rejects a browser `Origin` that does not match the request `Host`.
+
+Loopback clients on the host Mac remain directly accessible. Restarting the
+gateway rotates the internal token and invalidates existing LAN sessions. This
+is shared-instance authentication: it does not create user identities,
+per-user chats, or per-user model selections. See the full guide for security,
+concurrency, and operational limitations.
 
 ## Health
 
@@ -20,6 +48,9 @@ Representative model-less response:
 ```json
 {
   "gateway": true,
+  "listen_address": "127.0.0.1",
+  "lan_access": false,
+  "lan_auth": "none",
   "backend": "qwen",
   "supports_images": false,
   "supports_image_attachments": true,
@@ -121,7 +152,10 @@ Content-Type: application/json
 ```
 
 Returns `202`. A missing model or an active generation returns `409`. Switching
-stops the current backend before starting the selected one.
+stops the current backend before starting the selected one. Selection is global
+to the gateway, not scoped to a browser session. Simultaneous switches are
+serialized; a competing switch can return `409 selection_busy`. All model
+backends are configured for one active primary-model generation at a time.
 
 ## Context and compaction settings
 

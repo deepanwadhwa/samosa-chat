@@ -36,6 +36,9 @@ typedef struct {
     int is_background;
     char range[128]; /* raw `Range:` header value, empty if absent */
     char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
+    char host[256]; /* raw `Host:` value, used for same-origin validation */
+    char cookie[512]; /* raw `Cookie:` value, used by LAN browser sessions */
+    int remote_is_loopback; /* derived from the accepted socket, never a header */
     /* Correlates the microphone, STT, model, TTS, and playback stages of one
        explicitly traced Voice turn. It is opaque diagnostic metadata and is
        never forwarded to a model backend. */
@@ -52,6 +55,7 @@ typedef int (*SamosaHttpHandler)(struct SamosaHttpServer *, int,
 typedef struct SamosaHttpServer {
     int listener;
     int port;
+    char bind_address[INET_ADDRSTRLEN];
     atomic_int stopping;
     pthread_mutex_t connection_mu;
     pthread_cond_t connection_cv;
@@ -228,6 +232,16 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             size_t n=strlen(value);
             if (n>=sizeof(request->ui_token)) n=sizeof(request->ui_token)-1;
             memcpy(request->ui_token,value,n); request->ui_token[n]=0;
+        } else if (!strncasecmp(cursor,"Host:",5)) {
+            char *value=cursor+5; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->host)) n=sizeof(request->host)-1;
+            memcpy(request->host,value,n); request->host[n]=0;
+        } else if (!strncasecmp(cursor,"Cookie:",7)) {
+            char *value=cursor+7; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->cookie)) n=sizeof(request->cookie)-1;
+            memcpy(request->cookie,value,n); request->cookie[n]=0;
         } else if (!strncasecmp(cursor,"X-Samosa-Voice-Turn:",20)) {
             char *value=cursor+20; while(*value==' '||*value=='\t')value++;
             size_t n=strlen(value);
@@ -329,6 +343,19 @@ static void *samosa_http_connection_main(void *opaque) {
         samosa_http_json_error(fd,error_status,"invalid_http_request",
                                "Invalid or oversized HTTP request.");
     else {
+        struct sockaddr_storage peer={0}; socklen_t peer_size=sizeof(peer);
+        if (getpeername(fd,(struct sockaddr *)&peer,&peer_size)==0) {
+            if (peer.ss_family==AF_INET) {
+                uint32_t address=ntohl(((struct sockaddr_in *)&peer)->sin_addr.s_addr);
+                request.remote_is_loopback=(address>>24)==127;
+            }
+#ifdef AF_INET6
+            else if (peer.ss_family==AF_INET6) {
+                request.remote_is_loopback=IN6_IS_ADDR_LOOPBACK(
+                    &((struct sockaddr_in6 *)&peer)->sin6_addr);
+            }
+#endif
+        }
         server->handler(server,fd,&request,server->handler_ctx);
         free(request.body);
         if (request.body_file[0]) unlink(request.body_file);
@@ -364,15 +391,15 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
         bind_env = getenv("SAMOSA_HOST");
     }
     if (bind_env && *bind_env) {
-        unsigned long addr = inet_addr(bind_env);
-        if (addr != INADDR_NONE) {
-            address.sin_addr.s_addr = addr;
-            if (addr != htonl(INADDR_LOOPBACK)) {
+        struct in_addr parsed={0};
+        if (inet_pton(AF_INET,bind_env,&parsed)==1) {
+            address.sin_addr=parsed;
+            if (parsed.s_addr != htonl(INADDR_LOOPBACK)) {
                 fprintf(stderr, "[serve] custom bind: %s\n", bind_env);
                 fflush(stderr);
             }
         } else {
-            address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            close(listener); errno=EINVAL; return 0;
         }
     } else {
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -382,6 +409,10 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
     }
     if(port==0){ socklen_t size=sizeof(address); getsockname(listener,(struct sockaddr *)&address,&size);
         server->port=ntohs(address.sin_port); }
+    if (!inet_ntop(AF_INET,&address.sin_addr,server->bind_address,
+                   sizeof(server->bind_address))) {
+        close(listener); return 0;
+    }
     server->listener=listener; return 1;
 }
 

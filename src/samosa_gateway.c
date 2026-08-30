@@ -80,6 +80,8 @@ typedef struct {
     int app_lifecycle_thread_started;
     int public_port;
     int backend_port;
+    int lan_access;
+    char lan_password[129];
     char home[PATH_MAX];
     char user_home[PATH_MAX]; /* real OS user home for the T1.3 fs chooser -- distinct
                                   from `home`, which is Samosa's own app-state directory
@@ -5988,6 +5990,13 @@ static int backend_start(Gateway *g) {
            this gateway. The parent repeats this call below to close the
            small fork/exec race before it records the PID. */
         (void)setpgid(0, 0);
+        /* SAMOSA_BIND controls only the authenticated public gateway. Native
+           qwen/maple backends also use samosa_http.h and inherit the gateway
+           environment, so pin the child back to loopback before exec. Without
+           this, `--lan` would accidentally expose the raw model port + 1. */
+        setenv("SAMOSA_BIND", "127.0.0.1", 1);
+        unsetenv("SAMOSA_LAN");
+        unsetenv("SAMOSA_LAN_PASSWORD");
         int log = open(g->backend_log, O_WRONLY | O_CREAT | O_APPEND, 0600);
         if (log >= 0) { dup2(log, STDOUT_FILENO); dup2(log, STDERR_FILENO); close(log); }
         char port[16];
@@ -6651,25 +6660,143 @@ static int tokens_equal(const char *a, const char *b) {
     return diff == 0;
 }
 
-/* Every v1 route must pass this: a valid X-Samosa-Token, and if an Origin
-   header is present at all, it must be the exact loopback origin this
-   gateway is bound to (a browser always sends Origin for a fetch(); a
-   missing Origin is accepted only because a valid token is still
-   required, covering headless/CLI use per section 5.0). */
+/* Every gated v1 route must pass this: a valid X-Samosa-Token, and if an
+   Origin header is present it must match the HTTP Host used for this request.
+   Comparing those two browser-controlled views of the same origin preserves
+   the loopback CSRF check while also allowing an opted-in LAN URL such as
+   http://192.168.1.20:8642. A missing Origin is accepted only because a valid
+   token is still required, covering headless/CLI use per section 5.0. */
 static int require_ui_session(Gateway *g, int fd, const SamosaHttpRequest *request) {
     if (!request->ui_token[0] || !tokens_equal(request->ui_token, g->ui_token)) {
         samosa_http_json_error(fd, 401, "invalid_ui_token", "Missing or invalid session token.");
         return 0;
     }
     if (request->origin[0]) {
-        char expected[64];
-        snprintf(expected, sizeof(expected), "http://127.0.0.1:%d", g->public_port);
-        if (strcmp(request->origin, expected) != 0) {
+        char expected[sizeof(request->host) + 8];
+        int n = request->host[0]
+            ? snprintf(expected, sizeof(expected), "http://%s", request->host)
+            : -1;
+        if (n <= 0 || (size_t)n >= sizeof(expected) ||
+            strcmp(request->origin, expected) != 0) {
             samosa_http_json_error(fd, 403, "origin_denied", "Request origin is not allowed.");
             return 0;
         }
     }
     return 1;
+}
+
+static int request_has_lan_cookie(const SamosaHttpRequest *request,
+                                  const char *token) {
+    const char *cursor = request->cookie;
+    while (cursor && *cursor) {
+        while (*cursor == ' ' || *cursor == '\t' || *cursor == ';') cursor++;
+        const char *end = strchr(cursor, ';');
+        size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+        static const char prefix[] = "samosa_lan=";
+        if (length > sizeof(prefix) - 1 &&
+            !memcmp(cursor, prefix, sizeof(prefix) - 1)) {
+            size_t value_length = length - (sizeof(prefix) - 1);
+            if (value_length < sizeof(request->ui_token)) {
+                char value[sizeof(request->ui_token)];
+                memcpy(value, cursor + sizeof(prefix) - 1, value_length);
+                value[value_length] = 0;
+                if (tokens_equal(value, token)) return 1;
+            }
+        }
+        cursor = end ? end + 1 : NULL;
+    }
+    return 0;
+}
+
+static int serve_lan_login_page(int fd) {
+    static const char page[] =
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Samosa — Sign in</title><style>"
+        ":root{color-scheme:light dark;font-family:ui-rounded,-apple-system,BlinkMacSystemFont,"
+        "\"Segoe UI\",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;"
+        "display:grid;place-items:center;background:#17130f;color:#f7efe5;padding:24px}"
+        "main{width:min(100%,390px);background:#241d17;border:1px solid #4a392c;"
+        "border-radius:24px;padding:30px;box-shadow:0 24px 70px #0008}h1{margin:0 0 8px;"
+        "font-size:30px}p{color:#cdbdad;line-height:1.5;margin:0 0 24px}label{display:block;"
+        "font-weight:650;margin-bottom:8px}input,button{width:100%;font:inherit;border-radius:12px;"
+        "padding:13px 14px}input{border:1px solid #66503e;background:#17130f;color:#fff;"
+        "margin-bottom:12px}button{border:0;background:#e87836;color:#1c1008;font-weight:750;"
+        "cursor:pointer}button:disabled{opacity:.65}#error{min-height:22px;color:#ffad9e;"
+        "font-size:14px;margin:10px 0 0}</style></head><body><main>"
+        "<h1>Samosa</h1><p>The models and chats run on the MacBook Air. Sign in to use "
+        "them from this device.</p><form id=\"login\"><label for=\"password\">Password</label>"
+        "<input id=\"password\" type=\"password\" autocomplete=\"current-password\" required autofocus>"
+        "<button type=\"submit\">Open Samosa</button><div id=\"error\" role=\"alert\"></div>"
+        "</form></main><script>const f=document.getElementById('login'),p=document.getElementById('password'),"
+        "e=document.getElementById('error'),b=f.querySelector('button');f.addEventListener('submit',async x=>{"
+        "x.preventDefault();e.textContent='';b.disabled=true;try{const r=await fetch('/v1/lan/login',{"
+        "method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p.value})});"
+        "if(!r.ok)throw new Error('Incorrect password.');location.replace('/')}catch(x){e.textContent=x.message;"
+        "p.select();b.disabled=false}});</script></body></html>";
+    const char *headers =
+        "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; "
+        "script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'\r\n"
+        "Referrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
+    return samosa_http_headers(fd, 200, "text/html; charset=utf-8",
+                               sizeof(page) - 1, headers) &&
+           samosa_send_all(fd, page, sizeof(page) - 1);
+}
+
+static int lan_login_handler(Gateway *g, int fd,
+                             const SamosaHttpRequest *request) {
+    if (!g->lan_access)
+        return samosa_http_json_error(fd, 404, "not_found", "Endpoint not found.");
+    if (strcmp(request->method, "POST"))
+        return samosa_http_json_error(fd, 405, "method_not_allowed", "Only POST is supported.");
+    char *arena = NULL;
+    jval *root = json_parse(request->body, &arena);
+    jval *password = root && root->t == J_OBJ ? json_get(root, "password") : NULL;
+    int valid = password && password->t == J_STR &&
+                tokens_equal(password->str, g->lan_password);
+    json_free(root); free(arena);
+    if (!valid) {
+        sleep_millis(200);
+        return samosa_http_json_error(fd, 401, "invalid_lan_password",
+                                      "Incorrect password.");
+    }
+    char headers[256];
+    int n = snprintf(headers, sizeof(headers),
+        "Set-Cookie: samosa_lan=%s; HttpOnly; SameSite=Strict; Path=/\r\n",
+        g->ui_token);
+    if (n <= 0 || (size_t)n >= sizeof(headers))
+        return samosa_http_json_error(fd, 500, "login_failed",
+                                      "Could not create the LAN session.");
+    return samosa_http_response(fd, 200, "application/json",
+                                "{\"authenticated\":true}", headers);
+}
+
+/* A loopback-only app can rely on the host boundary. Once the user opts into
+   LAN mode, a successful password login stores the per-launch session token
+   in an HttpOnly, same-site cookie. The UI also carries that token in its
+   existing request header. This covers legacy Chat/Jobs routes that remain
+   unauthenticated on loopback. Release-shipped static assets contain no user
+   data and need to be loadable as ordinary browser subresources. */
+static int require_lan_session(Gateway *g, int fd,
+                               const SamosaHttpRequest *request) {
+    if (!g->lan_access || !g->server || request->remote_is_loopback) return 1;
+    if (!strcmp(request->path, "/v1/lan/login")) return 1;
+    if (!strcmp(request->method, "GET") &&
+        !strncmp(request->path, "/assets/", sizeof("/assets/") - 1)) return 1;
+    /* sendBeacon cannot attach a custom header. This route's own handler
+       validates the same token from its JSON body plus the request Origin. */
+    if (!strcmp(request->path, "/v1/app/lifecycle")) return 1;
+    if (request_has_lan_cookie(request, g->ui_token)) return 1;
+    if (request->ui_token[0] && tokens_equal(request->ui_token, g->ui_token)) return 1;
+    if (!strcmp(request->method, "GET") &&
+        (!strcmp(request->path, "/") || !strcmp(request->path, "/index.html"))) {
+        serve_lan_login_page(fd);
+        return 0;
+    }
+    samosa_http_json_error(fd, 401, "lan_access_denied",
+        "Sign in through the Samosa LAN page first.");
+    return 0;
 }
 
 /* Closed, named list of /v1/ paths that predate the per-launch UI token and
@@ -18699,6 +18826,9 @@ static int compact_request(Gateway *g, int fd, const SamosaHttpRequest *request)
 static int gateway_handler(SamosaHttpServer *server, int fd,
                            const SamosaHttpRequest *request, void *opaque) {
     Gateway *g = opaque;
+    if (!require_lan_session(g, fd, request)) return 1;
+    if (!strcmp(request->path, "/v1/lan/login"))
+        return lan_login_handler(g, fd, request);
     if (!strcmp(request->method, "GET") &&
         (!strcmp(request->path, "/") || !strcmp(request->path, "/index.html"))) {
         if (serve_root_html(g, fd)) return 1;
@@ -18797,7 +18927,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         return samosa_http_json_error(fd, 404, "logo_missing", "The app logo is missing.");
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/healthz")) {
-        char body[2048], version[128];
+        char body[2304], version[128];
         pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
         pthread_mutex_lock(&g->summarizer_mu);
         pid_t summarizer_pid = g->summarizer_pid;
@@ -18825,7 +18955,9 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             : backend_supports_images(g, g->backend) || auxiliary_vision_runtime;
         active_model_version(g, version, sizeof(version));
         snprintf(body, sizeof(body),
-            "{\"gateway\":true,\"compiled\":true,\"app_owned\":%s,\"backend\":\"%s\","
+            "{\"gateway\":true,\"compiled\":true,\"app_owned\":%s,"
+            "\"listen_address\":\"%s\",\"lan_access\":%s,"
+            "\"lan_auth\":\"%s\",\"backend\":\"%s\","
             "\"label\":\"%s\",\"model\":\"%s\",\"model_version\":\"%s\","
             "\"supports_images\":%s,\"supports_image_attachments\":%s,"
             "\"supports_video_attachments\":%s,"
@@ -18841,7 +18973,10 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "\"model\":\"Falconsai/text_summarization\",\"runtime\":\"native\"},"
             "\"ready\":%s,\"loading\":%s,\"generating\":%s,\"pid\":%ld,"
             "\"installed\":%s,\"backend_state\":\"%s\"}",
-            g->app_owned ? "true" : "false", g->backend, backend_label(g->backend), backend_model(g->backend), version,
+            g->app_owned ? "true" : "false", server->bind_address,
+            g->lan_access ? "true" : "false",
+            g->lan_access ? "password" : "none", g->backend,
+            backend_label(g->backend), backend_model(g->backend), version,
             backend_supports_images(g, g->backend) ? "true" : "false",
             supports_image_attachments ? "true" : "false",
             (direct_molmo ? molmo2_ready : molmo2_runtime) ? "true" : "false",
@@ -19215,6 +19350,13 @@ static int load_config(Gateway *g) {
     if (!user_home || !path_copy(g->user_home, sizeof(g->user_home), user_home)) return 0;
     g->public_port = getenv("SAMOSA_PORT") ? atoi(getenv("SAMOSA_PORT")) : 8642;
     g->backend_port = getenv("SAMOSA_BACKEND_PORT") ? atoi(getenv("SAMOSA_BACKEND_PORT")) : g->public_port + 1;
+    g->lan_access = getenv("SAMOSA_LAN") && !strcmp(getenv("SAMOSA_LAN"), "1");
+    const char *lan_password = getenv("SAMOSA_LAN_PASSWORD");
+    if (!lan_password || !*lan_password) lan_password = "password1234";
+    if (g->lan_access &&
+        (!*lan_password || strlen(lan_password) > 128 ||
+         !path_copy(g->lan_password, sizeof(g->lan_password), lan_password)))
+        return 0;
 #define ENV_PATH(field, name, fallback) do { const char *v = getenv(name); \
     if (v) { if (!path_copy(g->field, sizeof(g->field), v)) return 0; } \
     else { if (!path_join(g->field, sizeof(g->field), g->home, fallback)) return 0; } } while (0)
@@ -19398,16 +19540,21 @@ int main(int argc, char **argv) {
     SamosaHttpServer server;
     if (!samosa_http_server_init(&server, gateway.public_port, gateway_handler, &gateway)) {
         int bind_errno = errno;
+        const char *requested_bind = getenv("SAMOSA_BIND");
+        if (!requested_bind || !*requested_bind) requested_bind = getenv("SAMOSA_HOST");
+        if (!requested_bind || !*requested_bind) requested_bind = "127.0.0.1";
         char fields[160];
         snprintf(fields, sizeof(fields), "\"mode\":\"bind_failed\",\"errno\":%d", bind_errno);
         gateway_lifecycle_event(&gateway, "gateway_start_failed", fields);
-        fprintf(stderr, "samosa-gateway: cannot bind 127.0.0.1:%d: %s\n",
-                gateway.public_port, strerror(bind_errno)); backend_stop(&gateway); return 2;
+        fprintf(stderr, "samosa-gateway: cannot bind %s:%d: %s\n",
+                requested_bind, gateway.public_port, strerror(bind_errno));
+        backend_stop(&gateway); return 2;
     }
     gateway.server = &server; signal_gateway = &gateway;
     signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
-    fprintf(stderr, "[gateway] compiled ready http://127.0.0.1:%d backend=%s ready=%s\n",
-            server.port, gateway.backend, backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
+    fprintf(stderr, "[gateway] compiled ready http://%s:%d backend=%s ready=%s\n",
+            server.bind_address, server.port, gateway.backend,
+            backend_probe(&gateway) ? "true" : "false"); fflush(stderr);
     gateway_lifecycle_mark_ready(&gateway);
     if (gateway.app_owned) {
         if (pthread_create(&gateway.app_lifecycle_thread, NULL, app_lifecycle_watchdog, &gateway) == 0)

@@ -256,6 +256,9 @@ app-lifecycle-test: samosa-gateway chutni-service test_fake_openai_backend tests
 	sh tests/test_samosa_app_lifecycle.sh
 	sh tests/test_samosa_llama_lifecycle.sh
 
+test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.sh
+	sh tests/test_lan_access.sh
+
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
@@ -443,6 +446,7 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 	$(MAKE) chutni-gateway-test
 	$(MAKE) detached-service-test
 	$(MAKE) app-lifecycle-test
+	$(MAKE) test-lan-access
 	$(MAKE) test-kimi-converter
 # T3.3 view logic. Skips with a message where node is unavailable rather than
 # passing silently -- the rendering itself cannot be verified headlessly.

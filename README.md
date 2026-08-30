@@ -142,6 +142,19 @@ State and conversation ledgers are persisted under `~/.samosa/chats`.
 Developer traces are off by default because they contain full prompts and
 document/model contents; see [docs/DEVELOPER_MODE.md](docs/DEVELOPER_MODE.md).
 
+To use the Mac's models from a phone or another computer on the same Wi-Fi:
+
+```sh
+samosa app --lan
+```
+
+Samosa opens the normal local app and prints a clean `Other devices` link.
+Open it on the other device and enter the LAN password (`password1234` for
+now). Keep the Mac awake, allow incoming connections if macOS asks, and stop
+sharing with `samosa serve --stop`. See the full
+[LAN access guide](docs/LAN_ACCESS.md) for the trust boundary, password
+sessions, shared-model concurrency, model switching, and troubleshooting.
+
 ### Folder memory with Chutni
 
 Samosa bundles the independent [Chutni protocol](https://github.com/deepanwadhwa/chutni-protocol)
@@ -234,7 +247,8 @@ Test logs and regression benchmarks are located in [docs/regressions](docs/regre
 ## Privacy & Security
 
 - All inference and chat data remain local to the host machine.
-- The gateway server binds exclusively to `127.0.0.1`.
+- The gateway binds exclusively to `127.0.0.1` unless the user explicitly
+  starts password-protected LAN access with `--lan`.
 - No telemetry or external accounts are used.
 - Downloads are limited to pinned Hugging Face repository assets and Prism GitHub release binaries.
 - External web search tools are opt-in.
@@ -251,6 +265,7 @@ Test logs and regression benchmarks are located in [docs/regressions](docs/regre
 |---|---|
 | Installation & Model Storage | [docs/INSTALL.md](docs/INSTALL.md) |
 | App & Terminal Usage | [docs/USAGE.md](docs/USAGE.md) |
+| Password-protected LAN access | [docs/LAN_ACCESS.md](docs/LAN_ACCESS.md) |
 | Model Specifications & Network | [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md) |
 | Gateway API | [docs/SERVE_API.md](docs/SERVE_API.md) |
 | Chutni folder memory | [docs/CHUTNI_PROTOCOL.md](docs/CHUTNI_PROTOCOL.md) |

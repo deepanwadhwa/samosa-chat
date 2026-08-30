@@ -2020,8 +2020,8 @@
       "use strict";
       // Per-launch UI session token (docs/TASKS_UI_CHUTNI.md sec5.0): the server
       // substitutes it into this meta tag on every served root document. Only
-      // the v1 routes that require it (fs, profile, setup) need it attached;
-      // legacy Chat/Jobs/backend routes are not gated by it yet.
+      // every app request attaches it. Loopback keeps compatibility for older
+      // API clients, while LAN mode uses it to protect the private share link.
       const UI_TOKEN = document.querySelector('meta[name="samosa-ui-token"]')?.content || "";
       // Browser lifecycle requests are authenticated like the rest of the
       // local control plane. The gateway applies a refresh-safe grace period
@@ -3813,7 +3813,7 @@
         try {
           const requestHeaders={"Content-Type":"application/json"};
           if (voiceTurn) requestHeaders["X-Samosa-Voice-Turn"]=voiceTurn;
-          const response=await fetch("/v1/chat/completions",{method:"POST",headers:requestHeaders,body:JSON.stringify(payload)});
+          const response=await authFetch("/v1/chat/completions",{method:"POST",headers:requestHeaders,body:JSON.stringify(payload)});
           if (voiceTurn) voiceTraceEvent("llm_response_headers", voiceTurn, { http_status: response.status });
           if (!response.ok) {
             let detail=`Request failed (${response.status})`;
@@ -5110,7 +5110,7 @@
         error.hidden = !msg.error || !!msg.visionRequired;
         error.textContent = msg.error || "";
       }
-      async function cancel() { if (!generating) return; els.stop.disabled=true; try { await fetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
+      async function cancel() { if (!generating) return; els.stop.disabled=true; try { await authFetch("/v1/cancel",{method:"POST"}); els.closure.textContent="Stopping…"; } finally { setTimeout(()=>els.stop.disabled=false,500); } }
       async function killLocal() {
         if (!confirm("Kill the Samosa server, active model backend, and any Samosa job/model helper processes?")) return;
         els.kill.disabled = true;
@@ -5252,7 +5252,7 @@
       async function health() {
         let h;
         try {
-          const r=await fetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); h=await r.json();
+          const r=await authFetch("/healthz",{cache:"no-store"}); if(!r.ok)throw new Error(); h=await r.json();
         } catch (_) {
           els.dot.className="status-dot offline"; els.status.textContent="Local model server unavailable"; els.sideDot.className="status-dot offline"; els.sideStatus.textContent="Unavailable"; updateVoiceAvailability();
           return;
@@ -7670,7 +7670,7 @@
         try {
           const payload = { job_id: ctx.jobId || lastJobId, item, mark_done: true };
           if (includeFields) payload.fields = fields;
-          const r = await fetch("/v1/jobs/review/correct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+          const r = await authFetch("/v1/jobs/review/correct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const data = await r.json();
           if (!r.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Review update failed");
           row.remove();
@@ -7684,7 +7684,7 @@
       async function loadReviewQueue(jobId, ctx) {
         if (!jobId) return;
         try {
-          const r = await fetch("/v1/jobs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
+          const r = await authFetch("/v1/jobs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
           const data = await r.json();
           if (!r.ok || !data.ok || !data.items.length) return;
           clearReview();
@@ -7884,7 +7884,7 @@
       }
 
       async function streamJob(path, body, ctx) {
-        const resp = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const resp = await authFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (!resp.ok || !resp.body) {
           let msg = "request failed"; try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
           renderJobEvent({ type: "error", message: msg }, ctx); return;
@@ -7916,7 +7916,7 @@
         const job = parseJobDefinition(); if (!job) return;
         jobRunning = true; clearJobOutput();
         try {
-          const resp = await fetch("/v1/jobs/definition/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, expanded: jobEls.previewExpanded.checked }) });
+          const resp = await authFetch("/v1/jobs/definition/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, expanded: jobEls.previewExpanded.checked }) });
           const data = await resp.json();
           if (!resp.ok || !data.ok) throw new Error(data.reason || data.error?.message || "Preview failed");
           jobLine("●", `Previewed ${data.sample_count} sample${data.sample_count === 1 ? "" : "s"}`, "step-done");

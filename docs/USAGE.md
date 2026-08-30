@@ -194,13 +194,65 @@ use IDs under `~/.samosa/chats`.
 
 ```sh
 samosa serve
+samosa serve --lan
 samosa serve --context-tokens auto
 samosa serve --context-tokens 65536
 samosa serve --stop
 ```
 
-The gateway listens only on `127.0.0.1:8642` unless source code or environment
-settings are deliberately changed.
+The gateway listens only on `127.0.0.1:8642` by default.
+
+## LAN access
+
+The complete operational and security documentation is in
+[LAN_ACCESS.md](LAN_ACCESS.md). The summary below covers the normal startup
+path.
+
+Run this on the Mac that has Samosa and the models installed:
+
+```sh
+samosa app --lan
+```
+
+The command still opens `http://127.0.0.1:8642` on the Mac, and prints a line
+like this for the phone or second computer:
+
+```text
+Other devices: http://192.168.1.20:8642/
+Password:      password1234
+```
+
+Connect both devices to the same local network, open the link, and enter the
+password. A successful login creates a browser session that expires when the
+Samosa gateway restarts. Access grants use of chats, models, attachments, and
+any folders you deliberately make available through Samosa, so do not
+port-forward it or use LAN mode on a network you do not trust. The temporary
+default password is `password1234`; it can be overridden before launch with
+`SAMOSA_LAN_PASSWORD`.
+
+The Mac must remain awake and connected. If macOS Firewall asks whether to
+allow incoming connections for `samosa-gateway`, choose **Allow**. Guest Wi-Fi
+often isolates devices from one another; use the normal trusted Wi-Fi instead.
+If the Mac's local IP changes, run `samosa app --lan` again to print the current
+link. Stop all access with:
+
+```sh
+samosa serve --stop
+```
+
+Starting `samosa app` or `samosa serve` without `--lan` switches a running
+server back to loopback-only mode. LAN access uses plain local HTTP; many mobile
+browsers therefore disable microphone capture, while typed chat, model use,
+attachments, and audio playback continue to work.
+
+All connected browsers control one shared Samosa instance. Only one primary
+model generation runs at a time; additional requests wait without loading a
+second copy of the model. Model choice is also global. A model selected from
+one device becomes the active model for every device, and an active generation
+or another in-progress switch can reject a competing switch. See
+[Concurrent requests](LAN_ACCESS.md#concurrent-requests) and
+[Selecting different models](LAN_ACCESS.md#selecting-different-models-from-different-devices)
+for the exact behavior and queue math.
 
 ## Settings persistence
 
