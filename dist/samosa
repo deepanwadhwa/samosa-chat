@@ -11,9 +11,11 @@
 #   samosa --context-tokens N "..."         set total context capacity (or auto)
 #   samosa --thinking-budget N "..."         cap internal reasoning before the answer
 #   samosa serve                            start the local app server in background
+#   samosa serve --lan                      share it with this local network
 #   samosa serve --foreground               run attached for debugging
 #   samosa serve --stop                     stop the local app server cleanly
 #   samosa app                              start the server and open the browser app
+#   samosa app --lan                        open locally and print a private LAN link
 #   samosa jobs <command> <job.json>         run structured local batch work
 #   samosa pull                             pull the 24 GB model to local volume
 #   samosa doctor                           check the installation
@@ -62,6 +64,14 @@ fi
 [ -n "$SAMOSA_VERSION" ] || SAMOSA_VERSION="unknown"
 PORT="${SAMOSA_PORT:-8642}"
 BACKEND_PORT="${SAMOSA_BACKEND_PORT:-$((PORT + 1))}"
+BIND_ADDRESS="${SAMOSA_BIND:-${SAMOSA_HOST:-127.0.0.1}}"
+LAN_MODE="${SAMOSA_LAN:-0}"
+if [ "${SAMOSA_LAN_PASSWORD+x}" = x ]; then
+  LAN_PASSWORD_EXPLICIT=1
+else
+  LAN_PASSWORD_EXPLICIT=0
+fi
+LAN_PASSWORD="${SAMOSA_LAN_PASSWORD:-password1234}"
 PID_FILE="$HOME_DIR/server.pid"
 BACKEND_PID_FILE="$HOME_DIR/run/backend.pid"
 SERVER_LOG="$HOME_DIR/server.log"
@@ -159,7 +169,7 @@ pull_model() {
   say "Model pull complete."
 }
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 print_version() {
   echo "samosa $SAMOSA_VERSION"
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release: $(basename "$RELEASE_DIR")"
@@ -175,6 +185,97 @@ context_tokens_value() {
 
 server_running() {
   "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1
+}
+
+server_listen_address() {
+  "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" 2>/dev/null |
+    sed -n 's/.*"listen_address":"\([^"]*\)".*/\1/p'
+}
+
+server_lan_auth() {
+  "$CURL" -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" 2>/dev/null |
+    sed -n 's/.*"lan_auth":"\([^"]*\)".*/\1/p'
+}
+
+server_bind_matches() {
+  actual=$(server_listen_address || true)
+  # An older loopback gateway does not report this field. Preserve ordinary
+  # local compatibility, but restart it when the user explicitly requests LAN
+  # mode; otherwise `app --lan` would print a link to a loopback-only process.
+  [ -z "$actual" ] && [ "$BIND_ADDRESS" = "127.0.0.1" ] && [ "$LAN_MODE" = 0 ] && return 0
+  [ "$actual" = "$BIND_ADDRESS" ] || return 1
+  if [ "$LAN_MODE" = 1 ]; then
+    [ "$(server_lan_auth || true)" = password ] || return 1
+    # Health checks intentionally do not reveal the password (or a reusable
+    # derivative). When a password was supplied explicitly, restart so the
+    # running service always receives that requested value.
+    [ "$LAN_PASSWORD_EXPLICIT" = 0 ]
+  else
+    [ "$(server_lan_auth || true)" != password ]
+  fi
+}
+
+restart_for_bind_change() {
+  server_running || return 0
+  server_bind_matches && return 0
+  say "restarting the server to listen on $BIND_ADDRESS"
+  stop_server >/dev/null
+}
+
+lan_host() {
+  if [ -n "${SAMOSA_LAN_HOST:-}" ]; then
+    case "$SAMOSA_LAN_HOST" in *[!A-Za-z0-9._:-]*) return 1 ;; esac
+    printf '%s\n' "$SAMOSA_LAN_HOST"
+    return 0
+  fi
+  if [ "$(uname -s)" = Darwin ]; then
+    interface=$(/sbin/route -n get default 2>/dev/null |
+      awk '$1 == "interface:" { print $2; exit }')
+    if [ -n "$interface" ]; then
+      address=$(/usr/sbin/ipconfig getifaddr "$interface" 2>/dev/null || true)
+      if [ -n "$address" ]; then printf '%s\n' "$address"; return 0; fi
+    fi
+    for interface in en0 en1; do
+      address=$(/usr/sbin/ipconfig getifaddr "$interface" 2>/dev/null || true)
+      if [ -n "$address" ]; then printf '%s\n' "$address"; return 0; fi
+    done
+  elif command -v hostname >/dev/null 2>&1; then
+    address=$(hostname -I 2>/dev/null |
+      awk '{ for (i=1; i<=NF; i++) if ($i ~ /^[0-9]+\./ && $i !~ /^127\./) { print $i; exit } }')
+    if [ -n "$address" ]; then printf '%s\n' "$address"; return 0; fi
+  fi
+  if command -v ifconfig >/dev/null 2>&1; then
+    address=$(ifconfig 2>/dev/null |
+      awk '$1 == "inet" && $2 !~ /^127\./ && $2 !~ /^169\.254\./ { print $2; exit }')
+    if [ -n "$address" ]; then printf '%s\n' "$address"; return 0; fi
+  fi
+  if [ "$(uname -s)" = Darwin ] && command -v scutil >/dev/null 2>&1; then
+    name=$(scutil --get LocalHostName 2>/dev/null || true)
+    if [ -n "$name" ]; then printf '%s.local\n' "$name"; return 0; fi
+  fi
+  return 1
+}
+
+lan_url() {
+  host=$(lan_host) || return 1
+  printf 'http://%s:%s/\n' "$host" "$PORT"
+}
+
+print_server_location() {
+  if [ "$LAN_MODE" != 1 ]; then
+    echo "Samosa server running independently at http://127.0.0.1:$PORT"
+    return 0
+  fi
+  echo "Samosa LAN access is on."
+  echo "This Mac:     http://127.0.0.1:$PORT"
+  shared_url=$(lan_url || true)
+  if [ -n "$shared_url" ]; then
+    echo "Other devices: $shared_url"
+  else
+    echo "Other devices: open this Mac's local-network IP on port $PORT"
+  fi
+  echo "Password:      $LAN_PASSWORD"
+  echo "Stop sharing with: samosa serve --stop"
 }
 
 port_owner_pid() {
@@ -272,13 +373,16 @@ require_port_free_or_samosa_running() {
 }
 
 serve_foreground() {
+  restart_for_bind_change
   if require_port_free_or_samosa_running; then
     return 0
   fi
   cleanup_stale_backend
   [ -x "$GATEWAY" ] || fail "the browser control plane (samosa-gateway) is missing - reinstall Samosa"
   mkdir -p "$HOME_DIR/chats"
-  SAMOSA_PORT="$PORT" SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
+  SAMOSA_PORT="$PORT" SAMOSA_BIND="$BIND_ADDRESS" SAMOSA_LAN="$LAN_MODE" \
+    SAMOSA_LAN_PASSWORD="$LAN_PASSWORD" \
+    SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
     SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
     SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
     SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
@@ -305,6 +409,9 @@ write_launchd_plist() {
   x_gateway=$(xml_escape "$GATEWAY")
   x_home=$(xml_escape "$HOME_DIR")
   x_port=$(xml_escape "$PORT")
+  x_bind=$(xml_escape "$BIND_ADDRESS")
+  x_lan=$(xml_escape "$LAN_MODE")
+  x_lan_password=$(xml_escape "$LAN_PASSWORD")
   x_engine=$(xml_escape "$ENGINE")
   x_model=$(xml_escape "$MODEL")
   x_tokenizer=$(xml_escape "$TOKENIZER")
@@ -329,6 +436,9 @@ write_launchd_plist() {
   <dict>
     <key>SAMOSA_HOME</key><string>$x_home</string>
     <key>SAMOSA_PORT</key><string>$x_port</string>
+    <key>SAMOSA_BIND</key><string>$x_bind</string>
+    <key>SAMOSA_LAN</key><string>$x_lan</string>
+    <key>SAMOSA_LAN_PASSWORD</key><string>$x_lan_password</string>
     <key>SAMOSA_QWEN_ENGINE</key><string>$x_engine</string>
     <key>SAMOSA_QWEN_MODEL</key><string>$x_model</string>
     <key>SAMOSA_TOKENIZER</key><string>$x_tokenizer</string>
@@ -364,6 +474,8 @@ start_server_launchd() {
 start_server_detached() {
   if command -v setsid >/dev/null 2>&1; then
     nohup setsid env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+      SAMOSA_BIND="$BIND_ADDRESS" \
+      SAMOSA_LAN="$LAN_MODE" SAMOSA_LAN_PASSWORD="$LAN_PASSWORD" \
       SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
       SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
@@ -374,6 +486,8 @@ start_server_detached() {
       "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
   else
     nohup env SAMOSA_HOME="$HOME_DIR" SAMOSA_PORT="$PORT" \
+      SAMOSA_BIND="$BIND_ADDRESS" \
+      SAMOSA_LAN="$LAN_MODE" SAMOSA_LAN_PASSWORD="$LAN_PASSWORD" \
       SAMOSA_QWEN_ENGINE="$ENGINE" SAMOSA_QWEN_MODEL="$MODEL" \
       SAMOSA_TOKENIZER="$TOKENIZER" SAMOSA_APP_HTML="$APP_HTML" \
       SAMOSA_APP_LOGO="$APP_LOGO" SAMOSA_CONTEXT_TOKENS="$CONTEXT_TOKENS" \
@@ -390,17 +504,14 @@ start_server_detached() {
 start_server() {
   # App-owned servers must not be placed under launchd's KeepAlive policy:
   # closing the browser needs to be able to terminate the whole Samosa tree,
-  # and killing its gateway must not cause launchd to respawn it. Boot out a
-  # stale service from an older release before attaching to its port.
+  # and killing its gateway must not cause launchd to respawn it. Use the full
+  # authenticated stop path before changing ownership. Merely booting launchd
+  # out closes the listener before the old gateway PID is reaped; the stale-PID
+  # check below can then race that exiting process and reject `samosa app`.
   if [ "$APP_LIFECYCLE" = 1 ] && launchd_available; then
-    if launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1; then
-      i=0
-      while server_running && [ "$i" -lt 50 ]; do
-        sleep 0.1
-        i=$((i + 1))
-      done
-    fi
+    stop_server >/dev/null
   fi
+  restart_for_bind_change
   server_running && return 0
   pid=$(port_owner_pid)
   if [ -n "$pid" ]; then
@@ -593,39 +704,53 @@ if [ "${1:-}" = "serve" ]; then
     exit 0
   fi
   FOREGROUND=0
-  if [ "${1:-}" = "--foreground" ]; then
-    FOREGROUND=1
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --foreground) FOREGROUND=1 ;;
+      --lan) BIND_ADDRESS=0.0.0.0; LAN_MODE=1 ;;
+      --context-tokens)
+        shift
+        [ "$#" -gt 0 ] && context_tokens_value "$1" ||
+          fail "--context-tokens requires auto or a positive integer"
+        CONTEXT_TOKENS=$1
+        ;;
+      *) usage ;;
+    esac
     shift
-  fi
-  if [ "${1:-}" = "--context-tokens" ]; then
-    shift
-    [ "$#" = 1 ] && context_tokens_value "$1" || fail "--context-tokens requires auto or a positive integer"
-    CONTEXT_TOKENS=$1
-    shift
-  fi
-  [ "$#" = 0 ] || usage
+  done
   if [ "$FOREGROUND" = 1 ]; then
     serve_foreground
   else
     start_server
-    echo "Samosa server running independently at http://127.0.0.1:$PORT"
+    print_server_location
   fi
   exit 0
 fi
 
 if [ "${1:-}" = "app" ]; then
   shift
-  APP_LIFECYCLE=1
-  if [ "${1:-}" = "--context-tokens" ]; then
+  # A normal app launch uses the same persistent supervisor as `serve`, so
+  # the local UI cannot disappear when a terminal or automation host reaps
+  # detached children after this short-lived launcher returns. Browser-owned
+  # shutdown remains available for lifecycle-specific integration tests and
+  # compatibility via an explicit environment override.
+  APP_LIFECYCLE="${SAMOSA_APP_LIFECYCLE:-0}"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --lan) BIND_ADDRESS=0.0.0.0; LAN_MODE=1 ;;
+      --context-tokens)
+        shift
+        [ "$#" -gt 0 ] && context_tokens_value "$1" ||
+          fail "--context-tokens requires auto or a positive integer"
+        CONTEXT_TOKENS=$1
+        ;;
+      *) usage ;;
+    esac
     shift
-    [ "$#" = 1 ] && context_tokens_value "$1" || fail "--context-tokens requires auto or a positive integer"
-    CONTEXT_TOKENS=$1
-    shift
-  fi
-  [ "$#" = 0 ] || usage
+  done
   start_server
   url="http://127.0.0.1:$PORT"
-  echo "$url"
+  if [ "$LAN_MODE" != 1 ]; then echo "$url"; else print_server_location; fi
   "$OPEN" "$url"
   exit 0
 fi

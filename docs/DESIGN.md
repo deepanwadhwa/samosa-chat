@@ -54,6 +54,25 @@ adds:
 - An expert cache that keeps a fixed byte budget in RAM, drops the
   least-recently-used experts first, keeps a floor per layer, reuses freed
   memory, watches system memory pressure, and reports its I/O.
+- An auxiliary vision engine (`samosa-visionpsy`) in native MLX Metal C++ for
+  VisionPsy-Nano 460M (SigLIP2 encoder, pixel-shuffle projector, SmolLM2 decoder).
+  It runs in a separate supervised process without any Python runtime, loads
+  on demand for visual turns, and is evicted immediately to return unified Metal
+  memory.
+- An automatic planning and multi-stage evidence cascade: digital PDF text is
+  preferred first, native PP-OCRv6 extracts text from scans/forms, an installed
+  Molmo2 package provides the preferred visual image/video evidence, and
+  VisionPsy provides the standard-image fallback when Molmo is absent.
+- A hardware-adaptive VisionPsy preprocessor. The gateway samples live
+  available memory, memory pressure, thermal pressure, total RAM, and task
+  detail before model load and before every PDF page. It selects a maximum side
+  of 2048, 1536, 1024, or 512 pixels and may only downshift mid-turn. The
+  helper validates compressed input size and decoded dimensions before
+  allocating tensors, then uses the pinned aspect-preserving tile transform.
+- Task-driven multi-page vision with no fixed turn cap. Explicit and
+  whole-document scopes are honored; relevance selection scans the complete
+  page inventory in bounded extractor windows. Pages run sequentially through
+  one helper process, preserving completed-page evidence if a later page fails.
 - Saved conversations (`QWSESS01` files) that are checked against the model
   geometry, sealed with a SHA-256 hash, written atomically, and can be resumed
   exactly.
@@ -71,6 +90,35 @@ adds:
 - Test tooling for output structure, task correctness, upstream comparisons,
   the quantized math, route traces, installer rollback, and memory-pressure
   limits.
+
+## Chat attachment evidence flow
+
+The later/composite attachment path is deliberately staged. A conversation's
+first turn with exactly one image or video takes a shorter path: it is sent
+straight to verified Molmo, whose own text and coordinate markup become the
+answer without planning or primary-model synthesis.
+
+1. The gateway inventories content-addressed attachment IDs and safe metadata.
+2. The active chat LLM returns schema-validated `read_text`/`inspect_visual`
+   routing JSON. A conservative safe route is used only if the planner fails.
+3. The reader supplies embedded PDF text or PP-OCRv6 text when requested.
+   Visual-only PDF work bypasses OCR.
+4. If visual evidence is requested and admitted, the gateway prefers an
+   installed `samosa-molmo2` Q4 package and otherwise starts one
+   `samosa-visionpsy` fallback. Both use supervised inherited pipes and never
+   open a public helper port. If neither package is ready but the active backend
+   accepts images, the validated route retains that native provider.
+5. When required, the active LLM performs a greedy, non-thinking synthesis from provenance-labelled,
+   untrusted evidence under a contract forbidding false image-access refusals.
+6. The gateway closes the helper/process group at turn end, cancellation, or
+   failure and releases the route/page allocation.
+
+The chat LLM and Molmo2 do not decode concurrently on constrained hosts. Critical memory or
+thermal pressure prevents a new visual load/page. Existing text/OCR or
+completed visual evidence becomes an explicitly labelled partial result;
+vision-only work returns a retryable error. `/healthz` separately exposes chat
+backend native image support, complete auxiliary attachment support, the
+auxiliary helpers/package readiness, and OCR executable/model-pack readiness.
 
 ## What group-32 is
 
@@ -184,3 +232,25 @@ assert merge_intervals([]) == []
 ```
 
 This run: 279 tokens, 7.19 tokens/sec, 4.09 GB memory.
+
+## Developer trace architecture
+
+Developer mode is implemented at gateway boundaries, not inferred afterward
+from process logs. The chat request thread creates a turn correlation ID and
+keeps it through router calls, attachment lookup, OCR/document extraction,
+VisionPsy IPC, evidence assembly, and the final backend stream. Each boundary
+writes one serialized JSONL event under a separate mutex, so concurrent turns
+remain ordered by a per-session sequence while retaining their own `turn_id`.
+
+The trace is opt-in but persistent across gateway restarts. It uses a new file
+for each gateway session, mode `0600`, and never serializes request auth headers
+or `ui_token`. Payload capture is intentionally lossless for textual model and
+reader traffic: the exact input body and raw HTTP/IPC output are recorded. The
+content-addressed attachment itself is not duplicated into JSONL; its SHA-256,
+metadata, and exact private blob path are recorded so the source bytes remain
+identifiable without multiplying large images in the logs.
+
+This boundary placement is an acceptance constraint. A child-process launch or
+Metal activity proves only that a helper ran; it does not prove what it saw or
+what evidence reached the final LLM. See
+[DEVELOPER_MODE.md](DEVELOPER_MODE.md) for the schema and attribution workflow.

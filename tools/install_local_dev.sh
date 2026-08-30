@@ -13,6 +13,9 @@ HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/${BUILD_DIR:-build}"}
 ENGINE="$BUILD_DIR/qwen36b"
 MAPLE_ENGINE="$BUILD_DIR/samosa-maple"
+MOLMO2_ENGINE="$BUILD_DIR/samosa-molmo2"
+MOLMO2_PACK="$BUILD_DIR/molmo2-pack"
+MOLMO2_PROCESSOR="$ROOT/assets/molmo2/processor.json"
 MAPLE_METALLIB="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
@@ -29,7 +32,7 @@ BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
@@ -82,7 +85,7 @@ for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dis
   [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
 done
 
-set -- "$ENGINE" "$MAPLE_ENGINE" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
+set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa"
@@ -102,7 +105,7 @@ release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
 final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-mkdir -p "$stage/bin" "$stage/voice/browser" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
+mkdir -p "$stage/bin" "$stage/share/molmo2" "$stage/voice/browser" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
 if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
   mkdir -p "$stage/lib" "$stage/models/native-summarizer"
@@ -122,6 +125,9 @@ if [ "$SNAPSHOT_OK" = "1" ]; then
 fi
 cp "$ENGINE" "$stage/bin/qwen36b"
 cp "$MAPLE_ENGINE" "$stage/bin/samosa-maple"
+cp "$MOLMO2_ENGINE" "$stage/bin/samosa-molmo2"
+cp "$MOLMO2_PACK" "$stage/bin/molmo2-pack"
+cp "$MOLMO2_PROCESSOR" "$stage/share/molmo2/processor.json"
 ln "$MAPLE_METALLIB" "$stage/bin/mlx.metallib" || {
   echo "hard-link failed for mlx.metallib; refusing to duplicate the Metal runtime" >&2
   exit 1
@@ -132,6 +138,10 @@ cp "$GATEWAY" "$stage/bin/samosa-gateway"
 cp "$JOBSD" "$stage/bin/samosa-jobsd"
 cp "$CHUTNI_SERVICE" "$stage/bin/chutni-mcp"
 cp "$OCR" "$stage/bin/samosa-ocr"
+if [ -f "$BUILD_DIR/samosa-visionpsy" ]; then
+  cp "$BUILD_DIR/samosa-visionpsy" "$stage/bin/samosa-visionpsy"
+  chmod +x "$stage/bin/samosa-visionpsy"
+fi
 cp "$ROOT/tools/samosa_voice_runtime.sh" "$stage/bin/samosa-voice-runtime"
 cp "$ROOT/tools/samosa_kokoro_runtime.sh" "$stage/bin/samosa-kokoro-runtime"
 cp "$ROOT/assets/app.html" "$stage/app.html"
@@ -142,7 +152,7 @@ for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do
   mkdir -p "$stage/voice/browser/$(dirname "$relative")"
   cp "$file" "$stage/voice/browser/$relative"
 done
-chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime"
+chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime" "$stage/bin/samosa-molmo2" "$stage/bin/molmo2-pack"
 chmod +x "$stage/bin/samosa-maple"
 
 if [ "$SUMMARIZER_OK" = "1" ]; then

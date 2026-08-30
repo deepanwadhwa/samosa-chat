@@ -61,6 +61,9 @@ printf 'native-summarizer-model-fixture\n' >"$TMP/summarizer.gguf"
 # --- page fixtures for the SAMOSA_WEB_STUB_DIR transport seam ---------------
 printf '<html><head><title>Careers</title></head><body><script>secret()</script><h1>Roles</h1><p>Engineer &amp; Designer</p></body></html>' \
   >"$TMP/stub/http-example-com-jobs.html"
+# A fetched page may contain a lone high byte. The gateway must replace it
+# before embedding the extract in JSON sent to the local model.
+printf '\377' >>"$TMP/stub/http-example-com-jobs.html"
 printf '<html><head><title>CDC current surveillance</title></head><body><main><h1>Cyclosporiasis surveillance</h1><p>As of August 8, 2026, CDC reports 4,321 domestically acquired cases. No deaths have been reported.</p></main></body></html>' \
   >"$TMP/stub/https-www-cdc-gov-cyclosporiasis-current.html"
 printf '<html><head><title>Cyclosporiasis background</title></head><body><main><h1>Cyclosporiasis</h1><p>Generic CDC background page text without a South Carolina case count.</p></main></body></html>' \
@@ -78,6 +81,9 @@ printf '<html><head><title>Article eight</title></head><body><p>Article eight re
 printf '<html><head><title>Walmart earnings calendar</title></head><body><main><p>Walmart is expected to release its next quarterly earnings on Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-one-example-walmart.html"
 printf '<html><head><title>WMT expected earnings date</title></head><body><main><p>The expected date for Walmart WMT next earnings is Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-two-example-wmt.html"
 printf '<html><head><title>Walmart quarterly report schedule</title></head><body><main><p>Walmart next quarterly results are scheduled for Thursday, August 20, 2026.</p></main></body></html>' >"$TMP/stub/https-earnings-three-example-schedule.html"
+printf '<html><head><title>2026 in India</title></head><body><main><p>A general calendar of events in India during 2026.</p></main></body></html>' >"$TMP/stub/https-example-org-2026-india.html"
+printf '<html><head><title>President of India</title></head><body><main><p>Droupadi Murmu is the current President of India.</p></main></body></html>' >"$TMP/stub/https-example-org-president-of-india.html"
+printf '<html><head><title>Droupadi Murmu</title></head><body><main><p>Droupadi Murmu has served as President of India since 2022.</p></main></body></html>' >"$TMP/stub/https-example-org-droupadi-murmu.html"
 printf 'User-agent: *\nAllow: /\n' >"$TMP/stub/robots.txt"
 
 # --- fake curl -------------------------------------------------------------
@@ -295,6 +301,10 @@ F=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/fetch" -H 'Content-Type: applica
      --data '{"url":"http://example.com/jobs"}')
 printf '%s' "$F" | grep -q '"title":"Careers"' || fail "fetch did not extract the page title"
 printf '%s' "$F" | grep -q 'Engineer & Designer' || fail "fetch did not decode entities"
+python3 -c 'import json,sys; json.loads(sys.stdin.read())' <<EOF
+$F
+EOF
+printf '%s' "$F" | grep -q '�' || fail "fetch did not replace malformed UTF-8"
 if printf '%s' "$F" | grep -q 'secret'; then fail "fetch leaked <script> text into the extract"; fi
 
 # ===========================================================================
@@ -533,10 +543,41 @@ cat >"$HOME_DIR/config.json" <<JSON
  "url":"http://203.0.113.10/res/v1/web/search?q={query}"}}}}
 JSON
 cat >"$FAKE_CURL_RESPONSE" <<'JSON'
+{"web":{"results":[
+  {"title":"2026 in India","url":"https://example.org/2026-india","description":"A general calendar page."},
+  {"title":"President of India","url":"https://example.org/president-of-india","description":"Current office holder."},
+  {"title":"Droupadi Murmu — President of India","url":"https://example.org/droupadi-murmu","description":"Biography of the current President of India."}
+]}}
+JSON
+
+# A short, self-contained factual lookup gets one public search and one final
+# model inference. It must never invoke the multi-pass planner/ranker/sufficiency
+# path that made this exact class of query take many minutes on the real 35B
+# disk-streamed backend.
+: >"$FAKE_CURL_ARGV"; : >"$FAKE_CURL_CONFIG"
+R=$(auth -X POST "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+     --data '{"model":"qwen3.6-35b-a3b","stream":true,"web":true,
+              "messages":[{"role":"user","content":"Who is the current president of India?"}]}')
+printf '%s' "$R" | grep -q 'Droupadi Murmu is the current President of India' \
+  || fail "the compact factual lookup did not reach a grounded final answer"
+printf '%s' "$R" | grep -q 'Running one focused factual lookup' \
+  || fail "the factual lookup did not use the zero-planner path"
+if printf '%s' "$R" | grep -q 'Working out what needs checking'; then
+  fail "a self-contained factual lookup still invoked the local planner"
+fi
+[ "$(wc -l <"$FAKE_CURL_ARGV" | tr -d ' ')" = "1" ] \
+  || fail "a focused factual lookup issued more than one public search"
+printf '%s' "$R" | grep -q 'https://example.org/president-of-india' \
+  || fail "local lexical ranking omitted the directly relevant fetched page"
+if printf '%s' "$R" | grep -q 'https://example.org/2026-india'; then
+  fail "the compact answer prompt admitted a weaker generic page"
+fi
+
+cat >"$FAKE_CURL_RESPONSE" <<'JSON'
 {"web":{"results":[{"title":"Careers at Example","url":"http://example.com/jobs","description":"Open roles."}]}}
 JSON
 
-# 4a. `web: true` means the user explicitly asked Samosa to research. It plans
+# 4b. `web: true` means the user explicitly asked Samosa to research. It plans
 # several focused searches locally; neither the entire message nor its obvious
 # personal details ever reach the search provider.
 : >"$FAKE_CURL_ARGV"

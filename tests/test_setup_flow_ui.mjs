@@ -97,12 +97,34 @@ function loadSetupFlowUi() {
 
 assert.match(app, /\/\/ The app always opens in Chat\.[\s\S]*?\n      enterChat\(\);/,
   "startup must bootstrap Chat directly instead of routing through setup/status");
-assert.match(app, /h\.ready\?`\$\{h\.label\} ready`:modelLoading\?`Loading \$\{h\.label\}…`:`Choose a model`/,
-  "a non-ready backend must distinguish loading from a genuine no-model state");
-assert.match(app, /backend\.ready \|\| backend\.loading \? welcomeHTML\(\) : chooseModelHTML\(\)/,
-  "a loading model must keep the normal Chat empty state instead of flashing the chooser");
-assert.match(app, /const previousLoading=!!backend\.loading;[\s\S]*?previousLoading!==!!backend\.loading/,
-  "a loading-to-failed transition must still refresh the empty state");
+const healthStatusBegin = app.indexOf("      function modelHealthStatus(");
+const healthStatusEnd = app.indexOf("      async function health()", healthStatusBegin);
+assert.ok(healthStatusBegin >= 0 && healthStatusEnd > healthStatusBegin,
+  "the model health status function must remain extractable");
+const modelHealthStatus = eval(`(() => {${app.slice(healthStatusBegin, healthStatusEnd)}; return modelHealthStatus;})()`);
+const specialistHealth = {
+  label: "DeepGrove Maple-Preview", installed: true, ready: false,
+  generating: true, backend_state: "specialist",
+  vision: { specialist_active: true, specialist_model: "Molmo2 4B" }
+};
+assert.equal(modelHealthStatus(specialistHealth, false, true),
+  "Using Molmo2 4B vision model to process the image for DeepGrove Maple-Preview…",
+  "an active visual handoff must name both model roles instead of offering model selection");
+assert.notEqual(modelHealthStatus(specialistHealth, false, true), "Choose a model",
+  "a temporarily unloaded answering model must never look unconfigured");
+assert.equal(modelHealthStatus({ label: "Maple", installed: false, ready: false,
+  generating: false, backend_state: "none", vision: {} }, false, false), "Choose a model",
+  "the chooser label is reserved for a genuine no-model state");
+assert.match(app, /function modelHealthStatus\(h, modelLoading, specialistActive\)[\s\S]*?specialistActive[\s\S]*?Using \$\{visionLabel\} to process the image for \$\{h\.label\}/,
+  "an active specialist must be named while the selected text model remains visible");
+assert.match(app, /if \(h\.installed && h\.backend_state !== "none"\) return `\$\{h\.label\} needs attention`;[\s\S]*?return "Choose a model"/,
+  "Choose a model must be reserved for the genuine no-model state");
+assert.match(app, /backend\.ready \|\| backend\.loading \|\| backend\.installed \? welcomeHTML\(\) : chooseModelHTML\(\)/,
+  "a configured model must keep the normal Chat surface while temporarily paused for vision");
+assert.match(app, /const previousInstalled=!!backend\.installed;[\s\S]*?previousInstalled!==!!backend\.installed/,
+  "configured-model transitions must refresh the empty state without flashing the chooser");
+assert.match(app, /const waitingLabel = msg\.fileActivity\?\.message \|\| GENERATION_LABEL;[\s\S]*?generationStatusHTML\(waitingLabel\)/,
+  "the live vision stage must replace the opaque generic waiting label");
 assert.match(app, /function openModelSettings\(\) \{ openSettings\("models"\); \}/,
   "the model choice must open Settings directly on Models");
 assert.match(app, /els\.status\.onclick=.*openModelSettings\(\)/,
@@ -199,6 +221,10 @@ assert.match(app, /els\.status\.onclick=.*openModelSettings\(\)/,
   assert.deepEqual(fns.modelCardActions({ kind: "failed", retryable: true }).map(a => a.action), ["retry"]);
   assert.deepEqual(fns.modelCardActions({ kind: "failed", retryable: false }).map(a => a.action), [], "a non-recoverable failure offers no Retry");
   assert.deepEqual(fns.modelCardActions({ kind: "ready" }).map(a => a.action), ["select"]);
+  assert.deepEqual(fns.modelCardActions({ kind: "ready" }, { role: "primary", category: "chat", provisioning: "native_pack" }).map(a => a.action), ["select"],
+    "a verified native-pack Molmo primary is directly selectable");
+  assert.deepEqual(fns.modelCardActions({ kind: "not_installed" }, { role: "primary", category: "chat", provisioning: "native_pack" }).map(a => a.action), [],
+    "an unpublished native pack must not expose a Download button that cannot work");
   assert.deepEqual(fns.modelCardActions({ kind: "active" }).map(a => a.action), []);
   assert.deepEqual(fns.modelCardActions({ kind: "activating" }).map(a => a.action), []);
 }

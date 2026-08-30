@@ -30,7 +30,6 @@
         "tokenizer_sha256": "6d56a5c681da15d38fb9f883016f86fa0638176e3f748a0acf5c7ba02725679b",
         "vocabulary_size": 248320,
         "prompt_template_sha256": "",
-        "gigatoken_profile": "qwen3_5",
         "direct_token_ingestion_candidate": false
       },
       "license": {
@@ -545,6 +544,177 @@
           "sha256": "83e4c58ca602ade89b126cc75a036eb8bd06d373d4fd94b09d2277d609131089"
         }
       ]
+    },
+    {
+      "id": "visionpsy-nano-460m-mlx-bf16",
+      "version": "ca7a1bad19a08fe8e474bee24275a2e377bbabba",
+      "preferred_for_backend": false,
+      "label": "VisionPsy Nano 460M",
+      "description": "Auxiliary visual understanding model for chat attachments (captions, diagrams, objects, layout). Loaded on demand only when visual evidence is needed.",
+      "family": "vision",
+      "category": "vision",
+      "role": "auxiliary",
+      "backend_kind": "mlx_vision_native",
+      "precision": "bf16",
+      "capabilities": [
+        "image_understanding",
+        "captioning",
+        "visual_qa",
+        "objects",
+        "relationships",
+        "document_vision"
+      ],
+      "routing": "automatic",
+      "load_policy": "on_demand_per_turn",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 0,
+      "launch_profile_id": "visionpsy_native_default",
+      "runtime_dependencies": [
+        {
+          "package_id": "samosa-visionpsy",
+          "version": "v1",
+          "source": "bundled"
+        }
+      ],
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://huggingface.co/qvac/VisionPsy-Nano-460M"
+      },
+      "artifacts": [
+        {
+          "name": "model.safetensors",
+          "role": "weights",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/model.safetensors",
+          "install_path": "models/visionpsy/model.safetensors",
+          "file_mode": "0600",
+          "bytes": 1014772920,
+          "sha256": "0cc93c1027a58aec26c4350115b5eca02a836aba06277fe700de854ff078572f"
+        },
+        {
+          "name": "config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/config.json",
+          "install_path": "models/visionpsy/config.json",
+          "file_mode": "0600",
+          "bytes": 7364,
+          "sha256": "f25b85a4aef0df1867e0221310b86d87058de9ea6fadc50e993a2de5b08851a8"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/preprocessor_config.json",
+          "install_path": "models/visionpsy/preprocessor_config.json",
+          "file_mode": "0600",
+          "bytes": 2622,
+          "sha256": "7d039134cbf96a4daa956e1aa256b604975cc6184bfdce9911105fddabbb39da"
+        },
+        {
+          "name": "processor_config.json",
+          "role": "configuration",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/processor_config.json",
+          "install_path": "models/visionpsy/processor_config.json",
+          "file_mode": "0600",
+          "bytes": 142,
+          "sha256": "a09a8dd0ad8e9ef92b5e2f2a1f78df1aee12f40ff87c3e0f7d3c7877a26e718d"
+        },
+        {
+          "name": "tokenizer.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/tokenizer.json",
+          "install_path": "models/visionpsy/tokenizer.json",
+          "file_mode": "0600",
+          "bytes": 3535344,
+          "sha256": "9da3f64c3f7b940520c48fc81dc203149080934d4c7f52201883d24d0cd390a8"
+        },
+        {
+          "name": "tokenizer_config.json",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/tokenizer_config.json",
+          "install_path": "models/visionpsy/tokenizer_config.json",
+          "file_mode": "0600",
+          "bytes": 4207,
+          "sha256": "926bab5b0063ec24731caa635cc60df8d76ad3efa1b92dbc4a82912aca96a63d"
+        },
+        {
+          "name": "chat_template.jinja",
+          "role": "tokenizer",
+          "required": true,
+          "url": "https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX/resolve/ca7a1bad19a08fe8e474bee24275a2e377bbabba/chat_template.jinja",
+          "install_path": "models/visionpsy/chat_template.jinja",
+          "file_mode": "0600",
+          "bytes": 196,
+          "sha256": "153280e3ff55d19da1398bdb3914ee2a51b80429bfaedde11d7d216c39db80f3"
+        }
+      ]
+    },
+    {
+      "id": "molmo2-4b-mlx-q4-v1",
+      "version": "042abfa7a38879a376cec03d949eff0aefaa0600-q4-v1",
+      "preferred_for_backend": false,
+      "label": "Molmo2 4B Native Q4",
+      "description": "Direct image and video chat with Molmo2's own text answers and grounding output. Requires a visual attachment and unloads after every turn.",
+      "family": "chat",
+      "category": "chat",
+      "role": "primary",
+      "backend_kind": "mlx_vision_native",
+      "precision": "q4_group64",
+      "capabilities": [
+        "image_to_text",
+        "video_to_text",
+        "image_understanding",
+        "multi_image_understanding",
+        "video_understanding",
+        "temporal_localization",
+        "tracking",
+        "captioning",
+        "visual_qa"
+      ],
+      "routing": "direct_or_automatic",
+      "load_policy": "on_demand_per_turn",
+      "input_policy": "visual_required",
+      "output_modalities": [
+        "text",
+        "grounding_coordinates"
+      ],
+      "provisioning": "native_pack",
+      "setup_command": "~/.samosa/current/bin/molmo2-pack /absolute/path/to/reviewed/source ~/.samosa/current/share/molmo2/processor.json ~/.samosa/models/molmo2-4b-mlx-q4-v1",
+      "upstream_revision": "042abfa7a38879a376cec03d949eff0aefaa0600",
+      "qualified_package_bytes": 3372298903,
+      "qualified_manifest_sha256": "a07230dd952e97969921223328e7812020bb58711728450cdfb2205e3a15b770",
+      "qualification_report": "docs/regressions/molmo2-4b-q4-2026-08-26.md",
+      "supported_platforms": [
+        {
+          "os": "macos",
+          "architecture": "arm64"
+        }
+      ],
+      "required_runtime_abi": "samosa-model-runtime-v1",
+      "minimum_ram_bytes": 13743895347,
+      "launch_profile_id": "molmo2_native_safe_16gb",
+      "runtime_dependencies": [
+        {
+          "package_id": "samosa-molmo2",
+          "version": "v1",
+          "source": "bundled"
+        }
+      ],
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://huggingface.co/allenai/Molmo2-4B"
+      },
+      "artifacts": []
     }
   ]
 }

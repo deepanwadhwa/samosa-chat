@@ -82,7 +82,7 @@ d = json.load(open('$TMP/r2.json'))
 assert d['schema_version'] == 1
 assert d['runtime_abi'] == 'samosa-model-runtime-v1'
 ids = sorted(m['id'] for m in d['models'])
-assert ids == ['bonsai', 'maple', 'ornith', 'qwen', 'voice-stt-whisper-base-en', 'voice-stt-whisper-tiny-en', 'voice-tts-browser', 'voice-tts-kitten-nano', 'voice-tts-kokoro', 'voice-tts-moss-nano', 'voice-tts-pocket'], ids
+assert ids == ['bonsai', 'maple', 'molmo2-4b-mlx-q4-v1', 'ornith', 'qwen', 'visionpsy-nano-460m-mlx-bf16', 'voice-stt-whisper-base-en', 'voice-stt-whisper-tiny-en', 'voice-tts-browser', 'voice-tts-kitten-nano', 'voice-tts-kokoro', 'voice-tts-moss-nano', 'voice-tts-pocket'], ids
 by_id = {m['id']: m for m in d['models']}
 # Nothing is installed in this sandboxed \$HOME_DIR -- every model must
 # report not_installed, never a false 'ready'.
@@ -94,7 +94,7 @@ for mid, m in by_id.items():
         continue
     assert m['install_state'] == 'not_installed', (mid, m['install_state'])
     assert m['installed_bytes'] == 0, (mid, m['installed_bytes'])
-    if m['backend_kind'] not in ('pocket_tts', 'kokoro_tts', 'moss_tts', 'kitten_tts'):
+    if m.get('provisioning') != 'native_pack' and m['backend_kind'] not in ('pocket_tts', 'kokoro_tts', 'moss_tts', 'kitten_tts'):
         assert m['download_bytes'] > 0, (mid, m['download_bytes'])
 # 'qwen' is the gateway's default selected backend even with nothing
 # installed (matches /healthz's own \"backend\":\"qwen\" in this state,
@@ -104,6 +104,27 @@ assert by_id['qwen']['active'] is True
 assert by_id['bonsai']['active'] is False
 assert by_id['maple']['active'] is False
 assert by_id['ornith']['active'] is False
+visionpsy = by_id['visionpsy-nano-460m-mlx-bf16']
+assert visionpsy['family'] == 'vision'
+assert visionpsy['category'] == 'vision'
+assert visionpsy['role'] == 'auxiliary'
+assert visionpsy['backend_kind'] == 'mlx_vision_native'
+assert visionpsy['active'] is False
+assert visionpsy['routing'] == 'automatic'
+assert visionpsy['load_policy'] == 'on_demand_per_turn'
+assert visionpsy['download_bytes'] == 1014772920 + 7364 + 2622 + 142 + 3535344 + 4207 + 196
+molmo = by_id['molmo2-4b-mlx-q4-v1']
+assert molmo['family'] == 'chat'
+assert molmo['category'] == 'chat'
+assert molmo['role'] == 'primary'
+assert molmo['provisioning'] == 'native_pack'
+assert molmo['upstream_revision'] == '042abfa7a38879a376cec03d949eff0aefaa0600'
+assert molmo['routing'] == 'direct_or_automatic'
+assert molmo['input_policy'] == 'visual_required'
+assert molmo['output_modalities'] == ['text', 'grounding_coordinates']
+assert molmo['download_bytes'] == 0
+assert molmo['install_state'] == 'not_installed'
+assert 'video_understanding' in molmo['capabilities']
 voice = by_id['voice-stt-whisper-base-en']
 assert voice['family'] == 'voice'
 assert voice['backend_kind'] == 'whisper_cpp'

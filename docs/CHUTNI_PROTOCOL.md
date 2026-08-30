@@ -50,9 +50,9 @@ Samosa keeps small presentation-only documents under
 store and never appear in retrieval. The portable store beside the selected
 folder is the sole source of indexed evidence.
 
-The older `src/samosa_chutni_db.c` implementation remains temporarily for its
-standalone legacy tests and migration research. The gateway no longer invokes
-it. It must not be packaged or described as a Chutni store.
+The older private `samosa_chutni_db` implementation and its duplicate SQLite
+copy have been removed. The bundled generic Chutni service is the only folder
+memory implementation maintained or shipped by Samosa.
 
 ## Current capability
 

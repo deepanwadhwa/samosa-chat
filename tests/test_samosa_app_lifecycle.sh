@@ -38,6 +38,44 @@ printf 'fixture\n' >"$HOME_DIR/models/qwen/tokenizer_qwen36.json"
 printf '#!/bin/sh\nexit 0\n' >"$TMP/open"
 chmod +x "$TMP/open"
 
+# The user-facing default must use the persistent service path. The launcher
+# returns immediately, but the app must remain reachable from a later process
+# instead of depending on a detached child surviving its parent shell.
+SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+  SAMOSA_OPEN="$TMP/open" sh "$ROOT/dist/samosa" app >/dev/null
+DEFAULT_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
+printf '%s' "$DEFAULT_HEALTH" | grep -q '"app_owned":false'
+SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+  sh "$ROOT/dist/samosa" serve --stop >/dev/null
+
+# The explicit browser-owned compatibility mode must still transition cleanly
+# from an ordinary launchd-owned service without racing its stale server.pid.
+if [ "$(uname -s)" = Darwin ] && command -v launchctl >/dev/null 2>&1; then
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+    sh "$ROOT/dist/samosa" serve >/dev/null
+  SERVICE_PID=$(tr -d '\r\n' <"$HOME_DIR/server.pid")
+  SERVICE_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
+  printf '%s' "$SERVICE_HEALTH" | grep -q '"app_owned":false'
+
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+    SAMOSA_OPEN="$TMP/open" SAMOSA_APP_LIFECYCLE=1 \
+    sh "$ROOT/dist/samosa" app >/dev/null
+  i=0
+  while [ "$i" -lt 100 ]; do
+    TRANSITION_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
+    printf '%s' "$TRANSITION_HEALTH" | grep -q '"app_owned":true' && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ "$i" -lt 100 ] || { echo "FAIL: launchd-to-app ownership transition failed" >&2; exit 1; }
+  TRANSITION_PID=$(tr -d '\r\n' <"$HOME_DIR/server.pid")
+  [ "$TRANSITION_PID" != "$SERVICE_PID" ] || {
+    echo "FAIL: app mode reused the launchd-owned gateway" >&2; exit 1;
+  }
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+    sh "$ROOT/dist/samosa" serve --stop >/dev/null
+fi
+
 # Recreate an abnormal prior exit: the gateway is gone but its exact model
 # process and durable PID marker remain. App startup must recover that stale
 # child before launching the newly supervised backend on the same port.
@@ -54,7 +92,8 @@ done
 [ "$i" -lt 100 ] || { echo "FAIL: stale backend fixture did not start" >&2; exit 1; }
 
 if ! SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
-  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 sh "$ROOT/dist/samosa" app >/dev/null; then
+  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 SAMOSA_APP_LIFECYCLE=1 \
+  sh "$ROOT/dist/samosa" app >/dev/null; then
   echo "FAIL: app-owned gateway startup log:" >&2
   sed -n '1,240p' "$HOME_DIR/server.log" >&2 || true
   exit 1

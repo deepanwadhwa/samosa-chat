@@ -61,6 +61,11 @@ assert_no_model_requests() {
 # --- Package a runtime-only release: no --snapshot, no --tokenizer -----------
 SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runtime-only \
   --repo-id test/samosa \
+  --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
+  --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
@@ -91,6 +96,14 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     fail "Apple-Silicon release manifest is missing samosa-maple"
   grep -q 'runtime/macos-arm64/mlx.metallib$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing mlx.metallib"
+  grep -q 'runtime/macos-arm64/samosa-visionpsy$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing samosa-visionpsy"
+  grep -q 'runtime/macos-arm64/samosa-molmo2$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing samosa-molmo2"
+  grep -q 'runtime/macos-arm64/molmo2-pack$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing molmo2-pack"
+  grep -q 'runtime/common/molmo2-processor.json$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing the Molmo2 processor contract"
   grep -q 'runtime/macos-arm64/samosa-summarizer$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing the native summarizer"
   grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf$' "$REMOTE/release-manifest.tsv" ||
@@ -133,6 +146,8 @@ SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ] || fail "gateway binary missing after install"
 [ -x "$HOME_DIR/current/bin/samosa-fs" ] || fail "filesystem sidecar missing after install"
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ] || fail "Chutni service missing after install"
+[ ! -e "$HOME_DIR/current/.smoke-home" ] ||
+  fail "installer published its isolated smoke home or a stale gateway PID"
 
 # dist/install.sh compiles Chutni without its Makefile, so it must pass
 # -DCHUTNI_VERSION itself. The in-source fallback is "0.0.0-unversioned", and
@@ -179,6 +194,14 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     fail "Apple-Silicon install did not stage samosa-maple"
   [ -f "$HOME_DIR/current/bin/mlx.metallib" ] ||
     fail "Apple-Silicon install did not stage mlx.metallib"
+  [ -x "$HOME_DIR/current/bin/samosa-visionpsy" ] ||
+    fail "Apple-Silicon install did not stage samosa-visionpsy"
+  [ -x "$HOME_DIR/current/bin/samosa-molmo2" ] ||
+    fail "Apple-Silicon install did not stage samosa-molmo2"
+  [ -x "$HOME_DIR/current/bin/molmo2-pack" ] ||
+    fail "Apple-Silicon install did not stage molmo2-pack"
+  [ -f "$HOME_DIR/current/share/molmo2/processor.json" ] ||
+    fail "Apple-Silicon install did not stage the Molmo2 processor contract"
 fi
 
 assert_no_model_requests
@@ -228,6 +251,8 @@ stop_remote
 
 [ "$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' | wc -l | tr -d ' ')" = 2 ] ||
   fail "upgrade did not produce a second retained release"
+[ ! -e "$HOME_DIR/current/.smoke-home" ] ||
+  fail "upgrade published its isolated smoke home or a stale gateway PID"
 
 [ -f "$LEGACY_MODEL_DIR/experts.bin" ] || fail "legacy model file vanished after upgrade"
 [ "$(get_inode "$LEGACY_MODEL_DIR/experts.bin")" = "$LEGACY_INODE_BEFORE" ] ||

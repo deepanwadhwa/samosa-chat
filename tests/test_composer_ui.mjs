@@ -139,7 +139,7 @@ function loadComposer({ authFetch, storage = new Map() } = {}) {
   els.attachMenu.hidden = true;
 
   globalThis.els = els;
-  globalThis.backend = { ready: true, supports_images: true, supports_documents: true };
+  globalThis.backend = { ready: true, supports_images: true, supports_image_attachments: true, supports_documents: true };
   // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config reported.
   // Defaults to fully closed, matching the app's own initial value.
   globalThis.web = { offline: false, fetch_available: false, search_configured: false,
@@ -316,26 +316,34 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
 // --- Capability gating reflects server truth, not optimism ----------------
 {
   const { fns, els } = loadComposer();
-  globalThis.backend = { ready: true, supports_images: false, supports_documents: false };
+  globalThis.backend = { ready: true, supports_images: false, supports_image_attachments: false, supports_documents: false };
   fns.applyCapabilities();
   assert.equal(els.attachImage.disabled, true, "a model without vision must disable Image");
-  assert.match(els.attachImageReason.textContent, /vision projector/i);
+  assert.match(els.attachImageReason.textContent, /auxiliary visual runtime/i);
   assert.equal(els.attachDocument.disabled, true, "no reported reader must disable Document");
   assert.match(els.attachDocumentReason.textContent, /isn't installed/i);
 }
 {
   const { fns, els } = loadComposer();
-  globalThis.backend = { ready: false, supports_images: true, supports_documents: true };
+  globalThis.backend = { ready: false, supports_images: true, supports_image_attachments: true, supports_documents: true };
   fns.applyCapabilities();
   assert.equal(els.attachImage.disabled, true, "Image must stay disabled until a model is ready");
   assert.match(els.attachImageReason.textContent, /once a model is ready/i);
 }
 
-// --- Losing image support mid-session drops staged image attachments ------
+// --- A text LLM keeps images when auxiliary VisionPsy is available --------
+{
+  const { fns, els } = loadComposer();
+  globalThis.backend = { ready: true, supports_images: false, supports_image_attachments: true, supports_documents: true };
+  fns.applyCapabilities();
+  assert.equal(els.attachImage.disabled, false, "a text LLM must allow images through automatic VisionPsy routing");
+}
+
+// --- Losing all image support mid-session drops staged image attachments --
 {
   const { fns } = loadComposer();
   fns.pending = [{ clientId: "c1", kind: "image", name: "a.png", id: "x".repeat(64), status: "ready", thumb: null }];
-  globalThis.backend = { ready: true, supports_images: false, supports_documents: true };
+  globalThis.backend = { ready: true, supports_images: false, supports_image_attachments: false, supports_documents: true };
   fns.applyCapabilities();
   assert.equal(fns.pending.length, 0, "an image staged under a vision model must not survive a switch to a text-only one");
 }

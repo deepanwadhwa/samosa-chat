@@ -12,13 +12,16 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <limits.h>
 #include <pthread.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #define SAMOSA_HTTP_MAX_HEADER (64u << 10)
 #define SAMOSA_HTTP_MAX_BODY (4u << 20)
+#define SAMOSA_HTTP_MAX_ATTACHMENT_BODY (4ULL << 30)
 
 typedef struct {
     char method[8];
@@ -26,9 +29,16 @@ typedef struct {
     char query[256]; /* raw (still percent-encoded) query string after '?', empty if absent */
     char *body;
     size_t body_len;
+    /* Oversized attachment uploads are streamed to this private temporary
+       file instead of allocating Content-Length bytes. The connection owner
+       unlinks it after the handler returns. */
+    char body_file[PATH_MAX];
     int is_background;
     char range[128]; /* raw `Range:` header value, empty if absent */
     char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
+    char host[256]; /* raw `Host:` value, used for same-origin validation */
+    char cookie[512]; /* raw `Cookie:` value, used by LAN browser sessions */
+    int remote_is_loopback; /* derived from the accepted socket, never a header */
     /* Correlates the microphone, STT, model, TTS, and playback stages of one
        explicitly traced Voice turn. It is opaque diagnostic metadata and is
        never forwarded to a model backend. */
@@ -45,6 +55,7 @@ typedef int (*SamosaHttpHandler)(struct SamosaHttpServer *, int,
 typedef struct SamosaHttpServer {
     int listener;
     int port;
+    char bind_address[INET_ADDRSTRLEN];
     atomic_int stopping;
     pthread_mutex_t connection_mu;
     pthread_cond_t connection_cv;
@@ -71,9 +82,11 @@ static int samosa_send_all(int fd, const void *data, size_t size) {
 static const char *samosa_http_reason(int status) {
     switch (status) {
         case 200: return "OK"; case 204: return "No Content";
+        case 206: return "Partial Content";
         case 400: return "Bad Request"; case 404: return "Not Found";
         case 405: return "Method Not Allowed";
         case 409: return "Conflict"; case 413: return "Payload Too Large";
+        case 416: return "Range Not Satisfiable";
         case 429: return "Too Many Requests";
         case 500: return "Internal Server Error";
         case 503: return "Service Unavailable";
@@ -195,8 +208,12 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
         if (!strncasecmp(cursor,"Content-Length:",15)) {
             char *value=cursor+15; while(*value==' '||*value=='\t')value++;
             char *tail=NULL; unsigned long long parsed=strtoull(value,&tail,10);
-            if (tail==value || (*tail && *tail!=' ' && *tail!='\t') ||
-                parsed>SAMOSA_HTTP_MAX_BODY) {
+            unsigned long long limit = (!strcmp(request->method,"POST") &&
+                                         !strcmp(request->path,"/v1/attachments"))
+                                       ? SAMOSA_HTTP_MAX_ATTACHMENT_BODY
+                                       : SAMOSA_HTTP_MAX_BODY;
+            if (tail==value || (*tail && *tail!=' ' && *tail!='\t') || parsed>limit ||
+                parsed>(unsigned long long)SIZE_MAX) {
                 free(buffer); *error_status=413; return 0;
             }
             content_length=(size_t)parsed;
@@ -215,6 +232,16 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
             size_t n=strlen(value);
             if (n>=sizeof(request->ui_token)) n=sizeof(request->ui_token)-1;
             memcpy(request->ui_token,value,n); request->ui_token[n]=0;
+        } else if (!strncasecmp(cursor,"Host:",5)) {
+            char *value=cursor+5; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->host)) n=sizeof(request->host)-1;
+            memcpy(request->host,value,n); request->host[n]=0;
+        } else if (!strncasecmp(cursor,"Cookie:",7)) {
+            char *value=cursor+7; while(*value==' '||*value=='\t')value++;
+            size_t n=strlen(value);
+            if (n>=sizeof(request->cookie)) n=sizeof(request->cookie)-1;
+            memcpy(request->cookie,value,n); request->cookie[n]=0;
         } else if (!strncasecmp(cursor,"X-Samosa-Voice-Turn:",20)) {
             char *value=cursor+20; while(*value==' '||*value=='\t')value++;
             size_t n=strlen(value);
@@ -241,10 +268,53 @@ static int samosa_http_read_request(int fd, SamosaHttpRequest *request,
         }
         cursor=next+2;
     }
-    request->body=(char*)malloc(content_length+1);
-    if (!request->body) { free(buffer); *error_status=500; return 0; }
     size_t present=used-header_bytes;
     if (present>content_length) present=content_length;
+    int stream_attachment = content_length>SAMOSA_HTTP_MAX_BODY &&
+                            !strcmp(request->method,"POST") &&
+                            !strcmp(request->path,"/v1/attachments");
+    if (stream_attachment) {
+        const char *tmp_root=getenv("TMPDIR");
+        if (!tmp_root || tmp_root[0]!='/') tmp_root="/tmp";
+        if (snprintf(request->body_file,sizeof(request->body_file),
+                     "%s/samosa-upload-XXXXXX",tmp_root)>=(int)sizeof(request->body_file)) {
+            free(buffer); *error_status=500; return 0;
+        }
+        int upload=mkstemp(request->body_file);
+        if (upload<0) { free(buffer); *error_status=500; return 0; }
+        fchmod(upload,0600);
+        size_t written=0;
+        while (written<present) {
+            ssize_t n=write(upload,buffer+header_bytes+written,present-written);
+            if (n<0 && errno==EINTR) continue;
+            if (n<=0) { close(upload); unlink(request->body_file); request->body_file[0]=0; free(buffer); return 0; }
+            written+=(size_t)n;
+        }
+        free(buffer);
+        char chunk[65536];
+        while (present<content_length) {
+            size_t want=content_length-present<sizeof(chunk)?content_length-present:sizeof(chunk);
+            ssize_t n=recv(fd,chunk,want,0);
+            if (n<0 && errno==EINTR) continue;
+            if (n<=0) { close(upload); unlink(request->body_file); request->body_file[0]=0; return 0; }
+            size_t off=0;
+            while (off<(size_t)n) {
+                ssize_t w=write(upload,chunk+off,(size_t)n-off);
+                if (w<0 && errno==EINTR) continue;
+                if (w<=0) { close(upload); unlink(request->body_file); request->body_file[0]=0; return 0; }
+                off+=(size_t)w;
+            }
+            present+=(size_t)n;
+        }
+        if (fsync(upload)!=0 || lseek(upload,0,SEEK_SET)<0) {
+            close(upload); unlink(request->body_file); request->body_file[0]=0; return 0;
+        }
+        close(upload);
+        request->body=NULL; request->body_len=content_length;
+        return 1;
+    }
+    request->body=(char*)malloc(content_length+1);
+    if (!request->body) { free(buffer); *error_status=500; return 0; }
     memcpy(request->body,buffer+header_bytes,present);
     free(buffer);
     while (present<content_length) {
@@ -273,8 +343,22 @@ static void *samosa_http_connection_main(void *opaque) {
         samosa_http_json_error(fd,error_status,"invalid_http_request",
                                "Invalid or oversized HTTP request.");
     else {
+        struct sockaddr_storage peer={0}; socklen_t peer_size=sizeof(peer);
+        if (getpeername(fd,(struct sockaddr *)&peer,&peer_size)==0) {
+            if (peer.ss_family==AF_INET) {
+                uint32_t address=ntohl(((struct sockaddr_in *)&peer)->sin_addr.s_addr);
+                request.remote_is_loopback=(address>>24)==127;
+            }
+#ifdef AF_INET6
+            else if (peer.ss_family==AF_INET6) {
+                request.remote_is_loopback=IN6_IS_ADDR_LOOPBACK(
+                    &((struct sockaddr_in6 *)&peer)->sin6_addr);
+            }
+#endif
+        }
         server->handler(server,fd,&request,server->handler_ctx);
         free(request.body);
+        if (request.body_file[0]) unlink(request.body_file);
     }
     close(fd);
     pthread_mutex_lock(&server->connection_mu);
@@ -307,15 +391,15 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
         bind_env = getenv("SAMOSA_HOST");
     }
     if (bind_env && *bind_env) {
-        unsigned long addr = inet_addr(bind_env);
-        if (addr != INADDR_NONE) {
-            address.sin_addr.s_addr = addr;
-            if (addr != htonl(INADDR_LOOPBACK)) {
+        struct in_addr parsed={0};
+        if (inet_pton(AF_INET,bind_env,&parsed)==1) {
+            address.sin_addr=parsed;
+            if (parsed.s_addr != htonl(INADDR_LOOPBACK)) {
                 fprintf(stderr, "[serve] custom bind: %s\n", bind_env);
                 fflush(stderr);
             }
         } else {
-            address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            close(listener); errno=EINVAL; return 0;
         }
     } else {
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -325,6 +409,10 @@ static int samosa_http_server_init(SamosaHttpServer *server, int port,
     }
     if(port==0){ socklen_t size=sizeof(address); getsockname(listener,(struct sockaddr *)&address,&size);
         server->port=ntohs(address.sin_port); }
+    if (!inet_ntop(AF_INET,&address.sin_addr,server->bind_address,
+                   sizeof(server->bind_address))) {
+        close(listener); return 0;
+    }
     server->listener=listener; return 1;
 }
 
@@ -343,6 +431,16 @@ static int samosa_http_server_run(SamosaHttpServer *server) {
             if(atomic_load(&server->stopping))break;
             fprintf(stderr, "samosa_http_server_run: accept failed: %s\n", strerror(errno)); fflush(stderr);
             return 0;
+        }
+        /* A request handler may restart a local model before it returns (for
+           example, after an on-demand visual specialist has produced the
+           answer). Without close-on-exec, that model child inherits this
+           accepted client socket and keeps an otherwise completed streaming
+           response open until the model exits. The listener already has the
+           same protection above; accepted sockets need it independently. */
+        if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+            close(fd);
+            continue;
         }
         SamosaHttpConnection *connection=(SamosaHttpConnection*)malloc(sizeof(*connection));
         if(!connection){ close(fd); continue; }

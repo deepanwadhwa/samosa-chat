@@ -22,6 +22,9 @@ chmod +x "$TMP/bin/qwen36b"
 cat >"$TMP/bin/samosa-gateway" <<'EOF'
 #!/bin/sh
 printf 'port=%s\n' "${SAMOSA_PORT:-}"
+printf 'bind=%s\n' "${SAMOSA_BIND:-}"
+printf 'lan=%s\n' "${SAMOSA_LAN:-}"
+printf 'lan_password=%s\n' "${SAMOSA_LAN_PASSWORD:-}"
 printf 'context=%s\n' "${SAMOSA_CONTEXT_TOKENS:-}"
 printf 'chutni=%s\n' "${SAMOSA_CHUTNI_SERVICE:-}"
 EOF
@@ -63,11 +66,19 @@ printf '%s\n' "$custom_context" | grep -qx -- '65536'
 
 serve=$(run serve --foreground)
 printf '%s\n' "$serve" | grep -qx -- 'port=18642'
+printf '%s\n' "$serve" | grep -qx -- 'bind=127.0.0.1'
+printf '%s\n' "$serve" | grep -qx -- 'lan=0'
 printf '%s\n' "$serve" | grep -qx -- 'context=auto'
 printf '%s\n' "$serve" | grep -qx -- "chutni=$TMP/bin/chutni-mcp"
 
 serve_custom=$(run serve --foreground --context-tokens 65536)
 printf '%s\n' "$serve_custom" | grep -qx -- 'context=65536'
+
+serve_lan=$(run serve --context-tokens 65536 --lan --foreground)
+printf '%s\n' "$serve_lan" | grep -qx -- 'bind=0.0.0.0'
+printf '%s\n' "$serve_lan" | grep -qx -- 'lan=1'
+printf '%s\n' "$serve_lan" | grep -qx -- 'lan_password=password1234'
+printf '%s\n' "$serve_lan" | grep -qx -- 'context=65536'
 
 cat >"$TMP/fake-curl" <<'EOF'
 #!/bin/sh
@@ -81,6 +92,13 @@ chmod +x "$TMP/fake-curl" "$TMP/fake-open"
 app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" run app)
 printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:18642'
 printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
+lan_app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" \
+  SAMOSA_LAN_HOST=192.168.50.12 run app --lan)
+printf '%s\n' "$lan_app" | grep -qx -- 'Samosa LAN access is on.'
+printf '%s\n' "$lan_app" | grep -qx -- \
+  'Other devices: http://192.168.50.12:18642/'
+printf '%s\n' "$lan_app" | grep -qx -- 'Password:      password1234'
+printf '%s\n' "$lan_app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
 already=$(SAMOSA_CURL="$TMP/fake-curl" run serve)
 printf '%s\n' "$already" | grep -q -- 'Samosa server running independently at http://127.0.0.1:18642'
 if printf '%s\n' "$already" | grep -q -- 'answer a question'; then

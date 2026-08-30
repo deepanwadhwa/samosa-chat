@@ -26,7 +26,10 @@ ifeq ($(UNAME_S),Darwin)
   DL_LDFLAGS :=
   PDFIUM_LOCAL_RPATH := @loader_path
 else
-  DL_LDFLAGS := -ldl
+  # The gateway's multimodal resource policy uses libm (floor/ceil) in
+  # addition to dlopen. Darwin's libSystem provides both implicitly, while
+  # Linux requires the explicit libraries at link time.
+  DL_LDFLAGS := -ldl -lm
   PDFIUM_LOCAL_RPATH := '$$ORIGIN'
 endif
 NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
@@ -36,6 +39,7 @@ PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
 CHUTNI_DIR ?= vendor/chutni
 CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
 CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
+MULTIMODAL_SRCS := src/samosa_multimodal.c
 
 # PDFium is deliberately optional: the engine's normal build remains
 # dependency-free.  The installer supplies a SHA-pinned platform artifact and
@@ -70,28 +74,6 @@ samosa-fs: src/samosa_fs.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -std=c11 src/samosa_fs.c -o $(BUILD_DIR)/samosa-fs
 
-# T0.5: build the separate, minimized MIT-licensed Gigatoken adapter. Keeping
-# it outside the C gateway means a Rust/toolchain failure cannot make the
-# browser control plane unavailable.
-gigatoken-adapter:
-	sh tools/build_gigatoken_adapter.sh
-
-tok-oracle: tests/tok_oracle.c src/tok.h src/tok_unicode.h src/json.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -Isrc tests/tok_oracle.c -o $(BUILD_DIR)/tok-oracle
-
-test-gigatoken-adapter: gigatoken-adapter tok-oracle tests/test_gigatoken_adapter.py
-	python3 tests/test_gigatoken_adapter.py
-
-test-gigatoken-supervisor: gigatoken-adapter tests/test_gigatoken_supervisor.c src/samosa_gigatoken.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 -Wall -Wextra -Wno-unused-function -std=c11 -pthread -Isrc tests/test_gigatoken_supervisor.c -o $(BUILD_DIR)/test_gigatoken_supervisor
-	SAMOSA_GIGATOKEN_ADAPTER="$(PWD)/$(BUILD_DIR)/samosa-gigatoken-adapter" SAMOSA_TOKENIZER="$(PWD)/tokenizer_qwen36.json" $(BUILD_DIR)/test_gigatoken_supervisor
-
-samosa-chutni-db: src/samosa_chutni_db.c src/sqlite/sqlite3.c src/sqlite/sqlite3.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CHUTNI_OPT) $(CWARN) -Wno-unused-function -std=c11 -Isrc -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 src/samosa_chutni_db.c src/sqlite/sqlite3.c -o $(BUILD_DIR)/samosa-chutni-db -lpthread -ldl -lm
-
 ifeq ($(UNAME_S),Darwin)
   CHUTNI_OPT := -O2 -Wno-error=implicit-function-declaration
   CWARN := -Wall -Wextra -Werror
@@ -110,14 +92,6 @@ chutni-service:
 	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="$(CHUTNI_OPT)" "$(CHUTNI_BUILD)/chutni-mcp"
 	@mkdir -p $(BUILD_DIR)
 	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
-
-test-chutni-db: samosa-chutni-db tests/test_chutni_db.sh tests/test_chutni_scope.sh tests/test_chutni_extraction_cache.sh tests/test_chutni_recovery.sh
-	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_db.sh
-	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_scope.sh
-	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_extraction_cache.sh
-# T4.5 injected-failure recovery. Uses a real RAM disk for ENOSPC on macOS and
-# reports SKIP elsewhere rather than pretending the case ran.
-	SAMOSA_CHUTNI_DB="$(PWD)/$(BUILD_DIR)/samosa-chutni-db" sh tests/test_chutni_recovery.sh
 
 # Kimi Linear metadata preflight. This does not download or quantize the model;
 # the pure-C KDA/MLA runtime must land before a weight converter is enabled.
@@ -240,10 +214,10 @@ tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_
 r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
 	sh tests/test_r7_r6_handwriting.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_http.h src/json.h chutni-service
+samosa-gateway: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
+	  src/samosa_gateway.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
 
 # Falconsai/text_summarization is T5 (encoder-decoder), so it needs the
 # dedicated llama_encode/llama_decode helper rather than llama-server's
@@ -282,13 +256,16 @@ app-lifecycle-test: samosa-gateway chutni-service test_fake_openai_backend tests
 	sh tests/test_samosa_app_lifecycle.sh
 	sh tests/test_samosa_llama_lifecycle.sh
 
+test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.sh
+	sh tests/test_lan_access.sh
+
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
-samosa-jobsd: src/samosa_gateway.c src/samosa_http.h src/json.h
+samosa-jobsd: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  src/samosa_gateway.c -o $(BUILD_DIR)/samosa-jobsd
+	  src/samosa_gateway.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
 
 test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	@mkdir -p $(BUILD_DIR)
@@ -300,16 +277,16 @@ test_fake_native_summarizer: tests/fake_native_summarizer.c
 	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
 	  -o $(BUILD_DIR)/test_fake_native_summarizer
 
-test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_multimodal.c
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  tests/test_native_summarizer_supervisor.c -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
+	  tests/test_native_summarizer_supervisor.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_native_summarizer_supervisor \
 	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
-test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_multimodal.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  tests/test_runtime_settings.c -o $(BUILD_DIR)/test_runtime_settings
+	  tests/test_runtime_settings.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_runtime_settings
 
 # fake_model_download_server: deterministic stand-in for the trusted model
@@ -333,7 +310,7 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # and the fail-closed-by-default /v1/ dispatcher gate (any new v1 route not
 # on the closed legacy-exemption list requires a valid session token before
 # route matching, so it can't ship unauthenticated by omission).
-test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs tests/test_web_activity_ui.mjs
+test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs tests/test_web_activity_ui.mjs tests/test_developer_mode_ui.mjs
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
@@ -346,8 +323,9 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	node tests/test_composer_ui.mjs
 	node tests/test_composer_perf.mjs
 	node tests/test_web_activity_ui.mjs
+	node tests/test_developer_mode_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh
+compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_web_search.sh tests/test_developer_trace.sh
 	BUILD_DIR="$(BUILD_DIR)" \
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
@@ -361,7 +339,10 @@ compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_ba
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
 	SAMOSA_FAKE_SUMMARIZER="$$PWD/$(BUILD_DIR)/test_fake_native_summarizer" \
-	sh tests/test_web_search.sh
+		sh tests/test_web_search.sh
+	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
+	SAMOSA_FAKE_BACKEND="$$PWD/$(BUILD_DIR)/test_fake_openai_backend" \
+		sh tests/test_developer_trace.sh
 
 # doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor
 # regression for the PDF page-batch-cap fix. Skips gracefully (exit 0) if no
@@ -388,8 +369,13 @@ omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm $(OMP_LDFLAGS)
 
+ifeq ($(UNAME_S),Darwin)
+install: omp samosa-gateway samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service samosa-visionpsy samosa-molmo2 molmo2-pack
+	sh tools/install_local_dev.sh
+else
 install: omp samosa-gateway samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service
 	sh tools/install_local_dev.sh
+endif
 
 # E-X5 experiment build only — never shipped. Same as `omp` plus
 # -DSAMOSA_SCHED_RUNTIME, so OMP_SCHEDULE picks the hot-kernel schedule at run
@@ -456,11 +442,11 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 # them left `make test` green. Run as sub-makes, not prerequisites: several
 # bind fixed ports and must not overlap under `make -j`.
 	$(MAKE) compiled-gateway-test
-	$(MAKE) test-chutni-db
 	$(MAKE) test-chutni
 	$(MAKE) chutni-gateway-test
 	$(MAKE) detached-service-test
 	$(MAKE) app-lifecycle-test
+	$(MAKE) test-lan-access
 	$(MAKE) test-kimi-converter
 # T3.3 view logic. Skips with a message where node is unavailable rather than
 # passing silently -- the rendering itself cannot be verified headlessly.
@@ -470,14 +456,6 @@ test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c t
 # tier table is unit-tested and guarded against drifting from the gateway.
 	$(CC) -O1 $(CWARN) -std=c11 tests/test_backend_limits.c -o $(BUILD_DIR)/test_backend_limits && ./$(BUILD_DIR)/test_backend_limits
 	sh tests/test_backend_limits_match.sh
-
-# test-all adds the gates that need a toolchain beyond a C compiler. The
-# Gigatoken adapter needs `cargo +nightly`, so it is deliberately not in
-# `make test`: a machine without Rust must still be able to run the full
-# offline gate for everything else.
-test-all: test
-	$(MAKE) test-gigatoken-adapter
-	$(MAKE) test-gigatoken-supervisor
 
 # Jobs acceptance (offline). Gate 11 removed the Python jobs modules
 # (samosa_jobs/samosa_gateway/samosa_tools/jobs_fs) after native parity, so the
@@ -494,7 +472,7 @@ jobs-test: samosa-fs
 clean:
 	rm -rf $(BUILD_DIR)
 
-debian-portability-test: compiled-gateway-test test-chutni-db test-chutni chutni-gateway-test
+debian-portability-test: compiled-gateway-test test-chutni chutni-gateway-test
 
 ci-debian:
 	docker run --rm --platform linux/amd64 \
@@ -597,6 +575,7 @@ test-maple: test-maple-components test-maple-model
 	@echo "Running Maple C++ Model Tests"
 	$(BUILD_DIR)/test-maple-model
 
+
 test-maple-sanitize: tests/fixtures/maple/test_checkpoint_sanitization.py
 	sh tools/run_memory_guarded.sh python3 tests/fixtures/maple/test_checkpoint_sanitization.py
 
@@ -650,6 +629,12 @@ samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tok
 	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
 
+samosa-visionpsy: src/visionpsy/samosa_visionpsy.cpp src/visionpsy/visionpsy_model.cpp src/visionpsy/visionpsy_model.h
+	@echo "Building samosa-visionpsy helper..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/visionpsy/samosa_visionpsy.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/samosa-visionpsy $(MLX_LDFLAGS)
+
 maple-pack: tools/maple_pack.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/json.h $(MAPLE_CACHE_OBJ)
 	@echo "Building maple-pack..."
 	@mkdir -p $(BUILD_DIR)
@@ -671,5 +656,102 @@ test-maple-expert-views: tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRC
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-views $(MLX_LDFLAGS)
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-expert-views
 
+test-visionpsy-components: tests/test_visionpsy_components.cpp src/visionpsy/visionpsy_model.cpp src/visionpsy/visionpsy_model.h
+	@echo "Building VisionPsy component tests..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_visionpsy_components.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/test-visionpsy-components $(MLX_LDFLAGS)
+	$(BUILD_DIR)/test-visionpsy-components
+
+test-visionpsy: test-visionpsy-components samosa-gateway samosa-visionpsy
+	node tests/test_visionpsy_ui.mjs
+	node tests/test_developer_mode_ui.mjs
+	sh tests/test_visionpsy_e2e.sh
+
+test-multimodal-supervisor: tests/fake_multimodal_helper.c tests/test_multimodal_supervisor.c src/samosa_multimodal.c src/samosa_multimodal.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 $(CWARN) -std=c11 -pthread -Isrc tests/fake_multimodal_helper.c -o $(BUILD_DIR)/fake-multimodal-helper
+	$(CC) -O2 $(CWARN) -std=c11 -pthread -Isrc tests/test_multimodal_supervisor.c src/samosa_multimodal.c -o $(BUILD_DIR)/test-multimodal-supervisor
+	$(BUILD_DIR)/test-multimodal-supervisor "$(abspath $(BUILD_DIR)/fake-multimodal-helper)"
+
+test-molmo2-contract: tests/test_molmo2_contract.cpp src/molmo2/molmo2_contract.cpp src/molmo2/molmo2_contract.h assets/molmo2/config.json assets/molmo2/processor.json
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_molmo2_contract.cpp src/molmo2/molmo2_contract.cpp -o $(BUILD_DIR)/test-molmo2-contract
+	$(BUILD_DIR)/test-molmo2-contract
+
+test-molmo2-processor: tests/test_molmo2_processor.cpp src/molmo2/molmo2_processor.cpp src/molmo2/molmo2_processor.h src/stb_image.h
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -Wno-unused-function -Isrc \
+	  tests/test_molmo2_processor.cpp src/molmo2/molmo2_processor.cpp -o $(BUILD_DIR)/test-molmo2-processor
+	$(BUILD_DIR)/test-molmo2-processor
+
+molmo2-pack: tools/molmo2_pack.cpp src/molmo2/molmo2_contract.cpp src/molmo2/molmo2_contract.h
+	@echo "Building native Molmo2 Q4 package builder..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-copy $(MLX_INCLUDE) -Isrc \
+	  tools/molmo2_pack.cpp src/molmo2/molmo2_contract.cpp -o $(BUILD_DIR)/molmo2-pack $(MLX_LDFLAGS)
+
+molmo2-model-compile: src/molmo2/molmo2_model.cpp src/molmo2/molmo2_model.h src/molmo2/molmo2_processor.h src/molmo2/molmo2_contract.h
+	@echo "Compiling native Molmo2 model core..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-deprecated-copy \
+	  $(MLX_INCLUDE) -Isrc -c src/molmo2/molmo2_model.cpp -o $(BUILD_DIR)/molmo2_model.o
+
+ifeq ($(UNAME_S),Darwin)
+MOLMO2_MEDIA_SRC := src/molmo2/molmo2_media.mm
+MOLMO2_MEDIA_LIBS := -framework AVFoundation -framework CoreMedia -framework CoreGraphics
+else
+MOLMO2_MEDIA_SRC := src/molmo2/molmo2_media_stub.cpp
+MOLMO2_MEDIA_LIBS :=
+endif
+
+samosa-molmo2: src/molmo2/samosa_molmo2.cpp src/molmo2/molmo2_model.cpp src/molmo2/molmo2_processor.cpp src/molmo2/molmo2_contract.cpp $(MOLMO2_MEDIA_SRC)
+	@echo "Building on-demand native Molmo2 4B helper..."
+	@mkdir -p $(BUILD_DIR)
+	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
+	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-deprecated-copy \
+	  $(MLX_INCLUDE) -Isrc $^ -o $(BUILD_DIR)/samosa-molmo2 $(MLX_LDFLAGS) $(MOLMO2_MEDIA_LIBS)
+
+test-molmo2-gateway: samosa-gateway test_fake_openai_backend test-multimodal-supervisor tests/test_molmo2_gateway.sh
+	SAMOSA_COMPILED_GATEWAY=./$(BUILD_DIR)/samosa-gateway \
+	SAMOSA_FAKE_BACKEND=./$(BUILD_DIR)/test_fake_openai_backend \
+	SAMOSA_FAKE_MM_HELPER=./$(BUILD_DIR)/fake-multimodal-helper \
+	sh tests/test_molmo2_gateway.sh
+
+test-molmo2: test-molmo2-contract test-molmo2-processor molmo2-model-compile samosa-molmo2 molmo2-pack test-molmo2-gateway assets/app.html tests/test_composer_perf.mjs
+	node tests/test_composer_perf.mjs
+	@echo "Molmo2 native unit/integration suite: PASS"
+
+# Mandatory release gate with a real, already packed Q4 model. It is opt-in so
+# ordinary builds never fetch or manufacture multi-gigabyte weights. The
+# memory guard aborts on process-tree RSS/swap growth rather than risking the host.
+test-molmo2-real: samosa-molmo2
+	@test -n "$(MOLMO2_MODEL_DIR)" || { echo "set MOLMO2_MODEL_DIR to the pinned molmo2-4b-mlx-q4-v1 package" >&2; exit 2; }
+	@test -n "$(MOLMO2_SAMPLE_IMAGE)" || { echo "set MOLMO2_SAMPLE_IMAGE to a reviewed image fixture" >&2; exit 2; }
+	@test -n "$(MOLMO2_SAMPLE_VIDEO)" || { echo "set MOLMO2_SAMPLE_VIDEO to a reviewed short video fixture" >&2; exit 2; }
+	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-3750} MAX_SWAP_DELTA_MB=0 \
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	sh tools/run_memory_guarded.sh $(BUILD_DIR)/samosa-molmo2 --self-test image "$(MOLMO2_MODEL_DIR)" "$(MOLMO2_SAMPLE_IMAGE)"
+	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-3750} MAX_SWAP_DELTA_MB=0 \
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	sh tools/run_memory_guarded.sh $(BUILD_DIR)/samosa-molmo2 --self-test video "$(MOLMO2_MODEL_DIR)" "$(MOLMO2_SAMPLE_VIDEO)"
+
+# Release qualification gate. Unlike test-visionpsy, this target refuses to
+# substitute fake tensors: it loads the immutable standard BF16 checkpoint,
+# renders a real PDF page, validates the processor token contract, and performs
+# native MLX/Metal generation. Release automation must provide the downloaded
+# catalog artifact directory explicitly.
+test-visionpsy-real: samosa-visionpsy tests/test_visionpsy_real.cpp
+	@test -n "$(VISIONPSY_MODEL_DIR)" || { echo "set VISIONPSY_MODEL_DIR to the pinned VisionPsy MLX checkpoint" >&2; exit 2; }
+	@test -x "$(BUILD_DIR)/samosa-extract" || { echo "build samosa-extract with PDFium before running the real VisionPsy gate" >&2; exit 2; }
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_visionpsy_real.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/test-visionpsy-real $(MLX_LDFLAGS)
+	@tmp_ppm=$$(mktemp "$${TMPDIR:-/tmp}/samosa-visionpsy-real-XXXXXX"); \
+	  trap 'rm -f "$$tmp_ppm"' EXIT; \
+	  rm -f "$$tmp_ppm"; \
+	  $(BUILD_DIR)/samosa-extract --render-ppm tests/fixtures/documents/hello.pdf 1 "$$tmp_ppm" >/dev/null; \
+	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-visionpsy-real "$(VISIONPSY_MODEL_DIR)" "$$tmp_ppm"
 test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc $^ -o build/$@ $(MLX_LDFLAGS)

@@ -122,10 +122,10 @@ static int open_input(const char *path, InputFile *input, const char **error) {
         *error = "not_regular_file";
         return 0;
     }
-    if (st.st_size < 5 || (uintmax_t)st.st_size > max_input_bytes() ||
+    if (st.st_size == 0 || (uintmax_t)st.st_size > max_input_bytes() ||
         (uintmax_t)st.st_size > ULONG_MAX) {
         close(input->fd);
-        *error = "file_too_large";
+        *error = st.st_size == 0 ? "file_empty" : "file_too_large";
         return 0;
     }
     input->length = (unsigned long)st.st_size;
@@ -326,6 +326,16 @@ static int valid_utf8(const unsigned char *data, size_t length) {
     return 1;
 }
 
+static int text_has_binary_control(const unsigned char *data, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = data[i];
+        if ((c < 0x20 && c != '\n' && c != '\r' && c != '\t' && c != '\f') ||
+            c == 0x7f)
+            return 1;
+    }
+    return 0;
+}
+
 static unsigned long utf8_char_count(const char *text) {
     unsigned long count = 0;
     for (; *text; ++text)
@@ -348,9 +358,15 @@ static int extract_native_text(InputFile *input, Buffer *text, const char **erro
         *error = "out_of_memory";
         return 0;
     }
-    if (!read_block(input, 0, raw, input->length) || !valid_utf8(raw, input->length)) {
+    if (!read_block(input, 0, raw, input->length) ||
+        !valid_utf8(raw, input->length)) {
         free(raw);
         *error = "text_invalid_utf8";
+        return 0;
+    }
+    if (text_has_binary_control(raw, input->length)) {
+        free(raw);
+        *error = "text_binary_control";
         return 0;
     }
     for (i = 0; i < input->length; ++i) {

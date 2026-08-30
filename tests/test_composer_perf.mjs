@@ -36,12 +36,13 @@ class Element {
     this.children = [];
     // The renderer reads back .avatar/.bubble/.thinking-body/.response/
     // .error-note from markup it just set, so the fixture materializes those.
-    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note", "generation-status", "generation-workmark"]) {
+    for (const cls of ["avatar", "bubble", "thinking", "thinking-body", "response", "error-note", "generation-status", "generation-workmark", "generation-status-label"]) {
       if (v.includes(`class="${cls}`)) { const e = new Element("div"); e.className = cls; this.appendChild(e); }
     }
   }
   get innerHTML() { return this._innerHTML || ""; }
   setAttribute(n, v) { this.attrs[n] = String(v); }
+  removeAttribute(n) { delete this.attrs[n]; }
   getAttribute(n) { return this.attrs[n] ?? null; }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   querySelectorAll(sel) {
@@ -77,17 +78,54 @@ function load() {
   globalThis.generating = false;
   globalThis.resizePrompt = () => {};
   globalThis.scrollBottom = () => {};
+  globalThis.renderFileActivity = () => {};
   globalThis.renderWebActivity = () => {};
   globalThis.authFetch = async () => ({ ok: false });
   globalThis.voicePlaybackReady = () => false;
   const fns = eval(`(() => {${block}
     return { renderMessages, appendMessageNode, welcomeHTML, escapeHTML,
              generationStatusHTML, renderAssistantResponse,
+             parseMolmoGrounding, renderMolmoGrounding,
              get renderLimit() { return renderLimit; },
              set renderLimit(v) { renderLimit = v; },
              RENDER_WINDOW };
   })()`);
   return { fns, els };
+}
+
+// --- Molmo image grounding remains structured instead of visible XML ------
+{
+  const { fns } = load();
+  const legacy = fns.parseMolmoGrounding(
+    'Counting the <points x1="10.5" y1="20.5" x2="80.0" y2="75.0" alt="charts">charts</points> shows a total of 2.');
+  assert.equal(legacy.points.length, 2, "legacy Molmo xN/yN points must all be decoded");
+  assert.deepEqual(legacy.points.map(p => [p.x, p.y]), [[10.5, 20.5], [80, 75]]);
+  assert.equal(legacy.cleanText, "Counting the charts shows a total of 2.");
+
+  const molmo2 = fns.parseMolmoGrounding(
+    '<points coords="1 1 098 629 2 500 250 3 901 875">charts</points>');
+  assert.equal(molmo2.points.length, 3, "Molmo2 frame-prefixed 0..1000 coordinates must be decoded");
+  assert.deepEqual(molmo2.points.map(p => [p.x, p.y]), [[9.8, 62.9], [50, 25], [90.1, 87.5]]);
+  assert.equal(molmo2.cleanText, "charts", "coordinate markup must not leak into visible prose");
+
+  const multiGroup = fns.parseMolmoGrounding(
+    '<points coords="1 1 100 200 2 300 400;2 3 500 600">items</points>');
+  assert.equal(multiGroup.points.length, 3, "semicolon-delimited image/frame groups must retain every point");
+  const assistant = { id: "grounded-a", role: "assistant", content: molmo2.cleanText };
+  globalThis.activeChat = () => ({ messages: [
+    { id: "grounded-u", role: "user", content: "count them", attachments: [
+      { id: "a".repeat(64), kind: "image", name: "charts.png" }
+    ] },
+    assistant
+  ] });
+  const groundedNode = new Element("div");
+  fns.renderMolmoGrounding(groundedNode, assistant, molmo2);
+  assert.equal(groundedNode.querySelectorAll(".molmo-grounding-marker").length, 3,
+    "the response DOM must contain one visible marker per decoded coordinate");
+  assert.equal(groundedNode.querySelector("figcaption").textContent, "charts (3)",
+    "the overlay caption must expose the grounded count");
+  assert.ok(app.includes(".molmo-grounding-marker") && app.includes("background: #ef4a9b"),
+    "grounded locations must render as the requested pink markers");
 }
 
 function synthesize(count) {
@@ -122,6 +160,12 @@ function timeRender(fns, els, messages) {
     "the waiting state should use the active-work mark");
   assert.doesNotMatch(response.innerHTML, /typing/,
     "the retired terminal cursor class must not return");
+  const visionResponse = new Element("div");
+  fns.renderAssistantResponse(visionResponse, { streaming: true, content: "", fileActivity: {
+    message: "Using Molmo2 4B vision model to process this image; Maple remains selected…"
+  }});
+  assert.match(visionResponse.innerHTML, /Using Molmo2 4B vision model to process this image/,
+    "a visual handoff must replace the opaque waiting label with its live stage");
   const originalStatus = response.querySelector(".generation-status");
   fns.renderAssistantResponse(response, { streaming: true, content: "", reasoning: "A later SSE update" });
   assert.equal(response.querySelector(".generation-status"), originalStatus,

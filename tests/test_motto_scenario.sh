@@ -12,24 +12,23 @@ BUILD_DIR="${BUILD_DIR:-build}"
 # Compile test fake backend if not built
 make test_fake_openai_backend >/dev/null 2>&1 || true
 
-# Start fake backend
-"${BUILD_DIR}/test_fake_openai_backend" --port "$PORT_BE" &
-BE_PID=$!
-trap 'kill "$BE_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
-
-# Wait for fake backend health
-i=0
-while [ "$i" -lt 50 ]; do
-  if /usr/bin/curl -fsS "http://127.0.0.1:$PORT_BE/health" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.05
-  i=$((i + 1))
-done
-
 # Prepare 20-file fixture folder
 REAL_HOME="$HOME"
 PACK="${SAMOSA_OCR_PACK:-$REAL_HOME/.samosa/models/ocr-pack-v1}"
+
+# This gate covers search/cache/definition orchestration. OCR weights are an
+# optional artifact, so use a deterministic sidecar on clean CI runners.
+mkdir -p "$TMP/bin"
+cat >"$TMP/bin/fake-ocr" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "--version" ]; then echo 'samosa-ocr-test-v1'; exit 0; fi
+if [ "${1:-}" = "read" ]; then
+  echo '{"ok":true,"text":"Poličar 2019","lines":[{"text":"Poličar 2019","conf":0.99}]}'
+  exit 0
+fi
+exit 64
+EOF
+chmod +x "$TMP/bin/fake-ocr"
 
 mkdir -p "$TMP/files" "$TMP/home/models/ornith-9b" "$TMP/home/models/bonsai-27b-1bit" "$TMP/home/.samosa/cache/read"
 printf 'fixture\n' >"$TMP/home/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf"
@@ -73,7 +72,7 @@ SAMOSA_APP_HTML="$TMP/app.html" \
 SAMOSA_APP_LOGO="$TMP/logo.png" \
 SAMOSA_ORNITH_MODEL="$TMP/home/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf" \
 SAMOSA_BONSAI_MMPROJ="$TMP/home/bonsai-mmproj.gguf" \
-SAMOSA_OCR="$(pwd)/${BUILD_DIR}/samosa-ocr" \
+SAMOSA_OCR="$TMP/bin/fake-ocr" \
 SAMOSA_FS="$(pwd)/${BUILD_DIR}/samosa-fs" \
 SAMOSA_EXTRACT="$(pwd)/${BUILD_DIR}/samosa-extract" \
 SAMOSA_BONSAI_SERVER="$(pwd)/${BUILD_DIR}/test_fake_openai_backend" \
@@ -81,7 +80,7 @@ SAMOSA_BACKEND_PORT="$PORT_BE" \
 SAMOSA_PORT="$PORT_GW" \
 "${BUILD_DIR}/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
 GW_PID=$!
-trap 'kill "$GW_PID" "$BE_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+trap 'kill "$GW_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
 
 # Wait for gateway healthz
 i=0
@@ -127,5 +126,5 @@ printf '%s' "$run_def" | /usr/bin/grep -q '"type":"item_complete"' || { echo "De
 grep -q '"status":"review_required"' "$TMP/def-out/output.jsonl" || { echo "Planted image unit did not land in review_required" >&2; exit 1; }
 grep -q '"reasons":\["vision_backend_required"\]' "$TMP/def-out/output.jsonl" || { echo "Expected reason vision_backend_required missing" >&2; exit 1; }
 
-kill "$GW_PID" "$BE_PID" 2>/dev/null || true
+kill "$GW_PID" 2>/dev/null || true
 echo "motto-scenario-test: PASS"

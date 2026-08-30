@@ -56,6 +56,6 @@ Pinned architectural facts from `config.json`:
    memory admission, and cancellation. Add a model manifest and only then
    expose Kimi in the UI catalog.
 
-The Gigatoken adapter already supports Kimi's local `tiktoken.model` format for
-tokenization. That is independent of model-weight conversion and does not imply
-that the pure-C KDA/MLA runtime exists.
+The removed Gigatoken prototype demonstrated local `tiktoken.model` parsing,
+but it was never part of the runtime. Any future Kimi backend must provide and
+test its own maintained tokenizer path alongside the pure-C KDA/MLA runtime.

@@ -27,7 +27,6 @@
     "tokenizer_sha256": "hex",
     "vocabulary_size": 0,
     "prompt_template_sha256": "hex",
-    "gigatoken_profile": "qwen3_5",
     "direct_token_ingestion_candidate": true
   },
   "license": {

@@ -79,6 +79,7 @@ assert.doesNotMatch(localSettingsBlock, /contextTokens|contextConfigured|autoCom
   });
   globalThis.runtimeSettings = {}; // prevents the optional first-open refresh in this isolated router fixture
   globalThis.refreshRuntimeSettings = () => { throw new Error("an already-hydrated pane must not refetch"); };
+  globalThis.refreshDeveloperTrace = () => {};
   globalThis.document = {
     querySelectorAll(selector) {
       if (selector === "[data-settings-pane-content]") return panes;

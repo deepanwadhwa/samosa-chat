@@ -18,15 +18,11 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/doc_read_pdf_paging.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=18982
-BACKEND_PORT=18983
 PID=""
-BPID=""
 
 cleanup() {
   [ -z "$PID" ] || kill "$PID" 2>/dev/null || true
   [ -z "$PID" ] || wait "$PID" 2>/dev/null || true
-  [ -z "$BPID" ] || kill "$BPID" 2>/dev/null || true
-  [ -z "$BPID" ] || wait "$BPID" 2>/dev/null || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT HUP INT TERM
@@ -44,14 +40,6 @@ printf '<!doctype html><title>Compiled Samosa</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 cp "$ROOT/tests/fixtures/documents/multipage_7pages.pdf" "$TMP/files/multipage_7pages.pdf"
 
-"$BACKEND" --port "$BACKEND_PORT" &
-BPID=$!
-i=0
-while [ "$i" -lt 50 ]; do
-  curl -fsS "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1 && break
-  sleep 0.05; i=$((i + 1))
-done
-
 SAMOSA_HOME="$HOME_DIR" \
 SAMOSA_PORT="$PORT" \
 SAMOSA_BACKEND_PORT=$((PORT + 1)) \
@@ -65,8 +53,10 @@ SAMOSA_FS="$FS_SIDECAR" \
 PID=$!
 
 i=0
+health=""
 while [ "$i" -lt 50 ]; do
-  curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
+  health=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
+  printf '%s' "$health" | grep -q '"ready":true' && break
   sleep 0.05; i=$((i + 1))
 done
 

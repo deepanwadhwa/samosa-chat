@@ -46,10 +46,10 @@ synthetic_config = {
     "sliding_window": 64,
 }
 
-args = maple_ref.ModelArgs.from_dict(synthetic_config)
+synthetic_args = maple_ref.ModelArgs.from_dict(synthetic_config)
 
 print("Generating Model fixture...")
-model = maple_ref.Model(args)
+model = maple_ref.Model(synthetic_args)
 # randomize gates to avoid ties
 for layer in model.model.layers:
     if hasattr(layer, "mlp") and hasattr(layer.mlp, "gate"):
@@ -57,19 +57,19 @@ for layer in model.model.layers:
 
 quantize_module(model)
 
-x_seq = mx.random.randint(0, args.vocab_size, (1, 8))
+x_seq = mx.random.randint(0, synthetic_args.vocab_size, (1, 8))
 
 # 1. Prefill
 from mlx_lm.models.cache import make_prompt_cache
-caches = make_prompt_cache(maple_ref.Model(args), max_kv_size=args.sliding_window)
+caches = make_prompt_cache(model, max_kv_size=synthetic_args.sliding_window)
 out_prefill = model(x_seq, cache=caches)
 
 # 2. Decode 1
-x_dec1 = mx.random.randint(0, args.vocab_size, (1, 1))
+x_dec1 = mx.random.randint(0, synthetic_args.vocab_size, (1, 1))
 out_dec1 = model(x_dec1, cache=caches)
 
 # 3. Decode 2
-x_dec2 = mx.random.randint(0, args.vocab_size, (1, 1))
+x_dec2 = mx.random.randint(0, synthetic_args.vocab_size, (1, 1))
 out_dec2 = model(x_dec2, cache=caches)
 
 state = dict(tree_flatten(model.parameters()))
@@ -88,8 +88,8 @@ for k in list(state.keys()):
         w = state.pop(k)
         suffix = k.split('.')[-1]
         prefix = k.replace(f"qkv_proj.{suffix}", "")
-        q_size = args.num_attention_heads * args.head_dim
-        k_size = args.num_key_value_heads * args.head_dim
+        q_size = synthetic_args.num_attention_heads * synthetic_args.head_dim
+        k_size = synthetic_args.num_key_value_heads * synthetic_args.head_dim
         state[f"{prefix}q_proj.{suffix}"] = w[:q_size]
         state[f"{prefix}k_proj.{suffix}"] = w[q_size:q_size + k_size]
         state[f"{prefix}v_proj.{suffix}"] = w[q_size + k_size:]

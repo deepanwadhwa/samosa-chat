@@ -48,6 +48,15 @@ static void stop_server(int number) {
 static int handler(SamosaHttpServer *server, int fd,
                    const SamosaHttpRequest *request, void *opaque) {
     (void)opaque;
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/compact")) {
+        const char *reply = strstr(request->body, "pinned_context")
+            ? "saw pinned compaction context" : "missing pinned compaction context";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"status\":\"ok\",\"before_tokens\":1000,\"after_tokens\":400,"
+            "\"retained_recent_tokens\":400,\"message\":\"%s\"}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
     /* /healthz (not just /health) so this binary can also stand in for
        SAMOSA_QWEN_ENGINE in tests -- backend_probe() in src/samosa_gateway.c
        probes /healthz specifically for the "qwen" backend name. */
@@ -62,6 +71,27 @@ static int handler(SamosaHttpServer *server, int fd,
         if (!delay || !*delay) delay = getenv("SAMOSA_FAKE_HEALTH_DELAY_MS");
         if (delay && *delay) sleep_ms(atol(delay));
         return samosa_http_response(fd, 200, "application/json", "{\"status\":\"ok\"}", NULL);
+    }
+    /* VisionPsy attachment planner fixture. These decisions deliberately do
+       not all match the gateway's conservative fallback, so the E2E test
+       proves validated model routing is actually honored. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Route a local attachment question")) {
+        const char *body =
+            strstr(request->body, "Molmo extended image probe")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":false,\\\"inspect_visual\\\":true,\\\"detail\\\":\\\"overview\\\",\\\"extended_visual\\\":true,\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}"
+            : strstr(request->body, "Copy the lettering exactly and preserve line breaks")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":true,\\\"inspect_visual\\\":false,\\\"detail\\\":\\\"fine\\\",\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}"
+            : strstr(request->body, "Read the text and describe the layout")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":true,\\\"inspect_visual\\\":true,\\\"detail\\\":\\\"fine\\\",\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}"
+            : strstr(request->body, "Describe every chart across the entire document")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":true,\\\"inspect_visual\\\":true,\\\"detail\\\":\\\"fine\\\",\\\"visual_scope\\\":\\\"all\\\",\\\"pages\\\":[]}\"}}]}"
+            : strstr(request->body, "What is in this image") ||
+              strstr(request->body, "Describe the diagram in this image") ||
+              strstr(request->body, "attachment image probe")
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":false,\\\"inspect_visual\\\":true,\\\"detail\\\":\\\"overview\\\",\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"read_text\\\":true,\\\"inspect_visual\\\":false,\\\"detail\\\":\\\"overview\\\",\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}";
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     /* T0.3 (docs/TASKS_UI_CHUTNI.md): real-extractor regression for the PDF
        page-batch-cap fix. Placed first so its specific goal text always
@@ -425,6 +455,101 @@ static int handler(SamosaHttpServer *server, int fd,
        this stand-in backend, rather than forwarding the client's plain
        attachment_ids field through unmodified. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Molmo extended image probe")) {
+        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "fixture image evidence"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing extended Molmo image evidence\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw extended Molmo image evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Molmo single image grounding probe")) {
+        const char *system_message = strstr(request->body, "\"role\":\"system\"");
+        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts") ||
+            !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
+            !strstr(request->body, "ORIGINAL_UI_SYSTEM_CONTEXT") ||
+            !strstr(request->body, "\"messages\":[{\"role\":\"system\"") ||
+            !system_message || strstr(system_message + 1, "\"role\":\"system\"") ||
+            !strstr(request->body, "\"thinking\":\"off\"") ||
+            !strstr(request->body, "\"chat_template_kwargs\":{\"enable_thinking\":false}") ||
+            !strstr(request->body, "\"temperature\":0") ||
+            strstr(request->body, "\"thinking\":\"on\""))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing grounded Molmo synthesis contract\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"There are 12 charts in a 3 by 4 grid.\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "what is this image?")) {
+        const char *system_message = strstr(request->body, "\"role\":\"system\"");
+        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts") ||
+            !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
+            !strstr(request->body, "UI context") ||
+            !strstr(request->body, "\"messages\":[{\"role\":\"system\"") ||
+            !system_message || strstr(system_message + 1, "\"role\":\"system\"") ||
+            !strstr(request->body, "\"thinking\":\"off\""))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing clean visual handoff\"}}]}", NULL);
+        if (strstr(request->body, "\"stream\":true"))
+            return samosa_http_response(fd, 200, "text/event-stream",
+                "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"This is a black-and-white geometric pattern with repeated chart-like motifs.\"},\"finish_reason\":null}]}\n\n"
+                "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                "data: [DONE]\n\n", "Cache-Control: no-cache\r\n");
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"This is a black-and-white geometric pattern with repeated chart-like motifs.\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "what is this?")) {
+        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            strstr(request->body, "POISONED_VAGUE_IMAGE_PROMPT"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"vague image prompt was poisoned\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"This is a black-and-white circular mandala.\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment video probe")) {
+        if (strstr(request->body, "Route a local attachment question"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":"
+                "\"{\\\"read_text\\\":false,\\\"inspect_visual\\\":true,\\\"detail\\\":\\\"overview\\\",\\\"video_mode\\\":\\\"temporal\\\",\\\"visual_scope\\\":\\\"relevant\\\",\\\"pages\\\":[]}\"}}]}", NULL);
+        if (!strstr(request->body, "Attached video observation") ||
+            !strstr(request->body, "fixture timestamped video evidence") ||
+            !strstr(request->body, "audio=false") ||
+            !strstr(request->body, "covered_interval=0.000-30.000 seconds"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing video evidence\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "What happens in this video?")) {
+        if (!strstr(request->body, "Attached video observation") ||
+            !strstr(request->body, "fixture timestamped video evidence") ||
+            !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
+            !strstr(request->body, "\"thinking\":\"off\""))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing clean video handoff\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment image probe")) {
         if (!strstr(request->body, "\"type\":\"image_url\"") ||
             !strstr(request->body, "\"url\":\"data:image/png;base64,"))
@@ -443,7 +568,56 @@ static int handler(SamosaHttpServer *server, int fd,
                 "\"message\":{\"role\":\"assistant\",\"content\":\"missing document attachment\"}}]}", NULL);
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-            "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
+                "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment text probe")) {
+        /* Phase 1 deep-file regression: the decisive fact is deliberately
+           beyond both the old native-summary and opening-excerpt budgets. */
+        if (!strstr(request->body, "BEGIN_FILE") ||
+            !strstr(request->body, "LATE_FILE_SENTINEL") ||
+            !strstr(request->body, "\"max_tokens\":2048") ||
+            strstr(request->body, "Native document summary") ||
+            strstr(request->body, "opening excerpt bounded"))
+            return samosa_http_response(fd, 200, "application/json",
+                "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                "\"message\":{\"role\":\"assistant\",\"content\":\"late text was not preserved\"}}]}", NULL);
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw the complete text attachment\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment text followup probe")) {
+        const char *reply = strstr(request->body, "LATE_FILE_SENTINEL") &&
+                            strstr(request->body, "Attached document context already loaded")
+            ? "saw the bound text document" : "missing bound text document";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment text detached probe")) {
+        const char *reply = strstr(request->body, "LATE_FILE_SENTINEL")
+            ? "detached document leaked" : "detach removed document";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment retrieval probe")) {
+        const char *reply = strstr(request->body, "RETRIEVAL_SENTINEL") &&
+                            strstr(request->body, "[Source:") &&
+                            strstr(request->body, "lines=")
+            ? "saw cited retrieval passage" : "missing cited retrieval passage";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     /* Explicit Web research plans a dynamic number of focused queries locally
        before any public request. The contextual case only succeeds when the
@@ -616,6 +790,18 @@ static int handler(SamosaHttpServer *server, int fd,
     /* The answering turn. Reports whether the web evidence actually arrived
        spliced into the user message, so a silently dropped splice fails the
        test instead of looking like a pass. */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Who is the current president of India"))
+        return samosa_http_response(fd, 200, "application/json",
+            strstr(request->body, "Fast factual web evidence rules") &&
+            strstr(request->body, "Droupadi Murmu is the current President of India") &&
+            strstr(request->body, "\"thinking\":\"off\"") &&
+            strstr(request->body, "\"max_tokens\":384") &&
+            request->body_len < 10000
+                ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"Droupadi Murmu is the current President of India.\"}}]}"
+                : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+                  "\"message\":{\"role\":\"assistant\",\"content\":\"fast factual contract failed\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "web tool probe hostile"))
         return samosa_http_response(fd, 200, "application/json",

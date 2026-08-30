@@ -1,4 +1,5 @@
 build/
+/build-linux-ubuntu/
 /build-ci-*/
 *.qws
 *.dSYM/
