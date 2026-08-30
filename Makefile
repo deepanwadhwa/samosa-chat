@@ -730,10 +730,14 @@ test-molmo2: test-molmo2-contract test-molmo2-processor molmo2-model-compile sam
 test-molmo2-real: samosa-molmo2
 	@test -n "$(MOLMO2_MODEL_DIR)" || { echo "set MOLMO2_MODEL_DIR to the pinned molmo2-4b-mlx-q4-v1 package" >&2; exit 2; }
 	@test -n "$(MOLMO2_SAMPLE_IMAGE)" || { echo "set MOLMO2_SAMPLE_IMAGE to a reviewed image fixture" >&2; exit 2; }
+	@test -n "$(MOLMO2_SAMPLE_IMAGE_2)" || { echo "set MOLMO2_SAMPLE_IMAGE_2 to a second reviewed image fixture" >&2; exit 2; }
 	@test -n "$(MOLMO2_SAMPLE_VIDEO)" || { echo "set MOLMO2_SAMPLE_VIDEO to a reviewed short video fixture" >&2; exit 2; }
 	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-3750} MAX_SWAP_DELTA_MB=0 \
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
 	sh tools/run_memory_guarded.sh $(BUILD_DIR)/samosa-molmo2 --self-test image "$(MOLMO2_MODEL_DIR)" "$(MOLMO2_SAMPLE_IMAGE)"
+	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-3750} MAX_SWAP_DELTA_MB=0 \
+	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
+	sh tools/run_memory_guarded.sh $(BUILD_DIR)/samosa-molmo2 --self-test images "$(MOLMO2_MODEL_DIR)" "$(MOLMO2_SAMPLE_IMAGE)" "$(MOLMO2_SAMPLE_IMAGE_2)"
 	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-3750} MAX_SWAP_DELTA_MB=0 \
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
 	sh tools/run_memory_guarded.sh $(BUILD_DIR)/samosa-molmo2 --self-test video "$(MOLMO2_MODEL_DIR)" "$(MOLMO2_SAMPLE_VIDEO)"

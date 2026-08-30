@@ -83,6 +83,13 @@ assert.equal(fns.consumeEvent('{"choices":[{"delta":{"content":"hello"}}]}', str
 assert.equal(streamed.content, "hello");
 assert.equal(fns.consumeEvent('{"choices":[{"delta":{},"finish_reason":"stop"}]}', streamed), true,
   "finish_reason marks a completed response even before the DONE sentinel");
+const lengthStopped = { content: "partial", reasoning: "", sources: [] };
+assert.equal(fns.consumeEvent('{"choices":[{"delta":{},"finish_reason":"length"}],"samosa":{"thinking_closure":"natural"}}', lengthStopped), true,
+  "a response-limit stop is terminal");
+assert.match(lengthStopped.error, /response limit before finishing/i,
+  "a response-limit stop must be disclosed beside the partial answer");
+assert.equal(els.closure.textContent, "length",
+  "backend thinking metadata must not disguise a response-limit stop as natural");
 assert.equal(fns.consumeEvent("[DONE]", streamed), true, "the DONE sentinel marks a completed response");
 assert.equal(fns.consumeEvent("not-json", streamed), false, "malformed chunks cannot mark a response complete");
 assert.equal(fns.consumeEvent('{"error":{"message":"generation failed"}}', streamed), true,

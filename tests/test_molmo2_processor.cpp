@@ -48,6 +48,34 @@ int main() {
     check(preprocess_image(image(1920, 320), &wide, &error), error.c_str());
     check(wide.crop_count <= 9, "wide image crop bound");
 
+    VisualInput joint;
+    check(preprocess_images({image(1920, 320), image(320, 1920)},
+                            &joint, &error), error.c_str());
+    check(!joint.is_video && joint.crop_count == 4 &&
+          joint.patch_token_count == 2 * 392,
+          "two-image batch shares four-crop budget");
+    check(joint.pooling_width == 4 &&
+          joint.pooling.size() == static_cast<std::size_t>(joint.patch_token_count * 4),
+          "joint image token/pool parity");
+    check(joint.segment_crop_counts.size() == 2 &&
+          joint.segment_patch_token_counts.size() == 2 &&
+          joint.segment_crop_counts[0] == 2 && joint.segment_crop_counts[1] == 2,
+          "joint image segments preserve independent vision batches");
+    check(joint.token_text.find("Image 1<low_res_im_start>") == 0 &&
+          joint.token_text.find("Image 2<low_res_im_start>") != std::string::npos,
+          "joint image labels match upstream chat template");
+    const std::size_t second_pooling = (joint.patch_token_count / 2) * 4;
+    for (std::size_t i = second_pooling; i < joint.pooling.size(); ++i)
+        check(joint.pooling[i] < 0 || joint.pooling[i] >= 2 * 729,
+              "second image pooling indices are crop-offset");
+
+    VisualInput rejected;
+    check(!preprocess_images({image(1, 1)}, &rejected, &error),
+          "joint processor rejects one image");
+    check(!preprocess_images({image(1, 1), image(1, 1), image(1, 1)},
+                             &rejected, &error),
+          "joint processor rejects unsafe third image");
+
     VisualInput video;
     check(preprocess_video_frames({image(320, 180), image(180, 320)}, {0.0, 1.25},
                                   &video, &error), error.c_str());

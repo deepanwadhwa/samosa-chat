@@ -38,6 +38,30 @@ printf 'fixture\n' >"$HOME_DIR/models/qwen/tokenizer_qwen36.json"
 printf '#!/bin/sh\nexit 0\n' >"$TMP/open"
 chmod +x "$TMP/open"
 
+# Reproduce launchd's asynchronous bootout/bootstrap race deterministically:
+# the first bootstrap reports failure, while the retry delegates to the real
+# launchctl. The launcher must still bring up a healthy persistent service.
+if [ "$(uname -s)" = Darwin ] && command -v launchctl >/dev/null 2>&1; then
+  REAL_LAUNCHCTL=$(command -v launchctl)
+  cat >"$TMP/launchctl-retry" <<EOF
+#!/bin/sh
+if [ "\${1:-}" = bootstrap ] && [ ! -e "$TMP/bootstrap-failed-once" ]; then
+  : >"$TMP/bootstrap-failed-once"
+  exit 5
+fi
+exec "$REAL_LAUNCHCTL" "\$@"
+EOF
+  chmod +x "$TMP/launchctl-retry"
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+    SAMOSA_LAUNCHCTL="$TMP/launchctl-retry" \
+    sh "$ROOT/dist/samosa" serve >/dev/null
+  [ -f "$TMP/bootstrap-failed-once" ]
+  curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null
+  SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+    SAMOSA_LAUNCHCTL="$TMP/launchctl-retry" \
+    sh "$ROOT/dist/samosa" serve --stop >/dev/null
+fi
+
 # The user-facing default must use the persistent service path. The launcher
 # returns immediately, but the app must remain reachable from a later process
 # instead of depending on a detached child surviving its parent shell.

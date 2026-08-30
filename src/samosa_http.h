@@ -83,6 +83,7 @@ static const char *samosa_http_reason(int status) {
     switch (status) {
         case 200: return "OK"; case 204: return "No Content";
         case 206: return "Partial Content";
+        case 303: return "See Other";
         case 400: return "Bad Request"; case 404: return "Not Found";
         case 405: return "Method Not Allowed";
         case 409: return "Conflict"; case 413: return "Payload Too Large";

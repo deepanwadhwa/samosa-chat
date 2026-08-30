@@ -101,6 +101,7 @@ int main(void) {
             return 73;
         }
         int image = strstr(message, "\"media_kind\":\"image\"") != NULL;
+        int images = strstr(message, "\"media_kind\":\"images\"") != NULL;
         int poisoned_vague_prompt = image && strstr(message, "what is this?") &&
             (strstr(message, "For charts") ||
              strstr(message, "Transcribe every visible title"));
@@ -119,12 +120,15 @@ int main(void) {
         }
         const char *response = poisoned_vague_prompt
             ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"POISONED_VAGUE_IMAGE_PROMPT\","
-              "\"prompt_tokens\":3,\"generated_tokens\":4,\"frames\":0,\"duration_seconds\":0}"
+              "\"prompt_tokens\":3,\"generated_tokens\":4,\"images\":1,\"frames\":0,\"duration_seconds\":0}"
+            : images
+            ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"joint fixture evidence from Image 1 and Image 2 in one Molmo inference\","
+              "\"prompt_tokens\":11,\"generated_tokens\":12,\"images\":2,\"frames\":0,\"duration_seconds\":0}"
             : image
             ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"fixture image evidence: a 3 by 4 grid containing 12 charts <points coords=\\\"1 1 100 100 2 300 100 3 500 100 4 700 100 5 100 400 6 300 400 7 500 400 8 700 400 9 100 700 10 300 700 11 500 700 12 700 700\\\">charts</points>\","
-              "\"prompt_tokens\":3,\"generated_tokens\":4,\"frames\":0,\"duration_seconds\":0}"
+              "\"prompt_tokens\":3,\"generated_tokens\":4,\"images\":1,\"frames\":0,\"duration_seconds\":0}"
             : "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"fixture timestamped video evidence\","
-              "\"prompt_tokens\":3,\"generated_tokens\":4,\"frames\":8,\"duration_seconds\":30}";
+              "\"prompt_tokens\":3,\"generated_tokens\":4,\"images\":0,\"frames\":8,\"duration_seconds\":30}";
         if (!send_message(framed, response))
             return 1;
     }

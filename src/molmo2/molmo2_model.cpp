@@ -328,6 +328,56 @@ struct Model::Impl {
             hidden = text_layers[layer].forward(hidden, mask, &(*caches)[layer]);
         return lm_head(rms_norm(hidden, final_norm));
     }
+
+    array encode_visual(const VisualInput& input) const {
+        if (input.segment_crop_counts.size() <= 1)
+            return vision.forward(input);
+        if (input.segment_crop_counts.size() !=
+            input.segment_patch_token_counts.size())
+            throw std::runtime_error("Molmo2 visual segment metadata mismatch");
+        constexpr std::size_t values_per_crop = 729 * 588;
+        std::vector<array> encoded;
+        encoded.reserve(input.segment_crop_counts.size());
+        int crop_offset = 0, token_offset = 0;
+        for (std::size_t segment = 0;
+             segment < input.segment_crop_counts.size(); ++segment) {
+            const int crops = input.segment_crop_counts[segment];
+            const int patch_tokens = input.segment_patch_token_counts[segment];
+            if (crops <= 0 || patch_tokens <= 0 ||
+                crop_offset + crops > input.crop_count ||
+                token_offset + patch_tokens > input.patch_token_count)
+                throw std::runtime_error("Molmo2 visual segment exceeds input bounds");
+            VisualInput current;
+            current.crop_count = crops;
+            current.patch_token_count = patch_tokens;
+            current.pooling_width = input.pooling_width;
+            const std::size_t patch_begin =
+                static_cast<std::size_t>(crop_offset) * values_per_crop;
+            const std::size_t patch_end = patch_begin +
+                static_cast<std::size_t>(crops) * values_per_crop;
+            current.patches.assign(input.patches.begin() + patch_begin,
+                                   input.patches.begin() + patch_end);
+            const std::size_t pool_begin =
+                static_cast<std::size_t>(token_offset) * input.pooling_width;
+            const std::size_t pool_end = pool_begin +
+                static_cast<std::size_t>(patch_tokens) * input.pooling_width;
+            current.pooling.reserve(pool_end - pool_begin);
+            const std::int32_t index_offset = crop_offset * 729;
+            for (std::size_t index = pool_begin; index < pool_end; ++index)
+                current.pooling.push_back(input.pooling[index] < 0
+                    ? -1 : input.pooling[index] - index_offset);
+            auto features = vision.forward(current);
+            eval(features);
+            encoded.push_back(std::move(features));
+            mlx::core::clear_cache();
+            crop_offset += crops;
+            token_offset += patch_tokens;
+        }
+        if (crop_offset != input.crop_count ||
+            token_offset != input.patch_token_count)
+            throw std::runtime_error("Molmo2 visual segments do not cover the input");
+        return concatenate(encoded, 0);
+    }
 };
 
 Model::Model() : impl_(std::make_unique<Impl>()) {}
@@ -422,7 +472,7 @@ GenerateResult Model::generate(const std::string& question, const VisualInput& v
 
         auto ids = array(tokens.data(), {1, static_cast<int>(tokens.size())}, int32);
         auto hidden = impl_->embed(ids);
-        auto visual_features = impl_->vision.forward(visual);
+        auto visual_features = impl_->encode_visual(visual);
         std::vector<int> patch_positions;
         for (std::size_t i = 0; i < tokens.size(); ++i)
             if (tokens[i] == 151938) patch_positions.push_back(static_cast<int>(i));

@@ -114,6 +114,7 @@ Models** after the package is present. The real-release gate is:
 ```sh
 MOLMO2_MODEL_DIR="$HOME/.samosa/models/molmo2-4b-mlx-q4-v1" \
 MOLMO2_SAMPLE_IMAGE=/absolute/path/to/reviewed-image.png \
+MOLMO2_SAMPLE_IMAGE_2=/absolute/path/to/second-reviewed-image.png \
 MOLMO2_SAMPLE_VIDEO=/absolute/path/to/reviewed-video.mp4 \
 make test-molmo2-real
 ```

@@ -54,11 +54,13 @@ image task as well as video, multi-image comparison, temporal tracking,
 localization/pointing, and complex spatial reasoning. OCR-only work remains on
 the native reader. Molmo2 remains an auxiliary provider: the gateway admits one
 specialist globally, and on a Mac with 18 GiB RAM or less it stops the primary
-chat backend before loading Molmo2. When a conversation starts with one image
-or video, Samosa returns Molmo's own text and point markup directly, unloads it,
-and starts restoring the selected text model without waiting on that restart.
-Later/composite visual turns can still use a greedy, non-thinking grounded
-synthesis pass when another model is actually needed.
+chat backend before loading Molmo2. For two images, Samosa labels and
+passes every original image to a single Molmo inference; the vision encoder is
+scheduled per image to preserve the qualified memory ceiling, then the decoder
+reasons across the combined visual feature sequence. Samosa unloads Molmo,
+restores the selected text model, and uses a greedy, non-thinking grounded
+synthesis pass for the final response. Selecting Molmo itself returns its
+visual response directly.
 
 VisionPsy is available in the first release on macOS Apple Silicon. A text-only
 chat LLM can still use it: `/healthz` distinguishes native chat-model image

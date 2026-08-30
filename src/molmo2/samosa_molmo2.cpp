@@ -22,6 +22,7 @@ namespace {
 std::atomic_bool g_cancelled {false};
 std::atomic_bool g_quit {false};
 constexpr std::size_t kMaxFrame = 1024 * 1024;
+constexpr std::size_t kMaxImages = 2;
 
 void signal_handler(int) { g_cancelled.store(true); g_quit.store(true); }
 
@@ -99,6 +100,26 @@ bool integer_value(jval* root, const char* key, int fallback,
     return true;
 }
 
+bool string_array_value(jval* root, const char* key,
+                        std::size_t minimum, std::size_t maximum,
+                        std::vector<std::string>* output) {
+    jval* value = root ? json_get(root, key) : nullptr;
+    if (!value || value->t != J_ARR || value->len < static_cast<int>(minimum) ||
+        value->len > static_cast<int>(maximum) || !output)
+        return false;
+    output->clear();
+    output->reserve(static_cast<std::size_t>(value->len));
+    for (int index = 0; index < value->len; ++index) {
+        jval* item = value->kids[index];
+        if (!item || item->t != J_STR || !item->str[0] || item->str[0] != '/') {
+            output->clear();
+            return false;
+        }
+        output->emplace_back(item->str);
+    }
+    return true;
+}
+
 std::string error_reply(const std::string& id, const std::string& code, const std::string& message) {
     return "{\"status\":\"error\",\"id\":\"" + escape(id) + "\",\"code\":\"" +
            escape(code) + "\",\"message\":\"" + escape(message) + "\"}";
@@ -106,12 +127,18 @@ std::string error_reply(const std::string& id, const std::string& code, const st
 }  // namespace
 
 int main(int argc, char** argv) {
-    const bool self_test = argc == 5 && !std::strcmp(argv[1], "--self-test") &&
-                           (!std::strcmp(argv[2], "image") || !std::strcmp(argv[2], "video"));
+    const bool single_self_test = argc == 5 && !std::strcmp(argv[1], "--self-test") &&
+                                  (!std::strcmp(argv[2], "image") || !std::strcmp(argv[2], "video"));
+    const bool multi_self_test = argc == 6 &&
+                                 !std::strcmp(argv[1], "--self-test") &&
+                                 !std::strcmp(argv[2], "images");
+    const bool self_test = single_self_test || multi_self_test;
     const char* model_path = self_test ? argv[3] : argc == 2 ? argv[1] : nullptr;
-    if (!model_path || model_path[0] != '/' || (self_test && argv[4][0] != '/')) {
+    if (!model_path || model_path[0] != '/' ||
+        (self_test && argv[4][0] != '/') || (multi_self_test && argv[5][0] != '/')) {
         std::cerr << "usage: samosa-molmo2 ABSOLUTE_MODEL_PACKAGE\n"
-                     "       samosa-molmo2 --self-test image|video ABSOLUTE_MODEL_PACKAGE ABSOLUTE_MEDIA\n";
+                     "       samosa-molmo2 --self-test image|video ABSOLUTE_MODEL_PACKAGE ABSOLUTE_MEDIA\n"
+                     "       samosa-molmo2 --self-test images ABSOLUTE_MODEL_PACKAGE ABSOLUTE_IMAGE_1 ABSOLUTE_IMAGE_2\n";
         return 2;
     }
     std::signal(SIGINT, signal_handler);
@@ -130,6 +157,17 @@ int main(int argc, char** argv) {
             RgbImage image;
             prepared = decode_image(argv[4], &image, &media_error) &&
                        preprocess_image(image, &visual, &media_error);
+        } else if (!std::strcmp(argv[2], "images")) {
+            std::vector<RgbImage> images(static_cast<std::size_t>(argc - 4));
+            prepared = true;
+            for (int index = 4; index < argc; ++index) {
+                if (!decode_image(argv[index], &images[static_cast<std::size_t>(index - 4)],
+                                  &media_error)) {
+                    prepared = false;
+                    break;
+                }
+            }
+            prepared = prepared && preprocess_images(images, &visual, &media_error);
         } else {
             DecodedVideo video;
             prepared = decode_video_window(argv[4], 0, 0, 8, 2.0, &video, &media_error) &&
@@ -138,11 +176,13 @@ int main(int argc, char** argv) {
         if (!prepared) { std::cerr << "samosa-molmo2: " << media_error << "\n"; return 65; }
         GenerateOptions options; options.max_new_tokens = 96;
         auto result = model.generate(
-            "First describe the visible medium, outline, composition, colors, shapes, "
-            "and repeated motifs without naming the subject. Then identify the most "
-            "likely visual type and subject. Distinguish a literal object from an "
-            "illustration or decorative pattern that merely resembles one. If "
-            "ambiguous, give plausible interpretations and the visible reason.",
+            multi_self_test
+                ? "Compare all supplied Images directly. Describe what is common and what differs."
+                : "First describe the visible medium, outline, composition, colors, shapes, "
+                  "and repeated motifs without naming the subject. Then identify the most "
+                  "likely visual type and subject. Distinguish a literal object from an "
+                  "illustration or decorative pattern that merely resembles one. If "
+                  "ambiguous, give plausible interpretations and the visible reason.",
                                      visual, options, &g_cancelled);
         model.unload();
         if (!result.ok || result.text.empty()) {
@@ -165,7 +205,7 @@ int main(int argc, char** argv) {
         const std::string id = string_value(root, "id");
         if (command == "hello") {
             send("{\"status\":\"ok\",\"protocol\":\"samosa.multimodal.v1\","
-                 "\"provider\":\"molmo2-4b\",\"capabilities\":[\"image\",\"video\"]}");
+                 "\"provider\":\"molmo2-4b\",\"capabilities\":[\"image\",\"multi_image\",\"video\"]}");
         } else if (command == "quit") {
             send("{\"status\":\"ok\"}"); json_free(root); free(arena); break;
         } else if (command == "cancel") {
@@ -178,6 +218,7 @@ int main(int argc, char** argv) {
             VisualInput visual;
             double media_duration = 0;
             int decoded_frames = 0;
+            int decoded_images = 0;
             std::string media_error;
             bool prepared = false;
             if (!integer_value(root, "max_tokens", 256, 1, 1024, &max_tokens)) {
@@ -186,6 +227,23 @@ int main(int argc, char** argv) {
                 RgbImage image;
                 prepared = decode_image(path, &image, &media_error) &&
                            preprocess_image(image, &visual, &media_error);
+                if (prepared) decoded_images = 1;
+            } else if (kind == "images") {
+                std::vector<std::string> paths;
+                if (!string_array_value(root, "media_paths", 2, kMaxImages, &paths)) {
+                    media_error = "media_paths must contain exactly two absolute image paths";
+                } else {
+                    std::vector<RgbImage> images(paths.size());
+                    prepared = true;
+                    for (std::size_t index = 0; index < paths.size(); ++index) {
+                        if (!decode_image(paths[index], &images[index], &media_error)) {
+                            prepared = false;
+                            break;
+                        }
+                    }
+                    prepared = prepared && preprocess_images(images, &visual, &media_error);
+                    if (prepared) decoded_images = static_cast<int>(images.size());
+                }
             } else if (kind == "video") {
                 DecodedVideo video;
                 const double start = number_value(root, "start_seconds", 0);
@@ -203,7 +261,7 @@ int main(int argc, char** argv) {
                     media_duration = video.duration_seconds;
                     decoded_frames = static_cast<int>(video.frames.size());
                 }
-            } else media_error = "media_kind must be image or video";
+            } else media_error = "media_kind must be image, images, or video";
             if (!prepared) {
                 send(error_reply(id, "molmo2_media_invalid", media_error));
             } else {
@@ -221,6 +279,7 @@ int main(int argc, char** argv) {
                           << "\",\"observation\":\"" << escape(result.text)
                           << "\",\"prompt_tokens\":" << result.prompt_tokens
                           << ",\"generated_tokens\":" << result.generated_tokens
+                          << ",\"images\":" << decoded_images
                           << ",\"frames\":" << decoded_frames
                           << ",\"duration_seconds\":" << media_duration << "}";
                     send(reply.str());

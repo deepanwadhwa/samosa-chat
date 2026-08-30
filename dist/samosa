@@ -85,6 +85,7 @@ else
 fi
 LAUNCH_DOMAIN="gui/$(id -u)"
 CURL="${SAMOSA_CURL:-curl}"
+LAUNCHCTL="${SAMOSA_LAUNCHCTL:-launchctl}"
 if [ "$(uname -s)" = "Darwin" ]; then
   OPEN="${SAMOSA_OPEN:-open}"
 else
@@ -394,7 +395,7 @@ serve_foreground() {
 
 launchd_available() {
   [ "${SAMOSA_DISABLE_LAUNCHD:-0}" != 1 ] &&
-    [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1
+    [ "$(uname -s)" = "Darwin" ] && command -v "$LAUNCHCTL" >/dev/null 2>&1
 }
 
 xml_escape() {
@@ -463,12 +464,19 @@ EOF
 
 start_server_launchd() {
   write_launchd_plist
-  launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
-  launchctl bootstrap "$LAUNCH_DOMAIN" "$LAUNCHD_PLIST" >/dev/null 2>&1 || {
-    echo "Samosa could not register its macOS background service; see $SERVER_LOG" >&2
-    return 1
-  }
-  return 0
+  "$LAUNCHCTL" bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
+  # launchd can acknowledge bootout before the old job has fully left its
+  # domain. An immediate bootstrap then fails once even though the plist is
+  # valid. Retry that bounded teardown race instead of reporting a false app
+  # startup failure to the user.
+  i=0
+  while [ "$i" -lt 20 ]; do
+    "$LAUNCHCTL" bootstrap "$LAUNCH_DOMAIN" "$LAUNCHD_PLIST" >/dev/null 2>&1 && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  echo "Samosa could not register its macOS background service after retrying; see $SERVER_LOG" >&2
+  return 1
 }
 
 start_server_detached() {
@@ -568,7 +576,7 @@ stop_server() {
   # Boot out only after giving the gateway an authenticated graceful-stop
   # request. Doing this first hid the shutdown cause as a generic SIGTERM.
   if launchd_available; then
-    launchctl bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
+    "$LAUNCHCTL" bootout "$LAUNCH_DOMAIN/$LAUNCH_LABEL" >/dev/null 2>&1 || true
   fi
   if server_running; then
     i=0

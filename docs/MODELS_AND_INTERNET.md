@@ -96,7 +96,9 @@ After a valid package is installed, inference is offline. Text-only work never
 starts Molmo2. Every admitted visual image task, plus video, multi-image
 comparison, temporal tracking, and localization, prefers Molmo2 and acquires
 the global specialist lease. VisionPsy remains the standard-image fallback on
-installations without Molmo2. On constrained Macs the primary backend is stopped first.
+installations without Molmo2. A two-image request is sent as one
+labelled native Molmo2 multi-image prompt; it is not reduced to separate image
+captions. On constrained Macs the primary backend is stopped first.
 The gateway decodes bounded timestamp windows sequentially, terminates Molmo2,
 then restarts the primary model for a greedy, non-thinking grounded evidence synthesis.
 That synthesis is explicitly told that the local specialist inspected the

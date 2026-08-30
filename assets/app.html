@@ -4978,10 +4978,13 @@
         }
         if (choice?.finish_reason) {
           const meta=event.samosa||{};
+          const finishReason=String(choice.finish_reason);
           const tokensPerSecond=meta.tokens_per_second||event.timings?.predicted_per_second;
           els.speed.textContent=tokensPerSecond ? `${tokensPerSecond.toFixed(2)} tok/s` : "—";
           els.rss.textContent=meta.rss_gb ? `${meta.rss_gb.toFixed(2)} GB` : "—";
-          els.closure.textContent=(meta.thinking_closure||choice.finish_reason).replaceAll("_"," ");
+          els.closure.textContent=(finishReason === "stop" ? (meta.thinking_closure||finishReason) : finishReason).replaceAll("_"," ");
+          if (finishReason === "length" && !assistant.error)
+            assistant.error="The model reached the response limit before finishing. The partial answer was kept; ask it to continue or retry the turn.";
           if (meta.compacted) els.closure.textContent=`auto-compacted ${Number(meta.compacted_from_tokens).toLocaleString()} → ${Number(meta.compacted_to_tokens).toLocaleString()} · ${els.closure.textContent}`;
           if (meta.session_saved===false) assistant.error="The answer completed, but its continuation snapshot could not be saved.";
         }
