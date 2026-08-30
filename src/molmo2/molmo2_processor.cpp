@@ -64,13 +64,13 @@ std::vector<float> resize_bilinear(const RgbImage& image, int out_w, int out_h) 
     return result;
 }
 
-std::pair<int, int> select_tiling(int height, int width) {
+std::pair<int, int> select_tiling(int height, int width, int max_crops) {
     const float h = static_cast<float>(std::max(1, height));
     const float w = static_cast<float>(std::max(1, width));
     std::vector<std::pair<int, int>> candidates;
-    for (int rows = 1; rows <= kMaxCrops; ++rows)
-        for (int cols = 1; cols <= kMaxCrops; ++cols)
-            if (rows * cols <= kMaxCrops) candidates.emplace_back(rows, cols);
+    for (int rows = 1; rows <= max_crops; ++rows)
+        for (int cols = 1; cols <= max_crops; ++cols)
+            if (rows * cols <= max_crops) candidates.emplace_back(rows, cols);
     std::sort(candidates.begin(), candidates.end(), [](auto a, auto b) {
         if (a.first * a.second != b.first * b.second)
             return a.first * a.second < b.first * b.second;
@@ -178,7 +178,12 @@ bool decode_image(const std::string& path, RgbImage* output, std::string* error)
     return true;
 }
 
-bool preprocess_image(const RgbImage& image, VisualInput* output, std::string* error) {
+static bool preprocess_image_with_crop_limit(const RgbImage& image, int max_crops,
+                                             VisualInput* output, std::string* error) {
+    if (max_crops < 1 || max_crops > kMaxCrops) {
+        if (error) *error = "invalid Molmo2 image crop limit";
+        return false;
+    }
     if (!output || !valid_image(image)) { if (error) *error = "invalid RGB image"; return false; }
     try {
         VisualInput result;
@@ -187,7 +192,8 @@ bool preprocess_image(const RgbImage& image, VisualInput* output, std::string* e
         append_patches(global, kSide, kSide, 0, 0, &result.patches);
 
         const auto [rows, cols] = select_tiling(image.height - 2 * kOverlap * kPatch,
-                                                image.width - 2 * kOverlap * kPatch);
+                                                image.width - 2 * kOverlap * kPatch,
+                                                max_crops);
         const int resized_h = rows * kWindowPixels + 2 * kOverlap * kPatch;
         const int resized_w = cols * kWindowPixels + 2 * kOverlap * kPatch;
         auto high = resize_bilinear(image, resized_w, resized_h);
@@ -235,6 +241,61 @@ bool preprocess_image(const RgbImage& image, VisualInput* output, std::string* e
         result.patch_token_count = low_h * low_w + pooled_h * pooled_w;
         if (static_cast<int>(result.pooling.size()) != result.patch_token_count * 4)
             throw std::runtime_error("Molmo2 image token/pooling mismatch");
+        result.segment_crop_counts.push_back(result.crop_count);
+        result.segment_patch_token_counts.push_back(result.patch_token_count);
+        *output = std::move(result);
+        if (error) error->clear();
+        return true;
+    } catch (const std::exception& exception) {
+        if (error) *error = exception.what();
+        return false;
+    }
+}
+
+bool preprocess_image(const RgbImage& image, VisualInput* output, std::string* error) {
+    return preprocess_image_with_crop_limit(image, kMaxCrops, output, error);
+}
+
+bool preprocess_images(const std::vector<RgbImage>& images,
+                       VisualInput* output, std::string* error) {
+    if (!output || images.size() != 2) {
+        if (error) *error = "Molmo2 joint image batches require exactly two images";
+        return false;
+    }
+    try {
+        VisualInput result;
+        result.pooling_width = 4;
+        /* Each image gets one detailed crop in addition to its global crop.
+           Four ViT crops total preserve both native visual streams while
+           keeping joint prefill below the host-pressure transition observed
+           with six crops on the qualified 16 GiB machine. */
+        const int high_resolution_crops = 1;
+        for (std::size_t image_index = 0; image_index < images.size(); ++image_index) {
+            VisualInput current;
+            std::string current_error;
+            if (!preprocess_image_with_crop_limit(images[image_index],
+                                                  high_resolution_crops,
+                                                  &current, &current_error))
+                throw std::runtime_error(current_error.empty()
+                                             ? "Molmo2 joint image preprocessing failed"
+                                             : current_error);
+            const std::int32_t patch_offset = result.crop_count * kPatches * kPatches;
+            result.patches.insert(result.patches.end(),
+                                  current.patches.begin(), current.patches.end());
+            for (std::int32_t index : current.pooling)
+                result.pooling.push_back(index < 0 ? -1 : index + patch_offset);
+            result.token_text += "Image " + std::to_string(image_index + 1);
+            result.token_text += current.token_text;
+            result.crop_count += current.crop_count;
+            result.patch_token_count += current.patch_token_count;
+            result.segment_crop_counts.push_back(current.crop_count);
+            result.segment_patch_token_counts.push_back(current.patch_token_count);
+        }
+        if (result.crop_count > 9 ||
+            result.patches.size() != static_cast<std::size_t>(result.crop_count) *
+                                         kPatches * kPatches * kPixelsPerPatch ||
+            result.pooling.size() != static_cast<std::size_t>(result.patch_token_count * 4))
+            throw std::runtime_error("Molmo2 joint image token/pooling mismatch");
         *output = std::move(result);
         if (error) error->clear();
         return true;
@@ -273,6 +334,8 @@ bool preprocess_video_frames(const std::vector<RgbImage>& frames,
         result.patch_token_count = static_cast<int>(frames.size()) * 81;
         if (static_cast<int>(result.pooling.size()) != result.patch_token_count * 9)
             throw std::runtime_error("Molmo2 video token/pooling mismatch");
+        result.segment_crop_counts.push_back(result.crop_count);
+        result.segment_patch_token_counts.push_back(result.patch_token_count);
         *output = std::move(result);
         if (error) error->clear();
         return true;

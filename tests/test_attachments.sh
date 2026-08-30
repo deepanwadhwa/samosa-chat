@@ -169,7 +169,7 @@ import sys
 with open(sys.argv[1], "w", encoding="utf-8", newline="") as f:
     for i in range(1800):
         if i == 1700:
-            f.write("RETRIEVAL_SENTINEL: the deep file retrieval citation is here.\n")
+            f.write("# Testing\nThe deep file citation value is mango-quartz-731.\n")
         else:
             f.write(f"filler record {i} alpha beta gamma delta epsilon zeta eta theta\n")
 PY
@@ -180,7 +180,7 @@ PY
   RETRIEVAL_CONV=deep-file-retrieval-probe
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$RETRIEVAL_CONV\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment retrieval probe: where is RETRIEVAL_SENTINEL?\"}],\"attachment_ids\":[\"$RETRIEVAL_ID\"],\"stream\":false}")
+    -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$RETRIEVAL_CONV\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment retrieval probe: does this document talk about testing?\"}],\"attachment_ids\":[\"$RETRIEVAL_ID\"],\"stream\":false,\"thinking\":\"auto\"}")
   printf '%s' "$RESP" | grep -q "saw cited retrieval passage" || { echo "FAIL: oversized document did not produce a cited retrieval passage: $RESP"; exit 1; }
   DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$RETRIEVAL_CONV/documents")
   printf '%s' "$DOCS" | grep -q '"mode":"retrieval"' || { echo "FAIL: oversized document was not recorded in retrieval mode: $DOCS"; exit 1; }

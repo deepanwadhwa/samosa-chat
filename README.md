@@ -44,10 +44,12 @@ Only one primary chat model is loaded in memory at a time. When the optional
 Molmo2 package is installed it handles admitted visual image and video work;
 VisionPsy-Nano 460M is the standard-image fallback when Molmo is absent. On
 constrained Macs, Samosa stops the primary model, runs one bounded Molmo
-operation, and unloads it. If a conversation starts with one image or video,
-Molmo's own text and point coordinates are returned directly while the selected
-text model restarts for later turns. Later/composite visual workflows may use a
-grounded, greedy, non-thinking synthesis pass. Molmo2 is a locally built,
+operation, and unloads it. Under any selected text model, Molmo's grounded
+observation is handed back to that selected model for one bounded,
+non-thinking final response. Two attached images are supplied to
+Molmo together as labelled native visual inputs, rather than captioned in
+isolation. Selecting Molmo itself returns Molmo's own text and point
+coordinates directly. Molmo2 is a locally built,
 hash-verified package: the app never
 downloads its 19.4 GB FP32 source checkpoint. Samosa contains zero runtime
 Python dependencies. The real 16 GiB-machine conversion and zero-swap

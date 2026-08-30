@@ -76,6 +76,7 @@ than interpreted at runtime. The important fixed values are:
 | Image input | 378 x 378, patch size 14, 729 learned positions |
 | Connector | hidden 1152, intermediate 9728, 16 heads, output width 2560; selected vision layers -3 and -9 |
 | Image processing | mean/std 0.5, bilinear resize, global plus overlap crops, maximum 8 crops, 2 x 2 pooling |
+| Multi-image processing | two labelled native image inputs in one decoder sequence; shared crop budget and sequential per-image vision encoding |
 | Video processing | timestamped 378 x 378 frames, 3 x 3 pooling, task-bounded sampling up to 2 fps |
 
 Molmo2 prefill is not a stock causal Qwen prefill: visual query and visual key
@@ -139,6 +140,15 @@ video, multi-image comparison, temporal localization, pointing/tracking, or
 detailed visual reasoning. A request that requires Molmo2 returns an actionable
 `molmo2_model_required` or `molmo2_resource_pressure` result; it is never
 silently answered by a provider lacking the required capability.
+
+For two image attachments, the helper receives one bounded `images`
+command containing every validated private path. Its prompt and visual tokens
+follow the upstream `Image 1`, `Image 2` chat-template convention.
+Each image is vision-encoded sequentially to prevent crop memory from scaling
+with the batch, while the projected visual features are concatenated before
+the language decoder so cross-image reasoning remains genuinely joint. Three
+or more images fail explicitly rather than being silently split into unrelated
+observations.
 
 ### Native helper and IPC
 
@@ -418,9 +428,8 @@ All gates are mandatory:
 1. Text-only and OCR-only turns do not start Molmo2. Visual image turns prefer
    Molmo2 when its verified package is present; VisionPsy is the fallback.
 2. Molmo2 starts only after successful resource admission. It is gone before
-   any later/composite primary-model synthesis. For selected Molmo and for a
-   conversation's first single-visual turn, there is no primary synthesis and
-   Molmo is gone before the response completes.
+   primary-model synthesis. When Molmo itself is selected there is no primary
+   synthesis, and Molmo is gone before the response completes.
 3. The shipped runtime contains no Python invocation or dependency.
 4. Native image preprocessing, video timestamps, special-token placement, and
    visual attention masks match the pinned contract, including no column tokens
@@ -446,10 +455,10 @@ All gates are mandatory:
     responses contain Molmo's own output, text-only turns fail with an explicit
     visual-required error, and every completed/cancelled turn returns to zero
     Molmo child processes.
-14. A first image/video turn under any selected text model returns Molmo's own
-    output and exact coordinate markup without a planner or synthesis model
-    pass; the selected text model remains the conversation binding for later
-    text turns.
+14. An image/video turn under any selected text model uses Molmo's grounded
+   output as evidence for that selected model's bounded synthesis pass. A
+   multi-image turn sends all original pixels in one Molmo inference and
+   preserves exact coordinate markup through the handoff.
 
 If the Q4 artifact misses either the quality or machine-safety gate, the catalog
 entry remains unavailable. The accepted remedy is further native quantization,

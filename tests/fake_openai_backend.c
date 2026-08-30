@@ -456,14 +456,16 @@ static int handler(SamosaHttpServer *server, int fd,
        attachment_ids field through unmodified. */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Molmo extended image probe")) {
-        if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
-            !strstr(request->body, "fixture image evidence"))
+        if (!strstr(request->body, "Joint attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "Image 1 source:") ||
+            !strstr(request->body, "Image 2 source:") ||
+            !strstr(request->body, "joint fixture evidence from Image 1 and Image 2 in one Molmo inference"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-                "\"message\":{\"role\":\"assistant\",\"content\":\"missing extended Molmo image evidence\"}}]}", NULL);
+                "\"message\":{\"role\":\"assistant\",\"content\":\"missing joint Molmo image evidence\"}}]}", NULL);
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
-            "\"message\":{\"role\":\"assistant\",\"content\":\"saw extended Molmo image evidence\"}}]}", NULL);
+            "\"message\":{\"role\":\"assistant\",\"content\":\"saw joint Molmo image evidence\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Molmo single image grounding probe")) {
@@ -609,9 +611,11 @@ static int handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment retrieval probe")) {
-        const char *reply = strstr(request->body, "RETRIEVAL_SENTINEL") &&
+        const char *reply = strstr(request->body, "mango-quartz-731") &&
                             strstr(request->body, "[Source:") &&
-                            strstr(request->body, "lines=")
+                            strstr(request->body, "lines=") &&
+                            strstr(request->body, "\"thinking\":\"off\"") &&
+                            strstr(request->body, "\"chat_template_kwargs\":{\"enable_thinking\":false}")
             ? "saw cited retrieval passage" : "missing cited retrieval passage";
         char body[512];
         snprintf(body, sizeof(body),

@@ -122,8 +122,24 @@ printf '%s' "$REPLY" | grep -q 'black-and-white circular mandala' || {
 REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Molmo extended image probe: compare these images spatially.\"}],\"attachment_ids\":[\"$IMAGE_A\",\"$IMAGE_B\"],\"stream\":false}")
-printf '%s' "$REPLY" | grep -q 'saw extended Molmo image evidence' || {
-  echo "FAIL: extended multi-image work did not route through Molmo: $REPLY"; exit 1;
+printf '%s' "$REPLY" | grep -q 'saw joint Molmo image evidence' || {
+  echo "FAIL: multi-image work did not use joint Molmo evidence: $REPLY"; exit 1;
+}
+[ "$(grep -c '\"media_kind\":\"images\"' "$TMP/molmo-commands.jsonl")" = "1" ] || {
+  echo "FAIL: two images were not delivered in exactly one joint helper command"; exit 1;
+}
+grep -q '\"media_paths\":\[\"[^\"]*\",\"[^\"]*\"\]' "$TMP/molmo-commands.jsonl" || {
+  echo "FAIL: joint helper command omitted the two original image paths"; exit 1;
+}
+grep '\"media_kind\":\"images\"' "$TMP/molmo-commands.jsonl" | grep -q \
+  'Inspect all 2 attached images jointly' || {
+  echo "FAIL: joint helper prompt did not require one cross-image inference"; exit 1;
+}
+TOO_MANY_DELEGATED=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Compare all three images.\"}],\"attachment_ids\":[\"$IMAGE_A\",\"$IMAGE_B\",\"$IMAGE_A\"],\"stream\":false}")
+printf '%s' "$TOO_MANY_DELEGATED" | grep -q '"code":"molmo2_joint_image_limit"' || {
+  echo "FAIL: delegated unsafe third image was not rejected explicitly: $TOO_MANY_DELEGATED"; exit 1;
 }
 
 # A UI conversation that begins with one visual must use Molmo only as the
@@ -245,6 +261,23 @@ printf '%s' "$DIRECT" | grep -q '"provider":"molmo2_4b"' || {
 }
 printf '%s' "$DIRECT" | grep -q 'data: \[DONE\]' || {
   echo "FAIL: direct Molmo stream did not terminate cleanly: $DIRECT"; exit 1;
+}
+
+DIRECT_JOINT=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"molmo2-4b-mlx-q4-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"Compare Image 1 and Image 2 directly.\"}],\"attachment_ids\":[\"$IMAGE_A\",\"$IMAGE_B\"],\"stream\":false}")
+printf '%s' "$DIRECT_JOINT" | grep -q 'joint fixture evidence from Image 1 and Image 2 in one Molmo inference' || {
+  echo "FAIL: direct Molmo did not run a joint multi-image turn: $DIRECT_JOINT"; exit 1;
+}
+printf '%s' "$DIRECT_JOINT" | grep -q '"images":2' || {
+  echo "FAIL: direct joint response omitted its two-image provenance: $DIRECT_JOINT"; exit 1;
+}
+
+TOO_MANY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"molmo2-4b-mlx-q4-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"Compare all of these.\"}],\"attachment_ids\":[\"$IMAGE_A\",\"$IMAGE_B\",\"$IMAGE_A\"],\"stream\":false}")
+printf '%s' "$TOO_MANY" | grep -q '"code":"molmo2_joint_image_limit"' || {
+  echo "FAIL: unsafe third joint image was not rejected explicitly: $TOO_MANY"; exit 1;
 }
 sleep 0.1
 CHILDREN=$(pgrep -P "$GW_PID" 2>/dev/null | wc -l | tr -d ' ')
