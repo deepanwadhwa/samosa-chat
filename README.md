@@ -276,6 +276,7 @@ Test logs and regression benchmarks are located in [docs/regressions](docs/regre
 | Password-protected LAN access | [docs/LAN_ACCESS.md](docs/LAN_ACCESS.md) |
 | Model Specifications & Network | [docs/MODELS_AND_INTERNET.md](docs/MODELS_AND_INTERNET.md) |
 | Gateway API | [docs/SERVE_API.md](docs/SERVE_API.md) |
+| Conversation context & document reuse | [docs/CONVERSATION_CONTEXT.md](docs/CONVERSATION_CONTEXT.md) |
 | Chutni folder memory | [docs/CHUTNI_PROTOCOL.md](docs/CHUTNI_PROTOCOL.md) |
 | Architecture | [docs/DESIGN.md](docs/DESIGN.md) |
 | Performance Benchmarks | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |

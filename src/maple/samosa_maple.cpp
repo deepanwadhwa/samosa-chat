@@ -14,13 +14,59 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
+#include <mutex>
 
 using namespace samosa::maple;
+
+struct MapleHotSession {
+    std::string conversation_id;
+    std::vector<int> transcript;
+    std::vector<KVCache*> caches;
+    bool valid = false;
+    uint64_t hits = 0;
+    uint64_t evictions = 0;
+};
 
 struct ServerContext {
     MapleModel* model;
     MapleTokenizer* tokenizer;
+    std::mutex inference_mutex;
+    MapleHotSession hot;
+    ServerContext(MapleModel* model_in, MapleTokenizer* tokenizer_in)
+        : model(model_in), tokenizer(tokenizer_in) {}
 };
+
+static void maple_hot_evict(MapleHotSession& hot, const char* reason) {
+    if (!hot.valid) return;
+    std::cerr << "[session] evicted hot Maple conversation "
+              << hot.conversation_id << " (" << (reason ? reason : "policy")
+              << ", " << hot.transcript.size() << " tokens)" << std::endl;
+    for (auto* cache : hot.caches) delete cache;
+    hot.caches.clear();
+    hot.transcript.clear();
+    hot.conversation_id.clear();
+    hot.valid = false;
+    hot.evictions++;
+}
+
+static bool maple_conversation_id_valid(const std::string& id) {
+    if (id.empty() || id.size() > 64) return false;
+    for (unsigned char c : id)
+        if (!(std::isalnum(c) || c == '-' || c == '_')) return false;
+    return true;
+}
+
+static std::vector<KVCache*> maple_new_caches(const MapleModel& model) {
+    std::vector<KVCache*> caches;
+    for (const auto& layer_type : model.args().layer_types) {
+        if (layer_type == "sliding_attention")
+            caches.push_back(new RotatingKVCache(model.args().sliding_window));
+        else
+            caches.push_back(new KVCache());
+    }
+    return caches;
+}
 
 static std::string visible_answer(std::string text, bool started_thinking) {
     const auto think_start = text.find("<think>");
@@ -54,6 +100,14 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
     if (strcmp(req->method, "GET") == 0 && strcmp(req->path, "/healthz") == 0) {
         ecache_stats stats{};
         server_ctx->model->cache_stats(&stats);
+        std::unique_lock<std::mutex> hot_lock(server_ctx->inference_mutex,
+                                              std::try_to_lock);
+        bool hot_available = hot_lock.owns_lock();
+        bool hot = hot_available && server_ctx->hot.valid;
+        size_t hot_tokens = hot ? server_ctx->hot.transcript.size() : 0;
+        uint64_t hot_hits = hot_available ? server_ctx->hot.hits : 0;
+        uint64_t hot_evictions = hot_available ? server_ctx->hot.evictions : 0;
+        if (hot_available) hot_lock.unlock();
         char body[2048];
         std::snprintf(
             body, sizeof(body),
@@ -63,7 +117,9 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             "\"hits\":%llu,\"misses\":%llu,\"bytes_read\":%llu,"
             "\"bytes_avoided\":%llu,\"evictions\":%llu,"
             "\"failed_admissions\":%llu,\"pressure_warn\":%llu,"
-            "\"pressure_critical\":%llu}}",
+            "\"pressure_critical\":%llu},"
+            "\"resident_session\":{\"capacity\":1,\"available\":%s,"
+            "\"hot\":%s,\"tokens\":%zu,\"hits\":%llu,\"evictions\":%llu}}",
             server_ctx->model->streaming_enabled() ? "true" : "false",
             (unsigned long long)stats.budget_bytes,
             (unsigned long long)stats.payload_bytes,
@@ -76,7 +132,10 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             (unsigned long long)stats.evictions,
             (unsigned long long)stats.failed_admissions,
             (unsigned long long)stats.pressure_warn_events,
-            (unsigned long long)stats.pressure_critical_events);
+            (unsigned long long)stats.pressure_critical_events,
+            hot_available ? "true" : "false", hot ? "true" : "false",
+            hot_tokens, (unsigned long long)hot_hits,
+            (unsigned long long)hot_evictions);
         return samosa_http_response(fd, 200, "application/json",
                                     body, nullptr);
     }
@@ -141,23 +200,80 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             return samosa_http_json_error(fd, 400, "invalid_request", "max_tokens must be between 0 and 4096.");
         }
 
+        std::string conversation_id;
+        jval* conversation_val = json_get(root, "conversation_id");
+        if (conversation_val && conversation_val->t == J_STR)
+            conversation_id = conversation_val->str;
+        if (!conversation_id.empty() && !maple_conversation_id_valid(conversation_id)) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 400, "invalid_conversation_id",
+                                           "conversation_id contains unsupported characters.");
+        }
+        std::string pinned_context;
+        jval* pinned_val = json_get(root, "pinned_context");
+        if (pinned_val && pinned_val->t == J_STR) pinned_context = pinned_val->str;
+        if (pinned_context.size() > 262144) {
+            json_free(root); free(arena);
+            return samosa_http_json_error(fd, 413, "pinned_context_too_large",
+                                           "Pinned document context is too large.");
+        }
+
         json_free(root);
         free(arena);
 
-        std::string prompt = server_ctx->tokenizer->apply_chat_template(msgs, true, enable_thinking);
-        auto input_ids = server_ctx->tokenizer->encode(prompt);
-
         int eos_token = server_ctx->tokenizer->get_eos_token();
+        std::lock_guard<std::mutex> inference_lock(server_ctx->inference_mutex);
+        bool hot_hit = !conversation_id.empty() && server_ctx->hot.valid &&
+                       server_ctx->hot.conversation_id == conversation_id;
+        if (server_ctx->hot.valid && !hot_hit)
+            maple_hot_evict(server_ctx->hot, conversation_id.empty()
+                            ? "stateless request" : "conversation switch");
+        if (max_tokens == 0 && hot_hit) {
+            maple_hot_evict(server_ctx->hot, "zero-token request");
+            hot_hit = false;
+        }
+
+        std::vector<int> input_ids;
+        std::vector<KVCache*> caches;
+        if (hot_hit) {
+            std::string latest_user;
+            for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
+                if (it->role == "user") { latest_user = it->content; break; }
+            const bool ended = !server_ctx->hot.transcript.empty() &&
+                               server_ctx->hot.transcript.back() == eos_token;
+            std::string continuation = ended ? "\n" : "<|im_end|>\n";
+            continuation += "<|im_start|>user\n" + latest_user +
+                            "<|im_end|>\n<|im_start|>assistant\n";
+            if (enable_thinking) continuation += "<think>\n";
+            auto extra = server_ctx->tokenizer->encode(continuation);
+            input_ids.reserve(extra.size() + 1);
+            input_ids.push_back(server_ctx->hot.transcript.back());
+            input_ids.insert(input_ids.end(), extra.begin(), extra.end());
+            server_ctx->hot.transcript.insert(server_ctx->hot.transcript.end(),
+                                               extra.begin(), extra.end());
+            caches = std::move(server_ctx->hot.caches);
+            server_ctx->hot.hits++;
+            std::cerr << "[session] hot Maple hit " << conversation_id << ": "
+                      << server_ctx->hot.transcript.size() << " tokens" << std::endl;
+        } else {
+            /* A cold recovery receives the complete browser transcript.  If a
+             * stateful document follow-up supplied recovery-only evidence,
+             * attach it once to the latest user turn before the full prefill. */
+            if (!pinned_context.empty()) {
+                for (auto it = msgs.rbegin(); it != msgs.rend(); ++it) {
+                    if (it->role == "user") {
+                        it->content += pinned_context;
+                        break;
+                    }
+                }
+            }
+            std::string prompt = server_ctx->tokenizer->apply_chat_template(
+                msgs, true, enable_thinking);
+            input_ids = server_ctx->tokenizer->encode(prompt);
+            caches = maple_new_caches(*server_ctx->model);
+        }
 
         std::vector<int> generated_tokens;
-        std::vector<KVCache*> caches;
-        for (const auto& layer_type : server_ctx->model->args().layer_types) {
-            if (layer_type == "sliding_attention") {
-                caches.push_back(new RotatingKVCache(server_ctx->model->args().sliding_window));
-            } else {
-                caches.push_back(new KVCache());
-            }
-        }
 
         bool client_connected = true;
         std::string streamed_text;
@@ -232,7 +348,26 @@ int samosa_maple_handler(SamosaHttpServer *server, int fd, const SamosaHttpReque
             generation_error = "unknown exception";
         }
 
-        for (auto* cache : caches) delete cache;
+        bool keep_hot = generation_error.empty() && client_connected &&
+                        max_tokens > 0 && !conversation_id.empty();
+        if (keep_hot) {
+            if (hot_hit) {
+                server_ctx->hot.transcript.insert(server_ctx->hot.transcript.end(),
+                                                   generated_tokens.begin(),
+                                                   generated_tokens.end());
+            } else {
+                server_ctx->hot.transcript = input_ids;
+            }
+            server_ctx->hot.caches = std::move(caches);
+            server_ctx->hot.conversation_id = conversation_id;
+            server_ctx->hot.valid = true;
+        } else {
+            for (auto* cache : caches) delete cache;
+            caches.clear();
+            if (hot_hit) maple_hot_evict(server_ctx->hot,
+                                         generation_error.empty()
+                                         ? "client disconnect" : "generation error");
+        }
 
         if (!generation_error.empty()) {
             std::cerr << "Maple generation failed: " << generation_error << std::endl;
@@ -423,7 +558,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    ServerContext ctx = {&model, &tokenizer};
+    ServerContext ctx(&model, &tokenizer);
 
     SamosaHttpServer server;
     if (!samosa_http_server_init(&server, port, samosa_maple_handler, &ctx)) {
@@ -433,6 +568,10 @@ int main(int argc, char** argv) {
 
     std::cout << "Maple HTTP Server running on http://127.0.0.1:" << port << std::endl;
     samosa_http_server_run(&server);
+    {
+        std::lock_guard<std::mutex> lock(ctx.inference_mutex);
+        maple_hot_evict(ctx.hot, "server shutdown");
+    }
     samosa_http_server_destroy(&server);
 
     return 0;

@@ -138,13 +138,16 @@ PY
   DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents")
   printf '%s' "$DOCS" | grep -q "\"attachment_id\":\"$TEXT_ID\"" || { echo "FAIL: manifest did not persist the document: $DOCS"; exit 1; }
   [ -s "$HOME_DIR/chats/$CONV_ID/documents.json" ] || { echo "FAIL: durable document manifest was not written to the conversation directory"; exit 1; }
+  [ -s "$HOME_DIR/chats/$CONV_ID/document-context.txt" ] || { echo "FAIL: admitted document context sidecar was not written"; exit 1; }
+  grep -q 'LATE_FILE_SENTINEL' "$HOME_DIR/chats/$CONV_ID/document-context.txt" || { echo "FAIL: saved document context lost the admitted tail"; exit 1; }
   printf '%s' "$DOCS" | grep -q '"filename":"late-notes.py"' || { echo "FAIL: manifest lost the document filename: $DOCS"; exit 1; }
   printf '%s' "$DOCS" | grep -q '"mode":"full"' || { echo "FAIL: new document should begin in full mode: $DOCS"; exit 1; }
 
   # The fake backend does not write a native Qwen KV session. Mark the
   # conversation as resumable so this fixture exercises the gateway's saved-
-  # session follow-up path: the new user turn gets a continuity note while
-  # pinned_context retains the bounded local evidence for compaction.
+  # session follow-up path: the new user turn gets only a continuity note.
+  # Recovery/compaction can read document-context.txt on demand, so the large
+  # evidence and pinned_context must stay off the ordinary hot request.
   mkdir -p "$HOME_DIR/chats/$CONV_ID"
   touch "$HOME_DIR/chats/$CONV_ID/session.qws"
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -155,6 +158,7 @@ PY
   STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X DELETE \
     "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents/$TEXT_ID")
   [ "$STATUS" = "200" ] || { echo "FAIL: detaching a bound document should be 200, got $STATUS"; exit 1; }
+  [ ! -e "$HOME_DIR/chats/$CONV_ID/document-context.txt" ] || { echo "FAIL: detaching a document left stale saved evidence"; exit 1; }
   DOCS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/conversations/$CONV_ID/documents")
   [ "$(printf '%s' "$DOCS" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("documents", [])))')" = "0" ] || { echo "FAIL: detached document remained in the manifest: $DOCS"; exit 1; }
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \

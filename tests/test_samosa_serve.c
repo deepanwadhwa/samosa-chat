@@ -79,6 +79,28 @@ int main(void){
     teacher_state_end(&sealed);
     assert(!remove(sealed_path));assert(!rmdir(sealed_dir));
 
+    int live_types[]={1};
+    Model live={.c={.n_layers=1,.n_kv_heads=2,.head_dim=2,
+        .layer_type=live_types},.max_t=3};
+    live.K=calloc(1,sizeof(float *));live.V=calloc(1,sizeof(float *));
+    live.conv_state=calloc(1,sizeof(float *));live.recurrent_state=calloc(1,sizeof(float *));
+    live.K[0]=calloc(12,sizeof(float));live.V[0]=calloc(12,sizeof(float));
+    live.K[0][0]=11;live.K[0][1]=12;live.K[0][2]=13;live.K[0][3]=14;
+    live.K[0][6]=21;live.K[0][7]=22;live.K[0][8]=23;live.K[0][9]=24;
+    live.V[0][0]=31;live.V[0][6]=41;
+    assert(teacher_state_grow(&live,6,2));
+    assert(live.max_t==6);
+    assert(live.K[0][0]==11&&live.K[0][2]==13);
+    assert(live.K[0][12]==21&&live.K[0][14]==23);
+    assert(live.V[0][0]==31&&live.V[0][12]==41);
+    ResidentSession resident={0};
+    resident.valid=1;resident.tokens=malloc(4*sizeof(int));resident.len=4;
+    resident.capacity=6;strcpy(resident.conversation_id,"hot-fixture");
+    strcpy(resident.session_path,"/tmp/hot-fixture/session.qws");
+    assert(resident_session_matches(&resident,"/tmp/hot-fixture/session.qws"));
+    resident_session_evict(&live,&resident,"unit test");
+    assert(!resident.valid&&!resident.tokens&&live.max_t==0&&resident.evictions==1);
+
     assert(piece_ends_sentence("2003.",5));
     assert(piece_ends_sentence(".\n\n",3));
     assert(piece_ends_sentence(" done!)\n",8));
@@ -120,7 +142,8 @@ int main(void){
     assert(strstr(health,"HTTP/1.1 200 OK"));assert(strstr(health,"\"status\":\"ok\""));
     assert(strstr(health,"\"model_context_limit_tokens\":262144"));
     assert(strstr(health,"\"context_limit_tokens\":131072"));
-    assert(strstr(health,"\"compaction\":{\"auto\":true,\"threshold_percent\":80}"));free(health);
+    assert(strstr(health,"\"compaction\":{\"auto\":true,\"threshold_percent\":80}"));
+    assert(strstr(health,"\"resident_session\":{\"capacity\":1,\"hot\":false"));free(health);
     const char *settings_body="{\"context_tokens\":\"auto\",\"auto_compact\":false,\"compact_threshold_percent\":75}";
     char settings_wire[256];snprintf(settings_wire,sizeof(settings_wire),
         "POST /v1/settings HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n%s",
@@ -157,6 +180,15 @@ int main(void){
     assert(terminal_n>0);terminal_wire[terminal_n]=0;
     assert(strstr(terminal_wire,"\"compacted\":true"));
     assert(strstr(terminal_wire,"\"compacted_from_tokens\":100"));
+    close(pair[0]);close(pair[1]);
+
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,pair));
+    assert(serve_context_activity(pair[0],"compacting",
+        "Optimizing conversation context…",25,1));
+    terminal_n=recv(pair[1],terminal_wire,sizeof(terminal_wire)-1,0);
+    assert(terminal_n>0);terminal_wire[terminal_n]=0;
+    assert(strstr(terminal_wire,"\"stage\":\"compacting\""));
+    assert(strstr(terminal_wire,"\"indeterminate\":true"));
     close(pair[0]);close(pair[1]);
 
     char *models=request(server.port,"GET /v1/models HTTP/1.1\r\nHost: localhost\r\n\r\n");
