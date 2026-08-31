@@ -203,6 +203,12 @@ samosa serve --stop
 ```
 
 The gateway listens only on `127.0.0.1:8642` by default.
+`samosa serve` is an independently running service and remains alive when all
+browser tabs close. In contrast, `samosa app` owns the gateway/model tree from
+the browser: closing the final Samosa tab stops the entire tree after a short
+grace period that allows ordinary refreshes to reconnect. **Stop local
+processes** in Privacy settings and `samosa serve --stop` both perform an
+immediate authenticated shutdown.
 
 ## LAN access
 

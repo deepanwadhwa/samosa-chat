@@ -62,18 +62,31 @@ EOF
     sh "$ROOT/dist/samosa" serve --stop >/dev/null
 fi
 
-# The user-facing default must use the persistent service path. The launcher
-# returns immediately, but the app must remain reachable from a later process
-# instead of depending on a detached child surviving its parent shell.
+# The user-facing app default must be browser-owned and must not register a
+# launchd KeepAlive job. Activity Monitor-style termination of its gateway
+# must also stop the model and stay stopped.
 SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
   SAMOSA_OPEN="$TMP/open" sh "$ROOT/dist/samosa" app >/dev/null
 DEFAULT_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
-printf '%s' "$DEFAULT_HEALTH" | grep -q '"app_owned":false'
-SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
-  sh "$ROOT/dist/samosa" serve --stop >/dev/null
+printf '%s' "$DEFAULT_HEALTH" | grep -q '"app_owned":true'
+DEFAULT_GW_PID=$(tr -d '\r\n' <"$HOME_DIR/server.pid")
+DEFAULT_BACKEND_PID=$(printf '%s' "$DEFAULT_HEALTH" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')
+[ -n "$DEFAULT_GW_PID" ] && [ -n "$DEFAULT_BACKEND_PID" ]
+kill -TERM "$DEFAULT_GW_PID"
+i=0
+while kill -0 "$DEFAULT_GW_PID" 2>/dev/null && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+kill -0 "$DEFAULT_GW_PID" 2>/dev/null && { echo "FAIL: default app gateway survived SIGTERM" >&2; exit 1; }
+kill -0 "$DEFAULT_BACKEND_PID" 2>/dev/null && { echo "FAIL: default app backend survived gateway SIGTERM" >&2; exit 1; }
+sleep 0.3
+curl -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && {
+  echo "FAIL: launchd respawned the default app gateway" >&2; exit 1;
+}
 
-# The explicit browser-owned compatibility mode must still transition cleanly
-# from an ordinary launchd-owned service without racing its stale server.pid.
+# The browser-owned default must transition cleanly from an ordinary
+# launchd-owned `serve` process without racing its stale server.pid.
 if [ "$(uname -s)" = Darwin ] && command -v launchctl >/dev/null 2>&1; then
   SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
     sh "$ROOT/dist/samosa" serve >/dev/null
@@ -82,8 +95,7 @@ if [ "$(uname -s)" = Darwin ] && command -v launchctl >/dev/null 2>&1; then
   printf '%s' "$SERVICE_HEALTH" | grep -q '"app_owned":false'
 
   SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
-    SAMOSA_OPEN="$TMP/open" SAMOSA_APP_LIFECYCLE=1 \
-    sh "$ROOT/dist/samosa" app >/dev/null
+    SAMOSA_OPEN="$TMP/open" sh "$ROOT/dist/samosa" app >/dev/null
   i=0
   while [ "$i" -lt 100 ]; do
     TRANSITION_HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz" 2>/dev/null || true)
@@ -116,7 +128,7 @@ done
 [ "$i" -lt 100 ] || { echo "FAIL: stale backend fixture did not start" >&2; exit 1; }
 
 if ! SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
-  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 SAMOSA_APP_LIFECYCLE=1 \
+  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=0 \
   sh "$ROOT/dist/samosa" app >/dev/null; then
   echo "FAIL: app-owned gateway startup log:" >&2
   sed -n '1,240p' "$HOME_DIR/server.log" >&2 || true
@@ -151,6 +163,33 @@ BACKEND_PID=$(printf '%s' "$HEALTH" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')
 [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null
 TOKEN=$(tr -d '\r\n' <"$HOME_DIR/run/ui-token")
 [ -n "$TOKEN" ]
+
+# The browser troubleshooting button uses this authenticated kill route. It
+# must terminate the same app-owned gateway/backend tree without a respawn.
+curl -fsS -H "X-Samosa-Token: $TOKEN" -X POST \
+  "http://127.0.0.1:$PORT/v1/kill" >/dev/null
+i=0
+while kill -0 "$GW_PID" 2>/dev/null && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+kill -0 "$GW_PID" 2>/dev/null && { echo "FAIL: browser kill left gateway running" >&2; exit 1; }
+kill -0 "$BACKEND_PID" 2>/dev/null && { echo "FAIL: browser kill left backend running" >&2; exit 1; }
+sleep 0.3
+curl -fsS --max-time 1 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && {
+  echo "FAIL: browser-killed gateway was respawned" >&2; exit 1;
+}
+
+# Start a fresh default app instance for refresh-versus-final-tab-close checks.
+SAMOSA_HOME="$HOME_DIR" SAMOSA_RELEASE_DIR="$RELEASE_DIR" SAMOSA_PORT="$PORT" \
+  SAMOSA_OPEN="$TMP/open" SAMOSA_VOICE_TRACE_AUTO=1 \
+  sh "$ROOT/dist/samosa" app >/dev/null
+GW_PID=$(tr -d '\r\n' <"$HOME_DIR/server.pid")
+HEALTH=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
+printf '%s' "$HEALTH" | grep -q '"app_owned":true'
+BACKEND_PID=$(printf '%s' "$HEALTH" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')
+TOKEN=$(tr -d '\r\n' <"$HOME_DIR/run/ui-token")
+[ -n "$GW_PID" ] && [ -n "$BACKEND_PID" ] && [ -n "$TOKEN" ]
 
 # Refresh closes the old document and opens a replacement. The grace period
 # must preserve both the gateway and its already-loaded backend.

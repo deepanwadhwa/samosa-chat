@@ -18,8 +18,13 @@ was not removed; its gateway/backend process had been stopped.
 
 ## Fix
 
-- Browser lifecycle events never stop the gateway. Refresh reconnects to the
-  same process and selected model.
+- `samosa app` is browser-owned. A close event removes that tab from the active
+  client set; closing the final tab stops the gateway and its complete model
+  process group after a 2.5-second grace period. A refresh reconnects before
+  that deadline and preserves the same process and selected model. Multiple
+  tabs are safe because only the final close initiates shutdown.
+- `samosa serve` remains explicitly persistent and ignores browser lifecycle
+  closure, so headless and intentional background use still works.
 - Both shutdown routes require the current random UI token.
 - The explicit `samosa serve --stop` path reads that token and requests a
   clean shutdown before unregistering the launchd job; it uses a direct
