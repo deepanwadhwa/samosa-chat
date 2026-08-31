@@ -128,6 +128,12 @@ samosa app
 
 Access the interface at <http://127.0.0.1:8642>. Available settings include:
 
+`samosa app` is browser-owned: closing the final Samosa tab stops the gateway,
+the loaded model, and Samosa helper processes after a short refresh-safe grace
+period. Use `samosa serve` only when you intentionally want the service to
+remain running without an open browser tab. The Privacy settings page also has
+a **Stop local processes** action for immediate authenticated shutdown.
+
 - Model selection and downloading.
 - Grouped Text LLM, Vision, OCR, and Voice model settings with live readiness.
 - Automatic chat-attachment routing, hardware-adaptive image resizing, and

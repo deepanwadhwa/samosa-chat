@@ -292,6 +292,12 @@ process_command() {
   ps -p "$pid" -o command= 2>/dev/null || true
 }
 
+process_running() {
+  pid=$1
+  state=$(ps -p "$pid" -o stat= 2>/dev/null | tr -d '[:space:]' || true)
+  case "$state" in ''|Z*) return 1 ;; *) return 0 ;; esac
+}
+
 is_samosa_server_pid() {
   pid=$1
   command=$(process_command "$pid")
@@ -315,6 +321,33 @@ is_samosa_backend_pid() {
   esac
 }
 
+samosa_server_running_pid() {
+  process_running "$1" && is_samosa_server_pid "$1"
+}
+
+samosa_backend_running_pid() {
+  process_running "$1" && is_samosa_backend_pid "$1"
+}
+
+signal_backend_tree() {
+  pid=$1
+  requested_signal=$2
+  pgid=$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d '[:space:]' || true)
+  case "$pgid" in ''|*[!0-9]*|0|1) pgid= ;; esac
+  case "$requested_signal" in
+    TERM)
+      if [ "$pgid" = "$pid" ]; then kill -TERM -- "-$pgid" 2>/dev/null || true
+      else kill -TERM "$pid" 2>/dev/null || true
+      fi
+      ;;
+    KILL)
+      if [ "$pgid" = "$pid" ]; then kill -KILL -- "-$pgid" 2>/dev/null || true
+      else kill -KILL "$pid" 2>/dev/null || true
+      fi
+      ;;
+  esac
+}
+
 cleanup_stale_backend() {
   pid=""
   if [ -s "$BACKEND_PID_FILE" ]; then
@@ -328,7 +361,7 @@ cleanup_stale_backend() {
     rm -f "$BACKEND_PID_FILE"
     return 0
   fi
-  if ! kill -0 "$pid" 2>/dev/null; then
+  if ! process_running "$pid"; then
     rm -f "$BACKEND_PID_FILE"
     return 0
   fi
@@ -337,17 +370,16 @@ cleanup_stale_backend() {
     fail "private model port $BACKEND_PORT is occupied by process $pid: $command"
   fi
   say "recovering stale local model process $pid"
-  kill -TERM "$pid" 2>/dev/null || true
+  signal_backend_tree "$pid" TERM
   i=0
-  while [ -n "$(port_owner_pid "$BACKEND_PORT")" ] && [ "$i" -lt 50 ]; do
+  while samosa_backend_running_pid "$pid" && [ "$i" -lt 80 ]; do
     sleep 0.1
     i=$((i + 1))
   done
-  owner=$(port_owner_pid "$BACKEND_PORT")
-  if [ "$owner" = "$pid" ]; then
-    kill -KILL "$pid" 2>/dev/null || true
+  if samosa_backend_running_pid "$pid"; then
+    signal_backend_tree "$pid" KILL
     i=0
-    while [ -n "$(port_owner_pid "$BACKEND_PORT")" ] && [ "$i" -lt 20 ]; do
+    while samosa_backend_running_pid "$pid" && [ "$i" -lt 20 ]; do
       sleep 0.1
       i=$((i + 1))
     done
@@ -566,6 +598,26 @@ start_server() {
 }
 
 stop_server() {
+  # Capture the actual listeners before shutdown starts. launchd can replace
+  # the short-lived bootstrap PID in server.pid, and both gateway and backend
+  # close their sockets before their final cleanup has completed. Waiting only
+  # on the marker or listener therefore used to report success too early.
+  tracked_server_pid=$(port_owner_pid)
+  if [ -z "$tracked_server_pid" ] && [ -s "$PID_FILE" ]; then
+    tracked_server_pid=$(tr -d '[:space:]' <"$PID_FILE")
+  fi
+  case "$tracked_server_pid" in ''|*[!0-9]*) tracked_server_pid= ;; esac
+  if [ -n "$tracked_server_pid" ] && ! is_samosa_server_pid "$tracked_server_pid"; then
+    tracked_server_pid=
+  fi
+  tracked_backend_pid=
+  if [ -s "$BACKEND_PID_FILE" ]; then
+    tracked_backend_pid=$(tr -d '[:space:]' <"$BACKEND_PID_FILE")
+    case "$tracked_backend_pid" in ''|*[!0-9]*) tracked_backend_pid= ;; esac
+    if [ -n "$tracked_backend_pid" ] && ! is_samosa_backend_pid "$tracked_backend_pid"; then
+      tracked_backend_pid=
+    fi
+  fi
   if server_running && [ -s "$UI_TOKEN_FILE" ]; then
     ui_token=$(tr -d '\r\n' <"$UI_TOKEN_FILE")
     if [ -n "$ui_token" ]; then
@@ -585,18 +637,30 @@ stop_server() {
       i=$((i + 1))
     done
   fi
-  if [ -f "$PID_FILE" ]; then
-    pid=$(cat "$PID_FILE" 2>/dev/null || true)
+  if [ -n "$tracked_server_pid" ]; then
     i=0
-    while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+    while samosa_server_running_pid "$tracked_server_pid" && [ "$i" -lt 120 ]; do
       sleep 0.1
       i=$((i + 1))
     done
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid" 2>/dev/null || true
+    if samosa_server_running_pid "$tracked_server_pid"; then
+      kill -TERM "$tracked_server_pid" 2>/dev/null || true
+      i=0
+      while samosa_server_running_pid "$tracked_server_pid" && [ "$i" -lt 50 ]; do
+        sleep 0.1
+        i=$((i + 1))
+      done
     fi
-    rm -f "$PID_FILE"
+    if samosa_server_running_pid "$tracked_server_pid"; then
+      kill -KILL "$tracked_server_pid" 2>/dev/null || true
+      i=0
+      while samosa_server_running_pid "$tracked_server_pid" && [ "$i" -lt 20 ]; do
+        sleep 0.1
+        i=$((i + 1))
+      done
+    fi
   fi
+  rm -f "$PID_FILE"
   pid=$(port_owner_pid)
   if [ -n "$pid" ] && is_samosa_server_pid "$pid"; then
     kill -TERM "$pid" 2>/dev/null || true
@@ -610,6 +674,23 @@ stop_server() {
     fi
   fi
   cleanup_stale_backend
+  if [ -n "$tracked_backend_pid" ] && samosa_backend_running_pid "$tracked_backend_pid"; then
+    signal_backend_tree "$tracked_backend_pid" TERM
+    i=0
+    while samosa_backend_running_pid "$tracked_backend_pid" && [ "$i" -lt 80 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if samosa_backend_running_pid "$tracked_backend_pid"; then
+      signal_backend_tree "$tracked_backend_pid" KILL
+    fi
+  fi
+  if [ -n "$tracked_server_pid" ] && samosa_server_running_pid "$tracked_server_pid"; then
+    fail "Samosa gateway process $tracked_server_pid did not stop"
+  fi
+  if [ -n "$tracked_backend_pid" ] && samosa_backend_running_pid "$tracked_backend_pid"; then
+    fail "Samosa model process $tracked_backend_pid did not stop"
+  fi
   echo "Samosa server stopped."
 }
 
@@ -737,12 +818,12 @@ fi
 
 if [ "${1:-}" = "app" ]; then
   shift
-  # A normal app launch uses the same persistent supervisor as `serve`, so
-  # the local UI cannot disappear when a terminal or automation host reaps
-  # detached children after this short-lived launcher returns. Browser-owned
-  # shutdown remains available for lifecycle-specific integration tests and
-  # compatibility via an explicit environment override.
-  APP_LIFECYCLE="${SAMOSA_APP_LIFECYCLE:-0}"
+  # `app` belongs to the browser session: closing its final Samosa tab must
+  # terminate the gateway and every model/helper process it owns. KeepAlive is
+  # deliberately reserved for `samosa serve`, whose documented purpose is an
+  # independently running service. The override remains available for tests
+  # and unusual embedding environments, but browser ownership is the default.
+  APP_LIFECYCLE="${SAMOSA_APP_LIFECYCLE:-1}"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --lan) BIND_ADDRESS=0.0.0.0; LAN_MODE=1 ;;
