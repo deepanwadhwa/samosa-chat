@@ -1144,7 +1144,7 @@ static void embed_gather_row(float *out, const QT *w, int row) {
 static QT qt_load(Model *m, const char *name, int O, int I) {
     QT t = {0};
     char nm[512];
-    strcpy(nm, name);
+    snprintf(nm, sizeof(nm), "%s", name);
     
     st_tensor *tw = st_find(&m->S, name);
     if (!tw) {
@@ -1156,7 +1156,7 @@ static QT qt_load(Model *m, const char *name, int O, int I) {
         }
         tw = st_find(&m->S, wrapped);
         if (tw) {
-            strcpy(nm, wrapped);
+            snprintf(nm, sizeof(nm), "%s", wrapped);
         }
     }
     if (!tw) {
@@ -4295,8 +4295,8 @@ static int teacher_is_calibration(uint64_t ordinal, uint64_t positions,
 static void teacher_fsync_parent(const char *path) {
     char parent[2048];
     if (strlen(path)>=sizeof(parent)) teacher_die("output path is too long");
-    strcpy(parent,path); char *slash=strrchr(parent,'/');
-    if (!slash) strcpy(parent,".");
+    snprintf(parent, sizeof(parent), "%s", path); char *slash=strrchr(parent,'/');
+    if (!slash) snprintf(parent, sizeof(parent), ".");
     else if (slash==parent) slash[1]=0;
     else *slash=0;
     int fd=open(parent,O_RDONLY);
@@ -5085,7 +5085,7 @@ static int serve_valid_id(const char *id){
 
 static int serve_mkdir(const char *path){
     char copy[PATH_MAX]; if(strlen(path)>=sizeof(copy))return 0;
-    strcpy(copy,path);
+    snprintf(copy, sizeof(copy), "%s", path);
     for(char *p=copy+1;*p;p++)if(*p=='/'){*p=0;if(mkdir(copy,0700)&&errno!=EEXIST)return 0;*p='/';}
     return !mkdir(copy,0700)||errno==EEXIST;
 }
