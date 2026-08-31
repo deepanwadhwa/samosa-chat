@@ -209,7 +209,18 @@ Content-Type: application/json
 
 The route is OpenAI-compatible. The gateway normalizes Qwen and GGUF streaming
 and appends a `samosa` metadata object to the terminal event when available.
-For Bonsai and Ornith, `conversation_id` enables the durable per-model ledger.
+`conversation_id` selects backend-appropriate continuation state: native live
+K/V plus a durable checkpoint for Qwen, native live K/V with browser-transcript
+recovery for Maple, and a stable cached prompt prefix for Bonsai and Ornith.
+Only one conversation is hot per active text engine; switching conversations
+causes a cold restore or rebuild without loading another model instance. See
+[CONVERSATION_CONTEXT.md](CONVERSATION_CONTEXT.md) for the lifecycle, document
+reuse, eviction, privacy, and recovery contracts.
+
+Qwen's private backend `/healthz` includes a `resident_session` object with
+one-slot capacity, hot token count, eviction policy, hit/restore/eviction
+counters, and scheduler state. Maple reports its one-slot resident state and
+uses `available: false` rather than blocking a health probe during inference.
 
 ## Cancel generation
 

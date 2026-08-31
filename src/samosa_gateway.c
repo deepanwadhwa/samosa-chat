@@ -7313,6 +7313,70 @@ static int conversation_documents_path(Gateway *g, const char *id,
            path_join(out, cap, dir, "documents.json");
 }
 
+/* The manifest records identity and extraction mode; this sidecar records the
+ * exact bounded evidence already admitted to the model.  Keeping it beside the
+ * conversation lets every text backend reuse a stable prompt prefix without
+ * re-running OCR or query-specific assembly on ordinary full-document
+ * follow-ups.  It is local private conversation state, never a public asset. */
+static int conversation_document_context_path(Gateway *g,const char *id,
+                                              char *out,size_t cap){
+    char chats[PATH_MAX],dir[PATH_MAX];
+    return valid_conversation_id(id)&&
+           path_join(chats,sizeof(chats),g->home,"chats")&&
+           path_join(dir,sizeof(dir),chats,id)&&
+           path_join(out,cap,dir,"document-context.txt");
+}
+
+static char *conversation_document_context_load(Gateway *g,const char *id){
+    char path[PATH_MAX];
+    if(!conversation_document_context_path(g,id,path,sizeof(path)))return NULL;
+    return read_file_limit(path,262144);
+}
+
+static int conversation_document_context_exists(Gateway *g,const char *id){
+    char path[PATH_MAX];
+    return conversation_document_context_path(g,id,path,sizeof(path))&&
+           access(path,R_OK)==0;
+}
+
+static int conversation_document_context_append(Gateway *g,const char *id,
+                                                TextBuffer *out){
+    char *saved=conversation_document_context_load(g,id);
+    if(!saved)return 0;
+    int ok=text_add(out,saved);free(saved);return ok;
+}
+
+static int conversation_document_context_save(Gateway *g,const char *id,
+                                              const char *context){
+    char path[PATH_MAX],chats[PATH_MAX],dir[PATH_MAX];
+    if(!context||!*context||strlen(context)>262144||
+       !path_join(chats,sizeof(chats),g->home,"chats")||
+       !path_join(dir,sizeof(dir),chats,id)||!mkdirs(dir)||
+       !conversation_document_context_path(g,id,path,sizeof(path)))return 0;
+    return write_small_file(path,context);
+}
+
+static void conversation_document_context_invalidate(Gateway *g,const char *id){
+    char path[PATH_MAX];
+    if(conversation_document_context_path(g,id,path,sizeof(path)))unlink(path);
+}
+
+static int conversation_documents_all_full(const ConversationDocuments *docs){
+    if(!docs||docs->len<1)return 0;
+    for(int i=0;i<docs->len;i++)if(strcmp(docs->items[i].mode,"full"))return 0;
+    return 1;
+}
+
+static int conversation_documents_full_context_current(
+        Gateway *g,const ConversationDocuments *docs){
+    if(!conversation_documents_all_full(docs))return 0;
+    const char *fingerprint=reader_fingerprint(g);
+    for(int i=0;i<docs->len;i++)
+        if(!docs->items[i].extractor_fingerprint[0]||
+           strcmp(docs->items[i].extractor_fingerprint,fingerprint))return 0;
+    return 1;
+}
+
 static int conversation_documents_lock(Gateway *g, const char *id,
                                        int *lock_out) {
     char chats[PATH_MAX], dir[PATH_MAX], lock_path[PATH_MAX];
@@ -7506,6 +7570,10 @@ static int conversation_documents_handler(Gateway *g, int fd,
         if (!removed)
             return samosa_http_json_error(fd, 404, "conversation_document_not_found",
                                           "That document is not attached to this conversation.");
+        /* The saved evidence may contain the detached document.  Invalidate it
+         * immediately; a later turn can rebuild the remaining set from the
+         * extraction cache without exposing stale detached text. */
+        conversation_document_context_invalidate(g,id);
         return samosa_http_response(fd, 200, "application/json", "{\"deleted\":true}", NULL);
     }
     return samosa_http_json_error(fd, 405, "method_not_allowed",
@@ -12720,10 +12788,21 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
                           message, 15, 1);
     }
 
-    int reuse_saved_document_context =
-        !have_attachments && have_bound_documents && !strcmp(g->backend, "qwen") &&
-        conversation_id && conversation_session_exists(g, conversation_id) &&
+    int saved_context_current=have_bound_documents&&
+        conversation_documents_full_context_current(g,&bound_documents)&&
+        conversation_document_context_exists(g,conversation_id);
+    int native_conversation_state=!strcmp(g->backend,"qwen")||
+                                  !strcmp(g->backend,"maple");
+    int prompt_prefix_cache=!strcmp(g->backend,"bonsai")||
+                            !strcmp(g->backend,"ornith");
+    int reuse_saved_document_context=
+        !have_attachments&&saved_context_current&&native_conversation_state&&
+        conversation_id&&(!strcmp(g->backend,"maple")||
+        conversation_session_exists(g,conversation_id))&&
         !vision_turn.plan.inspect_visual;
+    int reuse_stable_document_prefix=
+        !have_attachments&&saved_context_current&&prompt_prefix_cache&&
+        conversation_id&&!vision_turn.plan.inspect_visual;
     int document_progress = streaming &&
         (have_document_attachments || have_bound_documents);
     if (document_progress && !web_progress.started &&
@@ -12736,8 +12815,15 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
                                bound_documents.len ? bound_documents.items[0].filename :
                                "Attached document";
         char message[320];
-        snprintf(message, sizeof(message), "Reading %s with Samosa's local file reader…", filename);
-        file_sse_activity(&web_progress, filename, "reading", message, 15, 0);
+        const char *stage="reading";
+        if(reuse_saved_document_context||reuse_stable_document_prefix){
+            snprintf(message,sizeof(message),"Using the already extracted text from %s…",filename);
+            stage="reused";
+        }else if(!have_attachments&&have_bound_documents){
+            snprintf(message,sizeof(message),"Searching the previously extracted text from %s…",filename);
+            stage="searching";
+        }else snprintf(message,sizeof(message),"Reading %s with Samosa's local file reader…",filename);
+        file_sse_activity(&web_progress,filename,stage,message,15,0);
     }
 
     /* Molmo2 was trained to receive multiple visual placeholders in one
@@ -12794,13 +12880,13 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             }
     }
     if (reuse_saved_document_context) {
-        /* The Qwen session already contains the previous turn's exact file
-           passages. Re-inserting them here forces another 1K+ token native
-           prefill on every follow-up, defeating the point of the saved KV
-           session. Keep a small continuity marker in the new user turn; the
-           full extracted evidence is rebuilt below only for pinned compaction
-           context. If no session exists, the normal extraction path remains
-           the safe fallback. */
+        /* The native Qwen/Maple session already contains the previous turn's
+           exact file passages. Re-inserting them here forces another 1K+
+           token native prefill on every follow-up, defeating the point of the
+           saved K/V session. Keep a small continuity marker in the new user
+           turn; the full extracted evidence is loaded below only for cold
+           recovery or compaction. If no usable state exists, the normal
+           extraction path remains the safe fallback. */
         text_add(&doc_evidence,
             "\n\n--- Attached document context already loaded in this conversation ---\n"
             "The preceding saved conversation turn contains the exact passages "
@@ -12817,7 +12903,14 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             file_sse_activity(&web_progress, filename, "reused", "Using the previously loaded document context…", 55, 0);
         }
     }
-    for (int i = 0; i < bound_documents.len && !reuse_saved_document_context; i++) {
+    if(reuse_stable_document_prefix&&
+       !conversation_document_context_append(g,conversation_id,&doc_evidence)){
+        vision_turn_close(g,&vision_turn);free(doc_evidence.data);free(image_blocks.data);
+        return chat_context_error(fd,&web_progress,409,"document_context_invalid",
+                                  "The saved document context is unreadable.");
+    }
+    for (int i = 0; i < bound_documents.len && !reuse_saved_document_context &&
+                        !reuse_stable_document_prefix; i++) {
         int supplied = 0;
         for (int j = 0; have_attachments && j < attach_ids->len; j++) {
             jval *idv = attach_ids->kids[j];
@@ -12882,8 +12975,11 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         const char *filename = new_documents.len ? new_documents.items[0].filename :
                                bound_documents.len ? bound_documents.items[0].filename :
                                "Attached document";
-        file_sse_activity(&web_progress, filename, "passages",
-                          "Selecting the most relevant passages and citations…", 65, 0);
+        file_sse_activity(&web_progress,filename,
+            (reuse_saved_document_context||reuse_stable_document_prefix)?"ready":"passages",
+            (reuse_saved_document_context||reuse_stable_document_prefix)?
+                "Previously extracted document context is ready.":
+                "Selecting the most relevant passages and citations…",65,0);
     }
     if (conversation_id) {
         if (new_documents.len && !conversation_documents_merge(g, conversation_id, &new_documents)) {
@@ -12895,6 +12991,15 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             free(doc_evidence.data); free(image_blocks.data);
             return chat_context_error(fd, &web_progress, 500, "documents_write_failed",
                                       "The conversation document manifest could not be saved.");
+        }
+        int all_full=(!new_documents.len||conversation_documents_all_full(&new_documents))&&
+                     (!bound_documents.len||conversation_documents_all_full(&bound_documents));
+        if(all_full&&doc_evidence.data&&doc_evidence.len&&
+           !reuse_saved_document_context&&!reuse_stable_document_prefix&&
+           !conversation_document_context_save(g,conversation_id,doc_evidence.data)){
+            free(doc_evidence.data);free(image_blocks.data);
+            return chat_context_error(fd,&web_progress,500,"document_context_write_failed",
+                                      "The extracted document context could not be saved.");
         }
     }
 
@@ -12992,23 +13097,18 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     web_append_grounding_requirements(&web_evidence, web_high_stakes,
                                       fast_web_synthesis);
 
-    /* Keep the user-facing follow-up small, but retain fresh bounded evidence
-       for Qwen's compaction path. The extraction cache makes this local-only
-       rebuild cheap; it must not become another model call. */
+    /* Native stateful engines need the full evidence only for cold recovery or
+       compaction.  Read the exact admitted sidecar rather than rebuilding
+       query evidence on every hot follow-up. */
     TextBuffer pinned_doc_evidence = {0}, pinned_image_scratch = {0};
     if (reuse_saved_document_context) {
-        for (int i = 0; i < bound_documents.len; i++) {
-            int status; char code[64], message[160];
-            unsigned long tokens = 0; int retrieval = 0;
-            if (!attachment_augment(g, bound_documents.items[i].attachment_id,
-                                    &pinned_doc_evidence, &pinned_image_scratch,
-                                    &status, code, sizeof(code), message, sizeof(message),
-                                    original_text, &tokens, &retrieval, NULL)) {
-                free(doc_evidence.data); free(image_blocks.data);
-                free(chutni_evidence.data); free(web_evidence.data);
-                free(pinned_doc_evidence.data); free(pinned_image_scratch.data);
-                return chat_context_error(fd, &web_progress, status, code, message);
-            }
+        if(!conversation_document_context_append(g,conversation_id,
+                                                 &pinned_doc_evidence)){
+            free(doc_evidence.data);free(image_blocks.data);
+            free(chutni_evidence.data);free(web_evidence.data);
+            free(pinned_doc_evidence.data);free(pinned_image_scratch.data);
+            return chat_context_error(fd,&web_progress,409,"document_context_invalid",
+                                      "The saved document context is unreadable.");
         }
     } else if (doc_evidence.data && doc_evidence.len) {
         text_add_n(&pinned_doc_evidence, doc_evidence.data, doc_evidence.len);
@@ -13056,11 +13156,13 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     TextBuffer payload = {0};
     text_add(&payload, "{");
     int wrote = 0;
+    int force_prompt_cache=prompt_prefix_cache&&conversation_id;
     for (int i = 0; i < body->len; i++) {
         if (!strcmp(body->keys[i], "messages") || !strcmp(body->keys[i], "attachment_ids") ||
             !strcmp(body->keys[i], "web") || !strcmp(body->keys[i], "web_urls") ||
             !strcmp(body->keys[i], "directory_context") ||
             !strcmp(body->keys[i], "pinned_context") ||
+            (force_prompt_cache&&!strcmp(body->keys[i],"cache_prompt")) ||
             ((grounded_visual_synthesis || grounded_document_synthesis || fast_web_synthesis) &&
              (!strcmp(body->keys[i], "thinking") ||
               !strcmp(body->keys[i], "chat_template_kwargs") ||
@@ -13082,6 +13184,10 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         if (wrote) text_add(&payload, ",");
         text_add(&payload, "\"max_tokens\":4096");
         wrote = 1;
+    }
+    if(force_prompt_cache){
+        if(wrote)text_add(&payload,",");
+        text_add(&payload,"\"cache_prompt\":true");wrote=1;
     }
     if (grounded_visual_synthesis || grounded_document_synthesis || fast_web_synthesis) {
         /* Synthesis is a bounded evidence rewrite, not an open-ended reasoning
@@ -13154,6 +13260,15 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         messages_wrote = 1;
         free(merged_system.data);
     }
+    int first_user_idx=last_idx;
+    if(reuse_stable_document_prefix){
+        for(int i=0;i<messages->len;i++){
+            jval *candidate=messages->kids[i];
+            jval *role=candidate&&candidate->t==J_OBJ?json_get(candidate,"role"):NULL;
+            if(role&&role->t==J_STR&&!strcmp(role->str,"user")){first_user_idx=i;break;}
+        }
+    }
+    int document_target_idx=reuse_stable_document_prefix?first_user_idx:last_idx;
     for (int i = 0; i < messages->len; i++) {
         jval *message_role = messages->kids[i] && messages->kids[i]->t == J_OBJ
             ? json_get(messages->kids[i], "role") : NULL;
@@ -13170,26 +13285,34 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             !strcmp(message_role->str, "assistant")) continue;
         if (messages_wrote) text_add(&payload, ",");
         messages_wrote = 1;
-        if (i != last_idx) { text_json_value(&payload, messages->kids[i]); continue; }
+        if (i != last_idx && i != document_target_idx) {
+            text_json_value(&payload, messages->kids[i]); continue;
+        }
+        jval *target_msg=messages->kids[i];
+        jval *target_content=target_msg&&target_msg->t==J_OBJ?
+                             json_get(target_msg,"content"):NULL;
+        const char *target_text=target_content&&target_content->t==J_STR?
+                                target_content->str:"";
         text_add(&payload, "{");
         int mwrote = 0;
-        for (int k = 0; k < last_msg->len; k++) {
-            if (!strcmp(last_msg->keys[k], "content")) continue;
+        for (int k = 0; k < target_msg->len; k++) {
+            if (!strcmp(target_msg->keys[k], "content")) continue;
             if (mwrote) text_add(&payload, ",");
-            text_json_string(&payload, last_msg->keys[k]); text_add(&payload, ":");
-            text_json_value(&payload, last_msg->kids[k]);
+            text_json_string(&payload, target_msg->keys[k]); text_add(&payload, ":");
+            text_json_value(&payload, target_msg->kids[k]);
             mwrote = 1;
         }
         if (mwrote) text_add(&payload, ",");
         TextBuffer full_text = {0};
-        text_add(&full_text, original_text);
-        if (doc_evidence.data) text_add(&full_text, doc_evidence.data);
-        if (chutni_evidence.data) text_add(&full_text, chutni_evidence.data);
-        if (web_evidence.data) text_add(&full_text, web_evidence.data);
+        text_add(&full_text,target_text);
+        if(i==document_target_idx&&doc_evidence.data)
+            text_add(&full_text,doc_evidence.data);
+        if(i==last_idx&&chutni_evidence.data)text_add(&full_text,chutni_evidence.data);
+        if(i==last_idx&&web_evidence.data)text_add(&full_text,web_evidence.data);
         /* Keep the ordinary text-only OpenAI shape for local backends that do
            not implement multimodal content arrays. Use an array only when an
            image actually needs one; web evidence alone is still plain text. */
-        if (image_blocks.data) {
+        if (i==last_idx&&image_blocks.data) {
             text_add(&payload, "\"content\":[{\"type\":\"text\",\"text\":");
             text_json_string(&payload, full_text.data ? full_text.data : "");
             text_add(&payload, "}");
@@ -13204,12 +13327,19 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     }
     free(synthesis_instruction.data);
     text_add(&payload, "]");
-    /* Qwen uses this separate field only while rebuilding a compacted native
-       session. The same evidence remains in the current user turn above, so
-       ordinary backends can ignore the field without changing their prompt. */
+    /* Native engines use this separate field only while rebuilding cold or
+       compacted state. Stateless/prompt-cache backends already receive the
+       evidence in the selected user turn above. */
     const char *pinned_context = pinned_doc_evidence.data && pinned_doc_evidence.len
         ? pinned_doc_evidence.data : doc_evidence.data;
-    if (pinned_context && *pinned_context) {
+    /* Qwen can read the shared per-conversation sidecar itself if automatic
+       compaction actually runs.  Omitting this large recovery-only field on a
+       normal hot follow-up also keeps the gateway on its ordinary timeout
+       path. Maple still receives it because a cold native restart currently
+       rebuilds from the request rather than a sealed session. */
+    int qwen_hot_followup=reuse_saved_document_context&&!strcmp(g->backend,"qwen");
+    if (pinned_context && *pinned_context && native_conversation_state &&
+        !qwen_hot_followup) {
         text_add(&payload, ",\"pinned_context\":");
         text_json_string(&payload, pinned_context);
     }
@@ -19037,7 +19167,9 @@ static int compact_request(Gateway *g, int fd, const SamosaHttpRequest *request)
         return proxy_request(g, fd, request);
     }
     TextBuffer pinned = {0}, image_blocks = {0};
-    for (int i = 0; i < documents.len; i++) {
+    int used_saved_context=conversation_documents_full_context_current(g,&documents)&&
+        conversation_document_context_append(g,conversation->str,&pinned);
+    for (int i = 0; i < documents.len && !used_saved_context; i++) {
         int status, retrieval = 0;
         char code[64], message[160];
         unsigned long tokens = 0;

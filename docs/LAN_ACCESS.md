@@ -169,6 +169,15 @@ turn is active. Do not rely on closing a waiting tab to cancel work that has
 already reached the backend. Stop and model controls should be treated as
 shared operational controls.
 
+The devices also share one hot conversation slot in the active text engine.
+Two devices using different conversations do not create two copies of the
+model: when the queued second conversation starts, it replaces the first hot
+K/V or prompt-cache state. Returning to the first conversation performs a cold
+checkpoint restore or prompt rebuild. Full-document extraction remains cached,
+so a cold switch does not normally rerun OCR. See
+[CONVERSATION_CONTEXT.md](CONVERSATION_CONTEXT.md) for the backend matrix and
+eviction policy.
+
 ## Selecting different models from different devices
 
 There is one global active-model selection. Two devices cannot independently

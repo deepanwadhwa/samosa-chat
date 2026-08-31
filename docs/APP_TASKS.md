@@ -98,31 +98,31 @@ are unaffected (serve code compiled but idle in oracle mode); guardrails
 hold in a 15-minute serve soak driven by scripted requests (zero swap,
 writes < 100 MB/h, thermal ≤ moderate at the 2T default).
 
-### A0.2 Conversation slots on the session machinery  ~2 days
+### A0.2 Resident conversation state on the session machinery  ~2 days
 
-**Status (2026-07-14): partially implemented.** `conversation_id` uses sealed,
-atomic `QWSESS01` snapshots, and two real HTTP turns verified exact restore
-without history re-prefill. The four-slot in-RAM LRU, pressure eviction, write
-batching, and four-conversation soak are still open; the current developer
-preview restores the snapshot from disk on every later turn.
+**Status (2026-08-31): implemented with a one-hot policy.** Native Qwen keeps
+the current conversation's transcript and K/V state resident after atomically
+writing its sealed `QWSESS01` checkpoint. A matching next turn continues from
+memory; a conversation switch restores the durable checkpoint. The engine
+evicts on switch, stateless work, compaction, settings changes, shutdown, a
+five-minute idle timeout, or low available memory, and reports the capacity,
+hot tokens, policy, hits, restores, and evictions in `/healthz`.
 
-Per-conversation state without re-prefill: keep N in-RAM conversation slots
-(N=4 default; each ≈ KV bytes of its context + 63 MB state). API:
-`conversation_id` on the completions call; slot hit → continue exactly
-(the byte-identical continuation property is already proven); slot miss →
-restore from the conversation's `QWSESS01` snapshot on disk; snapshot
-written on turn end (atomic tmp+fsync+rename, batched — write-hygiene
-guardrail applies).
+The earlier N=4 proposal was deliberately replaced by one hot conversation per
+active engine. Four simultaneous large K/V allocations are the wrong default
+for a fanless MacBook Air; durability on disk makes one slot sufficient without
+losing conversations. Maple now follows the same one-hot principle with native
+MLX K/V state. Bonsai and Ornith use one llama.cpp slot plus an exact stable
+prompt prefix and `cache_prompt` for cache reuse. See
+[CONVERSATION_CONTEXT.md](CONVERSATION_CONTEXT.md).
 
-Eviction: LRU over slots; RAM budget for slots is explicit and reported in
-`/healthz`; the engine's memory-pressure reflex must also drop cold slots
-(WARN) before the OS swaps.
-
-**Acceptance:** turn 2 of a resumed conversation starts decoding in < 2 s
-(no prompt re-prefill — measure TTFT); slot eviction + snapshot restore
-produces byte-identical continuations (extend the T4.4 A/B/C test across
-the HTTP path); 4 interleaved conversations soak 15 minutes within RAM
-budget and zero swap.
+The remaining optimization debt is Qwen checkpoint write amplification: a
+successful turn still writes one complete synchronous snapshot. Incremental or
+asynchronous checkpointing is open, subject to preserving atomic recovery and
+the prior-good snapshot on failure. Real-model TTFT, eviction/restore, long
+interleaving, thermal, swap, and write-rate soaks remain release measurements;
+synthetic tests cover K/V growth layout, ownership, eviction, health telemetry,
+and cross-backend document-prefix behavior.
 
 ### A0.3 `samosa app` launcher  ~0.5 day
 

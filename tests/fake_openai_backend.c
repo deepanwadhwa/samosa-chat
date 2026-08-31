@@ -573,6 +573,34 @@ static int handler(SamosaHttpServer *server, int fd,
                 "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "stable prefix initial probe") &&
+        !strstr(request->body, "stable prefix followup probe")) {
+        const char *reply = strstr(request->body, "LATE_FILE_SENTINEL") &&
+                            strstr(request->body, "\"cache_prompt\":true") &&
+                            !strstr(request->body, "\"pinned_context\"")
+            ? "stable prefix initial ok" : "stable prefix initial missing";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "stable prefix followup probe")) {
+        const char *evidence = strstr(request->body, "LATE_FILE_SENTINEL");
+        const char *prior = strstr(request->body, "stable prefix initial ok");
+        const char *reply = evidence && prior && evidence < prior &&
+                            !strstr(evidence + 1, "LATE_FILE_SENTINEL") &&
+                            strstr(request->body, "\"cache_prompt\":true") &&
+                            !strstr(request->body, "\"pinned_context\"")
+            ? "stable prefix followup ok" : "stable prefix followup missing";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment text probe")) {
         /* Phase 1 deep-file regression: the decisive fact is deliberately
            beyond both the old native-summary and opening-excerpt budgets. */
@@ -590,7 +618,8 @@ static int handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment text followup probe")) {
-        const char *reply = strstr(request->body, "LATE_FILE_SENTINEL") &&
+        const char *reply = !strstr(request->body, "LATE_FILE_SENTINEL") &&
+                            !strstr(request->body, "\"pinned_context\"") &&
                             strstr(request->body, "Attached document context already loaded")
             ? "saw the bound text document" : "missing bound text document";
         char body[512];
