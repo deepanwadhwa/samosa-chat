@@ -27,7 +27,7 @@ class Element {
     this.className = ""; this.hidden = false; this.disabled = false;
     this.textContent = ""; this.style = {}; this.attrs = {}; this.dataset = {};
     this.scrollHeight = 0; this.scrollTop = 0; this.clientHeight = 0;
-    this.onclick = null; this.isConnected = true;
+    this.onclick = null; this.isConnected = true; this.currentTime = 0; this.paused = true;
   }
   appendChild(c) { this.children.push(c); c.parent = this; return c; }
   append(...k) { k.forEach(x => this.appendChild(x)); }
@@ -44,6 +44,12 @@ class Element {
   setAttribute(n, v) { this.attrs[n] = String(v); }
   removeAttribute(n) { delete this.attrs[n]; }
   getAttribute(n) { return this.attrs[n] ?? null; }
+  get classList() { return { toggle: (name, active) => {
+    const classes = new Set(this.className.split(/\s+/).filter(Boolean));
+    if (active) classes.add(name); else classes.delete(name);
+    this.className = [...classes].join(" ");
+  } }; }
+  addEventListener() {}
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   querySelectorAll(sel) {
     const byClass = sel.startsWith(".");
@@ -86,11 +92,60 @@ function load() {
     return { renderMessages, appendMessageNode, welcomeHTML, escapeHTML,
              generationStatusHTML, renderAssistantResponse,
              parseMolmoGrounding, renderMolmoGrounding,
+             parseMolmoTracking, renderMolmoTracking,
              get renderLimit() { return renderLimit; },
              set renderLimit(v) { renderLimit = v; },
              RENDER_WINDOW };
   })()`);
   return { fns, els };
+}
+
+// --- File decisions remain readable, safe, and distinct from filenames ----
+{
+  const source = extract("      function renderFileActivity(row, msg)", "      function updateAssistantNode(msg)");
+  const render = eval(`(() => {${source}; return renderFileActivity;})()`);
+  const row = new Element(), box = new Element(); box.className = "file-activity"; row.appendChild(box);
+  const activity = { filename: '<img src=x onerror=alert(1)>' + "long-name".repeat(60) + ".pdf",
+    message: "Reading PDF pages 1–9 to find the first chapter…", progress: 0, indeterminate: true };
+  render(row, { streaming: true, content: "", fileActivity: activity });
+  assert.equal(box.querySelector(".file-activity-label").textContent, activity.message);
+  assert.equal(box.querySelector(".file-activity-source").textContent, activity.filename);
+  assert.equal(box.querySelectorAll("img").length, 0, "source labels must remain text, not markup");
+  assert.equal(box.querySelector("span").style.width, "100%", "unknown duration must remain visible");
+  assert.equal(box.getAttribute("aria-live"), "polite");
+  activity.message = "Read PDF pages 1–9. Checking whether they answer your question…";
+  render(row, { streaming: true, content: "", fileActivity: activity });
+  assert.equal(box.querySelector(".file-activity-label").textContent, activity.message);
+  render(row, { streaming: true, content: "The first chapter", fileActivity: activity });
+  assert.equal(box.hidden, true, "live file status must clear when the answer begins");
+}
+
+// --- Molmo video tracks become a synchronized overlay, not visible XML ----
+{
+  const { fns } = load();
+  const tracking = fns.parseMolmoTracking(
+    '<tracks coords="0.0 1 730 615;0.5 1 720 600;1.0 1 710 590">cat</tracks>');
+  assert.equal(tracking.points.length, 3, "each timestamped Molmo2 track point must be decoded");
+  assert.deepEqual(tracking.points.map(p => [p.time, p.objectId, p.x, p.y]), [
+    [0, "1", 73, 61.5], [0.5, "1", 72, 60], [1, "1", 71, 59]
+  ]);
+  assert.equal(tracking.cleanText, "", "tracking coordinate markup must not leak into prose");
+  const assistant = { id: "tracked-a", role: "assistant", content: "" };
+  globalThis.activeChat = () => ({ messages: [
+    { id: "tracked-u", role: "user", content: "track my cat", attachments: [
+      { id: "b".repeat(64), kind: "video", name: "cat.mov", bytes: 1024 }
+    ] },
+    assistant
+  ] });
+  const trackedNode = new Element("div");
+  assert.equal(fns.renderMolmoTracking(trackedNode, assistant, tracking), true,
+    "a valid video track must render as an annotated video");
+  assert.equal(trackedNode.querySelectorAll(".molmo-tracking-marker").length, 1,
+    "one stable object id must reuse one synchronized marker across timestamps");
+  assert.match(trackedNode.querySelector("figcaption").textContent, /3 sampled times · up to 2 FPS/,
+    "the UI must disclose sparse local sampling rather than imply original-frame tracking");
+  assert.ok(app.includes("video.requestVideoFrameCallback") && app.includes("right.x - left.x"),
+    "playback must update and interpolate the marker between adjacent sampled predictions");
 }
 
 // --- Molmo image grounding remains structured instead of visible XML ------
@@ -164,8 +219,8 @@ function timeRender(fns, els, messages) {
   fns.renderAssistantResponse(visionResponse, { streaming: true, content: "", fileActivity: {
     message: "Using Molmo2 4B vision model to process this image; Maple remains selected…"
   }});
-  assert.match(visionResponse.innerHTML, /Using Molmo2 4B vision model to process this image/,
-    "a visual handoff must replace the opaque waiting label with its live stage");
+  assert.equal(visionResponse.innerHTML, "",
+    "file activity already has a live panel and must not be duplicated below it");
   const originalStatus = response.querySelector(".generation-status");
   fns.renderAssistantResponse(response, { streaming: true, content: "", reasoning: "A later SSE update" });
   assert.equal(response.querySelector(".generation-status"), originalStatus,
@@ -181,6 +236,25 @@ function timeRender(fns, els, messages) {
     "the rejected text-shimmer implementation must remain removed");
   assert.match(app, /@keyframes work-tile-a/,
     "the active-work mark should rearrange its tiles instead of animating text");
+
+  const fastAnswer = new Element("div");
+  fns.renderAssistantResponse(fastAnswer, {
+    streaming: false, content: "Fast OCR answer", canDeepen: true,
+    detailPrompt: "What does this say?",
+    detailAttachments: [{ id: "a".repeat(64), kind: "image", name: "note.png" }]
+  });
+  assert.equal(fastAnswer.querySelector(".detail-check")?.textContent, "Check in more detail",
+    "a completed fast file answer must offer an explicit deeper visual pass");
+  const detailedAnswer = new Element("div");
+  fns.renderAssistantResponse(detailedAnswer, {
+    streaming: false, content: "Detailed visual answer", analysisDepth: "detailed"
+  });
+  assert.equal(detailedAnswer.querySelector(".detail-check"), null,
+    "a detailed answer must not offer an endless chain of deeper passes");
+  assert.doesNotMatch(app, /@keyframes\s+file-progress-slide/,
+    "file progress must not use the moving orange sweep");
+  assert.doesNotMatch(app, /is answering from the local .* analysis/,
+    "the removed model-answering status sentence must not return");
 }
 
 // --- 1. A 1,000-message conversation renders a bounded number of nodes ----

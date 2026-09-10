@@ -50,6 +50,10 @@ SOURCE_FILES = [
     "samosa_http.h",
     "samosa_kokoro.h",
     "samosa_extract.c",
+    "samosa_html.c",
+    "samosa_html.h",
+    "samosa_docx.c",
+    "samosa_docx.h",
     "samosa_ocr.c",
     "visionpsy/samosa_visionpsy.cpp",
     "visionpsy/visionpsy_model.cpp",
@@ -59,12 +63,28 @@ SOURCE_FILES = [
     # them unconditionally, not as an opt-in capability with a raw-Qwen
     # HTTP-serve fallback.
     "samosa_gateway.c",
+    "samosa_audio_decode.mm",
     "samosa_multimodal.c",
     "samosa_multimodal.h",
+    "samosa_evidence.c",
+    "samosa_evidence.h",
     "samosa_summarizer.cpp",
     "samosa_fs.c",
     "read_cache.h",
     "durable_job.h",
+]
+
+MINIZ_SOURCE_FILES = [
+    "LICENSE",
+    "miniz.c",
+    "miniz.h",
+    "miniz_common.h",
+    "miniz_export.h",
+    "miniz_tdef.h",
+    "miniz_tinfl.c",
+    "miniz_tinfl.h",
+    "miniz_zip.c",
+    "miniz_zip.h",
 ]
 
 CHUTNI_SOURCE_FILES = [
@@ -191,6 +211,10 @@ def main() -> int:
         default=ROOT / "build" / "molmo2-pack",
         help="native pinned Molmo2 Q4 package builder")
     ap.add_argument(
+        "--audio-decode-runtime", type=pathlib.Path,
+        default=ROOT / "build" / "samosa-audio-decode",
+        help="reviewed macOS compressed-audio probe/decoder")
+    ap.add_argument(
         "--summarizer-model", type=pathlib.Path,
         default=ROOT / "build" / "samosa-text-summarization-Q8_0.gguf",
         help="verified Falconsai/text_summarization Q8_0 GGUF")
@@ -224,11 +248,12 @@ def main() -> int:
                           (args.visionpsy_runtime, "samosa-visionpsy"),
                           (args.molmo2_runtime, "samosa-molmo2"),
                           (args.molmo2_pack, "molmo2-pack"),
+                          (args.audio_decode_runtime, "samosa-audio-decode"),
                           (args.maple_metallib, "mlx.metallib")):
             if not src.is_file():
-                print(f"missing Apple-Silicon Maple runtime: {src}", file=sys.stderr)
+                print(f"missing Apple-Silicon native runtime: {src}", file=sys.stderr)
                 return 1
-            if name in {"samosa-maple", "samosa-visionpsy", "samosa-molmo2", "molmo2-pack"} and not os.access(src, os.X_OK):
+            if name in {"samosa-maple", "samosa-visionpsy", "samosa-molmo2", "molmo2-pack", "samosa-audio-decode"} and not os.access(src, os.X_OK):
                 print(f"Apple-Silicon native runtime is not executable: {src}",
                       file=sys.stderr)
                 return 1
@@ -267,6 +292,15 @@ def main() -> int:
             return 1
         place(src, out / "engine" / name, link=False)
         staged.append(out / "engine" / name)
+
+    miniz_root = ROOT / "vendor" / "miniz"
+    for name in MINIZ_SOURCE_FILES:
+        src = miniz_root / name
+        if not src.exists():
+            print(f"missing miniz source: {src}", file=sys.stderr)
+            return 1
+        place(src, out / "engine" / "miniz" / name, link=False)
+        staged.append(out / "engine" / "miniz" / name)
 
     chutni_root = ROOT / "vendor" / "chutni"
     for name in CHUTNI_SOURCE_FILES:

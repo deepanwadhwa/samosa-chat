@@ -1,4 +1,5 @@
 #include "molmo2/molmo2_processor.h"
+#include "molmo2/molmo2_model.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -24,6 +25,15 @@ static RgbImage image(int width, int height) {
 }
 
 int main() {
+    check(bounded_generation_tokens(1439, 640) == 609,
+          "video generation clamps to remaining sequence capacity");
+    check(bounded_generation_tokens(1439, 512) == 512,
+          "safe video generation request remains unchanged");
+    check(bounded_generation_tokens(2047, 512) == 1,
+          "one remaining sequence token stays usable");
+    check(bounded_generation_tokens(2048, 512) == 0,
+          "full prompt leaves no unsafe generation capacity");
+
     std::string error;
     VisualInput square;
     check(preprocess_image(image(640, 640), &square, &error), error.c_str());

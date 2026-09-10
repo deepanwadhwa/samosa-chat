@@ -102,6 +102,11 @@ int main(void) {
         }
         int image = strstr(message, "\"media_kind\":\"image\"") != NULL;
         int images = strstr(message, "\"media_kind\":\"images\"") != NULL;
+        int video = strstr(message, "\"media_kind\":\"video\"") != NULL;
+        int tracking = video && strstr(message, "Track the cat") != NULL;
+        int invalid_tracking = video && strstr(message, "Track the invalid-target") != NULL;
+        int unsafe_video_budget = video &&
+            strstr(message, "\"max_tokens\":640") != NULL;
         int poisoned_vague_prompt = image && strstr(message, "what is this?") &&
             (strstr(message, "For charts") ||
              strstr(message, "Transcribe every visible title"));
@@ -118,7 +123,16 @@ int main(void) {
                 while (nanosleep(&pause, &pause) && errno == EINTR) {}
             }
         }
-        const char *response = poisoned_vague_prompt
+        const char *response = unsafe_video_budget
+            ? "{\"status\":\"error\",\"id\":\"gateway\",\"code\":\"molmo2_inference_failed\","
+              "\"message\":\"fixture video sequence envelope overflow\"}"
+            : invalid_tracking
+            ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"Yes, I tracked it throughout the video.\","
+              "\"prompt_tokens\":3,\"generated_tokens\":9,\"images\":0,\"frames\":8,\"duration_seconds\":3}"
+            : tracking
+            ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"Here is the cat. <tracks coords=\\\"0.0 1 700 600;0.5 1 710 590;1.0 1 720 580\\\">cat</tracks> It runs away.\","
+              "\"prompt_tokens\":3,\"generated_tokens\":24,\"images\":0,\"frames\":8,\"duration_seconds\":3}"
+            : poisoned_vague_prompt
             ? "{\"status\":\"ok\",\"id\":\"gateway\",\"observation\":\"POISONED_VAGUE_IMAGE_PROMPT\","
               "\"prompt_tokens\":3,\"generated_tokens\":4,\"images\":1,\"frames\":0,\"duration_seconds\":0}"
             : images

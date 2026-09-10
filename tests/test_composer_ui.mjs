@@ -122,24 +122,29 @@ function loadComposer({ authFetch, storage = new Map() } = {}) {
     attachBtn: new Element("button"),
     attachChips: new Element("div"),
     attachError: new Element("div"),
-    attachImage: attachItem(), attachDocument: attachItem(),
+    attachImage: attachItem(), attachVideo: attachItem(), attachAudio: attachItem(), attachDocument: attachItem(),
     attachWeb: attachItem(), attachWebSearch: attachItem(), attachDirectory: attachItem(),
-    attachImageReason: new Element("span"), attachDocumentReason: new Element("span"),
+    attachImageReason: new Element("span"), attachVideoReason: new Element("span"),
+    attachAudioReason: new Element("span"), attachDocumentReason: new Element("span"),
     attachWebReason: new Element("span"), attachWebSearchReason: new Element("span"),
     attachDirectoryReason: new Element("span"),
-    imageInput: new Element("input"), documentInput: new Element("input"),
+    imageInput: new Element("input"), videoInput: new Element("input"),
+    audioInput: new Element("input"), documentInput: new Element("input"),
   };
   els.attachImage.querySelector(".attach-item-label").textContent = "Image";
+  els.attachVideo.querySelector(".attach-item-label").textContent = "Video";
+  els.attachAudio.querySelector(".attach-item-label").textContent = "Audio";
   els.attachDocument.querySelector(".attach-item-label").textContent = "Document";
   els.attachWeb.querySelector(".attach-item-label").textContent = "Web page";
   els.attachWebSearch.querySelector(".attach-item-label").textContent = "Web search";
   els.attachDirectory.querySelector(".attach-item-label").textContent = "Directory";
-  els.attachMenu.append(els.attachImage, els.attachDocument, els.attachWeb,
+  els.attachMenu.append(els.attachImage, els.attachVideo, els.attachAudio, els.attachDocument, els.attachWeb,
                         els.attachWebSearch, els.attachDirectory);
   els.attachMenu.hidden = true;
 
   globalThis.els = els;
   globalThis.backend = { ready: true, supports_images: true, supports_image_attachments: true, supports_documents: true };
+  globalThis.voiceStatus = { stt_ready: true };
   // Phase W (docs/TASKS_WEB_SEARCH.md W6): what GET /v1/web/config reported.
   // Defaults to fully closed, matching the app's own initial value.
   globalThis.web = { offline: false, fetch_available: false, search_configured: false,
@@ -156,7 +161,8 @@ function loadComposer({ authFetch, storage = new Map() } = {}) {
   const fns = eval(`(() => {${app.slice(begin, end)}
     return { applyCapabilities, setAttachItem, openAttachMenu, closeAttachMenu,
              attachMenuKeydown, setAttachError, removeAttachment, renderAttachments,
-             uploadAttachment, pickAttachment, clearAttachments,
+             uploadAttachment, pickAttachment, attachmentKindForFile, clearAttachments,
+             refreshSourceCapabilities, syncAttachmentInputCapabilities,
              addWebPage, addWebSearch, applyPendingWebContext, applyAutomaticWebContext,
              shouldContinueWebResearch, setWebSearchEnabled, toggleWebSearch,
              get webSearchEnabled() { return webSearchEnabled; },
@@ -165,6 +171,8 @@ function loadComposer({ authFetch, storage = new Map() } = {}) {
              set pending(v) { pendingAttachments = v; },
              get pendingWebContext() { return pendingWeb; },
              set pendingWebContext(v) { pendingWeb = v; },
+             get sourceCapabilities() { return sourceCapabilities; },
+             set sourceCapabilities(v) { sourceCapabilities = v; },
              set readyMemoryCount(v) { readyChutniMemoryCount = v; } };
   })()`);
   return { fns, els };
@@ -229,6 +237,7 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   const { fns, els } = loadComposer();
   fns.applyCapabilities();
   assert.equal(els.attachImage.disabled, false, "an image-capable ready model must enable Image");
+  assert.equal(els.attachAudio.disabled, false, "a ready local STT model must enable Audio");
   assert.equal(els.attachDocument.disabled, false, "a reported document reader must enable Document");
   assert.equal(els.attachWeb.disabled, true, "Web page must stay disabled until the server reports a web reader");
   assert.equal(els.attachWebSearch.disabled, true, "Web search must stay disabled until a provider is configured");
@@ -242,6 +251,63 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   fns.applyCapabilities();
   assert.equal(els.attachDirectory.disabled, false, "a ready Chutni memory must make Directory available from Chat");
   assert.match(els.attachDirectoryReason.textContent, /folder memory/i);
+}
+{
+  const { fns, els } = loadComposer();
+  globalThis.voiceStatus = { stt_ready: false };
+  fns.applyCapabilities();
+  assert.equal(els.attachAudio.disabled, true, "Audio must wait for an installed local STT provider");
+  assert.match(els.attachAudioReason.textContent, /speech-to-text model/i);
+  assert.equal(fns.attachmentKindForFile(fakeFile("episode.wav", "")), "audio");
+  assert.equal(fns.attachmentKindForFile(fakeFile("episode.mp3", "")), "audio");
+  assert.equal(fns.attachmentKindForFile(fakeFile("episode.m4a", "")), "audio");
+  assert.equal(fns.attachmentKindForFile(fakeFile("recording", "audio/mp4")), "audio");
+  assert.equal(fns.attachmentKindForFile(fakeFile("clip.mov", "")), "video");
+  assert.equal(fns.attachmentKindForFile(fakeFile("notes.md", "")), "document");
+  assert.equal(fns.attachmentKindForFile(fakeFile("report.html", "")), "document");
+  assert.match(app, /id="documentInput"[^>]+\.html/,
+    "the document picker advertises attached HTML files");
+}
+{
+  const { fns, els } = loadComposer();
+  fns.sourceCapabilities = {
+    sources: [
+      { kind: "image", media_types: ["image/png"] },
+      { kind: "video", media_types: ["video/mp4"], available_operations: ["analyze_video"] },
+      { kind: "audio", media_types: ["audio/wav"] },
+      { kind: "document", media_types: ["application/pdf"] },
+    ],
+  };
+  fns.applyCapabilities();
+  assert.equal(els.audioInput.accept, "audio/wav,.wav",
+    "a WAV-only gateway must not offer compressed formats in the picker");
+  assert.match(els.attachAudioReason.textContent, /PCM WAV/i);
+  fns.sourceCapabilities.sources[2].media_types = ["audio/wav", "audio/mpeg", "audio/mp4"];
+  fns.applyCapabilities();
+  assert.equal(els.audioInput.accept,
+    "audio/wav,.wav,audio/mpeg,.mp3,audio/mp4,.m4a");
+  assert.match(els.attachAudioReason.textContent, /MP3.*M4A/i);
+
+  // A dialogue-only video does not require Molmo. When the live source
+  // contract exposes conditional video transcription and STT is ready, the
+  // picker remains usable even if this answering backend has no visual route.
+  globalThis.backend.supports_video_attachments = false;
+  fns.sourceCapabilities.sources[1].available_operations.push("transcribe_audio");
+  fns.applyCapabilities();
+  assert.equal(els.attachVideo.disabled, false);
+  assert.match(els.attachVideoReason.textContent, /qualified AAC speech/i);
+}
+{
+  const requested = [];
+  const { fns, els } = loadComposer({ authFetch: async path => {
+    requested.push(path);
+    return { ok: true, json: async () => ({
+      sources: [{ kind: "audio", media_types: ["audio/wav", "audio/mp4"] }],
+    }) };
+  } });
+  await fns.refreshSourceCapabilities();
+  assert.deepEqual(requested, ["/v1/capabilities/sources"]);
+  assert.equal(els.audioInput.accept, "audio/wav,.wav,audio/mp4,.m4a");
 }
 
 // --- Phase W: web items follow GET /v1/web/config, never optimism ---------
@@ -377,6 +443,17 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
     "btoa() cannot take raw UTF-8 -- the name must be encoded before it is base64'd");
 }
 
+// --- Server byte-sniffing may correct a dropped file's provisional kind ---
+{
+  const { fns } = loadComposer({
+    authFetch: async () => ({ ok: true, json: async () => ({
+      id: "9".repeat(64), filename: "episode.wav", capabilities: { audio: true }
+    }) }),
+  });
+  await fns.uploadAttachment(fakeFile("episode.data", "application/octet-stream"), "document");
+  assert.equal(fns.pending[0].kind, "audio", "the gateway's sniffed source kind must win");
+}
+
 // --- A failed upload is visible as a failed chip, never silently dropped --
 {
   const { fns, els } = loadComposer({
@@ -446,7 +523,8 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
 {
   const { fns, els } = loadComposer();
   fns.openAttachMenu();
-  // Only Image and Document are enabled, so focus must cycle between them
+  // Image, Audio, and Document are enabled, so focus must cycle across that
+  // bounded set and never land on the disabled Web page / Directory entries.
   // and never land on the disabled Web page / Directory entries.
   document.activeElement = els.attachDocument;
   let prevented = false;
@@ -479,5 +557,13 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   assert.equal(els.attachError.textContent, "");
   assert.equal(els.imageInput.value, "", "the file input is reset so the same file can be picked again");
 }
+
+// File processing status is live-only and cannot become reply chrome.
+assert.match(app, /if \(delta\.content\) \{[\s\S]*?assistant\.fileActivity = null;/,
+  "the first answer token must remove file activity immediately");
+assert.match(app, /const activity = msg\.streaming && !String\(msg\.content \|\| ""\)\.trim\(\) && !msg\.error/,
+  "saved or completed replies must never render a stale filename/progress strip");
+assert.match(app, /payload\.analysis_depth = analysisDepth/,
+  "static file turns must tell the gateway to use the fast or detailed level");
 
 console.log("test_composer_ui.mjs: PASS");

@@ -57,6 +57,13 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Test automatic file routing
+        run: |
+          make test-document-harness test-audio-attachments test-molmo2-gateway test-molmo2-processor
+          node tests/test_composer_ui.mjs
+          node tests/test_composer_perf.mjs
+          node tests/test_session_token_ui.mjs
+
       - name: Test inside Debian bookworm container
         if: matrix.os == 'ubuntu-latest'
         run: |

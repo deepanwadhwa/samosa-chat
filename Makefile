@@ -40,33 +40,40 @@ CHUTNI_DIR ?= vendor/chutni
 CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
 CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
 MULTIMODAL_SRCS := src/samosa_multimodal.c
+EVIDENCE_SRCS := src/samosa_evidence.c
+HTML_SRCS := src/samosa_html.c
+MINIZ_READ_SRCS := vendor/miniz/miniz.c vendor/miniz/miniz_tinfl.c vendor/miniz/miniz_zip.c
+MINIZ_READ_HEADERS := vendor/miniz/miniz.h vendor/miniz/miniz_common.h vendor/miniz/miniz_export.h vendor/miniz/miniz_tdef.h vendor/miniz/miniz_tinfl.h vendor/miniz/miniz_zip.h
+DOCX_SRCS := src/samosa_docx.c $(MINIZ_READ_SRCS)
+GATEWAY_SUPPORT_SRCS := $(MULTIMODAL_SRCS) $(EVIDENCE_SRCS) $(HTML_SRCS)
 
 # PDFium is deliberately optional: the engine's normal build remains
-# dependency-free.  The installer supplies a SHA-pinned platform artifact and
-# invokes this target with PDFIUM_DIR set to its unpacked root.
+# dependency-free. The portable sidecar still handles text, HTML, and DOCX;
+# the installer supplies a SHA-pinned platform artifact to add PDF support.
 ifeq ($(strip $(PDFIUM_DIR)),)
 PDFIUM_READY :=
+PDFIUM_EXTRACT_CFLAGS := -DSAMOSA_EXTRACT_NO_PDFIUM
+PDFIUM_EXTRACT_LIBS :=
 else
 PDFIUM_READY := $(PDFIUM_DIR)/include/fpdfview.h $(PDFIUM_LIBRARY)
+PDFIUM_EXTRACT_CFLAGS := -I$(PDFIUM_DIR)/include
+PDFIUM_EXTRACT_LIBS := $(PDFIUM_LIBRARY) -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(PDFIUM_DIR)/lib
 endif
 
 samosa-engine: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O3 -Wno-unused-function -pthread src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm
 
-samosa-extract: src/samosa_extract.c src/tok.h src/tok_unicode.h src/json.h $(PDFIUM_READY)
+samosa-extract: src/samosa_extract.c src/samosa_html.c src/samosa_html.h src/samosa_docx.c src/samosa_docx.h $(MINIZ_READ_HEADERS) src/tok.h src/tok_unicode.h src/json.h $(PDFIUM_READY)
 	@mkdir -p $(BUILD_DIR)
-	@if [ -z "$(PDFIUM_DIR)" ]; then \
-	  echo "PDFium support unavailable: set PDFIUM_DIR to an unpacked PDFium artifact" >&2; exit 2; \
-	fi
-	@if [ -z "$(PDFIUM_LIBRARY)" ]; then \
+	@if [ -n "$(PDFIUM_DIR)" ] && [ -z "$(PDFIUM_LIBRARY)" ]; then \
 	  echo "PDFium support unavailable: no libpdfium shared library under $(PDFIUM_DIR)/lib" >&2; exit 2; \
 	fi
-	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -I$(PDFIUM_DIR)/include \
-	  src/samosa_extract.c $(PDFIUM_LIBRARY) \
-	  -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(PDFIUM_DIR)/lib \
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 $(PDFIUM_EXTRACT_CFLAGS) -Ivendor/miniz \
+	  src/samosa_extract.c src/samosa_html.c $(DOCX_SRCS) \
+	  $(PDFIUM_EXTRACT_LIBS) \
 	  -o $(BUILD_DIR)/samosa-extract
-	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+	@if [ "$(UNAME_S)" = "Darwin" ] && [ -n "$(PDFIUM_LIBRARY)" ]; then \
 	  install_name_tool -change ./libpdfium.dylib @rpath/libpdfium.dylib $(BUILD_DIR)/samosa-extract; \
 	fi
 
@@ -161,7 +168,10 @@ test-kokoro-native: samosa-gateway tests/test_kokoro_native_gateway.sh tests/fak
 
 # Local hands-free voice: actual token-gated WAV validation and Whisper CLI
 # invocation through the compiled gateway, plus the browser UI fixture.
-test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-wake-word-ui test-kokoro-native
+test-audio-attachments: samosa-gateway test_fake_openai_backend tests/test_audio_attachments.sh
+	sh tests/test_audio_attachments.sh
+
+test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-wake-word-ui test-kokoro-native test-audio-attachments
 	sh tests/test_voice_gateway.sh
 
 # samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
@@ -214,10 +224,23 @@ tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_
 r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
 	sh tests/test_r7_r6_handwriting.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_http.h src/json.h chutni-service
+samosa-gateway: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  src/samosa_gateway.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
+	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
+
+ifeq ($(UNAME_S),Darwin)
+samosa-audio-decode: src/samosa_audio_decode.mm
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) -O2 -Wall -Wextra -Werror -Wno-deprecated-declarations \
+	  -fobjc-arc -std=c++17 $< -o $(BUILD_DIR)/samosa-audio-decode \
+	  -framework Foundation -framework AVFoundation -framework AudioToolbox \
+	  -framework CoreMedia
+else
+samosa-audio-decode:
+	@echo "samosa-audio-decode is available only on macOS" >&2
+	@exit 2
+endif
 
 # Falconsai/text_summarization is T5 (encoder-decoder), so it needs the
 # dedicated llama_encode/llama_decode helper rather than llama-server's
@@ -262,10 +285,10 @@ test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.s
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
-samosa-jobsd: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_http.h src/json.h
+samosa-jobsd: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  src/samosa_gateway.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
+	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
 
 test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	@mkdir -p $(BUILD_DIR)
@@ -277,16 +300,16 @@ test_fake_native_summarizer: tests/fake_native_summarizer.c
 	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
 	  -o $(BUILD_DIR)/test_fake_native_summarizer
 
-test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_multimodal.c
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  tests/test_native_summarizer_supervisor.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
+	  tests/test_native_summarizer_supervisor.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_native_summarizer_supervisor \
 	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
-test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_multimodal.c
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
-	  tests/test_runtime_settings.c $(MULTIMODAL_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
+	  tests/test_runtime_settings.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_runtime_settings
 
 # fake_model_download_server: deterministic stand-in for the trusted model
@@ -310,7 +333,7 @@ test-fake-download-server: fake_model_download_server tests/test_fake_model_down
 # and the fail-closed-by-default /v1/ dispatcher gate (any new v1 route not
 # on the closed legacy-exemption list requires a valid session token before
 # route matching, so it can't ship unauthenticated by omission).
-test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs tests/test_web_activity_ui.mjs tests/test_developer_mode_ui.mjs
+test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway tests/test_chutni_folder_fixture.sh tests/test_ui_chutni_contracts.py tests/test_zero_model_startup.sh tests/test_profile_setup.sh tests/test_fs_chooser.sh tests/test_chooser_ui.mjs tests/test_conversation_binding.sh tests/test_conversation_migration_ui.mjs tests/test_v1_fail_closed_default.sh tests/test_composer_ui.mjs tests/test_composer_perf.mjs tests/test_session_token_ui.mjs tests/test_web_activity_ui.mjs tests/test_developer_mode_ui.mjs
 	sh tests/test_chutni_folder_fixture.sh
 	python3 tests/test_ui_chutni_contracts.py
 	sh tests/test_zero_model_startup.sh
@@ -322,10 +345,11 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	sh tests/test_v1_fail_closed_default.sh
 	node tests/test_composer_ui.mjs
 	node tests/test_composer_perf.mjs
+	node tests/test_session_token_ui.mjs
 	node tests/test_web_activity_ui.mjs
 	node tests/test_developer_mode_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
+compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
 	BUILD_DIR="$(BUILD_DIR)" \
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
@@ -348,9 +372,34 @@ compiled-gateway-test: samosa-gateway samosa-jobsd samosa-fs test_fake_openai_ba
 		sh tests/test_developer_trace.sh
 
 # doc-read-pdf-paging-test: T0.3 (docs/TASKS_UI_CHUTNI.md) real-extractor
-# regression for the PDF page-batch-cap fix. Skips gracefully (exit 0) if no
-# real samosa-extract is available -- it deliberately does NOT depend on the
-# samosa-extract Makefile target, which hard-fails without PDFIUM_DIR.
+# regression for the PDF page-batch-cap fix. The required routing gate below
+# must fail when PDFium is absent; it must never turn a portable build into a
+# false passing/skip result.
+test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_document_reader_contract.c $(GATEWAY_SUPPORT_SRCS) \
+	  -o $(BUILD_DIR)/test-document-reader-contract $(DL_LDFLAGS)
+	$(BUILD_DIR)/test-document-reader-contract
+
+test-document-harness: samosa-gateway test_fake_openai_backend test-document-reader-contract tests/test_document_harness.py tests/document_reader_spy.py
+	python3 tests/test_document_harness.py
+
+test-pdf-ocr-routing: tests/test_pdf_ocr_routing.py
+	@if [ -n "$${SAMOSA_EXTRACT:-}" ]; then \
+		extractor="$${SAMOSA_EXTRACT}"; \
+	else \
+		test -n "$(PDFIUM_DIR)" || { echo "test-pdf-ocr-routing requires PDFium; set PDFIUM_DIR or SAMOSA_EXTRACT" >&2; exit 2; }; \
+		$(MAKE) samosa-extract BUILD_DIR="$(BUILD_DIR)" PDFIUM_DIR="$(PDFIUM_DIR)" || exit 2; \
+		extractor="$$PWD/$(BUILD_DIR)/samosa-extract"; \
+	fi; \
+	version="$$("$$extractor" --version 2>/dev/null || true)"; \
+	case "$$version" in \
+		*";pdfium)") ;; \
+		*) echo "test-pdf-ocr-routing requires a PDFium-enabled extractor (got $$extractor)" >&2; exit 2 ;; \
+	esac; \
+	SAMOSA_EXTRACT="$$extractor" .venv/bin/python tests/test_pdf_ocr_routing.py
+
 doc-read-pdf-paging-test: samosa-gateway samosa-fs test_fake_openai_backend tests/test_doc_read_pdf_paging.sh
 	SAMOSA_EXTRACT="$${SAMOSA_EXTRACT:-$$PWD/$(BUILD_DIR)/samosa-extract}" \
 	SAMOSA_FS="$$PWD/$(BUILD_DIR)/samosa-fs" \
@@ -373,10 +422,10 @@ omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
 	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm $(OMP_LDFLAGS)
 
 ifeq ($(UNAME_S),Darwin)
-install: omp samosa-gateway samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service samosa-visionpsy samosa-molmo2 molmo2-pack
+install: omp samosa-gateway samosa-extract samosa-audio-decode samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service samosa-visionpsy samosa-molmo2 molmo2-pack
 	sh tools/install_local_dev.sh
 else
-install: omp samosa-gateway samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service
+install: omp samosa-gateway samosa-extract samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service
 	sh tools/install_local_dev.sh
 endif
 
@@ -419,7 +468,26 @@ pagecache-residency: tools/pagecache_residency.c
 pagecache-residency-test: pagecache-residency tests/test_pagecache_residency.sh
 	sh tests/test_pagecache_residency.sh ./$(BUILD_DIR)/pagecache-residency
 
-test: pagecache-residency-test tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
+test-evidence-contract: tests/test_samosa_evidence.c src/samosa_evidence.c src/samosa_evidence.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 $(CWARN) -std=c11 -Isrc tests/test_samosa_evidence.c \
+	  src/samosa_evidence.c -o $(BUILD_DIR)/test-samosa-evidence
+	$(BUILD_DIR)/test-samosa-evidence
+
+test-html-extractor: tests/test_samosa_html.c src/samosa_html.c src/samosa_html.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 $(CWARN) -std=c11 -Isrc tests/test_samosa_html.c \
+	  src/samosa_html.c -o $(BUILD_DIR)/test-samosa-html
+	$(BUILD_DIR)/test-samosa-html
+
+test-docx-extractor: tests/test_samosa_docx.c tests/test_samosa_docx.sh src/samosa_docx.c src/samosa_docx.h src/samosa_html.c src/samosa_html.h $(MINIZ_READ_HEADERS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -Isrc -Ivendor/miniz \
+	  tests/test_samosa_docx.c src/samosa_docx.c src/samosa_html.c \
+	  $(MINIZ_READ_SRCS) -o $(BUILD_DIR)/test-samosa-docx
+	SAMOSA_DOCX_TEST_RUNNER=./$(BUILD_DIR)/test-samosa-docx sh tests/test_samosa_docx.sh
+
+test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache

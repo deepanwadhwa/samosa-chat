@@ -66,10 +66,21 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runt
   --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
+grep -q 'engine/samosa_evidence.c' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the evidence contract source"
+grep -q 'engine/samosa_evidence.h' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the evidence contract header"
+grep -q 'engine/samosa_audio_decode.mm' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the compressed-audio decoder source"
+grep -q 'engine/samosa_docx.c' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the portable DOCX reader source"
+grep -q 'engine/miniz/miniz_zip.c' "$REMOTE/release-manifest.tsv" ||
+  fail "runtime-only manifest is missing the bounded ZIP reader source"
 grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the bundled Chutni service source"
 grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv" ||
@@ -102,6 +113,8 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     fail "Apple-Silicon release manifest is missing samosa-molmo2"
   grep -q 'runtime/macos-arm64/molmo2-pack$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing molmo2-pack"
+  grep -q 'runtime/macos-arm64/samosa-audio-decode$' "$REMOTE/release-manifest.tsv" ||
+    fail "Apple-Silicon release manifest is missing the compressed-audio decoder"
   grep -q 'runtime/common/molmo2-processor.json$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing the Molmo2 processor contract"
   grep -q 'runtime/macos-arm64/samosa-summarizer$' "$REMOTE/release-manifest.tsv" ||
@@ -146,6 +159,14 @@ SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ] || fail "gateway binary missing after install"
 [ -x "$HOME_DIR/current/bin/samosa-fs" ] || fail "filesystem sidecar missing after install"
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ] || fail "Chutni service missing after install"
+[ -x "$HOME_DIR/current/bin/samosa-extract" ] ||
+  fail "portable document extractor missing after runtime-only install"
+printf 'portable document probe\n' >"$TMP/document-probe.txt"
+"$HOME_DIR/current/bin/samosa-extract" --json "$TMP/document-probe.txt" |
+  grep -q 'portable document probe' ||
+  fail "runtime-only portable document extractor could not read UTF-8 text"
+"$HOME_DIR/current/bin/samosa-extract" --version | grep -q 'no-pdfium' ||
+  fail "runtime-only document extractor overstated PDF capability"
 [ ! -e "$HOME_DIR/current/.smoke-home" ] ||
   fail "installer published its isolated smoke home or a stale gateway PID"
 
@@ -200,6 +221,8 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     fail "Apple-Silicon install did not stage samosa-molmo2"
   [ -x "$HOME_DIR/current/bin/molmo2-pack" ] ||
     fail "Apple-Silicon install did not stage molmo2-pack"
+  [ -x "$HOME_DIR/current/bin/samosa-audio-decode" ] ||
+    fail "Apple-Silicon install did not stage the compressed-audio decoder"
   [ -f "$HOME_DIR/current/share/molmo2/processor.json" ] ||
     fail "Apple-Silicon install did not stage the Molmo2 processor contract"
 fi

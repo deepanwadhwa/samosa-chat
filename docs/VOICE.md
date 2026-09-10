@@ -38,6 +38,48 @@ browser/macOS speech; every card shows practical pros and cons before
 selection. Existing Kokoro installs remain usable as an explicit selection
 rather than an invisible fallback.
 
+## Audio file chat
+
+The same selected Whisper provider now participates in Chat's Auto file mode.
+Drop a mono 16 kHz PCM16 `.wav`, `.mp3`, or AAC `.m4a` file, or choose
+**Audio** from the `+` menu, and ask an ordinary question. The gateway verifies
+the media from its bytes and native container/codec probe, runs the selected
+local Whisper model, stores a private timestamped
+`samosa.evidence.v1` transcript beside the content-addressed attachment, and
+gives bounded transcript segments to the selected chat model. Follow-up
+questions and gateway restarts reuse that evidence without retranscribing.
+MP3 and M4A use a packaged macOS AVFoundation sidecar that decodes only the
+current bounded window to mono 16 kHz PCM16; installations without that
+reviewed sidecar advertise WAV only.
+Long transcripts use local task-ranked segment selection and retain timestamp
+ranges in the answering prompt. WAVs longer than ten minutes are transcribed
+as overlapping bounded windows. Each completed window is privately and
+atomically checkpointed; if a later Whisper process fails or the gateway is
+restarted, retry resumes at the first missing window and reconciles the overlap
+onto one absolute timestamp timeline. Streaming chat shows exact completed and
+total window counts in the normal file-progress panel. Pressing **Stop**
+terminates the active Whisper process, preserves completed windows, and lets a
+later retry continue from the first missing window.
+
+On macOS, Auto also inventories AAC speech tracks inside byte-sniffed MP4/MOV
+videos. A dialogue question uses Whisper without loading the visual specialist;
+an explicitly visual question uses the existing video path; a general video
+question requests both. Transcript capability is granted only when the native
+probe proves one decodable AAC track covering the full video timeline. Silent
+videos, partial audio tracks, unsupported codecs, malformed media, and
+installations without the decoder remain visual-only. The video transcript uses
+the same timestamped durable evidence, follow-up reuse, cancellation, and
+compaction rules as an attached podcast. A speech-only question on a video that
+does not qualify fails explicitly rather than being answered from frames.
+
+Unlike an ephemeral microphone utterance, an explicitly attached audio file
+is retained as conversation source data so it can support later questions.
+Removing an unsent attachment deletes its raw audio and derived transcript;
+sources already used by a message follow the same durable attachment rules as
+documents. This file-audio path is English-only, has no speaker diarization,
+does not extract subtitle tracks yet, and currently qualifies video speech only
+for full-span AAC tracks through the packaged macOS decoder.
+
 ## Runtime and model details
 
 Use [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for the first local

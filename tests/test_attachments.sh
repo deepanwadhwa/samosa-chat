@@ -18,6 +18,10 @@ GATEWAY="${SAMOSA_COMPILED_GATEWAY:-./$BUILD_DIR/samosa-gateway}"
 BACKEND="${SAMOSA_FAKE_BACKEND:-./$BUILD_DIR/test_fake_openai_backend}"
 EXTRACT="${SAMOSA_EXTRACT:-./$BUILD_DIR/samosa-extract}"
 OCR="${SAMOSA_OCR:-./$BUILD_DIR/samosa-ocr}"
+PDF_EXTRACT=0
+if [ -x "$EXTRACT" ] && "$EXTRACT" --version 2>/dev/null | grep -F ';pdfium)' >/dev/null; then
+  PDF_EXTRACT=1
+fi
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/attachments_test.XXXXXX")
 HOME_DIR="$TMP/home"
 # Distinct from every other tests/*.sh port (they cluster in 18642-18643,
@@ -76,6 +80,37 @@ field() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.st
 MODEL_ID=qwen
 MODEL_VERSION=qwen-model
 
+# The universal source contract is authenticated and reports only behavior
+# implemented by this build, including the durable PCM-WAV transcription path.
+STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+  "http://127.0.0.1:$PORT/v1/capabilities/sources")
+[ "$STATUS" = "401" ] || { echo "FAIL: source capabilities without token should be 401, got $STATUS"; exit 1; }
+SOURCE_CAPS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
+  "http://127.0.0.1:$PORT/v1/capabilities/sources")
+printf '%s' "$SOURCE_CAPS" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["schema"] == "samosa.source-capabilities.v1", d
+assert d["source_schema"] == "samosa.source.v1", d
+assert d["routing_policy"] == "auto", d
+by_kind = {item["kind"]: item for item in d["sources"]}
+assert set(by_kind) == {"image", "document", "text", "video", "audio"}, by_kind
+assert "inspect_visual" in by_kind["image"]["available_operations"]
+assert "extract_text" in by_kind["document"]["available_operations"]
+assert "text/html" in by_kind["text"]["media_types"]
+assert "analyze_video" in by_kind["video"]["available_operations"]
+assert "transcribe_audio" in by_kind["audio"]["available_operations"]
+'
+if [ "$PDF_EXTRACT" = 0 ]; then
+  printf '%s' "$SOURCE_CAPS" | python3 -c '
+import json, sys
+document = {item["kind"]: item for item in json.load(sys.stdin)["sources"]}["document"]
+assert "application/pdf" not in document["media_types"], document
+assert "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in document["media_types"], document
+assert "pdf_extractor_unavailable" in document["limitations"], document
+'
+fi
+
 # --- fixtures ---
 printf '\211PNG\r\n\032\n' >"$TMP/probe.png"
 printf 'not-a-real-png-body-but-sniffing-only-checks-the-magic-header' >>"$TMP/probe.png"
@@ -85,6 +120,19 @@ printf '\000\000\000\030ftypisom\000\000\002\000isomiso2' >"$TMP/probe.mp4"
 dd if=/dev/zero bs=1048576 count=5 >>"$TMP/probe.mp4" 2>/dev/null
 printf '<html>unsupported large fixture' >"$TMP/large-unsupported.bin"
 dd if=/dev/zero bs=1048576 count=5 >>"$TMP/large-unsupported.bin" 2>/dev/null
+python3 - "$TMP/report.docx" "$TMP/not-a-docx.zip" <<'PY'
+import sys, zipfile
+
+content_types = '''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'''
+relationships = '''<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'''
+document = '''<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>DOCX Gateway Report</w:t></w:r></w:p><w:p><w:r><w:t>DOCX_GATEWAY_SENTINEL</w:t></w:r></w:p></w:body></w:document>'''
+with zipfile.ZipFile(sys.argv[1], "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("[Content_Types].xml", content_types)
+    archive.writestr("_rels/.rels", relationships)
+    archive.writestr("word/document.xml", document)
+with zipfile.ZipFile(sys.argv[2], "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("notes.txt", "ordinary ZIP, not a DOCX")
+PY
 
 # --- 1. Auth: no token on any new route ---
 STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/v1/attachments" \
@@ -100,10 +148,93 @@ IMG_ID=$(field "$RESP" id)
 [ "$(field "$RESP" filename)" = "my photo.png" ] || { echo "FAIL: filename not decoded, got: $RESP"; exit 1; }
 printf '%s' "$RESP" | grep -q '"image":true' || { echo "FAIL: expected capabilities.image:true, got: $RESP"; exit 1; }
 printf '%s' "$RESP" | grep -q '"document":false' || { echo "FAIL: expected capabilities.document:false, got: $RESP"; exit 1; }
+printf '%s' "$RESP" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["source"]
+assert s["schema"] == "samosa.source.v1", s
+assert s["kind"] == "image" and s["container"] == "png", s
+assert "ocr_text" in s["available_operations"] and "inspect_visual" in s["available_operations"], s
+assert "transcribe_audio" not in s["available_operations"], s
+'
 
 # --- 3. Re-upload identical bytes: same content-addressed id ---
 RESP2=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/probe.png")
 [ "$(field "$RESP2" id)" = "$IMG_ID" ] || { echo "FAIL: re-uploading identical bytes should return the same id"; exit 1; }
+
+# --- 3a. Attached HTML has no PDFium dependency. It is recognized from bytes
+# despite a misleading filename/MIME declaration, stripped by the shared
+# bounded reader, and passed as untrusted canonical text rather than markup. ---
+printf '<!doctype html><html><head><title>HTML Fixture &amp; Report</title><style>STYLE_POISON</style></head><body><h1>Quarterly results</h1><p>Revenue is &#x20ac;42 &mdash; verified.</p><ul><li>alpha</li><li>HTML_LATE_SENTINEL</li></ul><script>SCRIPT_POISON</script><template>TEMPLATE_POISON</template></body></html>' >"$TMP/report.bin"
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: image/png" \
+  -H "X-Samosa-Filename-B64: $(printf 'report.bin' | base64)" \
+  -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/report.bin")
+HTML_ID=$(field "$RESP" id)
+[ ${#HTML_ID} = 64 ] || { echo "FAIL: expected an HTML attachment id, got: $RESP"; exit 1; }
+printf '%s' "$RESP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["media_type"] == "text/html", d
+assert d["capabilities"]["document"] is True, d
+s = d["source"]
+assert s["kind"] == "text" and s["container"] == "html", s
+assert s["available_operations"] == ["extract_text", "inspect_metadata", "retrieve_evidence"], s
+'
+HTML_CONV=deep-file-html-probe
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$HTML_CONV\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment html probe\"}],\"attachment_ids\":[\"$HTML_ID\"],\"stream\":false}")
+printf '%s' "$RESP" | grep -q "saw clean HTML attachment evidence" || { echo "FAIL: HTML evidence was missing or unsafe: $RESP"; exit 1; }
+[ -s "$HOME_DIR/chats/$HTML_CONV/documents.json" ] || { echo "FAIL: HTML attachment was not bound durably"; exit 1; }
+[ -s "$HOME_DIR/chats/$HTML_CONV/document-context.txt" ] || { echo "FAIL: durable HTML evidence was not written"; exit 1; }
+grep -q 'HTML Fixture & Report' "$HOME_DIR/chats/$HTML_CONV/document-context.txt" || { echo "FAIL: durable HTML evidence lost its title"; exit 1; }
+grep -q 'HTML_LATE_SENTINEL' "$HOME_DIR/chats/$HTML_CONV/document-context.txt" || { echo "FAIL: durable HTML evidence lost late body text"; exit 1; }
+if grep -Eq 'SCRIPT_POISON|STYLE_POISON|TEMPLATE_POISON|<script|<h1>' "$HOME_DIR/chats/$HTML_CONV/document-context.txt"; then
+  echo "FAIL: durable HTML evidence retained raw or non-readable content"; exit 1
+fi
+
+printf '<html>bad\300\257</html>' >"$TMP/invalid.html"
+STATUS=$(curl -sS -o "$TMP/invalid-html.json" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" \
+  --data-binary "@$TMP/invalid.html")
+[ "$STATUS" = "415" ] || { echo "FAIL: invalid UTF-8 HTML should be 415, got $STATUS"; exit 1; }
+grep -q '"code":"html_invalid_utf8"' "$TMP/invalid-html.json" || {
+  echo "FAIL: invalid UTF-8 HTML did not return its typed error"; exit 1;
+}
+
+# --- 3b. DOCX admission is based on the validated ZIP/XML package rather than
+# an extension or MIME claim, and its exact text reaches durable chat context. ---
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: image/png" \
+  -H "X-Samosa-Filename-B64: $(printf 'misnamed-report.bin' | base64)" \
+  -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@$TMP/report.docx")
+DOCX_ID=$(field "$RESP" id)
+[ ${#DOCX_ID} = 64 ] || { echo "FAIL: expected a DOCX attachment id, got: $RESP"; exit 1; }
+printf '%s' "$RESP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["media_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document", d
+assert d["capabilities"]["document"] is True, d
+s = d["source"]
+assert s["kind"] == "document" and s["container"] == "docx", s
+assert "extract_text" in s["available_operations"], s
+'
+DOCX_CONV=deep-file-docx-probe
+RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"$MODEL_ID\",\"model_version\":\"$MODEL_VERSION\",\"conversation_id\":\"$DOCX_CONV\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment docx probe\"}],\"attachment_ids\":[\"$DOCX_ID\"],\"stream\":false}")
+printf '%s' "$RESP" | grep -q 'saw exact DOCX attachment evidence' || {
+  echo "FAIL: DOCX evidence did not reach the backend: $RESP"; exit 1;
+}
+grep -q 'DOCX_GATEWAY_SENTINEL' "$HOME_DIR/chats/$DOCX_CONV/document-context.txt" || {
+  echo "FAIL: durable DOCX context lost exact text"; exit 1;
+}
+
+STATUS=$(curl -sS -o "$TMP/not-docx.json" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" \
+  --data-binary "@$TMP/not-a-docx.zip")
+[ "$STATUS" = 415 ] || { echo "FAIL: an ordinary ZIP should be 415, got $STATUS"; exit 1; }
+grep -Eq '"code":"docx_(required_entry_missing|content_type_invalid)"' "$TMP/not-docx.json" || {
+  echo "FAIL: ordinary ZIP did not take the typed DOCX rejection path"; exit 1;
+}
 
 # --- 4. Plain UTF-8 text is a document, despite a misleading MIME header ---
 if [ -x "$EXTRACT" ]; then
@@ -121,6 +252,12 @@ PY
   [ ${#TEXT_ID} = 64 ] || { echo "FAIL: expected a text attachment id, got: $RESP"; exit 1; }
   printf '%s' "$RESP" | grep -q '"media_type":"text/x-python"' || { echo "FAIL: text type was not inferred from the safe filename: $RESP"; exit 1; }
   printf '%s' "$RESP" | grep -q '"document":true' || { echo "FAIL: text attachment was not marked as a document: $RESP"; exit 1; }
+  printf '%s' "$RESP" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["source"]
+assert s["kind"] == "text" and s["container"] == "utf-8", s
+assert s["available_operations"] == ["extract_text", "inspect_metadata", "retrieve_evidence"], s
+'
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
     -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment text probe\"}],\"attachment_ids\":[\"$TEXT_ID\"],\"stream\":false,\"max_tokens\":8192}")
@@ -216,6 +353,12 @@ VIDEO_ID=$(field "$RESP" id)
 [ ${#VIDEO_ID} = 64 ] || { echo "FAIL: expected a video attachment id, got: $RESP"; exit 1; }
 printf '%s' "$RESP" | grep -q '"media_type":"video/mp4"' || { echo "FAIL: MP4 was not sniffed from bytes: $RESP"; exit 1; }
 printf '%s' "$RESP" | grep -q '"video":true' || { echo "FAIL: expected capabilities.video:true: $RESP"; exit 1; }
+printf '%s' "$RESP" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["source"]
+assert s["kind"] == "video" and s["container"] == "mp4", s
+assert s["available_operations"] == ["analyze_video", "inspect_metadata"], s
+'
 STATUS=$(curl -sS -D "$TMP/range.headers" -o "$TMP/range.bin" -w '%{http_code}' \
   -H "X-Samosa-Token: $TOKEN" -H 'Range: bytes=4-11' \
   "http://127.0.0.1:$PORT/v1/attachments/$VIDEO_ID")
@@ -229,12 +372,16 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X 
   "http://127.0.0.1:$PORT/v1/attachments/$VIDEO_ID")
 [ "$STATUS" = "200" ] || { echo "FAIL: deleting the unused streamed video should be 200, got $STATUS"; exit 1; }
 
-# A streamed body that fails sniffing must inspect only its bounded prefix;
-# it must not index the full Content-Length through the prefix buffer.
+# A streamed HTML body above the complete UTF-8 validation bound fails closed
+# from its bounded prefix; it must not index the full Content-Length through
+# that prefix or publish an attachment that can only fail later.
 STATUS=$(curl -sS -o "$TMP/large-unsupported.json" -w '%{http_code}' \
   -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary "@$TMP/large-unsupported.bin")
-[ "$STATUS" = "415" ] || { echo "FAIL: large unsupported upload should be 415, got $STATUS"; exit 1; }
+[ "$STATUS" = "413" ] || { echo "FAIL: oversized HTML upload should be 413, got $STATUS"; exit 1; }
+grep -q '"code":"html_attachment_too_large"' "$TMP/large-unsupported.json" || {
+  echo "FAIL: oversized HTML upload did not return its typed error"; exit 1;
+}
 curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null || {
   echo "FAIL: gateway did not survive a large unsupported streamed upload"; exit 1;
 }
@@ -277,8 +424,8 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X 
 # --- 13. Document attachment: real doc.read extraction, only when this
 #     machine actually has a working samosa-extract/samosa-ocr build. ---
 SUPPORTS_DOCS=$(field "$HEALTH" supports_documents)
-if [ "$SUPPORTS_DOCS" != "True" ]; then
-  echo "test_attachments.sh: document half SKIPPED (no samosa-extract/samosa-ocr build on this machine)"
+if [ "$SUPPORTS_DOCS" != "True" ] || [ "$PDF_EXTRACT" != 1 ]; then
+  echo "test_attachments.sh: PDF half SKIPPED (no PDFium-capable samosa-extract/samosa-ocr build on this machine)"
 else
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: application/pdf" \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" --data-binary "@tests/fixtures/documents/hello.pdf")
@@ -286,6 +433,12 @@ else
   [ ${#DOC_ID} = 64 ] || { echo "FAIL: expected a 64-char hex attachment id for the PDF, got: $RESP"; exit 1; }
   printf '%s' "$RESP" | grep -q '"document":true' || { echo "FAIL: expected capabilities.document:true for a PDF, got: $RESP"; exit 1; }
   printf '%s' "$RESP" | grep -q '"image":false' || { echo "FAIL: expected capabilities.image:false for a PDF, got: $RESP"; exit 1; }
+  printf '%s' "$RESP" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["source"]
+assert s["kind"] == "document" and s["container"] == "pdf", s
+assert {"extract_text", "ocr_text", "inspect_visual", "retrieve_evidence"} <= set(s["available_operations"]), s
+'
 
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
