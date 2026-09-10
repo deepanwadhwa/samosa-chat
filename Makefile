@@ -383,7 +383,7 @@ test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_
 	$(BUILD_DIR)/test-document-reader-contract
 
 test-document-harness: samosa-gateway test_fake_openai_backend test-document-reader-contract tests/test_document_harness.py tests/document_reader_spy.py
-	python3 tests/test_document_harness.py
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_document_harness.py
 
 test-pdf-ocr-routing: tests/test_pdf_ocr_routing.py
 	@if [ -n "$${SAMOSA_EXTRACT:-}" ]; then \

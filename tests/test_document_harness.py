@@ -19,6 +19,9 @@ import urllib.request
 import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
+BUILD_DIR = Path(os.environ.get("BUILD_DIR", "build"))
+if not BUILD_DIR.is_absolute():
+    BUILD_DIR = ROOT / BUILD_DIR
 sys.path.insert(0, str(ROOT / "tools"))
 from gen_multipage_pdf import build
 
@@ -64,7 +67,7 @@ def run():
                    SAMOSA_DOCUMENT_FAILURE=str(reader_failure_trigger),
                    SAMOSA_BACKEND_PORT=str(port + 1),
                    SAMOSA_APP_HTML=str(work / "app.html"), SAMOSA_APP_LOGO=str(work / "logo.png"),
-                   SAMOSA_QWEN_ENGINE=str(ROOT / "build/test_fake_openai_backend"),
+                   SAMOSA_QWEN_ENGINE=str(BUILD_DIR / "test_fake_openai_backend"),
                    SAMOSA_QWEN_MODEL=str(model), SAMOSA_TOKENIZER=str(work / "tokenizer.json"),
                    SAMOSA_EXTRACT=str(ROOT / "tests/document_reader_spy.py"),
                    SAMOSA_OCR=str(ocr_script), SAMOSA_DOCUMENT_READ_LOG=str(reader_log),
@@ -118,7 +121,7 @@ def run():
             return events
 
         with (work / "gateway.log").open("w") as output:
-            gateway = subprocess.Popen([str(ROOT / "build/samosa-gateway")], env=env, stdout=output, stderr=output)
+            gateway = subprocess.Popen([str(BUILD_DIR / "samosa-gateway")], env=env, stdout=output, stderr=output)
             try:
                 last_health = None
                 for _ in range(150):
