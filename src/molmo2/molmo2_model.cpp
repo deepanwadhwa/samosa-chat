@@ -23,7 +23,6 @@ namespace {
 
 using namespace mlx::core;
 using Weights = std::unordered_map<std::string, array>;
-constexpr std::size_t kSafeSequenceTokens = 2048;
 
 array required(const Weights& weights, const std::string& name) {
     auto found = weights.find(name);
@@ -461,7 +460,9 @@ GenerateResult Model::generate(const std::string& question, const VisualInput& v
            the image/video placeholder. For this pinned Qwen tokenizer BOS is
            <|im_end|> (151645); it is not part of the visible chat template. */
         tokens.insert(tokens.begin(), 151645);
-        if (tokens.empty() || tokens.size() + options.max_new_tokens > kSafeSequenceTokens)
+        const int max_new_tokens =
+            bounded_generation_tokens(tokens.size(), options.max_new_tokens);
+        if (tokens.empty() || max_new_tokens < 1)
             throw std::runtime_error(
                 "Molmo2 request exceeds Samosa's 2,048-token memory-safe sequence envelope");
         int image_patch_tokens = 0;
@@ -498,7 +499,7 @@ GenerateResult Model::generate(const std::string& question, const VisualInput& v
         int next = argmax(slice(logits, {0, static_cast<int>(tokens.size()) - 1, 0},
                                 {1, static_cast<int>(tokens.size()), 151936}), -1).item<int>();
         std::string emitted;
-        for (int step = 0; step < options.max_new_tokens && !stop_token(next); ++step) {
+        for (int step = 0; step < max_new_tokens && !stop_token(next); ++step) {
             if (cancelled && cancelled->load(std::memory_order_relaxed)) {
                 result.cancelled = true; break;
             }

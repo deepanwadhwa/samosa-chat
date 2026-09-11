@@ -32,6 +32,7 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snap
   --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 

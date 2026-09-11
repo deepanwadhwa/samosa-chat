@@ -8,7 +8,7 @@ tests/fixtures/documents/hello.pdf's style.
 """
 import sys
 
-def build(num_pages: int) -> bytes:
+def build(num_pages: int, padding_bytes: int = 0) -> bytes:
     objs = {}
     # 1: catalog, 2: pages, 3..3+num_pages-1: page objs,
     # 3+num_pages: font, 3+num_pages+1 .. : content stream per page
@@ -51,6 +51,11 @@ def build(num_pages: int) -> bytes:
         objs[cid] = (f"<< /Length {len(stream)} >>\nstream\n".encode()
                       + stream + b"\nendstream")
 
+    if padding_bytes:
+        # Unreferenced stream simulates a large resource without making page
+        # text extraction or rendering proportional to the file size.
+        objs[max(objs) + 1] = (f"<< /Length {padding_bytes} >>\nstream\n".encode()
+                              + b"x" * padding_bytes + b"\nendstream")
     all_ids = sorted(objs.keys())
     max_id = all_ids[-1]
 

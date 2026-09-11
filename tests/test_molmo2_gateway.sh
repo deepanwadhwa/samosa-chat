@@ -35,6 +35,53 @@ JSON
 printf '\000\000\000\030ftypisom\000\000\002\000isomiso2fixture-video' >"$TMP/clip.mp4"
 printf '\211PNG\r\n\032\nfixture-a' >"$TMP/a.png"
 printf '\211PNG\r\n\032\nfixture-b' >"$TMP/b.png"
+python3 - "$TMP/video-audio.wav" "$TMP/ggml-base.en.bin" <<'PY'
+import pathlib, struct, sys
+
+seconds = 30
+data_bytes = 16000 * 2 * seconds
+header = (b'RIFF' + struct.pack('<I', 36 + data_bytes) + b'WAVEfmt ' +
+          struct.pack('<IHHIIHH', 16, 1, 1, 16000, 32000, 2, 16) +
+          b'data' + struct.pack('<I', data_bytes))
+with open(sys.argv[1], 'wb') as output:
+    output.write(header)
+    output.truncate(len(header) + data_bytes)
+model = pathlib.Path(sys.argv[2])
+model.write_bytes(b'')
+with model.open('r+b') as output:
+    output.truncate(147964211)
+PY
+cat >"$TMP/audio-decode" <<'EOF'
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "--probe" ]; then
+  printf '%s\n' '{"ok":true,"duration_seconds":30.000000,"audio_start_seconds":0.000000,"audio_end_seconds":30.000000,"audio_streams":1,"video_streams":1,"selected_stream":0,"codec_fourcc":"aac "}'
+  exit 0
+fi
+if [ "${1:-}" = "--decode-window" ] && [ "${5:-}" = "--output" ]; then
+  cp "$SAMOSA_FAKE_VIDEO_WAV" "$6"
+  exit 0
+fi
+exit 64
+EOF
+cat >"$TMP/whisper-cli" <<'EOF'
+#!/bin/sh
+set -eu
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -of) output=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$output" ]
+cat >"$output.srt" <<'SRT'
+1
+00:00:12,000 --> 00:00:14,000
+The speaker says launch now.
+SRT
+EOF
+chmod 700 "$TMP/audio-decode" "$TMP/whisper-cli"
 
 # Make the smaller specialist look fully installed as well. Its executable is
 # a tripwire: an installed Molmo package must win standard-image routing and
@@ -58,6 +105,10 @@ SAMOSA_VISIONPSY_ENGINE="$TMP/should-not-run-visionpsy" \
 SAMOSA_VISIONPSY_MODEL="$VISIONPSY_MODEL_DIR" \
 SAMOSA_MOLMO2_ENGINE="$(CDPATH= cd -- "$(dirname "$MM_HELPER")" && pwd)/$(basename "$MM_HELPER")" \
 SAMOSA_MOLMO2_MODEL="$MODEL_DIR" \
+SAMOSA_AUDIO_DECODE="$TMP/audio-decode" \
+SAMOSA_WHISPER_CLI="$TMP/whisper-cli" \
+SAMOSA_WHISPER_MODEL="$TMP/ggml-base.en.bin" \
+SAMOSA_FAKE_VIDEO_WAV="$TMP/video-audio.wav" \
 SAMOSA_FAKE_MM_FRAMED=1 \
 SAMOSA_FAKE_MM_LOG="$TMP/molmo-commands.jsonl" \
 SAMOSA_FAKE_MM_VISUAL_DELAY_MS=800 \
@@ -85,9 +136,23 @@ VIDEO_ID=$(printf '%s' "$UPLOAD" | sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p')
 
 REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
-  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment video probe: when does the visible event happen?\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":false}")
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment video probe: inspect the visible frames for the event.\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":false}")
 printf '%s' "$REPLY" | grep -q 'saw bounded Molmo video evidence' || {
   echo "FAIL: bounded Molmo evidence did not reach primary synthesis: $REPLY"; exit 1;
+}
+
+# A speech/action relationship question has a deterministic two-operation
+# floor. Whisper and Molmo emit evidence on the same absolute media timeline,
+# and the selected answering model receives both labelled coverage records.
+RELATIONSHIP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"model_id\":\"qwen\",\"model_version\":\"qwen-model\",\"conversation_id\":\"video-relationship-probe\",\"messages\":[{\"role\":\"user\",\"content\":\"attachment video relationship probe: What visible action happens when the speaker says launch?\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":false}")
+printf '%s' "$RELATIONSHIP" | grep -q 'saw aligned audio and visual video evidence' || {
+  echo "FAIL: combined video routing did not hand off both timelines: $RELATIONSHIP"; exit 1;
+}
+RELATIONSHIP_EVIDENCE=$(find "$HOME_DIR/attachments" -name "$VIDEO_ID.transcript.json" -print -quit)
+[ -n "$RELATIONSHIP_EVIDENCE" ] && [ -s "$RELATIONSHIP_EVIDENCE" ] || {
+  echo "FAIL: combined video routing did not persist transcript evidence"; exit 1;
 }
 
 UPLOAD_A=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: image/png' \
@@ -100,6 +165,21 @@ IMAGE_A=$(printf '%s' "$UPLOAD_A" | sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p')
 IMAGE_B=$(printf '%s' "$UPLOAD_B" | sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p')
 [ ${#IMAGE_A} = 64 ] && [ ${#IMAGE_B} = 64 ] || {
   echo "FAIL: extended-image fixture upload failed: $UPLOAD_A $UPLOAD_B"; exit 1;
+}
+# Fast-first image work must not call the model router or visual specialist.
+# This fixture intentionally has no OCR reader; the gateway should still
+# return a bounded fast-scan status through the answering model so the UI can
+# offer its explicit detailed pass instead of failing the whole turn.
+MM_BEFORE_FAST=$(wc -l <"$TMP/molmo-commands.jsonl" | tr -d ' ')
+FAST_REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Read this quickly.\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"analysis_depth\":\"fast\",\"stream\":false}")
+printf '%s' "$FAST_REPLY" | grep -q '"choices"' || {
+  echo "FAIL: fast-first image pass did not reach synthesis: $FAST_REPLY"; exit 1;
+}
+MM_AFTER_FAST=$(wc -l <"$TMP/molmo-commands.jsonl" | tr -d ' ')
+[ "$MM_AFTER_FAST" = "$MM_BEFORE_FAST" ] || {
+  echo "FAIL: fast-first image pass invoked the visual specialist"; exit 1;
 }
 REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -180,12 +260,9 @@ printf '%s' "$DELEGATED" | grep -q 'Preparing this image for local visual analys
 printf '%s' "$DELEGATED" | grep -q 'Using Molmo2 4B vision model to process this image; Qwen3.6 35B A3B remains the selected answering model' || {
   echo "FAIL: visual stream did not name both model roles: $DELEGATED"; exit 1;
 }
-printf '%s' "$DELEGATED" | grep -q 'Vision analysis is complete. Loading Qwen3.6 35B A3B to answer' || {
-  echo "FAIL: visual stream did not expose the specialist-to-text handoff: $DELEGATED"; exit 1;
-}
-printf '%s' "$DELEGATED" | grep -q 'Qwen3.6 35B A3B is answering from the local image analysis' || {
-  echo "FAIL: visual stream did not identify the answering model: $DELEGATED"; exit 1;
-}
+if printf '%s' "$DELEGATED" | grep -q 'analysis is complete. Loading .* to answer\|is answering from the local .* analysis'; then
+  echo "FAIL: removed visual handoff/answering status leaked into the reply stream: $DELEGATED"; exit 1;
+fi
 printf '%s' "$DELEGATED" | grep -q 'This is a black-and-white geometric pattern' || {
   echo "FAIL: first visual turn did not reach primary-model synthesis: $DELEGATED"; exit 1;
 }
@@ -248,6 +325,52 @@ NO_VISUAL=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/j
   -d '{"model":"molmo2-4b-mlx-q4-v1","messages":[{"role":"user","content":"hello"}],"stream":false}')
 printf '%s' "$NO_VISUAL" | grep -q '"code":"molmo2_visual_required"' || {
   echo "FAIL: direct Molmo text-only turn was not rejected honestly: $NO_VISUAL"; exit 1;
+}
+
+# Reproduce the browser's exact direct-video shape: stream enabled and no
+# explicit max_tokens. Sixteen real frames use about 1,439 prompt tokens, so a
+# 640-token gateway default overflows Molmo's 2,048-token sequence envelope
+# before generation begins.
+DIRECT_VIDEO=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"molmo2-4b-mlx-q4-v1\",\"messages\":[{\"role\":\"system\",\"content\":\"UI context\"},{\"role\":\"user\",\"content\":\"what's going on in this video?\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":true}")
+printf '%s' "$DIRECT_VIDEO" | grep -q 'fixture timestamped video evidence' || {
+  echo "FAIL: direct Molmo streaming video turn failed: $DIRECT_VIDEO"; exit 1;
+}
+printf '%s' "$DIRECT_VIDEO" | grep -q 'data: \[DONE\]' || {
+  echo "FAIL: direct Molmo streaming video did not terminate cleanly: $DIRECT_VIDEO"; exit 1;
+}
+if printf '%s' "$DIRECT_VIDEO" | grep -q 'file_activity\|Loading Molmo2 4B for this visual turn'; then
+  echo "FAIL: direct Molmo video emitted a fake indeterminate progress bar: $DIRECT_VIDEO"; exit 1;
+fi
+grep '"media_kind":"video"' "$TMP/molmo-commands.jsonl" | tail -n 1 | grep -q '"max_tokens":512' || {
+  echo "FAIL: direct Molmo video default exceeded its qualified sequence budget"; exit 1;
+}
+
+# Tracking is not conversational video QA. The gateway must use Molmo2's
+# timestamped coordinate contract, strip any prose surrounding the coordinate
+# evidence, and expose the result for the browser's synchronized overlay.
+DIRECT_TRACK=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"molmo2-4b-mlx-q4-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"Can you track my cat throughout the video?\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":false}")
+printf '%s' "$DIRECT_TRACK" | grep -q '<tracks coords=\\"0.0 1 700 600;0.5 1 710 590;1.0 1 720 580\\">cat</tracks>' || {
+  echo "FAIL: direct Molmo tracking did not return validated coordinates: $DIRECT_TRACK"; exit 1;
+}
+if printf '%s' "$DIRECT_TRACK" | grep -q 'Here is the cat\|It runs away'; then
+  echo "FAIL: ungrounded prose leaked into a coordinate tracking result: $DIRECT_TRACK"; exit 1;
+fi
+printf '%s' "$DIRECT_TRACK" | grep -q '"tracking":true,"tracking_fps":2' || {
+  echo "FAIL: direct Molmo tracking metadata was omitted: $DIRECT_TRACK"; exit 1;
+}
+grep 'Track the cat' "$TMP/molmo-commands.jsonl" | tail -n 1 | grep -q 'do not describe or infer events' || {
+  echo "FAIL: tracking intent was not rewritten to the strict coordinate prompt"; exit 1;
+}
+
+INVALID_TRACK=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+  -d "{\"model\":\"molmo2-4b-mlx-q4-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"Track the invalid-target in this video\"}],\"attachment_ids\":[\"$VIDEO_ID\"],\"stream\":false}")
+printf '%s' "$INVALID_TRACK" | grep -q '"code":"molmo2_invalid_tracking_output"' || {
+  echo "FAIL: prose-only tracking hallucination was not rejected: $INVALID_TRACK"; exit 1;
 }
 
 DIRECT=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \

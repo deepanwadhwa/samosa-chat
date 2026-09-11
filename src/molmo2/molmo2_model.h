@@ -4,11 +4,25 @@
 #include "molmo2_processor.h"
 
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
 
 namespace samosa::molmo2 {
+
+inline constexpr std::size_t kSafeSequenceTokens = 2048;
+
+/* max_new_tokens is a ceiling, not a reservation. Visual prompts vary with
+   crop/frame count, so trim generation to the context that remains instead
+   of rejecting an otherwise valid image or video before its first token. */
+inline int bounded_generation_tokens(std::size_t prompt_tokens,
+                                     int requested_tokens) {
+    if (requested_tokens < 1 || prompt_tokens >= kSafeSequenceTokens) return 0;
+    const std::size_t available = kSafeSequenceTokens - prompt_tokens;
+    return available < static_cast<std::size_t>(requested_tokens)
+        ? static_cast<int>(available) : requested_tokens;
+}
 
 struct GenerateOptions {
     int max_new_tokens = 256;

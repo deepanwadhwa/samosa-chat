@@ -23,12 +23,15 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snap
   --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/samosa_docx.c' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/miniz/miniz_zip.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/read_cache.h' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_voice_runtime.sh' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_kokoro_runtime.sh' "$REMOTE/release-manifest.tsv"
@@ -37,6 +40,7 @@ grep -q 'engine/chutni/src/mcp.c' "$REMOTE/release-manifest.tsv"
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   grep -q 'runtime/macos-arm64/samosa-summarizer' "$REMOTE/release-manifest.tsv"
   grep -q 'runtime/macos-arm64/samosa-visionpsy' "$REMOTE/release-manifest.tsv"
+  grep -q 'runtime/macos-arm64/samosa-audio-decode' "$REMOTE/release-manifest.tsv"
   grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf' "$REMOTE/release-manifest.tsv"
 fi
 
@@ -50,10 +54,12 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
 [ -x "$HOME_DIR/current/bin/samosa-ocr" ]
+[ -x "$HOME_DIR/current/bin/samosa-extract" ]
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ]
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   [ -x "$HOME_DIR/current/bin/samosa-summarizer" ]
   [ -x "$HOME_DIR/current/bin/samosa-visionpsy" ]
+  [ -x "$HOME_DIR/current/bin/samosa-audio-decode" ]
   [ -f "$HOME_DIR/current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf" ]
 fi
 # The launchd scheduler's plist runs current/bin/samosa-jobsd, so the installer

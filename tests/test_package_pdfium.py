@@ -44,6 +44,7 @@ class PackagePdfiumTest(unittest.TestCase):
                 "--visionpsy-runtime", str(MAPLE_RUNTIME),
                 "--molmo2-runtime", str(MAPLE_RUNTIME),
                 "--molmo2-pack", str(MAPLE_RUNTIME),
+                "--audio-decode-runtime", str(MAPLE_RUNTIME),
                 "--summarizer-model", str(SUMMARIZER / "model.gguf"),
                 "--summarizer-runtime-dir", str(SUMMARIZER)]
 

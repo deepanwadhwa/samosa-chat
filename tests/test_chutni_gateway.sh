@@ -34,6 +34,28 @@ if [ ! -f "$SAMOSA_EXTRACT" ] || [ ! -x "$SAMOSA_EXTRACT" ]; then
   echo "test_chutni_gateway.sh: SKIPPED (no samosa-extract build on this machine)"
   exit 0
 fi
+if "$SAMOSA_EXTRACT" --version 2>/dev/null | grep -q ';pdfium)'; then
+  PDFIUM_ENABLED=1
+  EXPECT_READABLE=4
+  EXPECT_METADATA_ONLY=0
+  EXPECT_CONTENT_ARTIFACTS=15
+  EXPECT_PDF_PAGES=7
+  EXPECT_SUMMARIES=4
+  EXPECT_MODEL_ARTIFACTS=5
+  EXPECT_ENRICHMENT_FAILURES=0
+else
+  # Runtime-only releases deliberately retain text/HTML/DOCX extraction but
+  # do not advertise PDF. Chutni must finish honestly with the PDF as metadata
+  # instead of making this portable release gate depend on a host PDFium SDK.
+  PDFIUM_ENABLED=0
+  EXPECT_READABLE=3
+  EXPECT_METADATA_ONLY=1
+  EXPECT_CONTENT_ARTIFACTS=7
+  EXPECT_PDF_PAGES=0
+  EXPECT_SUMMARIES=3
+  EXPECT_MODEL_ARTIFACTS=4
+  EXPECT_ENRICHMENT_FAILURES=1
+fi
 
 HOME="$TMP/home" \
 SAMOSA_HOME="$TMP/home" \
@@ -98,17 +120,18 @@ done
 [ -f "$STORE/indexes/lexical.sqlite" ]
 printf '%s' "$STATUS" | grep -q '"files_indexed":4'
 printf '%s' "$STATUS" | grep -q '"summary_token_budget":128'
-printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
-printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
-printf '%s' "$STATUS" | grep -q '"content_artifacts":15'
+printf '%s' "$STATUS" | grep -q "\"content_readable_files\":$EXPECT_READABLE"
+printf '%s' "$STATUS" | grep -q "\"metadata_only_files\":$EXPECT_METADATA_ONLY"
+printf '%s' "$STATUS" | grep -q "\"content_artifacts\":$EXPECT_CONTENT_ARTIFACTS"
 printf '%s' "$STATUS" | grep -q '"phase":"complete"'
 printf '%s' "$STATUS" | grep -q '"scan_files_seen":4'
 printf '%s' "$STATUS" | grep -q '"enrichment_files_total":4'
 printf '%s' "$STATUS" | grep -q '"enrichment_files_done":4'
-printf '%s' "$STATUS" | grep -q '"pdf_pages_read":7'
+printf '%s' "$STATUS" | grep -q "\"pdf_pages_read\":$EXPECT_PDF_PAGES"
 printf '%s' "$STATUS" | grep -q '"ocr_outputs":1'
 printf '%s' "$STATUS" | grep -q '"image_captions":1'
-printf '%s' "$STATUS" | grep -q '"summaries_created":4'
+printf '%s' "$STATUS" | grep -q "\"summaries_created\":$EXPECT_SUMMARIES"
+printf '%s' "$STATUS" | grep -q "\"enrichment_failures\":$EXPECT_ENRICHMENT_FAILURES"
 printf '%s' "$STATUS" | grep -q '"elapsed_seconds":'
 printf '%s' "$STATUS" | grep -q '"files_per_second":'
 printf '%s' "$STATUS" | grep -q "\"active_database\":\"$STORE\""
@@ -133,15 +156,19 @@ while [ "$i" -lt 300 ]; do
   i=$((i + 1))
 done
 [ "$i" -lt 300 ] || { echo "$STATUS" >&2; cat "$TMP/gateway.log" >&2; fail "unchanged Chutni refresh did not publish"; }
-printf '%s' "$STATUS" | grep -q '"content_readable_files":4'
-printf '%s' "$STATUS" | grep -q '"metadata_only_files":0'
+printf '%s' "$STATUS" | grep -q "\"content_readable_files\":$EXPECT_READABLE"
+printf '%s' "$STATUS" | grep -q "\"metadata_only_files\":$EXPECT_METADATA_ONLY"
 
 # Samosa enrichment is committed into the portable protocol store, not a
 # private cache: PDF pages, image OCR, captions, and summaries are searchable
 # with their protocol artifact kinds and provenance.
 PDF_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"synthetic fixture document\",\"limit\":20}")
-printf '%s' "$PDF_RESULT" | grep -q '"artifact_kind":"page_text"'
+if [ "$PDFIUM_ENABLED" = 1 ]; then
+  printf '%s' "$PDF_RESULT" | grep -q '"artifact_kind":"page_text"'
+else
+  ! printf '%s' "$PDF_RESULT" | grep -q '"artifact_kind":"page_text"'
+fi
 OCR_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"Poličar 2019\",\"limit\":20}")
 printf '%s' "$OCR_RESULT" | grep -q '"artifact_kind":"ocr_text"'
@@ -155,16 +182,16 @@ printf '%s' "$SUMMARY_RESULT" | grep -q '"artifact_kind":"summary_short"'
 DB_URI="file:$STORE/catalog.sqlite?immutable=1"
 sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) JOIN producers p USING(producer_id) WHERE a.artifact_kind='page_text' AND a.status='active' AND p.name='Samosa document reader' AND p.app_name='Samosa' AND p.app_version='test-enrichment-1';" \
-  | grep -q '^7$'
+  | grep -q "^$EXPECT_PDF_PAGES\$"
 sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) JOIN producers p USING(producer_id) WHERE a.artifact_kind IN ('image_caption','summary_short') AND a.status='active' AND p.producer_kind='model' AND p.model_id='qwen3.6-35b-a3b' AND p.model_revision<>'' AND p.app_name='Samosa';" \
-  | grep -q '^5$'
+  | grep -q "^$EXPECT_MODEL_ARTIFACTS\$"
 sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts a JOIN sources s USING(source_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND json_extract(s.locator_json,'$.display_path') LIKE '%/guide.pdf' AND a.selector_json='{\"type\":\"pages\",\"start\":1,\"end\":3}' AND a.inline_text NOT LIKE 'ERROR:%';" \
-  | grep -q '^1$'
+  | grep -q "^$PDFIUM_ENABLED\$"
 sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND d.recipe_hash='samosa-summary-leading-content-v1' AND json_extract(d.parameters_json,'$.summary_input')='leading_content_window' AND json_extract(d.parameters_json,'$.token_budget')=128 AND json_extract(d.parameters_json,'$.token_estimator')='utf8_bytes_div_4_v1' AND json_extract(d.parameters_json,'$.max_input_bytes')=512 AND a.inline_text NOT LIKE 'ERROR:%';" \
-  | grep -q '^4$'
+  | grep -q "^$EXPECT_SUMMARIES\$"
 
 RESULT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/query" \

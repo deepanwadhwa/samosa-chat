@@ -19,6 +19,7 @@ MOLMO2_PROCESSOR="$ROOT/assets/molmo2/processor.json"
 MAPLE_METALLIB="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
+AUDIO_DECODE="$BUILD_DIR/samosa-audio-decode"
 JOBSD="$BUILD_DIR/samosa-jobsd"
 CHUTNI_SERVICE="$BUILD_DIR/chutni-mcp"
 OCR="$BUILD_DIR/samosa-ocr"
@@ -27,6 +28,14 @@ SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
 SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
 SUMMARIZER_LIBS="libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib"
 BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
+
+# The installer stages binaries; it must never silently copy a stale jobsd or
+# gateway after source changes. Rebuild both from this checkout before taking
+# any release hash or validating inputs. Set SAMOSA_INSTALL_SKIP_BUILD=1 only
+# for an external packaging workflow that has already built the exact source.
+if [ "${SAMOSA_INSTALL_SKIP_BUILD:-0}" != "1" ]; then
+  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd
+fi
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
@@ -37,6 +46,10 @@ for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_P
   "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
+if [ "$(uname -s)" = "Darwin" ] && [ ! -x "$AUDIO_DECODE" ]; then
+  echo "missing local development input: $AUDIO_DECODE" >&2
+  exit 1
+fi
 
 # The native T5 summarizer is part of the Apple-Silicon application runtime,
 # not an optional developer tool. Keep the dev install shaped like a published
@@ -74,7 +87,7 @@ for path in "$SNAPSHOT/experts.bin" "$SNAPSHOT/resident.safetensors" \
 done
 [ -f "$TOKENIZER" ] || SNAPSHOT_OK=0
 
-# Discover the optional document extractor before calculating the release ID.
+# Discover the document extractor before calculating the release ID.
 # Otherwise rebuilding only this sidecar can silently reuse a stale release.
 EXTRACT_BIN=""
 EXTRACT_LIB=""
@@ -89,10 +102,12 @@ set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCES
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa"
+if [ "$(uname -s)" = "Darwin" ]; then set -- "$@" "$AUDIO_DECODE"; fi
 for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do set -- "$@" "$file"; done
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
 if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
-if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_BIN" "$EXTRACT_LIB"; fi
+if [ -n "$EXTRACT_BIN" ]; then set -- "$@" "$EXTRACT_BIN"; fi
+if [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_LIB"; fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
   set -- "$@" "$SUMMARIZER" "$SUMMARIZER_MODEL"
   for name in $SUMMARIZER_LIBS; do
@@ -135,6 +150,10 @@ ln "$MAPLE_METALLIB" "$stage/bin/mlx.metallib" || {
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"
+if [ "$(uname -s)" = "Darwin" ]; then
+  cp "$AUDIO_DECODE" "$stage/bin/samosa-audio-decode"
+  chmod +x "$stage/bin/samosa-audio-decode"
+fi
 cp "$JOBSD" "$stage/bin/samosa-jobsd"
 cp "$CHUTNI_SERVICE" "$stage/bin/chutni-mcp"
 cp "$OCR" "$stage/bin/samosa-ocr"
@@ -178,18 +197,16 @@ if [ "$MAPLE_MODEL_OK" = "1" ]; then
   done
 fi
 
-# Document extraction (PDF text via libpdfium, docs/TASKS_DOCUMENTS.md) is an
-# optional capability, not a hard dependency of this installer: most dev
-# checkouts have not run `make samosa-extract` (it needs PDFIUM_DIR set to an
-# unpacked PDFium artifact). When both the sidecar and its dylib exist —
-# checking repo root (the Makefile's freshly built output) before dist/ (the
-# fallback prebuilt convention) — stage them together in
-# bin/, where a loader-relative rpath finds the dylib.
-if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
+# Text, HTML, and DOCX extraction is portable; PDF support is optional and is
+# enabled when the built sidecar also has its PDFium library. Stage the
+# sidecar whenever it exists and colocate PDFium only when present.
+if [ -n "$EXTRACT_BIN" ]; then
   cp "$EXTRACT_BIN" "$stage/bin/samosa-extract"
-  cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
+  if [ -n "$EXTRACT_LIB" ]; then
+    cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
+  fi
   chmod +x "$stage/bin/samosa-extract"
-  if [ "$(uname -s)" = "Darwin" ] &&
+  if [ -n "$EXTRACT_LIB" ] && [ "$(uname -s)" = "Darwin" ] &&
      ! otool -l "$stage/bin/samosa-extract" | grep -F 'path @loader_path (offset' >/dev/null; then
     install_name_tool -add_rpath @loader_path "$stage/bin/samosa-extract"
   fi
@@ -206,7 +223,8 @@ if [ -n "$EXTRACT_BIN" ] && [ -n "$EXTRACT_LIB" ]; then
   else
     sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
     echo "warning: skipping incompatible document extractor; Maple/app installation will continue" >&2
-    rm -f "$stage/bin/samosa-extract" "$stage/bin/$(basename "$EXTRACT_LIB")"
+    rm -f "$stage/bin/samosa-extract"
+    if [ -n "$EXTRACT_LIB" ]; then rm -f "$stage/bin/$(basename "$EXTRACT_LIB")"; fi
     rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
     DOCUMENTS_ENABLED=0
   fi
@@ -239,11 +257,15 @@ else
   echo "  The app starts without one: open it and pick a model to download."
 fi
 if [ "$DOCUMENTS_ENABLED" = "1" ]; then
-  echo "Document reading: on (PDF text via $final/bin/samosa-extract; OCR via $final/bin/samosa-ocr)."
+  echo "Document reading: on (text/HTML/DOCX via $final/bin/samosa-extract; OCR via $final/bin/samosa-ocr)."
+  if "$final/bin/samosa-extract" --version | grep -F ';pdfium)' >/dev/null; then
+    echo "PDF text reading: on (PDFium)."
+  else
+    echo "PDF text reading: off — rebuild with PDFIUM_DIR=<unpacked pdfium> to enable it."
+  fi
 else
   echo "OCR reading: on ($final/bin/samosa-ocr)."
-  echo "PDF text reading: off — samosa-extract/libpdfium.dylib not found."
-  echo "  Build with: PDFIUM_DIR=<unpacked pdfium> make samosa-extract, then re-run this installer."
+  echo "Document text reading: off — samosa-extract was not built."
 fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
   echo "Native summaries: on ($final/bin/samosa-summarizer)."

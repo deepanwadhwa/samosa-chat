@@ -27,8 +27,9 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-if [ ! -x "$EXTRACTOR" ]; then
-  echo "test_doc_read_pdf_paging.sh: SKIP (no real samosa-extract at $EXTRACTOR -- build with" >&2
+if [ ! -x "$EXTRACTOR" ] ||
+   ! "$EXTRACTOR" --version 2>/dev/null | grep -F ';pdfium)' >/dev/null; then
+  echo "test_doc_read_pdf_paging.sh: SKIP (no PDFium-capable samosa-extract at $EXTRACTOR -- build with" >&2
   echo "  make samosa-extract PDFIUM_DIR=<unpacked PDFium SDK> first)" >&2
   exit 0
 fi

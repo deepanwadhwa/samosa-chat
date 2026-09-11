@@ -118,6 +118,7 @@ destination() { # destination <remote-path>
     runtime/macos-arm64/samosa-visionpsy) printf '%s/bin/samosa-visionpsy\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-molmo2) printf '%s/bin/samosa-molmo2\n' "$STAGE" ;;
     runtime/macos-arm64/molmo2-pack) printf '%s/bin/molmo2-pack\n' "$STAGE" ;;
+    runtime/macos-arm64/samosa-audio-decode) printf '%s/bin/samosa-audio-decode\n' "$STAGE" ;;
     runtime/common/molmo2-processor.json) printf '%s/share/molmo2/processor.json\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
@@ -135,7 +136,7 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_multimodal.c engine/samosa_multimodal.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
+INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_audio_decode.mm engine/samosa_multimodal.c engine/samosa_multimodal.h engine/samosa_evidence.c engine/samosa_evidence.h engine/samosa_html.c engine/samosa_html.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 # These pinned sources build the same generic service Samosa uses locally and
@@ -150,6 +151,7 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   visionpsy_exe=runtime/macos-arm64/samosa-visionpsy
   molmo2_exe=runtime/macos-arm64/samosa-molmo2
   molmo2_pack=runtime/macos-arm64/molmo2-pack
+  audio_decode_exe=runtime/macos-arm64/samosa-audio-decode
   molmo2_processor=runtime/common/molmo2-processor.json
   maple_lib=runtime/macos-arm64/mlx.metallib
   if manifest_field "$maple_exe" 1 >/dev/null 2>&1 ||
@@ -166,6 +168,12 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
       manifest_field "$maple_lib" 1 >/dev/null 2>&1 ||
       fail "release contains an incomplete Apple-Silicon MLX runtime"
     INSTALL_FILES="$INSTALL_FILES $maple_exe $visionpsy_exe $molmo2_exe $molmo2_pack $molmo2_processor $maple_lib"
+  fi
+
+  # AVFoundation supplies the codecs, but the reviewed bounded sidecar is a
+  # release artifact so installed gateways never depend on a host compiler.
+  if manifest_field "$audio_decode_exe" 1 >/dev/null 2>&1; then
+    INSTALL_FILES="$INSTALL_FILES $audio_decode_exe"
   fi
 
   summarizer_exe=runtime/macos-arm64/samosa-summarizer
@@ -205,11 +213,23 @@ case "$(uname -s):$(uname -m)" in
   Linux:x86_64) PDFIUM_ARCHIVE="pdfium/pdfium-linux-x64.tgz"; PDFIUM_LIBRARY="libpdfium.so" ;;
   Linux:aarch64) PDFIUM_ARCHIVE="pdfium/pdfium-linux-arm64.tgz"; PDFIUM_LIBRARY="libpdfium.so" ;;
 esac
-DOCUMENTS_ENABLED=0
-if [ -n "$PDFIUM_ARCHIVE" ] && manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&1 && \
-   manifest_field "engine/samosa_extract.c" 1 >/dev/null 2>&1; then
-  INSTALL_FILES="$INSTALL_FILES engine/samosa_extract.c $PDFIUM_ARCHIVE"
-  DOCUMENTS_ENABLED=1
+DOCX_READER_FILES="engine/samosa_docx.c engine/samosa_docx.h engine/miniz/LICENSE engine/miniz/miniz.c engine/miniz/miniz.h engine/miniz/miniz_common.h engine/miniz/miniz_export.h engine/miniz/miniz_tdef.h engine/miniz/miniz_tinfl.c engine/miniz/miniz_tinfl.h engine/miniz/miniz_zip.c engine/miniz/miniz_zip.h"
+PORTABLE_DOCUMENTS_ENABLED=0
+if manifest_field "engine/samosa_extract.c" 1 >/dev/null 2>&1 && \
+   manifest_field "engine/samosa_html.c" 1 >/dev/null 2>&1; then
+  for relative in $DOCX_READER_FILES; do
+    manifest_field "$relative" 1 >/dev/null 2>&1 ||
+      fail "release contains an incomplete DOCX reader"
+  done
+  INSTALL_FILES="$INSTALL_FILES engine/samosa_extract.c $DOCX_READER_FILES"
+  PORTABLE_DOCUMENTS_ENABLED=1
+fi
+
+PDFIUM_ENABLED=0
+if [ "$PORTABLE_DOCUMENTS_ENABLED" = 1 ] && [ -n "$PDFIUM_ARCHIVE" ] && \
+   manifest_field "$PDFIUM_ARCHIVE" 1 >/dev/null 2>&1; then
+  INSTALL_FILES="$INSTALL_FILES $PDFIUM_ARCHIVE"
+  PDFIUM_ENABLED=1
 fi
 
 # Stage a model weight file only if this release's manifest actually lists
@@ -293,6 +313,9 @@ fi
 if [ -f "$STAGE/bin/molmo2-pack" ]; then
   chmod 755 "$STAGE/bin/molmo2-pack"
 fi
+if [ -f "$STAGE/bin/samosa-audio-decode" ]; then
+  chmod 755 "$STAGE/bin/samosa-audio-decode"
+fi
 
 say "Compiling the staged engine..."
 COMPILER=""
@@ -361,25 +384,34 @@ $COMPILER -std=gnu99 -D_GNU_SOURCE -O2 -pthread \
   fail "staged Chutni service compilation failed; live release was not changed"
 chmod +x "$STAGE/bin/chutni-mcp"
 
-if [ "$DOCUMENTS_ENABLED" = 1 ]; then
-  command -v tar >/dev/null 2>&1 || fail "PDF support needs tar to unpack its verified release artifact"
-  PDFIUM_ROOT="$STAGE/pdfium/unpacked"
-  mkdir -p "$PDFIUM_ROOT" "$STAGE/lib"
-  tar -xzf "$STAGE/$PDFIUM_ARCHIVE" -C "$PDFIUM_ROOT" ||
-    fail "could not unpack the verified PDFium artifact"
-  [ -f "$PDFIUM_ROOT/include/fpdfview.h" ] && [ -f "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" ] ||
-    fail "verified PDFium artifact has an unexpected layout"
-  cp "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" "$STAGE/lib/$PDFIUM_LIBRARY"
-  if [ "$(uname -s)" = "Darwin" ]; then
-    EXTRACT_RPATH='@loader_path/../lib'
-  else
-    EXTRACT_RPATH='$ORIGIN/../lib'
+if [ "$PORTABLE_DOCUMENTS_ENABLED" = 1 ]; then
+  EXTRACT_PDF_CFLAGS='-DSAMOSA_EXTRACT_NO_PDFIUM'
+  EXTRACT_PDF_LIBS=''
+  if [ "$PDFIUM_ENABLED" = 1 ]; then
+    command -v tar >/dev/null 2>&1 || fail "PDF support needs tar to unpack its verified release artifact"
+    PDFIUM_ROOT="$STAGE/pdfium/unpacked"
+    mkdir -p "$PDFIUM_ROOT" "$STAGE/lib"
+    tar -xzf "$STAGE/$PDFIUM_ARCHIVE" -C "$PDFIUM_ROOT" ||
+      fail "could not unpack the verified PDFium artifact"
+    [ -f "$PDFIUM_ROOT/include/fpdfview.h" ] && [ -f "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" ] ||
+      fail "verified PDFium artifact has an unexpected layout"
+    cp "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" "$STAGE/lib/$PDFIUM_LIBRARY"
+    if [ "$(uname -s)" = "Darwin" ]; then
+      EXTRACT_RPATH='@loader_path/../lib'
+    else
+      EXTRACT_RPATH='$ORIGIN/../lib'
+    fi
+    EXTRACT_PDF_CFLAGS="-I$PDFIUM_ROOT/include"
+    EXTRACT_PDF_LIBS="$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY -Wl,-rpath,$EXTRACT_RPATH"
   fi
-  $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -I"$PDFIUM_ROOT/include" \
-    "$STAGE/engine/samosa_extract.c" "$PDFIUM_ROOT/lib/$PDFIUM_LIBRARY" \
-    -Wl,-rpath,"$EXTRACT_RPATH" -o "$STAGE/bin/samosa-extract" ||
+  # shellcheck disable=SC2086 -- these are reviewed compiler flag fragments,
+  # never document/user input.
+  $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 $EXTRACT_PDF_CFLAGS -I"$STAGE/engine/miniz" \
+    "$STAGE/engine/samosa_extract.c" "$STAGE/engine/samosa_html.c" "$STAGE/engine/samosa_docx.c" \
+    "$STAGE/engine/miniz/miniz.c" "$STAGE/engine/miniz/miniz_tinfl.c" "$STAGE/engine/miniz/miniz_zip.c" \
+    $EXTRACT_PDF_LIBS -o "$STAGE/bin/samosa-extract" ||
     fail "staged document extractor compilation failed; live release was not changed"
-  if [ "$(uname -s)" = "Darwin" ]; then
+  if [ "$PDFIUM_ENABLED" = 1 ] && [ "$(uname -s)" = "Darwin" ]; then
     install_name_tool -change ./libpdfium.dylib @rpath/libpdfium.dylib "$STAGE/bin/samosa-extract" ||
       fail "could not set the staged PDFium runtime path"
   fi
@@ -400,14 +432,14 @@ fi
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||

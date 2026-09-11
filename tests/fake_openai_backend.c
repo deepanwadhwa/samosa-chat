@@ -48,10 +48,77 @@ static void stop_server(int number) {
 static int handler(SamosaHttpServer *server, int fd,
                    const SamosaHttpRequest *request, void *opaque) {
     (void)opaque;
+    const char *document_log = getenv("SAMOSA_FAKE_DOCUMENT_REQUEST_LOG");
+    if (document_log && !strcmp(request->method, "POST")) {
+        FILE *log = fopen(document_log, "a");
+        if (log) { fprintf(log, "%s\n", request->body); fclose(log); }
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Plan the next document evidence action")) {
+        const char *decision = "{\\\"action\\\":\\\"read_all\\\"}";
+        if (strstr(request->body, "harness cancellation probe")) sleep_ms(1000);
+        int have_read = !strstr(request->body, "\\\"reads_completed\\\":0");
+        if (strstr(request->body, "harness metadata probe") ||
+            strstr(request->body, "harness irrelevant probe"))
+            decision = "{\\\"action\\\":\\\"finish\\\"}";
+        else if (strstr(request->body, "harness invalid probe"))
+            decision = "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":-1,\\\"count\\\":100}";
+        else if (strstr(request->body, "harness title probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":2}";
+        else if (strstr(request->body, "harness jump probe"))
+            decision = strstr(request->body, "[PDF page 73]") ? "{\\\"action\\\":\\\"finish\\\"}"
+                : have_read ? "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":73,\\\"count\\\":1}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness repeat probe"))
+            decision = "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":3,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness batch probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":9,\\\"purpose\\\":\\\"find the first chapter\\\"}";
+        else if (strstr(request->body, "harness reuse probe"))
+            decision = strstr(request->body, "Previously inspected source evidence")
+                ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_all\\\"}";
+        else if (strstr(request->body, "harness overlap probe"))
+            decision = strstr(request->body, "[PDF page 5]") ? "{\\\"action\\\":\\\"finish\\\"}"
+                : have_read ? "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":3,\\\"count\\\":3}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":3}";
+        else if (strstr(request->body, "harness text probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_text\\\",\\\"offset\\\":0,\\\"count\\\":100}";
+        else if (strstr(request->body, "harness child cancellation probe"))
+            decision = "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":99,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness uncertainty probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness native failure probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness native malformed retry probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness incomplete probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1}";
+        else if (strstr(request->body, "harness refresh probe"))
+            decision = have_read ? "{\\\"action\\\":\\\"finish\\\"}"
+                : "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":1,\\\"count\\\":1,\\\"refresh\\\":true}";
+        char body[1024];
+        snprintf(body, sizeof(body), "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"%s\"},\"finish_reason\":\"stop\"}]}", decision);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/compact")) {
         const char *reply = strstr(request->body, "pinned_context")
             ? "saw pinned compaction context" : "missing pinned compaction context";
         char body[512];
+        if (strstr(request->body, "\"stream\":true")) {
+            snprintf(body, sizeof(body),
+                "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"%s\"},\"finish_reason\":null}]}\n\n"
+                "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                "data: [DONE]\n\n", reply);
+            return samosa_http_response(fd, 200, "text/event-stream", body,
+                                        "Cache-Control: no-cache\r\n");
+        }
         snprintf(body, sizeof(body),
             "{\"status\":\"ok\",\"before_tokens\":1000,\"after_tokens\":400,"
             "\"retained_recent_tokens\":400,\"message\":\"%s\"}", reply);
@@ -521,6 +588,25 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":\"This is a black-and-white circular mandala.\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment video relationship probe") &&
+        !strstr(request->body, "Route a local attachment question")) {
+        const char *reply = strstr(request->body, "Attached video observation") &&
+                            strstr(request->body, "fixture timestamped video evidence") &&
+                            strstr(request->body, "covered_interval=0.000-30.000 seconds") &&
+                            strstr(request->body, "Attached audio transcript") &&
+                            strstr(request->body, "The speaker says launch now") &&
+                            strstr(request->body, "[00:00:12.000-00:00:14.000]") &&
+                            strstr(request->body, "coverage=complete") &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw aligned audio and visual video evidence"
+            : "missing aligned audio or visual video evidence";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment video probe")) {
         if (strstr(request->body, "Route a local attachment question"))
             return samosa_http_response(fd, 200, "application/json",
@@ -539,6 +625,22 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment video audio probe")) {
+        const char *reply = strstr(request->body, "Attached audio transcript") &&
+                            strstr(request->body, "podcast sentinel appears here") &&
+                            strstr(request->body, "provider=whisper.cpp") &&
+                            strstr(request->body, "citations use transcript time ranges") &&
+                            !strstr(request->body, "Attached video observation") &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw routed video audio transcript"
+            : "missing routed video audio transcript";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "What happens in this video?")) {
         if (!strstr(request->body, "Attached video observation") ||
             !strstr(request->body, "fixture timestamped video evidence") ||
@@ -550,6 +652,39 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
             "\"message\":{\"role\":\"assistant\",\"content\":\"saw bounded Molmo video evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "audio balanced retrieval probe")) {
+        const char *reply = strstr(request->body, "Attached audio transcript") &&
+                            strstr(request->body, "early ranking sentinel is cedar") &&
+                            strstr(request->body, "middle ranking sentinel is mango") &&
+                            strstr(request->body, "late ranking sentinel is quartz") &&
+                            strstr(request->body, "Transcript retrieval: locally selected") &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw balanced audio retrieval"
+            : "missing balanced audio retrieval evidence";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment audio probe")) {
+        const char *reply = strstr(request->body, "Attached audio transcript") &&
+                            strstr(request->body, "podcast sentinel appears here") &&
+                            strstr(request->body, "provider=whisper.cpp") &&
+                            strstr(request->body, "citations use transcript time ranges") &&
+                            strstr(request->body, "Transcript retrieval: locally selected") &&
+                            (strstr(request->body, "[00:00:01.000-00:00:02.500]") ||
+                             strstr(request->body, "[00:00:00.000-00:00:00.800]")) &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw durable audio transcript" : "missing audio transcript evidence";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment image probe")) {
@@ -571,6 +706,42 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json",
             "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":\"saw the document attachment\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment html probe")) {
+        const char *reply = strstr(request->body, "Attached document") &&
+                            strstr(request->body, "HTML Fixture & Report") &&
+                            strstr(request->body, "HTML_LATE_SENTINEL") &&
+                            strstr(request->body, "Revenue is ") &&
+                            !strstr(request->body, "SCRIPT_POISON") &&
+                            !strstr(request->body, "STYLE_POISON") &&
+                            !strstr(request->body, "TEMPLATE_POISON") &&
+                            !strstr(request->body, "<script") &&
+                            !strstr(request->body, "<h1>") &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw clean HTML attachment evidence"
+            : "missing or unsafe HTML attachment evidence";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "attachment docx probe")) {
+        const char *reply = strstr(request->body, "Attached document") &&
+                            strstr(request->body, "DOCX Gateway Report") &&
+                            strstr(request->body, "DOCX_GATEWAY_SENTINEL") &&
+                            !strstr(request->body, "<w:document") &&
+                            !strstr(request->body, "word/document.xml") &&
+                            !strstr(request->body, "\"attachment_ids\"")
+            ? "saw exact DOCX attachment evidence"
+            : "missing or unsafe DOCX attachment evidence";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "stable prefix initial probe") &&

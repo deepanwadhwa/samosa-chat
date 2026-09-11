@@ -1,8 +1,10 @@
 # `samosa-extract` protocol
 
-`samosa-extract` is the document-sidecar boundary: it links PDFium while the
-resident `qwen36b` server remains dependency-free. It takes one PDF and writes
-exactly one JSON object to standard output.
+`samosa-extract` is the isolated document-sidecar boundary while the resident
+`qwen36b` server remains dependency-free. Its portable build reads UTF-8 text,
+HTML, and DOCX; release builds additionally link PDFium when the reviewed
+platform artifact is present. It takes one local document and writes exactly
+one JSON object to standard output.
 
 ```sh
 samosa-extract --json file.pdf
@@ -21,10 +23,12 @@ inspect a small range, and explicitly request the next range when necessary.
 It must not use whole-document `--json` extraction for interactive Find jobs.
 
 UTF-8 plain-text input is also handled natively. Its line endings are normalized
-to LF and it receives the same one-page JSON shape. The extractor sniffs bytes,
-not extensions: invalid UTF-8/binary input is rejected rather than silently
-treated as text. DOCX, HTML, and RTF receive explicit unavailable/unsupported
-errors until their portable extractors land; no macOS host tool is used.
+to LF and it receives the same one-page JSON shape. HTML uses the same portable,
+dependency-free readable-text extractor as public web reads: title and useful
+block/list/table boundaries are retained, while script, style, SVG, noscript,
+and template contents are removed. The extractor sniffs bytes, not extensions:
+invalid UTF-8/binary input is rejected rather than silently treated as text. No
+macOS host document tool is used.
 
 ## Current format scope
 
@@ -32,12 +36,13 @@ errors until their portable extractors land; no macOS host tool is used.
 | --- | --- | --- |
 | PDF | Implemented | PDFium text, per-page metadata, optional exact token counts, bounded page rendering |
 | UTF-8 text / Markdown / source | Implemented | Native extraction with line-ending normalization |
-| DOCX | Deferred | Requires the planned vendored miniz ZIP reader plus XML text strip; returns `docx_extractor_unavailable` today |
-| HTML | Deferred to #4 | Will use the shared portable web extractor; returns `html_extractor_unavailable` today |
+| DOCX | Implemented | Vendored miniz ZIP reader, required OOXML-part validation, bounded XML text extraction, and expansion/path/ratio limits |
+| HTML | Implemented | Shared bounded readable-text extraction, title preservation, entity decoding, and non-readable/active-container stripping |
 | RTF | Unsupported | Returns `rtf_unsupported` |
 
-This is the explicit #5 boundary for now. It does not claim full document-format
-support before those remaining portable extractors are implemented and tested.
+This remains a deliberately bounded format set. It does not claim full
+document-format support before the remaining portable extractors are
+implemented and tested.
 
 A successful response has this shape:
 
@@ -48,7 +53,9 @@ A successful response has this shape:
   "page_count": 1,
   "page_start": 1,
   "page_end": 1,
-  "pages": [{"index": 1, "text_chars": 42, "has_raster_figure": false, "text": "..."}],
+  "pages": [{"index": 1, "text_chars": 42,
+             "inspection": {"kind": "digital_text", "needs_ocr": false},
+             "has_raster_figure": false, "text": "..."}],
   "text": "...",
   "tokens_estimate": 8
 }
@@ -58,6 +65,16 @@ A successful response has this shape:
 ingestion caller must calculate the exact model-token count with its loaded
 tokenizer before deciding whether input fits context; it must not treat this
 estimate as a budget authority.
+
+PDF pages also include a bounded `inspection` object. PDFium reports image
+object count/coverage, usable and suspicious Unicode counts, text quality,
+blank-preview status, and whether recovery should escalate to OCR. Image bounds
+are normalized to the rendered page and account for nested form objects,
+transforms and page geometry. These are conservative routing signals, not a
+semantic claim that every image contains text. Healthy selectable text avoids
+rendering; blank pages avoid OCR; scanned and mixed pages are rendered only
+when requested by the controller. The gateway preserves these facts in model
+evidence and reports the selected path over file-progress events.
 
 The controller can request exact counts from its trusted, release-provided Qwen
 tokenizer:
@@ -82,14 +99,29 @@ mode `0600` and capped to a 768-pixel long edge (at most 768² pixels). Successf
 rendering reports a small JSON acknowledgement on standard output. The caller
 owns the temporary directory and must delete the rendered image after inference.
 
+OCR candidates use the larger, bounded form:
+
+```sh
+samosa-extract --render-ocr-ppm file.pdf 3 /secure/job-temp/page-3.ppm
+samosa-extract --render-ocr-ppm file.pdf 3 /secure/job-temp/region.ppm 0.1 0.2 0.9 0.8
+```
+
+It caps the long edge at 2,000 pixels. Optional finite normalized bounds crop
+the emitted image with a small safety margin. OCR line boxes are in crop
+coordinates and must not be presented as page coordinates without remapping.
+
 Failures are also JSON, for example `{"ok":false,"error":"pdf_encrypted"}`.
 The stable failure classes include unavailable/invalid input, encrypted or
-malformed PDFs, page/text/output limits, and the wall timeout.
+malformed PDFs/DOCX packages, ZIP/XML expansion and path violations,
+page/text/output limits, and the wall timeout.
 
 ## Safety boundary
 
-The sidecar accepts only regular, non-symlink files up to 20 MiB (override down,
-never up, with `SAMOSA_EXTRACT_MAX_BYTES`). It keeps that opened descriptor
+The sidecar accepts only regular, non-symlink files. PDFs may be up to 4 GiB,
+matching the upload ceiling; other formats retain the 20 MiB input limit.
+`SAMOSA_EXTRACT_MAX_BYTES` can lower, but not raise, the format's limit.
+PDFs are identified from the opened descriptor's signature, not the filename.
+It keeps that opened descriptor
 behind PDFium's custom-file API, avoiding a path replacement race. It requests
 a 512 MiB `RLIMIT_AS` limit (and `RLIMIT_DATA` fallback): Linux enforces the
 address-space limit, while this macOS kernel rejects finite values for both.
@@ -110,15 +142,21 @@ sandbox policy.
 
 ## Development build
 
-PDFium is not part of `make` or `make test`. Build the optional sidecar with an
-unpacked, SHA-verified PDFium artifact:
+The default target builds the portable text/HTML/DOCX sidecar without PDFium:
+
+```sh
+make samosa-extract
+```
+
+Build the PDF-capable variant with an unpacked, SHA-verified PDFium artifact:
 
 ```sh
 PDFIUM_DIR=/path/to/pdfium make extract-test
 ```
 
-The release installer will fetch the platform-specific, manifest-pinned
-artifact whenever the release manifest includes it. `tools/package_hf.py`
+The release installer always builds the portable sidecar from the verified
+release sources. It fetches the platform-specific, manifest-pinned PDFium
+artifact only when the release manifest includes it. `tools/package_hf.py`
 accepts `--pdfium-dir`; that directory must contain the reviewed macOS-arm64,
 Linux-x64, and Linux-arm64 archives before it will package any of them. The
 installer verifies the archive through the release manifest, unpacks it inside
