@@ -309,7 +309,8 @@ bool preprocess_video_frames(const std::vector<RgbImage>& frames,
                              const std::vector<double>& timestamps,
                              VisualInput* output, std::string* error) {
     if (!output || frames.empty() || frames.size() != timestamps.size() || frames.size() > 16) {
-        if (error) *error = "video frame batch is invalid"; return false;
+        if (error) *error = "video frame batch is invalid";
+        return false;
     }
     try {
         VisualInput result;

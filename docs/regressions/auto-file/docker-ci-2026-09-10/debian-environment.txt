@@ -1,0 +1,12 @@
+Linux d7a5e1777f38 6.12.54-linuxkit #1 SMP Tue Nov  4 21:21:47 UTC 2025 x86_64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+gcc (Debian 12.2.0-14+deb12u1) 12.2.0
+ldd (Debian GLIBC 2.36-9+deb12u14) 2.36

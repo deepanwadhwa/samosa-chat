@@ -73,7 +73,13 @@ static void put_error(const char *code) {
 static void on_alarm(int ignored) {
     static const char message[] = "{\"ok\":false,\"error\":\"wall_timeout\"}\n";
     (void)ignored;
-    (void)write(STDOUT_FILENO, message, sizeof(message) - 1);
+    size_t sent = 0;
+    while (sent < sizeof(message) - 1) {
+        ssize_t written = write(STDOUT_FILENO, message + sent,
+                                sizeof(message) - 1 - sent);
+        if (written <= 0) break;
+        sent += (size_t)written;
+    }
     _Exit(124);
 }
 

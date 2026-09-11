@@ -181,7 +181,10 @@ static int check_cancellation_reaps_child(Gateway *gateway, const char *self) {
     pthread_join(thread, NULL);
     int grandchild = 0;
     FILE *pid_file = fopen(pid_path, "r");
-    if (pid_file) { (void)fscanf(pid_file, "%d", &grandchild); fclose(pid_file); }
+    if (pid_file) {
+        if (fscanf(pid_file, "%d", &grandchild) != 1) grandchild = 0;
+        fclose(pid_file);
+    }
     unlink(pid_path);
     unsetenv("SAMOSA_DOCUMENT_CONTRACT_GRANDCHILD_PID");
     int alive = 0;

@@ -1,0 +1,16 @@
+Linux 5c4f62c8d87c 6.12.54-linuxkit #1 SMP Tue Nov  4 21:21:47 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.4 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+UBUNTU_CODENAME=noble
+LOGO=ubuntu-logo
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+ldd (Ubuntu GLIBC 2.39-0ubuntu8.9) 2.39

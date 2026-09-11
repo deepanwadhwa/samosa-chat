@@ -4,11 +4,13 @@
 #include "samosa_multimodal.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct {
@@ -94,7 +96,10 @@ int main(int argc, char **argv) {
     HangingRequest request = {.session = &hanging};
     pthread_t thread;
     assert(pthread_create(&thread, NULL, request_hang, &request) == 0);
-    usleep(100000);
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 100000000};
+    while (nanosleep(&delay, &delay) != 0) {
+        assert(errno == EINTR);
+    }
     assert(samosa_mm_supervisor_cancel(&supervisor));
     pthread_join(thread, NULL);
     assert(!request.result);

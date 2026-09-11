@@ -554,7 +554,10 @@ ci-debian:
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
 	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates; \
 	    useradd -m ci; \
-	    cp -a /src /work; \
+	    mkdir -p /work; \
+	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
+	      --exclude=./.venv --exclude=./model --exclude=./models \
+	      --exclude=__pycache__ -cf - . | tar -xf - -C /work; \
 	    chown -R ci:ci /work; \
 	    su -s /bin/sh ci -c "\
 	      cd /work && \
@@ -563,22 +566,33 @@ ci-debian:
 	    "; \
 	  '
 
+CI_UBUNTU_APT_MIRROR ?= http://archive.ubuntu.com/ubuntu/
+
 ci-ubuntu-full:
 	docker run --rm --platform linux/amd64 \
 	  -v "$$PWD:/src:ro" \
-	  ubuntu:latest \
+	  -e CI_UBUNTU_APT_MIRROR="$(CI_UBUNTU_APT_MIRROR)" \
+	  ubuntu:24.04 \
 	  sh -ec '\
+	    sed -i "s|http://archive.ubuntu.com/ubuntu/|$$CI_UBUNTU_APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources; \
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev \
+	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 libomp-dev \
 	      file ca-certificates git bash; \
 	    useradd -m ci; \
-	    cp -a /src /work; \
+	    mkdir -p /work; \
+	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
+	      --exclude=./.venv --exclude=./model --exclude=./models \
+	      --exclude=__pycache__ -cf - . | tar -xf - -C /work; \
 	    chown -R ci:ci /work; \
 	    su -s /bin/bash ci -c "\
 	      cd /work && \
 	      rm -rf build && \
-	      SAMOSA_ALLOW_SLOW_CPU=1 make test\
+	      make && make omp && \
+	      SAMOSA_ALLOW_SLOW_CPU=1 make test && \
+	      make test-document-harness test-audio-attachments test-molmo2-gateway test-molmo2-processor && \
+	      node tests/test_composer_ui.mjs && node tests/test_composer_perf.mjs && \
+	      node tests/test_session_token_ui.mjs\
 	    "; \
 	  '
 
