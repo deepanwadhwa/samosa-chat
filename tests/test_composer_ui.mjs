@@ -282,6 +282,18 @@ const fakeFile = (name, type) => ({ name, type, size: 4 });
   assert.equal(els.audioInput.accept, "audio/wav,.wav",
     "a WAV-only gateway must not offer compressed formats in the picker");
   assert.match(els.attachAudioReason.textContent, /PCM WAV/i);
+  assert.match(els.documentInput.accept, /application\/pdf/);
+  assert.match(els.documentInput.accept, /\.pdf/);
+  assert.match(els.attachDocumentReason.textContent, /PDF/);
+
+  fns.sourceCapabilities.sources[3].media_types = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  fns.sourceCapabilities.sources.push({ kind: "text", media_types: ["text/plain", "text/html", "application/json"] });
+  fns.applyCapabilities();
+  assert.doesNotMatch(els.documentInput.accept, /application\/pdf|\.pdf/,
+    "a runtime without PDFium must not offer PDF in its file picker");
+  assert.match(els.documentInput.accept, /\.docx/);
+  assert.doesNotMatch(els.attachDocumentReason.textContent, /PDF/);
+
   fns.sourceCapabilities.sources[2].media_types = ["audio/wav", "audio/mpeg", "audio/mp4"];
   fns.applyCapabilities();
   assert.equal(els.audioInput.accept,

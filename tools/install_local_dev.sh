@@ -94,9 +94,19 @@ EXTRACT_LIB=""
 for candidate in "$BUILD_DIR/samosa-extract" "$ROOT/dist/samosa-extract"; do
   [ -x "$candidate" ] && EXTRACT_BIN="$candidate" && break
 done
-for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib" "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do
-  [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
-done
+case "$(uname -s)" in
+  Darwin)
+    for candidate in "$ROOT/dist/libpdfium.dylib" "$ROOT/libpdfium.dylib"; do
+      [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
+    done
+    ;;
+  *)
+    for candidate in "$ROOT/dist/libpdfium.so" "$ROOT/libpdfium.so"; do
+      [ -f "$candidate" ] && EXTRACT_LIB="$candidate" && break
+    done
+    ;;
+esac
+"$ROOT/tools/validate_local_document_runtime.sh" "$EXTRACT_BIN" "$EXTRACT_LIB"
 
 set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
@@ -202,7 +212,7 @@ fi
 # sidecar whenever it exists and colocate PDFium only when present.
 if [ -n "$EXTRACT_BIN" ]; then
   cp "$EXTRACT_BIN" "$stage/bin/samosa-extract"
-  if [ -n "$EXTRACT_LIB" ]; then
+  if "$EXTRACT_BIN" --version 2>/dev/null | grep -F ';pdfium)' >/dev/null; then
     cp "$EXTRACT_LIB" "$stage/bin/$(basename "$EXTRACT_LIB")"
   fi
   chmod +x "$stage/bin/samosa-extract"

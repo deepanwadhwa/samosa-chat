@@ -35,7 +35,22 @@ endif
 NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
 ENGINE_HEADERS := $(wildcard src/*.h)
 PDFIUM_DIR ?=
-PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
+PDFIUM_BUNDLED_HEADERS := vendor/pdfium-headers-152.0.7961.0
+ifeq ($(UNAME_S),Darwin)
+  PDFIUM_BUNDLED_LIBRARY := $(firstword $(wildcard dist/libpdfium.dylib libpdfium.dylib))
+else
+  PDFIUM_BUNDLED_LIBRARY := $(firstword $(wildcard dist/libpdfium.so libpdfium.so))
+endif
+ifneq ($(strip $(PDFIUM_DIR)),)
+  PDFIUM_INCLUDE_DIR := $(PDFIUM_DIR)/include
+  PDFIUM_LIBRARY := $(firstword $(wildcard $(PDFIUM_DIR)/lib/libpdfium.*))
+else ifneq ($(strip $(PDFIUM_BUNDLED_LIBRARY)),)
+  # Local release checkouts already carry the reviewed runtime library under
+  # dist/. Keep its matching public headers in source so an ordinary macOS
+  # rebuild cannot silently replace a PDF-capable reader with a portable one.
+  PDFIUM_INCLUDE_DIR := $(PDFIUM_BUNDLED_HEADERS)
+  PDFIUM_LIBRARY := $(PDFIUM_BUNDLED_LIBRARY)
+endif
 CHUTNI_DIR ?= vendor/chutni
 CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
 CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
@@ -50,14 +65,14 @@ GATEWAY_SUPPORT_SRCS := $(MULTIMODAL_SRCS) $(EVIDENCE_SRCS) $(HTML_SRCS)
 # PDFium is deliberately optional: the engine's normal build remains
 # dependency-free. The portable sidecar still handles text, HTML, and DOCX;
 # the installer supplies a SHA-pinned platform artifact to add PDF support.
-ifeq ($(strip $(PDFIUM_DIR)),)
+ifeq ($(strip $(PDFIUM_LIBRARY)),)
 PDFIUM_READY :=
 PDFIUM_EXTRACT_CFLAGS := -DSAMOSA_EXTRACT_NO_PDFIUM
 PDFIUM_EXTRACT_LIBS :=
 else
-PDFIUM_READY := $(PDFIUM_DIR)/include/fpdfview.h $(PDFIUM_LIBRARY)
-PDFIUM_EXTRACT_CFLAGS := -I$(PDFIUM_DIR)/include
-PDFIUM_EXTRACT_LIBS := $(PDFIUM_LIBRARY) -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(PDFIUM_DIR)/lib
+PDFIUM_READY := $(PDFIUM_INCLUDE_DIR)/fpdfview.h $(PDFIUM_INCLUDE_DIR)/fpdf_edit.h $(PDFIUM_INCLUDE_DIR)/fpdf_text.h $(PDFIUM_LIBRARY)
+PDFIUM_EXTRACT_CFLAGS := -I$(PDFIUM_INCLUDE_DIR)
+PDFIUM_EXTRACT_LIBS := $(PDFIUM_LIBRARY) -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(dir $(PDFIUM_LIBRARY))
 endif
 
 samosa-engine: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
@@ -487,7 +502,7 @@ test-docx-extractor: tests/test_samosa_docx.c tests/test_samosa_docx.sh src/samo
 	  $(MINIZ_READ_SRCS) -o $(BUILD_DIR)/test-samosa-docx
 	SAMOSA_DOCX_TEST_RUNNER=./$(BUILD_DIR)/test-samosa-docx sh tests/test_samosa_docx.sh
 
-test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
+test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_local_document_runtime_guard.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
@@ -500,6 +515,7 @@ test: pagecache-residency-test test-evidence-contract test-html-extractor test-d
 	sh tests/test_install_path.sh
 	sh tests/test_gateway_installer.sh
 	sh tests/test_runtime_only_release.sh
+	sh tests/test_local_document_runtime_guard.sh
 	python3 tests/test_thinking_output.py
 	python3 tests/test_regression_gate.py
 	python3 tests/test_openrouter_control.py
@@ -556,7 +572,7 @@ ci-debian:
 	    useradd -m ci; \
 	    mkdir -p /work; \
 	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
-	      --exclude=./.venv --exclude=./model --exclude=./models \
+	      --exclude=./.venv --exclude=./.ci-pdfium --exclude=./model --exclude=./models \
 	      --exclude=__pycache__ -cf - . | tar -xf - -C /work; \
 	    chown -R ci:ci /work; \
 	    su -s /bin/sh ci -c "\
@@ -567,6 +583,8 @@ ci-debian:
 	  '
 
 CI_UBUNTU_APT_MIRROR ?= http://archive.ubuntu.com/ubuntu/
+CI_PDFIUM_LINUX_X64_URL ?= https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7961/pdfium-linux-x64.tgz
+CI_PDFIUM_LINUX_X64_SHA256 ?= 019665c8877d46fe65f625f80fd714ab07aac68554b0636acf2a2adf9288adb2
 
 ci-ubuntu-full:
 	docker run --rm --platform linux/amd64 \
@@ -579,14 +597,20 @@ ci-ubuntu-full:
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
 	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 libomp-dev \
 	      file ca-certificates git bash; \
+	    curl -fL --retry 3 -o /tmp/pdfium-linux-x64.tgz "$(CI_PDFIUM_LINUX_X64_URL)"; \
+	    printf "%s  %s\n" "$(CI_PDFIUM_LINUX_X64_SHA256)" /tmp/pdfium-linux-x64.tgz | sha256sum -c -; \
 	    useradd -m ci; \
 	    mkdir -p /work; \
 	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
-	      --exclude=./.venv --exclude=./model --exclude=./models \
+	      --exclude=./.venv --exclude=./.ci-pdfium --exclude=./model --exclude=./models \
 	      --exclude=__pycache__ -cf - . | tar -xf - -C /work; \
+	    mkdir -p /work/.ci-pdfium; \
+	    tar -xzf /tmp/pdfium-linux-x64.tgz -C /work/.ci-pdfium; \
 	    chown -R ci:ci /work; \
 	    su -s /bin/bash ci -c "\
 	      cd /work && \
+	      export PDFIUM_DIR=/work/.ci-pdfium && \
+	      export SAMOSA_REQUIRE_PDF_ATTACHMENTS=1 && \
 	      rm -rf build && \
 	      make && make omp && \
 	      SAMOSA_ALLOW_SLOW_CPU=1 make test && \
