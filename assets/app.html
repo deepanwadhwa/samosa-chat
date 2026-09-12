@@ -6132,6 +6132,30 @@
         if (types.includes("audio/mpeg")) accept.push("audio/mpeg", ".mp3");
         if (types.includes("audio/mp4")) accept.push("audio/mp4", ".m4a");
         els.audioInput.accept = accept.join(",");
+
+        // Once live capabilities arrive, the document picker must describe
+        // this installation rather than the largest possible release. This
+        // prevents a portable reader from offering PDF and failing only after
+        // the user has already selected and uploaded a file.
+        if (sourceCapabilities) {
+          const documentTypes = new Set([
+            ...(sourceCapability("document")?.media_types || []),
+            ...(sourceCapability("text")?.media_types || []),
+          ]);
+          const documentAccept = [...documentTypes];
+          if (documentTypes.has("application/pdf")) documentAccept.push(".pdf");
+          if (documentTypes.has("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+            documentAccept.push(".docx");
+          if ([...documentTypes].some(type => type.startsWith("text/") ||
+                                             type === "application/json" ||
+                                             type === "application/xml")) {
+            documentAccept.push("text/*", ".html", ".htm", ".txt", ".md", ".csv",
+              ".json", ".yaml", ".yml", ".toml", ".xml", ".py", ".sh", ".bash",
+              ".js", ".mjs", ".cjs", ".ts", ".tsx", ".css", ".c", ".h", ".cc",
+              ".cpp", ".hpp", ".log");
+          }
+          els.documentInput.accept = [...new Set(documentAccept)].join(",");
+        }
       }
       async function refreshSourceCapabilities() {
         try {
@@ -6272,10 +6296,11 @@
           compressedAudio
             ? "WAV, MP3, or M4A · transcribed locally with timestamp citations."
             : "PCM WAV · transcribed locally with timestamp citations.");
+        const pdfAvailable = !!sourceCapability("document")?.media_types?.includes("application/pdf");
         setAttachItem(els.attachDocument, els.attachDocumentReason,
           documentsReported && !!backend.supports_documents,
           "The document reader isn't installed in this build.",
-          "PDF, DOCX, HTML, text, Markdown, code, or structured data.");
+          `${pdfAvailable ? "PDF, " : ""}DOCX, HTML, text, Markdown, code, or structured data.`);
         // WK2: an unanswered consent question is its own reason, distinct from
         // "not configured" -- one is a question, the other is a broken setup,
         // and telling a new user to edit config.json for the first would be

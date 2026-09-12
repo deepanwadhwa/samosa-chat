@@ -36,6 +36,31 @@ jobs:
           sudo apt-get install -y libomp-dev gcc clang
           python3 -m pip install numpy || true
 
+      - name: Install pinned PDFium SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s):$(uname -m)" in
+            Darwin:arm64)
+              url=https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7961/pdfium-mac-arm64.tgz
+              sha=1193a771e0bd934530afa3df73a0d44551d8f4078442e290054e6dd38ded960f
+              ;;
+            Linux:x86_64)
+              url=https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7961/pdfium-linux-x64.tgz
+              sha=019665c8877d46fe65f625f80fd714ab07aac68554b0636acf2a2adf9288adb2
+              ;;
+            *)
+              echo "No pinned PDFium SDK for $(uname -s):$(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          curl -fL --retry 3 -o "$RUNNER_TEMP/pdfium.tgz" "$url"
+          printf '%s  %s\n' "$sha" "$RUNNER_TEMP/pdfium.tgz" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/pdfium"
+          tar -xzf "$RUNNER_TEMP/pdfium.tgz" -C "$RUNNER_TEMP/pdfium"
+          echo "PDFIUM_DIR=$RUNNER_TEMP/pdfium" >> "$GITHUB_ENV"
+          echo "SAMOSA_REQUIRE_PDF_ATTACHMENTS=1" >> "$GITHUB_ENV"
+
       - name: Build (portable)
         run: make
 
@@ -81,6 +106,7 @@ jobs:
               cd /source
               tar \
                 --exclude=.git \
+                --exclude=.ci-pdfium \
                 --exclude=build \
                 --exclude="build-*" \
                 -cf - . | tar -xf - -C /work

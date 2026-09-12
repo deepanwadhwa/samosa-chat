@@ -425,6 +425,10 @@ STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" -X 
 #     machine actually has a working samosa-extract/samosa-ocr build. ---
 SUPPORTS_DOCS=$(field "$HEALTH" supports_documents)
 if [ "$SUPPORTS_DOCS" != "True" ] || [ "$PDF_EXTRACT" != 1 ]; then
+  if [ "${SAMOSA_REQUIRE_PDF_ATTACHMENTS:-0}" = 1 ]; then
+    echo "FAIL: PDF attachment coverage is required, but the gateway/extractor does not advertise PDF support" >&2
+    exit 1
+  fi
   echo "test_attachments.sh: PDF half SKIPPED (no PDFium-capable samosa-extract/samosa-ocr build on this machine)"
 else
   RESP=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H "X-Samosa-Media-Type: application/pdf" \
