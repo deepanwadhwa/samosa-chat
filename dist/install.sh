@@ -122,6 +122,7 @@ destination() { # destination <remote-path>
     runtime/common/molmo2-processor.json) printf '%s/share/molmo2/processor.json\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
+    runtime/macos-arm64/ocr/*) printf '%s/%s\n' "$STAGE" "${1#runtime/macos-arm64/ocr/}" ;;
     runtime/macos-arm64/lib/*) printf '%s/lib/%s\n' "$STAGE" "${1##*/}" ;;
     runtime/common/samosa-text-summarization-Q8_0.gguf)
       printf '%s/models/native-summarizer/samosa-text-summarization-Q8_0.gguf\n' "$STAGE" ;;
@@ -139,6 +140,7 @@ destination() { # destination <remote-path>
 INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_audio_decode.mm engine/samosa_multimodal.c engine/samosa_multimodal.h engine/samosa_evidence.c engine/samosa_evidence.h engine/samosa_html.c engine/samosa_html.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
+INSTALL_FILES="$INSTALL_FILES engine/stage_tesseract_runtime.sh"
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
 CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
@@ -146,7 +148,15 @@ INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 
 # The native Maple executable and its colocated MLX Metal library are a paired
 # Apple-Silicon capability.  Never install one without the other.
+OCR_PREBUILT=0
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  for relative in bin/samosa-ocr lib/ocr/libtesseract.5.dylib share/tessdata/eng.traineddata; do
+    manifest_field "runtime/macos-arm64/ocr/$relative" 1 >/dev/null 2>&1 ||
+      fail "release is missing the bundled Tesseract runtime: $relative"
+  done
+  ocr_files=$(awk -F '\t' '$3 ~ /^runtime\/macos-arm64\/ocr\// {print $3}' "$MANIFEST_NEXT")
+  INSTALL_FILES="$INSTALL_FILES $ocr_files"
+  OCR_PREBUILT=1
   maple_exe=runtime/macos-arm64/samosa-maple
   visionpsy_exe=runtime/macos-arm64/samosa-visionpsy
   molmo2_exe=runtime/macos-arm64/samosa-molmo2
@@ -328,6 +338,11 @@ else
 fi
 
 OMP_FLAGS=""
+OCR_FLAGS=""
+if [ "$OCR_PREBUILT" != 1 ]; then
+  pkg-config --exists tesseract lept || fail "Native OCR needs libtesseract-dev libleptonica-dev tesseract-ocr-eng and pkg-config"
+  OCR_FLAGS=$(pkg-config --cflags --libs tesseract lept)
+fi
 DL_FLAGS=""
 LINUX_WARNING_FLAGS="-Werror"
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -444,9 +459,16 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
   fail "staged filesystem sidecar compilation failed; live release was not changed"
-$COMPILER -O3 -Wno-unused-function -std=c11 -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_ocr.c" -o "$STAGE/bin/samosa-ocr" -lm ||
+if [ "$OCR_PREBUILT" != 1 ]; then
+  $COMPILER -O3 -Wno-unused-function -std=c11 -I"$STAGE/engine" \
+  "$STAGE/engine/samosa_ocr.c" $OCR_FLAGS -o "$STAGE/bin/samosa-ocr" -lm ||
   fail "staged OCR sidecar compilation failed; live release was not changed"
+  sh "$STAGE/engine/stage_tesseract_runtime.sh" "$STAGE" ||
+  fail "staged Tesseract runtime validation failed; live release was not changed"
+fi
+chmod +x "$STAGE/bin/samosa-ocr"
+"$STAGE/bin/samosa-ocr" --check >/dev/null ||
+  fail "bundled Tesseract could not initialize; live release was not changed"
 chmod +x "$STAGE/bin/samosa-gateway" "$STAGE/bin/samosa-jobsd" "$STAGE/bin/samosa-fs" "$STAGE/bin/samosa-ocr" "$STAGE/bin/chutni-mcp"
 if [ -f "$STAGE/bin/samosa-summarizer" ]; then
   chmod +x "$STAGE/bin/samosa-summarizer"

@@ -60,7 +60,7 @@ adds:
   on demand for visual turns, and is evicted immediately to return unified Metal
   memory.
 - An automatic planning and multi-stage evidence cascade: digital PDF text is
-  preferred first, native PP-OCRv6 extracts text from scans/forms, an installed
+  preferred first, native Tesseract extracts text from scans/forms, an installed
   Molmo2 package provides the preferred visual image/video evidence, and
   VisionPsy provides the standard-image fallback when Molmo is absent.
 - A hardware-adaptive VisionPsy preprocessor. The gateway samples live
@@ -101,7 +101,7 @@ answer without planning or primary-model synthesis.
 1. The gateway inventories content-addressed attachment IDs and safe metadata.
 2. The active chat LLM returns schema-validated `read_text`/`inspect_visual`
    routing JSON. A conservative safe route is used only if the planner fails.
-3. The reader supplies embedded PDF text or PP-OCRv6 text when requested.
+3. The reader supplies embedded PDF text or Tesseract text when requested.
    Visual-only PDF work bypasses OCR.
 4. If visual evidence is requested and admitted, the gateway prefers an
    installed `samosa-molmo2` Q4 package and otherwise starts one

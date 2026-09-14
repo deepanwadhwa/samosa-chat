@@ -3,7 +3,7 @@
 > **Ordinary Chat update (2026-08-23).** The PDFium text/rendering decision in
 > this card remains in force and still requires no runtime Python. Chat
 > attachments now layer automatic evidence routing on top of it: the active LLM
-> selects embedded text/PP-OCRv6, auxiliary standard VisionPsy-Nano 460M, or
+> selects embedded text/Tesseract, auxiliary standard VisionPsy-Nano 460M, or
 > both; visual PDF pages are hardware/task-selected with no fixed page cap and
 > are rendered sequentially through one on-demand native MLX C++ helper. This
 > does not extend the feature into Jobs or Chutni. See

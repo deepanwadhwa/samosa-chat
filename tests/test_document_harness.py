@@ -171,8 +171,20 @@ def run():
                 assert [(r[2], r[3]) for r in new_reads] == [("1", "1"), ("73", "1")], new_reads
                 assert "[PDF page 73]" in json.dumps(last) and "[PDF page 72]" not in json.dumps(last)
                 before = len(log(reader_log))
+                model_before = len(log(model_log))
                 chat("harness invalid probe", [pdf])
                 assert len(log(reader_log)) == before, ("invalid plan bypassed the bounded cache", log(reader_log)[before:], log(model_log)[-4:])
+                planners = [r for r in log(model_log)[model_before:]
+                            if "Plan the next document evidence action" in json.dumps(r)]
+                assert len(planners) == 1, "failed planner was retried after its bounded fallback"
+                for probe in ("unsupported finish", "invented quote"):
+                    model_before = len(log(model_log))
+                    last = chat("harness " + probe + " probe", [pdf])
+                    assert "[PDF page 1]" in json.dumps(last), "unsupported filename answer skipped reading"
+                    assert "[PDF page 2]" not in json.dumps(last), "fallback exceeded one page"
+                    planners = [r for r in log(model_log)[model_before:]
+                                if "Plan the next document evidence action" in json.dumps(r)]
+                    assert len(planners) == 1, "unsupported metadata finish triggered another planner"
                 last = chat("harness repeat probe", [pdf])
                 assert len(log(reader_log)) == before + 1, "duplicate operation executed"
                 assert "Stopped repeated planning" in json.dumps(last)

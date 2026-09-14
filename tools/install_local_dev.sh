@@ -34,7 +34,7 @@ BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
 # any release hash or validating inputs. Set SAMOSA_INSTALL_SKIP_BUILD=1 only
 # for an external packaging workflow that has already built the exact source.
 if [ "${SAMOSA_INSTALL_SKIP_BUILD:-0}" != "1" ]; then
-  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd
+  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd samosa-ocr
 fi
 
 # The application itself is what this installer must always be able to produce.
@@ -111,6 +111,7 @@ esac
 set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
+  "$ROOT/tools/stage_tesseract_runtime.sh" \
   "$ROOT/dist/samosa"
 if [ "$(uname -s)" = "Darwin" ]; then set -- "$@" "$AUDIO_DECODE"; fi
 for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do set -- "$@" "$file"; done
@@ -167,6 +168,7 @@ fi
 cp "$JOBSD" "$stage/bin/samosa-jobsd"
 cp "$CHUTNI_SERVICE" "$stage/bin/chutni-mcp"
 cp "$OCR" "$stage/bin/samosa-ocr"
+sh "$ROOT/tools/stage_tesseract_runtime.sh" "$stage"
 if [ -f "$BUILD_DIR/samosa-visionpsy" ]; then
   cp "$BUILD_DIR/samosa-visionpsy" "$stage/bin/samosa-visionpsy"
   chmod +x "$stage/bin/samosa-visionpsy"

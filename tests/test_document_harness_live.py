@@ -48,6 +48,7 @@ for filename, metadata_only in [("The Quiet Orchard - Jane Doe.pdf", True), ("bo
         "analysis_depth": "fast", "stream": False,
         "messages": [{"role": "user", "content": "Who is the author of this book?"}]})
     answer = result["choices"][0]["message"]["content"]
+    assert result["choices"][0].get("finish_reason") == "stop", result
     evidence = (home / "chats" / conversation / "document-context.txt").read_text()
     print(json.dumps({"model": health["backend"], "filename": filename, "answer": answer,
                       "seconds": round(time.monotonic() - started, 2), "conversation": conversation,

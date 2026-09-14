@@ -13,8 +13,6 @@ BUILD_DIR="${BUILD_DIR:-build}"
 make test_fake_openai_backend >/dev/null 2>&1 || true
 
 # Prepare 20-file fixture folder
-REAL_HOME="$HOME"
-PACK="${SAMOSA_OCR_PACK:-$REAL_HOME/.samosa/models/ocr-pack-v1}"
 
 # This gate covers search/cache/definition orchestration. OCR weights are an
 # optional artifact, so use a deterministic sidecar on clean CI runners.
@@ -61,12 +59,10 @@ cp assets/samosa-chat.png "$TMP/files/uncertain_20.png"
 export HOME="$TMP/home"
 export SAMOSA_HOME="$TMP/home"
 export SAMOSA_READ_CACHE_DIR="$TMP/home/.samosa/cache/read"
-export SAMOSA_OCR_PACK="$PACK"
 
 # Start gateway
 SAMOSA_HOME="$TMP/home" \
 SAMOSA_READ_CACHE_DIR="$TMP/home/.samosa/cache/read" \
-SAMOSA_OCR_PACK="$PACK" \
 SAMOSA_JOBS_ROOT="$TMP/jobs" \
 SAMOSA_APP_HTML="$TMP/app.html" \
 SAMOSA_APP_LOGO="$TMP/logo.png" \

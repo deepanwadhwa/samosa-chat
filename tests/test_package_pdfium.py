@@ -46,7 +46,8 @@ class PackagePdfiumTest(unittest.TestCase):
                 "--molmo2-pack", str(MAPLE_RUNTIME),
                 "--audio-decode-runtime", str(MAPLE_RUNTIME),
                 "--summarizer-model", str(SUMMARIZER / "model.gguf"),
-                "--summarizer-runtime-dir", str(SUMMARIZER)]
+                "--summarizer-runtime-dir", str(SUMMARIZER),
+                "--ocr-runtime-dir", str(ROOT / "tests/fixtures/native-ocr")]
 
     def run_package(self, command: list[str], **kwargs):
         env = dict(os.environ)

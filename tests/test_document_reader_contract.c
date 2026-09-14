@@ -197,6 +197,72 @@ static int check_cancellation_reaps_child(Gateway *gateway, const char *self) {
     return elapsed < 2000 && grandchild > 0 && !alive;
 }
 
+static int check_stale_render_path(Gateway *gateway, const char *self) {
+    char input[PATH_MAX], legacy[PATH_MAX], cache[PATH_MAX], key[65];
+    snprintf(input, sizeof(input), "/tmp/samosa-stale-render-%d.pdf", (int)getpid());
+    snprintf(legacy, sizeof(legacy), "/tmp/doc_read_%d_p1.ppm", (int)getpid());
+    snprintf(cache, sizeof(cache), "/tmp/samosa-stale-render-cache-%d", (int)getpid());
+    if (!write_contract_fixture(input) || !write_contract_fixture(legacy) ||
+        read_cache_key_file(input, key)) return 0;
+    setenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE", "stale", 1);
+    setenv("SAMOSA_READ_CACHE_DIR", cache, 1);
+    path_copy(gateway->home, sizeof(gateway->home), "/tmp");
+    path_copy(gateway->samosa_extract, sizeof(gateway->samosa_extract), self);
+    path_copy(gateway->samosa_ocr, sizeof(gateway->samosa_ocr), self);
+    atomic_store(&gateway->document_processing, 1);
+    atomic_store(&gateway->document_cancel_requested, 0);
+    char *result = doc_read_handler(gateway, input, NULL);
+    int ok = result && strstr(result, "OCR SENTINEL") && access(legacy, F_OK) == 0;
+    free(result);
+    atomic_store(&gateway->document_processing, 0);
+    unsetenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE");
+    unsetenv("SAMOSA_READ_CACHE_DIR");
+    cleanup_contract_cache(cache, key);
+    unlink(input); unlink(legacy);
+    return ok;
+}
+
+static int check_render_cancel_cleanup(Gateway *gateway, const char *self) {
+    char input[PATH_MAX], marker[PATH_MAX], cache[PATH_MAX], key[65];
+    snprintf(input, sizeof(input), "/tmp/samosa-render-cancel-%d.pdf", (int)getpid());
+    snprintf(marker, sizeof(marker), "/tmp/samosa-render-cancel-%d.ready", (int)getpid());
+    snprintf(cache, sizeof(cache), "/tmp/samosa-render-cancel-cache-%d", (int)getpid());
+    if (!write_contract_fixture(input) || read_cache_key_file(input, key)) return 0;
+    unlink(marker);
+    setenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE", "cancel_render", 1);
+    setenv("SAMOSA_RENDER_CANCEL_MARKER", marker, 1);
+    setenv("SAMOSA_READ_CACHE_DIR", cache, 1);
+    path_copy(gateway->home, sizeof(gateway->home), "/tmp");
+    path_copy(gateway->samosa_extract, sizeof(gateway->samosa_extract), self);
+    path_copy(gateway->samosa_ocr, sizeof(gateway->samosa_ocr), self);
+    atomic_store(&gateway->document_processing, 1);
+    atomic_store(&gateway->document_cancel_requested, 0);
+    CancelChildContext context = {gateway, marker};
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, cancel_child, &context)) return 0;
+    char *result = doc_read_handler(gateway, input, NULL);
+    pthread_join(thread, NULL);
+    char rendered[PATH_MAX + 64] = {0};
+    FILE *ready = fopen(marker, "r");
+    if (ready) {
+        if (!fgets(rendered, sizeof(rendered), ready)) rendered[0] = '\0';
+        fclose(ready);
+    }
+    int ok = result && strstr(result, "document_cancelled") && rendered[0] &&
+             access(rendered, F_OK) != 0;
+    char *slash = strrchr(rendered, '/');
+    if (slash) { *slash = 0; ok = ok && access(rendered, F_OK) != 0; }
+    free(result);
+    atomic_store(&gateway->document_processing, 0);
+    atomic_store(&gateway->document_cancel_requested, 0);
+    unsetenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE");
+    unsetenv("SAMOSA_RENDER_CANCEL_MARKER");
+    unsetenv("SAMOSA_READ_CACHE_DIR");
+    cleanup_contract_cache(cache, key);
+    unlink(input); unlink(marker);
+    return ok;
+}
+
 int main(int argc, char **argv) {
     const char *reader_mode = getenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE");
     if (argc > 1 && reader_mode) {
@@ -205,10 +271,19 @@ int main(int argc, char **argv) {
             return 0;
         }
         if (!strcmp(argv[1], "--render-ocr-ppm")) {
-            FILE *output = fopen(argv[4], "wb");
+            int fd = open(argv[4], O_WRONLY | O_CREAT | O_EXCL, 0600);
+            FILE *output = fd < 0 ? NULL : fdopen(fd, "wb");
             if (!output) return 2;
             fputs("P6\n1 1\n255\nxxx", output);
-            return fclose(output) == 0 ? 0 : 2;
+            if (fclose(output)) return 2;
+            if (!strcmp(reader_mode, "cancel_render")) {
+                const char *marker = getenv("SAMOSA_RENDER_CANCEL_MARKER");
+                FILE *ready = marker ? fopen(marker, "w") : NULL;
+                if (!ready) return 2;
+                fputs(argv[4], ready); fclose(ready);
+                usleep(3000000);
+            }
+            return 0;
         }
         if (!strcmp(argv[1], "read")) {
             puts(!strcmp(reader_mode, "empty")
@@ -238,6 +313,17 @@ int main(int argc, char **argv) {
     if (!gateway) return 1;
     pthread_mutex_init(&gateway->mu, NULL);
     atomic_init(&gateway->document_cancel_requested, 0);
+    if (argc == 6 && !strcmp(argv[1], "--real-pdf")) {
+        path_copy(gateway->home, sizeof(gateway->home), argv[5]);
+        path_copy(gateway->samosa_extract, sizeof(gateway->samosa_extract), argv[3]);
+        path_copy(gateway->samosa_ocr, sizeof(gateway->samosa_ocr), argv[4]);
+        atomic_store(&gateway->document_processing, 1);
+        char *result = doc_read_handler(gateway, argv[2], NULL);
+        if (result) puts(result);
+        int success = result && strstr(result, "\"ok\":true");
+        free(result); free(gateway);
+        return success ? 0 : 1;
+    }
     int ok = 1;
 #define CHECK_CONTRACT(name, expression) do { \
         if (!(expression)) { fprintf(stderr, "test_document_reader_contract: %s failed\n", name); ok = 0; } \
@@ -248,6 +334,17 @@ int main(int argc, char **argv) {
     CHECK_CONTRACT("empty OCR review", check_empty_ocr_requires_review(gateway, argv[0]));
     CHECK_CONTRACT("cancel before cache", check_cancel_prevents_cache(gateway, argv[0]));
     CHECK_CONTRACT("descendant cancellation", check_cancellation_reaps_child(gateway, argv[0]));
+    CHECK_CONTRACT("stale render path", check_stale_render_path(gateway, argv[0]));
+    CHECK_CONTRACT("render cancellation cleanup", check_render_cancel_cleanup(gateway, argv[0]));
+    char *failure = document_ocr_failure("{\"ok\":false,\"error\":\"image_invalid\"}", 65 << 8);
+    CHECK_CONTRACT("OCR error preserved", failure && strstr(failure, "image_invalid"));
+    free(failure);
+    failure = document_ocr_failure(NULL, 23 << 8);
+    CHECK_CONTRACT("OCR process failure distinguished", failure && strstr(failure, "ocr_process_failed"));
+    free(failure);
+    failure = document_ocr_failure(NULL, SIGXCPU);
+    CHECK_CONTRACT("OCR timeout remains retryable", failure && strstr(failure, "ocr_timeout") && strstr(failure, "retryable"));
+    free(failure);
 #undef CHECK_CONTRACT
     pthread_mutex_destroy(&gateway->mu);
     free(gateway);

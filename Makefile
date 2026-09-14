@@ -9,6 +9,7 @@
 # the same way; keep the two in step.
 UNAME_S := $(shell uname -s)
 BUILD_DIR ?= build
+OCR_TEST_PYTHON ?= .venv/bin/python
 CXX ?= c++
 PRISM_LLAMA_DIR ?= $(HOME)/.samosa/backends/prism-llama.cpp
 PRISM_LLAMA_BUILD ?= $(PRISM_LLAMA_DIR)/build
@@ -189,22 +190,20 @@ test-audio-attachments: samosa-gateway test_fake_openai_backend tests/test_audio
 test-voice: samosa-gateway tests/test_voice_gateway.sh test-voice-ui test-wake-word-ui test-kokoro-native test-audio-attachments
 	sh tests/test_voice_gateway.sh
 
-# samosa-ocr: the reader sidecar (R2/R3). Portable build; the OMP build is ~2.5x
-# faster on a first read (reads are cached forever after). stb_image is compiled
-# with -Wno-unused-function like the engine.
-samosa-ocr: src/samosa_ocr.c src/kernels.h src/json.h src/stb_image.h
+# Thin C adapter around the native Tesseract and Leptonica libraries.
+OCR_CFLAGS = $(shell pkg-config --cflags tesseract lept)
+OCR_LDFLAGS = $(shell pkg-config --libs tesseract lept)
+samosa-ocr: src/samosa_ocr.c src/json.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O3 -Wno-unused-function -std=c11 -Isrc src/samosa_ocr.c -o $(BUILD_DIR)/samosa-ocr -lm
+	@pkg-config --exists tesseract lept || { echo 'Install Tesseract development libraries (macOS: brew install tesseract pkgconf; Debian: libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config)' >&2; exit 1; }
+	$(CC) -O3 -Wno-unused-function $(OCR_CFLAGS) -std=c11 -Isrc src/samosa_ocr.c $(OCR_LDFLAGS) -o $(BUILD_DIR)/samosa-ocr -lm
 
-samosa-ocr-omp: src/samosa_ocr.c src/kernels.h src/json.h src/stb_image.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) -std=c11 -Isrc \
-	  src/samosa_ocr.c $(OMP_LDFLAGS) -o $(BUILD_DIR)/samosa-ocr-omp -lm
-
-# ocr-test: offline gate. Validates the C forward pass numerically against the
-# NumPy golden tensors (tools/testdata/ocr) that E-R1 verified against PaddleOCR.
-ocr-test: samosa-ocr tests/test_samosa_ocr.sh tools/testdata/ocr/det.gold
+# Offline native Tesseract interface and image recognition gate.
+ocr-test: samosa-ocr tests/test_samosa_ocr.sh
 	SAMOSA_OCR="$$PWD/$(BUILD_DIR)/samosa-ocr" sh tests/test_samosa_ocr.sh
+
+test-tesseract-installer: samosa-ocr
+	$(OCR_TEST_PYTHON) tests/test_tesseract_installer.py
 
 # read-cache-test: offline gate for the content-addressed doc.read cache (R4,
 # plus T0.3's locking/fsync/pruning correctness work).
@@ -234,10 +233,6 @@ motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_
 # tier2-test: offline gate for R5 Tier-2 Bonsai crop escalation.
 tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_escalation.sh
 	sh tests/test_tier2_escalation.sh
-
-# r7-r6-test: offline gate for R7 classifier and R6 rec_hand handwriting recognizer head.
-r7-r6-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_r7_r6_handwriting.sh
-	sh tests/test_r7_r6_handwriting.sh
 
 samosa-gateway: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
@@ -399,6 +394,12 @@ test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_
 
 test-document-harness: samosa-gateway test_fake_openai_backend test-document-reader-contract tests/test_document_harness.py tests/document_reader_spy.py
 	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_document_harness.py
+
+test-pdf-ocr-runtime: samosa-ocr test-document-reader-contract
+	SAMOSA_OCR="$$PWD/$(BUILD_DIR)/samosa-ocr" \
+	SAMOSA_OCR_TEST_RUNNER="$$PWD/$(BUILD_DIR)/test-document-reader-contract" \
+	SAMOSA_EXTRACT="$${SAMOSA_EXTRACT:-$$PWD/$(BUILD_DIR)/samosa-extract}" \
+	$(OCR_TEST_PYTHON) tests/test_pdf_ocr_runtime.py
 
 test-pdf-ocr-routing: tests/test_pdf_ocr_routing.py
 	@if [ -n "$${SAMOSA_EXTRACT:-}" ]; then \
@@ -568,7 +569,7 @@ ci-debian:
 	  sh -ec '\
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates; \
+	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config; \
 	    useradd -m ci; \
 	    mkdir -p /work; \
 	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
@@ -596,7 +597,7 @@ ci-ubuntu-full:
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
 	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 libomp-dev \
-	      file ca-certificates git bash; \
+	      file ca-certificates git bash libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config python3-pil python3-reportlab; \
 	    curl -fL --retry 3 -o /tmp/pdfium-linux-x64.tgz "$(CI_PDFIUM_LINUX_X64_URL)"; \
 	    printf "%s  %s\n" "$(CI_PDFIUM_LINUX_X64_SHA256)" /tmp/pdfium-linux-x64.tgz | sha256sum -c -; \
 	    useradd -m ci; \
@@ -615,6 +616,7 @@ ci-ubuntu-full:
 	      make && make omp && \
 	      SAMOSA_ALLOW_SLOW_CPU=1 make test && \
 	      make test-document-harness test-audio-attachments test-molmo2-gateway test-molmo2-processor && \
+	      make OCR_TEST_PYTHON=python3 ocr-test test-pdf-ocr-runtime && \
 	      node tests/test_composer_ui.mjs && node tests/test_composer_perf.mjs && \
 	      node tests/test_session_token_ui.mjs\
 	    "; \

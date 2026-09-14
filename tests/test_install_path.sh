@@ -34,7 +34,8 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snap
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
-  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
+  --ocr-runtime-dir "$ROOT/tests/fixtures/native-ocr" \
+    --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 
 # Runs the installer against the file:// fixture remote.
 #   $1 = fake HOME, $2 = SHELL, $3 = PATH, $4 = extra env assignment ("" for none)

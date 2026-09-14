@@ -26,14 +26,14 @@ jobs:
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install cmake libomp
+          brew install cmake libomp tesseract pkgconf
           python3 -m pip install --break-system-packages numpy || true
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libomp-dev gcc clang
+          sudo apt-get install -y libomp-dev gcc clang libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config python3-venv
           python3 -m pip install numpy || true
 
       - name: Install pinned PDFium SDK
@@ -60,6 +60,11 @@ jobs:
           tar -xzf "$RUNNER_TEMP/pdfium.tgz" -C "$RUNNER_TEMP/pdfium"
           echo "PDFIUM_DIR=$RUNNER_TEMP/pdfium" >> "$GITHUB_ENV"
           echo "SAMOSA_REQUIRE_PDF_ATTACHMENTS=1" >> "$GITHUB_ENV"
+
+      - name: Install OCR test dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install numpy pillow reportlab
 
       - name: Build (portable)
         run: make
@@ -89,6 +94,13 @@ jobs:
           node tests/test_composer_perf.mjs
           node tests/test_session_token_ui.mjs
 
+      - name: Test native OCR on PDFs
+        run: make ocr-test test-pdf-ocr-runtime
+
+      - name: Test clean bundled OCR install
+        if: runner.os == 'macOS'
+        run: PDFIUM_LIBRARY="$PDFIUM_DIR/lib/libpdfium.dylib" make test-tesseract-installer
+
       - name: Test inside Debian bookworm container
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -98,7 +110,7 @@ jobs:
             sh -ec '
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                make gcc libomp-dev curl python3 file nodejs sqlite3 ca-certificates
+                make gcc libomp-dev curl python3 file nodejs sqlite3 ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config
 
               useradd -m ci
               mkdir -p /work

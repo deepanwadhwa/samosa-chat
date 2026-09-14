@@ -68,7 +68,8 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runt
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
-  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
+  --ocr-runtime-dir "$ROOT/tests/fixtures/native-ocr" \
+    --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
 grep -q 'engine/samosa_evidence.c' "$REMOTE/release-manifest.tsv" ||
