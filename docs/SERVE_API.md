@@ -83,10 +83,10 @@ the native video runtime; `vision.video_available` additionally requires a
 structurally valid, pinned local Molmo2 package. The helper verifies every
 package file hash before mapping tensors. The composer can therefore accept a video and
 show actionable setup without pretending the model is ready. `ocr.runtime_available`
-reports the native executable, `ocr.pack_ready` reports the detector,
-recognizer, and charset files, and `ocr.ready` requires both; the UI must not
+reports the native executable, `ocr.pack_ready` is the compatibility field for successful Tesseract language-data
+initialization, and `ocr.ready` requires both; the UI must not
 claim scanned-page OCR is ready from the executable alone. Digital PDF text can
-still be available when the OCR pack is missing.
+still be available when OCR language data is missing.
 
 When ready, the response also includes the active label/model, actual
 `context_limit_tokens`, context mode, generation state, and compaction status.

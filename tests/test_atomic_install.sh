@@ -26,6 +26,7 @@ package() {
     --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
     --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
     --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
+    --ocr-runtime-dir "$ROOT/tests/fixtures/native-ocr" \
     --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 }
 

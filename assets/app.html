@@ -1840,16 +1840,16 @@
             </div>
             <div class="preferences-card">
               <h4 id="settingsOcrLabel">OCR</h4>
-              <p class="voice-mode-intro">Native PP-OCRv6 document reader. Digital PDF text is used before OCR; OCR extracts text from scans and images.</p>
+              <p class="voice-mode-intro">Tesseract reads text from scans and images. PDFs also retain their digital text.</p>
               <div class="ocr-card" style="padding:12px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--bg-2,#f9fafb);margin-top:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                   <div>
-                    <strong style="font-size:14px;color:var(--ink,#111827);">PP-OCRv6 Native Reader</strong>
+                    <strong style="font-size:14px;color:var(--ink,#111827);">Tesseract OCR</strong>
                     <div style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:2px;">Built-in C implementation · Detector &amp; Recognizer</div>
                   </div>
                   <span class="model-badge" id="settingsOcrBadge">Checking…</span>
                 </div>
-                <div id="settingsOcrDetail" style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:8px;">Checking the native reader and OCR model pack…</div>
+                <div id="settingsOcrDetail" style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:8px;">Checking Tesseract and its language data…</div>
               </div>
             </div>
           </section>
@@ -5543,11 +5543,11 @@
             if (ocr.ready) {
               els.settingsOcrBadge.className = "model-badge active";
               els.settingsOcrBadge.textContent = "Ready";
-              els.settingsOcrDetail.textContent = "Native detector, recognizer, and OCR model pack are ready. Digital PDF text is still preferred when available.";
+              els.settingsOcrDetail.textContent = "Tesseract and its language data are ready. PDFs also retain their digital text.";
             } else if (ocr.runtime_available) {
               els.settingsOcrBadge.className = "model-badge";
-              els.settingsOcrBadge.textContent = "Model pack missing";
-              els.settingsOcrDetail.textContent = "The native reader is installed, but scanned-page OCR is unavailable until the PP-OCR model pack is installed. Digital PDF text remains available.";
+              els.settingsOcrBadge.textContent = "Language data missing";
+              els.settingsOcrDetail.textContent = "The reader is installed, but Tesseract could not load its language data. Reinstall the OCR runtime. Digital PDF text remains available.";
             } else {
               els.settingsOcrBadge.className = "model-badge";
               els.settingsOcrBadge.textContent = "Unavailable";

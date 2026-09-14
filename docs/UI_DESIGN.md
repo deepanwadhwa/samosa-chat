@@ -332,7 +332,7 @@ The **Settings → Models** pane groups local capabilities by function:
 
 - **Text LLMs:** Chat conversation and reasoning models with active backend selection.
 - **Vision:** Auxiliary VisionPsy-Nano 460M with download/remove controls and the policy notice: *"Used automatically for chat attachments when the active LLM needs visual understanding. Loaded only for that turn."*
-- **OCR:** Native PP-OCRv6 document reader card explaining digital text layer priority. Its status comes from `/healthz`: **Ready** only when both the executable and detector/recognizer/charset pack exist, **Model pack missing** when only the executable exists, and **Unavailable** when the runtime is absent. The card must never say “always active.”
+- **OCR:** Tesseract document reader card. Its status comes from `/healthz`: **Ready** when the native runtime can initialize its language data, **Language data missing** when initialization fails, and **Unavailable** when the executable is absent. The card must never say “always active.”
 - **Voice:** Speech-to-text and text-to-speech engines.
 
 Placement comes from catalogue `category`/`role`, not display-name matching.

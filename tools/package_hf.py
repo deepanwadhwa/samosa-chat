@@ -20,6 +20,8 @@ import pathlib
 import shutil
 import sys
 import platform
+import subprocess
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODEL_ROOT = ROOT.parent / "samosa-models"
@@ -139,6 +141,39 @@ def place(src: pathlib.Path, dst: pathlib.Path, link: bool) -> None:
             pass
     shutil.copy2(src, dst)
 
+def stage_native_ocr(args, out: pathlib.Path, staged: list[pathlib.Path]) -> bool:
+    """Ship an executable, native libraries and traineddata, ready to run."""
+    with tempfile.TemporaryDirectory(prefix="samosa-package-ocr-") as temporary:
+        runtime = args.ocr_runtime_dir
+        if runtime is None:
+            runtime = pathlib.Path(temporary)
+            binary = ROOT / "build/samosa-ocr"
+            if not binary.is_file():
+                print("missing native OCR executable; run make samosa-ocr", file=sys.stderr)
+                return False
+            place(binary, runtime / "bin/samosa-ocr", link=False)
+            result = subprocess.run(["sh", str(ROOT / "tools/stage_tesseract_runtime.sh"),
+                                     str(runtime)], capture_output=True, text=True)
+            if result.returncode:
+                print(result.stderr, file=sys.stderr)
+                return False
+        for relative in ("bin/samosa-ocr", "share/tessdata/eng.traineddata",
+                         "lib/ocr/libtesseract.5.dylib"):
+            if not (runtime / relative).is_file():
+                print(f"incomplete native OCR runtime: {relative}", file=sys.stderr)
+                return False
+        if os.environ.get("SAMOSA_PACKAGE_TEST") != "1":
+            subprocess.run([str(runtime / "bin/samosa-ocr"), "--check"], check=True,
+                           stdout=subprocess.DEVNULL)
+        for directory in ("bin", "lib/ocr", "share/tessdata", "share/licenses/ocr"):
+            for source in sorted((runtime / directory).rglob("*")):
+                if source.is_file():
+                    target = out / "runtime/macos-arm64/ocr" / source.relative_to(runtime)
+                    place(source, target, link=False)
+                    staged.append(target)
+    return True
+
+
 def stage_native_summarizer(args, out: pathlib.Path,
                             staged: list[pathlib.Path]) -> bool:
     binary = args.summarizer_runtime_dir / "bin" / "samosa-summarizer"
@@ -228,6 +263,8 @@ def main() -> int:
                          "the small native summarizer remains part of the runtime -- "
                          "docs/TASKS_UI_CHUTNI.md T1.0. Model artifacts are "
                          "installed separately through the in-app catalog.")
+    ap.add_argument("--ocr-runtime-dir", type=pathlib.Path,
+                    help="pre-staged native Tesseract runtime; default stages build/samosa-ocr")
     args = ap.parse_args()
     out: pathlib.Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -269,6 +306,8 @@ def main() -> int:
         staged.append(processor_target)
 
         if not stage_native_summarizer(args, out, staged):
+            return 1
+        if not stage_native_ocr(args, out, staged):
             return 1
     if not args.runtime_only:
         for name in MODEL_FILES:
@@ -329,6 +368,7 @@ def main() -> int:
                      # binary: it fetches and verifies the pinned Whisper.cpp
                      # source only after the user explicitly enables STT.
                      (ROOT / "tools" / "samosa_voice_runtime.sh", out / "engine" / "samosa_voice_runtime.sh"),
+                     (ROOT / "tools" / "stage_tesseract_runtime.sh", out / "engine" / "stage_tesseract_runtime.sh"),
                      # Optional neural TTS is a separate opt-in native runtime;
                      # its pinned C library and model are fetched only after
                      # the user selects Download in Voice settings.

@@ -152,7 +152,7 @@ primitives, but they were split by feature:
 - UTF-8 text/code/structured-data extraction and PDFium text/page rendering.
 - Durable conversation document manifests, full-file/retrieval modes, and
   line/page citations.
-- Native PP-OCRv6 for images and scanned PDF pages.
+- Native Tesseract for images and scanned PDF pages.
 - A vision-specific `VisionRoutePlan` that asks the active chat model for
   `read_text`, `inspect_visual`, detail, pages, and video coverage, then
   validates that plan against deterministic fallbacks.
@@ -191,7 +191,7 @@ capability harness
 resource scheduler and provider registry
       |
       +--> exact extractors: text, PDF, DOCX/HTML, subtitles, metadata
-      +--> OCR provider: PP-OCRv6
+      +--> OCR provider: Tesseract
       +--> vision providers: Molmo2 / VisionPsy / native projector
       +--> speech providers: Whisper Base / Whisper Tiny / future STT providers
       |
@@ -256,7 +256,7 @@ The harness plans operations, not model names. Initial operations are:
 | Operation | Evidence produced | Typical provider |
 | --- | --- | --- |
 | `extract_text` | verbatim text with page/line anchors | native text/PDF/DOCX/HTML extractor |
-| `ocr_text` | literal visible text with page/region anchors and confidence | PP-OCRv6 |
+| `ocr_text` | literal visible text with page/region anchors and confidence | Tesseract |
 | `inspect_visual` | objects, layout, diagrams, relationships, image meaning | Molmo2 or VisionPsy |
 | `analyze_video` | timestamped actions/scenes/objects | Molmo2 |
 | `transcribe_audio` | timestamped transcript segments | selected STT provider |
@@ -664,7 +664,7 @@ path do not yet exist; current routes remain green.
 - Introduce source inventory and operation enums without changing visible
   behavior.
 - Adapt the current `VisionRoutePlan` to the generic per-attachment plan.
-- Put VisionPsy, Molmo2, PP-OCR, PDF/text extraction, and the current Whisper
+- Put VisionPsy, Molmo2, Tesseract, PDF/text extraction, and the current Whisper
   choices behind provider descriptors.
 - Add the resource scheduler abstraction around the existing hardened
   multimodal supervisor and current voice mutex.

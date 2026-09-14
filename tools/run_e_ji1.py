@@ -240,7 +240,7 @@ def main() -> int:
         "SAMOSA_BONSAI_MMPROJ": str(HOME / "models/bonsai-27b-1bit/Bonsai-27B-mmproj-Q8_0.gguf"),
         "SAMOSA_FS": str(ROOT / "build/samosa-fs"), "SAMOSA_EXTRACT": str(ROOT / "build/samosa-extract"),
         "SAMOSA_OCR": str(ocr_wrapper), "SAMOSA_REAL_OCR": str(ROOT / "build/samosa-ocr"),
-        "SAMOSA_OCR_COUNT_LOG": str(ocr_count_log), "SAMOSA_OCR_PACK": str(HOME / "models/ocr-pack-v1"),
+        "SAMOSA_OCR_COUNT_LOG": str(ocr_count_log),
         "SAMOSA_READ_CACHE_DIR": str(isolated_home / "cache/read"),
     }
     (isolated_home / "model-backend").parent.mkdir(parents=True, exist_ok=True)

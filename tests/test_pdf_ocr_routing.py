@@ -153,7 +153,7 @@ def main():
         page, _ = inspect(tiled)
         assert page["inspection"]["needs_ocr"], "small scan tiles must still route to OCR"
         page, _ = inspect(tiled_covered)
-        assert not page["inspection"]["needs_ocr"], "covered raster tiles must reuse native text"
+        assert page["inspection"]["needs_ocr"], "embedded raster tiles must be checked independently"
         page, _ = inspect(tiled_footer)
         assert page["inspection"]["needs_ocr"], "a native footer must not cover tiled scanned regions"
         page, _ = inspect(uncovered_scan)
@@ -171,7 +171,6 @@ def main():
         assert crop_w > full_w // 2 and crop_h > full_h // 2
         ocr_bin = Path(os.environ.get("SAMOSA_OCR", ROOT / "build/samosa-ocr"))
         ocr_env = dict(os.environ)
-        ocr_env.setdefault("SAMOSA_OCR_PACK", str(Path.home() / ".samosa/models/ocr-pack-v1"))
         ocr = subprocess.run([str(ocr_bin), "read", str(crop_ppm)], env=ocr_env,
                              check=True, text=True, capture_output=True)
         ocr_result = json.loads(ocr.stdout)

@@ -17,8 +17,7 @@ still require a combined active-LLM/desktop qualification run.
 These are requirements, not open questions:
 
 - Falcon-OCR is not part of this work.
-- Samosa keeps its existing native OCR reader. That reader is Samosa's C port of
-  the pinned PP-OCRv6 detector and recognizer; it is not Tesseract or olmOCR.
+- Samosa uses Tesseract through its native C API. See [OCR_TESSERACT.md](OCR_TESSERACT.md) for installation and language data.
 - Add the standard VisionPsy-Nano 460M model as an auxiliary vision specialist.
   Do not substitute the Flash variant.
 - Use the BF16 MLX artifact currently available in the named repository. The
@@ -65,7 +64,7 @@ These are requirements, not open questions:
 
 ## 3. Non-goals
 
-- Replacing or benchmarking the existing PP-OCRv6 reader as part of this work.
+- Replacing or benchmarking the existing Tesseract reader as part of this work.
 - Adding Falcon-OCR, Tesseract, or olmOCR.
 - Making VisionPsy a selectable conversation/chat model.
 - Jobs, Chutni, filesystem-wide indexing, or unattended document processing.
@@ -521,7 +520,7 @@ document works.
 
 ### OCR
 
-- identify the existing native PP-OCRv6 pack accurately;
+- identify the existing native Tesseract pack accurately;
 - installed/version/verification state and repair action;
 - explain that digital PDF text is used before OCR; and
 - expose no VisionPsy settings in this category.

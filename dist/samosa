@@ -19,6 +19,7 @@
 #   samosa jobs <command> <job.json>         run structured local batch work
 #   samosa pull                             pull the 24 GB model to local volume
 #   samosa doctor                           check the installation
+#   samosa ocr <PDFPATH>                    OCR every page directly
 #   samosa version                          print the installed version
 #
 # Conversations resume instantly from a small snapshot — your chat history
@@ -171,6 +172,23 @@ pull_model() {
 }
 
 usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+ocr_pdf() {
+  [ "$#" -eq 1 ] || fail "usage: samosa ocr PDFPATH"
+  PDF_PATH=$1
+  [ -f "$PDF_PATH" ] || fail "PDF not found: $PDF_PATH"
+  EXTRACT_BIN="${SAMOSA_EXTRACT:-$RELEASE_DIR/bin/samosa-extract}"
+  OCR_BIN="${SAMOSA_OCR:-$RELEASE_DIR/bin/samosa-ocr}"
+  if [ ! -x "$EXTRACT_BIN" ] && [ -x "$SELF_DIR/../build/samosa-extract" ]; then
+    EXTRACT_BIN="$SELF_DIR/../build/samosa-extract"
+  fi
+  if [ ! -x "$OCR_BIN" ] && [ -x "$SELF_DIR/../build/samosa-ocr" ]; then
+    OCR_BIN="$SELF_DIR/../build/samosa-ocr"
+  fi
+  [ -x "$EXTRACT_BIN" ] || fail "samosa-extract is not installed"
+  [ -x "$OCR_BIN" ] || fail "samosa-ocr is not installed"
+  exec "$OCR_BIN" pdf "$PDF_PATH" "$EXTRACT_BIN"
+}
 print_version() {
   echo "samosa $SAMOSA_VERSION"
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release: $(basename "$RELEASE_DIR")"
@@ -777,6 +795,12 @@ doctor() {
   fi
   [ "$ok" = 1 ] && echo "all good." || exit 1
 }
+
+if [ "${1:-}" = "ocr" ]; then
+  shift
+  ocr_pdf "$@"
+  exit 0
+fi
 
 if [ "${1:-}" = "pull" ]; then
   shift

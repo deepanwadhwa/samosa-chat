@@ -12,8 +12,6 @@ BUILD_DIR="${BUILD_DIR:-build}"
 # Compile test fake backend if not built
 make test_fake_openai_backend >/dev/null 2>&1 || true
 
-REAL_HOME="$HOME"
-PACK="${SAMOSA_OCR_PACK:-$REAL_HOME/.samosa/models/ocr-pack-v1}"
 
 # This gate exercises gateway/cache orchestration, not the optional OCR model
 # weights. Keep it self-contained on clean CI runners by stubbing the sidecar.
@@ -42,12 +40,10 @@ cp tools/testdata/ocr/tiny.png "$TMP/files/cat-medical-note.png"
 export HOME="$TMP/home"
 export SAMOSA_HOME="$TMP/home"
 export SAMOSA_READ_CACHE_DIR="$TMP/home/.samosa/cache/read"
-export SAMOSA_OCR_PACK="$PACK"
 
 # Start gateway pointing to fake backend
 SAMOSA_HOME="$TMP/home" \
 SAMOSA_READ_CACHE_DIR="$TMP/home/.samosa/cache/read" \
-SAMOSA_OCR_PACK="$PACK" \
 SAMOSA_JOBS_ROOT="$TMP/jobs" \
 SAMOSA_APP_HTML="$TMP/app.html" \
 SAMOSA_APP_LOGO="$TMP/logo.png" \

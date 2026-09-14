@@ -625,58 +625,24 @@ static void inspect_page(FPDF_PAGE page, FPDF_TEXTPAGE text_page, int chars,
     s->blank = !s->incomplete && !s->useful && !s->bad && inspect_blank(page);
     s->kind = s->blank ? "blank" : healthy ? "digital_text" : "visual_only";
     s->reason = s->blank ? "blank_preview" : healthy ? "usable_text_layer" : "no_usable_text";
-    s->needs_ocr = !s->blank && !healthy;
+    /* A PDF text layer and raster content are independent evidence sources.
+       Always inspect embedded images, even when selectable text is healthy;
+       the image may contain a figure, caption, annotation, or scanned text
+       that is absent from the native layer. */
+    s->needs_ocr = !s->blank && (!healthy || s->image_count > 0);
     if (s->bad && !healthy) { s->kind = "damaged_text"; s->reason = "unreliable_unicode"; }
-    InspectRect uncovered = {1,1,0,0};
-    for (int i = 0; healthy && i < s->image_count; ++i) {
+    InspectRect image_bounds = {1,1,0,0};
+    for (int i = 0; i < s->image_count; ++i) {
         InspectRect box = s->images[i];
-        double area = (box.x1-box.x0)*(box.y1-box.y0);
-        if (area < 0.12) continue; /* Small logos do not justify page OCR. */
-        unsigned char cells[INSPECT_GRID * INSPECT_GRID] = {0};
-        inspect_mark(cells, box, 0);
-        int covered = 0, total = 0;
-        for (int j = 0; j < INSPECT_GRID * INSPECT_GRID; ++j)
-            if (cells[j]) { total++; covered += s->text_cells[j]; }
-        if (total && (double)covered / total >= 0.45 && s->useful >= 50) continue;
-        if (box.x0 < uncovered.x0) uncovered.x0 = box.x0;
-        if (box.y0 < uncovered.y0) uncovered.y0 = box.y0;
-        if (box.x1 > uncovered.x1) uncovered.x1 = box.x1;
-        if (box.y1 > uncovered.y1) uncovered.y1 = box.y1;
-        s->needs_ocr = 1; s->kind = "mixed"; s->reason = "image_region_without_text";
+        if (box.x0 < image_bounds.x0) image_bounds.x0 = box.x0;
+        if (box.y0 < image_bounds.y0) image_bounds.y0 = box.y0;
+        if (box.x1 > image_bounds.x1) image_bounds.x1 = box.x1;
+        if (box.y1 > image_bounds.y1) image_bounds.y1 = box.y1;
     }
-    /* Several smaller scan tiles are still a scan, but total image coverage is
-       not enough evidence by itself: a tiled white background can sit behind
-       a completely usable native text layer. Measure the union of image cells
-       that are not covered by usable text before escalating. */
-    int aggregate_total = 0, aggregate_text_covered = 0;
-    for (int j = 0; j < INSPECT_GRID * INSPECT_GRID; ++j) {
-        if (s->image_cells[j]) {
-            aggregate_total++;
-            if (s->text_cells[j]) aggregate_text_covered++;
-        }
-    }
-    double aggregate_text_ratio = aggregate_total
-        ? (double)aggregate_text_covered / aggregate_total : 0.0;
-    if (healthy && !s->needs_ocr && s->coverage >= 0.35 && s->image_count > 1 &&
-        aggregate_total > 0 && aggregate_text_ratio < 0.45) {
-        s->needs_ocr = 1; s->kind = "mixed"; s->reason = "aggregate_image_region_without_text";
-        uncovered = (InspectRect){1,1,0,0};
-        for (int j = 0; j < INSPECT_GRID * INSPECT_GRID; ++j) {
-            if (!s->image_cells[j] || s->text_cells[j]) continue;
-            double x0 = (double)(j % INSPECT_GRID) / INSPECT_GRID;
-            double y0 = (double)(j / INSPECT_GRID) / INSPECT_GRID;
-            double x1 = (double)(j % INSPECT_GRID + 1) / INSPECT_GRID;
-            double y1 = (double)(j / INSPECT_GRID + 1) / INSPECT_GRID;
-            if (x0 < uncovered.x0) uncovered.x0 = x0;
-            if (y0 < uncovered.y0) uncovered.y0 = y0;
-            if (x1 > uncovered.x1) uncovered.x1 = x1;
-            if (y1 > uncovered.y1) uncovered.y1 = y1;
-        }
-        if (uncovered.x1 <= uncovered.x0 || uncovered.y1 <= uncovered.y0)
-            uncovered = (InspectRect){0,0,1,1};
-    }
-    if (healthy && s->needs_ocr && uncovered.x1 > uncovered.x0) {
-        s->region = 1; s->crop = uncovered;
+    if (s->needs_ocr && s->image_count > 0 &&
+        image_bounds.x1 > image_bounds.x0 && image_bounds.y1 > image_bounds.y0) {
+        s->region = 1; s->crop = image_bounds;
+        if (healthy) { s->kind = "mixed"; s->reason = "embedded_image"; }
     }
     if (s->incomplete) {
         s->needs_ocr = 1; s->blank = 0; s->region = 0;

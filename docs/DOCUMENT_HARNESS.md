@@ -114,7 +114,7 @@ The PDF reader now adds page-level inspection before OCR: selectable-text
 quality, suspicious Unicode, image count/coverage, blank-page preview, mixed
 image/text regions, and explicit OCR routing. `tests/test_pdf_ocr_routing.py`
 verifies digital, blank, scanned and mixed fixtures, crop rendering and actual
-OCR recovery of a generated sentinel when the local OCR pack is available.
+OCR recovery of a generated sentinel when native Tesseract and English language data are available.
 
 The original author acceptance also passed again on the installed
 `dev-8f9d6a17a61b` update: the named file required zero content reads (24.79

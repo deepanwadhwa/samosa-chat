@@ -58,9 +58,14 @@ static int handler(SamosaHttpServer *server, int fd,
         const char *decision = "{\\\"action\\\":\\\"read_all\\\"}";
         if (strstr(request->body, "harness cancellation probe")) sleep_ms(1000);
         int have_read = !strstr(request->body, "\\\"reads_completed\\\":0");
-        if (strstr(request->body, "harness metadata probe") ||
-            strstr(request->body, "harness irrelevant probe"))
+        if (strstr(request->body, "harness metadata probe"))
+            decision = "{\\\"action\\\":\\\"finish\\\",\\\"quote\\\":\\\"Jane Austen\\\"}";
+        else if (strstr(request->body, "harness irrelevant probe"))
+            decision = "{\\\"action\\\":\\\"finish\\\",\\\"irrelevant\\\":true}";
+        else if (strstr(request->body, "harness unsupported finish probe"))
             decision = "{\\\"action\\\":\\\"finish\\\"}";
+        else if (strstr(request->body, "harness invented quote probe"))
+            decision = "{\\\"action\\\":\\\"finish\\\",\\\"quote\\\":\\\"Invented Author\\\"}";
         else if (strstr(request->body, "harness invalid probe"))
             decision = "{\\\"action\\\":\\\"read_pages\\\",\\\"start\\\":-1,\\\"count\\\":100}";
         else if (strstr(request->body, "harness title probe"))

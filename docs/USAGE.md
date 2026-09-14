@@ -41,7 +41,7 @@ image/video/task classification is a floor: the planner may request more
 evidence, but cannot downgrade an obvious visual request to text-only work.
 
 - `read_text` uses a digital PDF's embedded text first and invokes Samosa's
-  native PP-OCRv6 reader only for scans/images that need literal text;
+  native Tesseract reader only for scans/images that need literal text;
 - `inspect_visual` prefers the verified Molmo2 4B Native Q4 package whenever it
   is installed. Without Molmo2, Samosa falls back to VisionPsy-Nano 460M BF16;
   if neither auxiliary model is installed and the active model has native image
