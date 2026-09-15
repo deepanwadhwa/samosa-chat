@@ -577,5 +577,7 @@ assert.match(app, /const activity = msg\.streaming && !String\(msg\.content \|\|
   "saved or completed replies must never render a stale filename/progress strip");
 assert.match(app, /payload\.analysis_depth = analysisDepth/,
   "static file turns must tell the gateway to use the fast or detailed level");
+assert.match(app, /For images the gateway's[\s\S]*?Tesseract OCR and an overview visual-model/,
+  "the app contract must preserve OCR + visual evidence in a fast image pass");
 
 console.log("test_composer_ui.mjs: PASS");

@@ -4001,6 +4001,9 @@
           applyAutomaticWebContext(chat, text, webContext);
           const researching = webContext.some(w => w.kind === "search");
           const user={id:makeId(),role:"user",content:String(requestOptions.displayText || text).trim(),attachments};
+          // Static files start with bounded evidence. For images the gateway's
+          // fast plan includes both Tesseract OCR and an overview visual-model
+          // pass; the detail action can still request a larger observation.
           const hasStaticFile = attachments.some(a => a.kind === "image" || a.kind === "document") &&
             !attachments.some(a => a.kind === "video" || a.kind === "audio");
           const analysisDepth = requestOptions.analysisDepth ||

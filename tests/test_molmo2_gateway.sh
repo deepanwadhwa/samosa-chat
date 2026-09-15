@@ -5,6 +5,7 @@ BUILD_DIR="${BUILD_DIR:-build}"
 GATEWAY="${SAMOSA_COMPILED_GATEWAY:-./$BUILD_DIR/samosa-gateway}"
 BACKEND="${SAMOSA_FAKE_BACKEND:-./$BUILD_DIR/test_fake_openai_backend}"
 MM_HELPER="${SAMOSA_FAKE_MM_HELPER:-./$BUILD_DIR/fake-multimodal-helper}"
+OCR="${SAMOSA_OCR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/tests/fake_ocr_sidecar.sh}"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/molmo2_gateway_test.XXXXXX")
 HOME_DIR="$TMP/home"
 MODEL_DIR="$TMP/molmo2"
@@ -105,6 +106,7 @@ SAMOSA_VISIONPSY_ENGINE="$TMP/should-not-run-visionpsy" \
 SAMOSA_VISIONPSY_MODEL="$VISIONPSY_MODEL_DIR" \
 SAMOSA_MOLMO2_ENGINE="$(CDPATH= cd -- "$(dirname "$MM_HELPER")" && pwd)/$(basename "$MM_HELPER")" \
 SAMOSA_MOLMO2_MODEL="$MODEL_DIR" \
+SAMOSA_OCR="$OCR" \
 SAMOSA_AUDIO_DECODE="$TMP/audio-decode" \
 SAMOSA_WHISPER_CLI="$TMP/whisper-cli" \
 SAMOSA_WHISPER_MODEL="$TMP/ggml-base.en.bin" \
@@ -166,20 +168,22 @@ IMAGE_B=$(printf '%s' "$UPLOAD_B" | sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p')
 [ ${#IMAGE_A} = 64 ] && [ ${#IMAGE_B} = 64 ] || {
   echo "FAIL: extended-image fixture upload failed: $UPLOAD_A $UPLOAD_B"; exit 1;
 }
-# Fast-first image work must not call the model router or visual specialist.
-# This fixture intentionally has no OCR reader; the gateway should still
-# return a bounded fast-scan status through the answering model so the UI can
-# offer its explicit detailed pass instead of failing the whole turn.
-MM_BEFORE_FAST=$(wc -l <"$TMP/molmo-commands.jsonl" | tr -d ' ')
+# Even an API client that asks for fast image handling must receive both OCR
+# and Molmo evidence. `fast` remains meaningful for documents, but can no
+# longer reduce an image question to an OCR status message.
+MM_BEFORE_FAST=$(grep -c '\"media_kind\":\"image\"' "$TMP/molmo-commands.jsonl" || true)
 FAST_REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -d "{\"model\":\"qwen3.6-35b-a3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Read this quickly.\"}],\"attachment_ids\":[\"$IMAGE_A\"],\"analysis_depth\":\"fast\",\"stream\":false}")
 printf '%s' "$FAST_REPLY" | grep -q '"choices"' || {
   echo "FAIL: fast-first image pass did not reach synthesis: $FAST_REPLY"; exit 1;
 }
-MM_AFTER_FAST=$(wc -l <"$TMP/molmo-commands.jsonl" | tr -d ' ')
-[ "$MM_AFTER_FAST" = "$MM_BEFORE_FAST" ] || {
-  echo "FAIL: fast-first image pass invoked the visual specialist"; exit 1;
+printf '%s' "$FAST_REPLY" | grep -q 'saw combined OCR and Molmo image evidence' || {
+  echo "FAIL: fast image pass did not combine OCR and Molmo evidence: $FAST_REPLY"; exit 1;
+}
+MM_AFTER_FAST=$(grep -c '\"media_kind\":\"image\"' "$TMP/molmo-commands.jsonl" || true)
+[ "$MM_AFTER_FAST" -eq "$((MM_BEFORE_FAST + 1))" ] || {
+  echo "FAIL: fast image pass did not invoke Molmo exactly once"; exit 1;
 }
 REPLY=$(curl -sS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
