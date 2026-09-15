@@ -544,6 +544,9 @@ static int handler(SamosaHttpServer *server, int fd,
         const char *system_message = strstr(request->body, "\"role\":\"system\"");
         if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
             !strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts") ||
+            !strstr(request->body, "OCR:") ||
+            !strstr(request->body, "OCR fixture text Poli") ||
+            !strstr(request->body, "MOLMO IMAGE DESCRIPTION:") ||
             !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
             !strstr(request->body, "ORIGINAL_UI_SYSTEM_CONTEXT") ||
             !strstr(request->body, "\"messages\":[{\"role\":\"system\"") ||
@@ -560,10 +563,23 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":\"There are 12 charts in a 3 by 4 grid.\"}}]}", NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Read this quickly.")) {
+        const int combined = strstr(request->body, "OCR:") &&
+                             strstr(request->body, "OCR fixture text Poli") &&
+                             strstr(request->body, "MOLMO IMAGE DESCRIPTION:") &&
+                             strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts");
+        return samosa_http_response(fd, 200, "application/json", combined
+            ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"saw combined OCR and Molmo image evidence\"}}]}"
+            : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"missing combined OCR and Molmo image evidence\"}}]}", NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "what is this image?")) {
         const char *system_message = strstr(request->body, "\"role\":\"system\"");
         if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
             !strstr(request->body, "fixture image evidence: a 3 by 4 grid containing 12 charts") ||
+            !strstr(request->body, "OCR:") ||
+            !strstr(request->body, "OCR fixture text Poli") ||
+            !strstr(request->body, "MOLMO IMAGE DESCRIPTION:") ||
             !strstr(request->body, "local visual specialist has already inspected the actual attachment bytes") ||
             !strstr(request->body, "UI context") ||
             !strstr(request->body, "\"messages\":[{\"role\":\"system\"") ||
@@ -584,6 +600,8 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "what is this?")) {
         if (!strstr(request->body, "Attached visual observation (Molmo2 4B") ||
+            !strstr(request->body, "OCR fixture text Poli") ||
+            !strstr(request->body, "MOLMO IMAGE DESCRIPTION:") ||
             strstr(request->body, "POISONED_VAGUE_IMAGE_PROMPT"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
