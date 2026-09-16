@@ -40,8 +40,11 @@ The active chat LLM first returns a validated evidence plan. Deterministic
 image/video/task classification is a floor: the planner may request more
 evidence, but cannot downgrade an obvious visual request to text-only work.
 
+- every image turn runs the native Tesseract reader and the installed visual
+  specialist. The final chat model receives separate `OCR:` and
+  `MOLMO IMAGE DESCRIPTION:` evidence sections when Molmo2 is installed;
 - `read_text` uses a digital PDF's embedded text first and invokes Samosa's
-  native Tesseract reader only for scans/images that need literal text;
+  native Tesseract reader for scanned pages;
 - `inspect_visual` prefers the verified Molmo2 4B Native Q4 package whenever it
   is installed. Without Molmo2, Samosa falls back to VisionPsy-Nano 460M BF16;
   if neither auxiliary model is installed and the active model has native image
@@ -49,18 +52,19 @@ evidence, but cannot downgrade an obvious visual request to text-only work.
 - a task that needs literal labels and visual structure selects both. The
   active chat LLM receives the labelled evidence and writes the final answer.
 
-When the pinned Molmo2 package is ready, Samosa selects it for every visual
-image task as well as video, multi-image comparison, temporal tracking,
+When the pinned Molmo2 package is ready, Samosa selects it for every image
+task as well as video, multi-image comparison, temporal tracking,
 localization/pointing, and complex spatial reasoning. OCR-only work remains on
-the native reader. Molmo2 remains an auxiliary provider: the gateway admits one
+the native reader for scanned documents. Molmo2 remains an auxiliary provider:
+the gateway admits one
 specialist globally, and on a Mac with 18 GiB RAM or less it stops the primary
 chat backend before loading Molmo2. For two images, Samosa labels and
 passes every original image to a single Molmo inference; the vision encoder is
 scheduled per image to preserve the qualified memory ceiling, then the decoder
 reasons across the combined visual feature sequence. Samosa unloads Molmo,
 restores the selected text model, and uses a greedy, non-thinking grounded
-synthesis pass for the final response. Selecting Molmo itself returns its
-visual response directly.
+synthesis pass over the combined OCR and Molmo description. Selecting Molmo
+itself returns its visual response directly.
 
 VisionPsy is available in the first release on macOS Apple Silicon. A text-only
 chat LLM can still use it: `/healthz` distinguishes native chat-model image
