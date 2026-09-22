@@ -305,8 +305,13 @@ candidate cannot be read. Sort by file type uses the persisted move plan,
 explicit Apply, source size/mtime revalidation, and Undo path. Inbox
 classification is a bounded filename-only pass: a single category clue yields
 a suggestion, while unknown or cross-category clues go to review. It does not
-read content or move files. Watch-folder deltas remain unimplemented Phase C
-work; this checkpoint does not claim the Phase C acceptance gates are complete.
+read content or move files. Watch folder saves a complete metadata baseline and
+checks every five minutes; the supported read-only inbox or report recipe runs
+only on added or changed paths. An incomplete inventory does not advance its
+checkpoint. Watch runs are stoppable and remain scheduled until stopped. These
+recipes complete the Phase C productized recipe list, while the durability,
+restart-history, and exact-tree acceptance gates still need their full dogfood
+evidence; this checkpoint does not claim the overall recovery plan is complete.
 
 ### C2. Durable `JobSpec`
 

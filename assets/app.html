@@ -1755,7 +1755,11 @@
           </div>
           <div class="job-field">
             <label for="jobRecipe">Recipe</label>
-            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option><option value="classify_inbox">Classify an inbox</option></select>
+            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option><option value="classify_inbox">Classify an inbox</option><option value="watch_folder">Watch a folder</option></select>
+          </div>
+          <div class="job-field" id="jobWatchRecipeField" hidden>
+            <label for="jobWatchRecipe">Recipe to run on added or changed files</label>
+            <select id="jobWatchRecipe"><option value="classify_inbox">Classify inbox filenames</option><option value="folder_report">Folder report</option></select>
           </div>
           <div class="job-field">
             <label id="jobGoalLabel" for="jobGoal">What should I find?</label>
@@ -6585,6 +6589,7 @@
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
       const jobEls = {
         view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"), recipe: $("jobRecipe"),
+        watchRecipe: $("jobWatchRecipe"), watchRecipeField: $("jobWatchRecipeField"),
         browse: $("jobBrowse"), memoryAccess: $("jobMemoryAccess"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
         progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
@@ -8365,7 +8370,36 @@
         if (!folder || (recipe === "find" && !goal)) { jobEls.folder.focus(); return; }
         jobRunning = true; jobEls.run.disabled = true; jobEls.run.textContent = "Running"; clearJobOutput();
         const ctx = { folder };
-        try { await streamJob("/v1/jobs/run", recipe !== "find" ? { recipe, folder } : { goal, folder, recipe, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
+        try {
+          if (recipe === "watch_folder") {
+            const storageKey = `samosa.watch.${folder}`;
+            const existingWatch = localStorage.getItem(storageKey);
+            if (existingWatch) {
+              showBar("Folder watch is active.", [["Stop watching", "undo", async () => {
+                const stopped = await authFetch("/v1/jobs/schedule/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: existingWatch }) });
+                const result = await stopped.json(); if (!stopped.ok || !result.ok) throw new Error(result.error?.message || "Could not stop folder watch");
+                localStorage.removeItem(storageKey); jobEls.bar.hidden = true; showJobResult("Folder watch stopped.");
+              }]]);
+              showJobResult("This folder already has an active watch. Stop it here before starting another.");
+              return;
+            }
+            const jobId = `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const job = { job_id: jobId, input: { folder }, watch_recipe: jobEls.watchRecipe.value, resources: { run_on_battery: true } };
+            const response = await authFetch("/v1/jobs/schedule/arm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, window_start: "00:00", window_end: "00:00", missed_policy: "run_next_start", keep_awake: false }) });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error?.message || "Could not start folder watch");
+            localStorage.setItem(storageKey, jobId);
+            jobLine("●", `Watching every five minutes · ${jobEls.watchRecipe.value === "classify_inbox" ? "classify inbox filenames" : "folder report"}`, "step-done");
+            showJobResult("The current folder state is saved as the baseline. Only added or changed files will run through the selected read-only recipe.");
+            showBar("Folder watch is active.", [["Stop watching", "undo", async () => {
+              const stopped = await authFetch("/v1/jobs/schedule/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
+              const result = await stopped.json(); if (!stopped.ok || !result.ok) throw new Error(result.error?.message || "Could not stop folder watch");
+              localStorage.removeItem(storageKey); jobEls.bar.hidden = true; showJobResult("Folder watch stopped.");
+            }]]);
+          } else {
+            await streamJob("/v1/jobs/run", recipe !== "find" ? { recipe, folder } : { goal, folder, recipe, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx);
+          }
+        }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
         finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Run job"; }
       }
@@ -8729,6 +8763,7 @@
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
       const syncJobRecipe = () => {
         const deterministic = jobEls.recipe.value !== "find";
+        jobEls.watchRecipeField.hidden = jobEls.recipe.value !== "watch_folder";
         jobEls.goal.disabled = deterministic;
         jobEls.goal.placeholder = deterministic ? "No description needed for this recipe" : "Find my cat's medical records";
         $("jobGoalLabel").textContent = deterministic ? "Task description (optional)" : "What should I find?";

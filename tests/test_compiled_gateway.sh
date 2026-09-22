@@ -59,6 +59,9 @@ printf 'Project sprint plan\n' >"$TMP/inbox-files/sprint-plan.txt"
 printf 'Family travel notes\n' >"$TMP/inbox-files/family-travel.txt"
 printf 'Conflicting evidence\n' >"$TMP/inbox-files/medical-invoice.pdf"
 printf 'Unclear document\n' >"$TMP/inbox-files/misc.pdf"
+/bin/mkdir "$TMP/watch-folder"
+printf 'Initial invoice\n' >"$TMP/watch-folder/invoice-initial.txt"
+printf 'Steady file\n' >"$TMP/watch-folder/steady.txt"
 /bin/mkdir "$TMP/interlock-files"
 printf "First interlock receipt.\n" >"$TMP/interlock-files/a.txt"
 printf "Second interlock receipt.\n" >"$TMP/interlock-files/b.txt"
@@ -786,6 +789,29 @@ missed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
 printf '%s' "$missed" | /usr/bin/grep -q '"job_id":"missed-skip","action":"defer","reason":"window_expired"'
 printf '%s' "$missed" | /usr/bin/grep -q '"job_id":"missed-run","action":"run","reason":"missed_window"'
 /usr/bin/grep -q '"type":"scheduled_job_complete"' "$HOME_DIR/jobs/missed-run/events.jsonl"
+
+# Folder watches snapshot a baseline, process only additions/changes, repeat
+# on the daemon's five-minute poll, and can be stopped from the UI session.
+WATCH_DEF="{\"job\":{\"job_id\":\"watch-delta\",\"input\":{\"folder\":\"$TMP/watch-folder\"},\"watch_recipe\":\"classify_inbox\",\"resources\":{\"run_on_battery\":true}},\"window_start\":\"00:00\",\"window_end\":\"00:00\",\"missed_policy\":\"run_next_start\",\"keep_awake\":false}"
+/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/schedule/arm" \
+  -H 'Content-Type: application/json' --data-binary "$WATCH_DEF" | /usr/bin/grep -q '"ok":true'
+[ -f "$HOME_DIR/jobs/watch-delta/watch-state.json" ]
+printf 'Changed invoice with a longer body\n' >"$TMP/watch-folder/invoice-initial.txt"
+printf 'New family trip\n' >"$TMP/watch-folder/family-trip.txt"
+watch_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' --data-binary '{"now_minutes":720,"on_battery":false}')
+printf '%s' "$watch_run" | /usr/bin/grep -q '"job_id":"watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":1,"changed":1.*"processed":2' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+/usr/bin/grep -q '"category":"billing"' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+/usr/bin/grep -q '"category":"personal"' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+watch_again=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' --data-binary '{"now_minutes":720,"on_battery":false}')
+printf '%s' "$watch_again" | /usr/bin/grep -q '"job_id":"watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":0,"changed":0.*"processed":0' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+stopped=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" -X POST \
+  "http://127.0.0.1:$PORT/v1/jobs/schedule/stop" -H 'Content-Type: application/json' \
+  --data-binary '{"job_id":"watch-delta"}')
+printf '%s' "$stopped" | /usr/bin/grep -q '"stopped":true'
 
 # --- launchd lifecycle (dry-run, temp LaunchAgents dir) ---
 /usr/bin/curl -fsS "http://127.0.0.1:$PORT/v1/jobs/launchd/status" | /usr/bin/grep -q '"installed":false'
