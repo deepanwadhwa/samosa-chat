@@ -439,6 +439,7 @@ serve_foreground() {
     SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
     SAMOSA_APP_VERSION="$SAMOSA_VERSION" \
     SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+    SAMOSA_FS="$RELEASE_DIR/bin/samosa-fs" \
     SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
     exec "$GATEWAY"
 }
@@ -472,6 +473,7 @@ write_launchd_plist() {
   x_voice_trace_auto=$(xml_escape "$VOICE_TRACE_AUTO")
   x_version=$(xml_escape "$SAMOSA_VERSION")
   x_chutni=$(xml_escape "$RELEASE_DIR/bin/chutni-mcp")
+  x_samosa_fs=$(xml_escape "$RELEASE_DIR/bin/samosa-fs")
   x_models_catalog=$(xml_escape "$MODELS_CATALOG")
   x_log=$(xml_escape "$SERVER_LOG")
   cat >"$LAUNCHD_PLIST" <<EOF
@@ -499,6 +501,7 @@ write_launchd_plist() {
     <key>SAMOSA_VOICE_TRACE_AUTO</key><string>$x_voice_trace_auto</string>
     <key>SAMOSA_APP_VERSION</key><string>$x_version</string>
     <key>SAMOSA_CHUTNI_SERVICE</key><string>$x_chutni</string>
+    <key>SAMOSA_FS</key><string>$x_samosa_fs</string>
     <key>SAMOSA_MODELS_CATALOG</key><string>$x_models_catalog</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -540,6 +543,7 @@ start_server_detached() {
       SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
       SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
       SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+      SAMOSA_FS="$RELEASE_DIR/bin/samosa-fs" \
       SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
       "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
   else
@@ -552,6 +556,7 @@ start_server_detached() {
       SAMOSA_VOICE_TRACE_AUTO="$VOICE_TRACE_AUTO" \
       SAMOSA_APP_VERSION="$SAMOSA_VERSION" SAMOSA_APP_LIFECYCLE="$APP_LIFECYCLE" \
       SAMOSA_CHUTNI_SERVICE="$RELEASE_DIR/bin/chutni-mcp" \
+      SAMOSA_FS="$RELEASE_DIR/bin/samosa-fs" \
       SAMOSA_MODELS_CATALOG="$MODELS_CATALOG" \
       "$GATEWAY" >"$SERVER_LOG" 2>&1 </dev/null &
   fi

@@ -282,7 +282,7 @@ chutni-gateway-test: samosa-gateway samosa-fs chutni-service test_fake_openai_ba
 	sh tests/test_chutni_gateway.sh
 	sh tests/test_chutni_controls.sh
 
-detached-service-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_samosa_detached_service.sh
+detached-service-test: samosa-gateway samosa-fs chutni-service test_fake_openai_backend tests/test_samosa_detached_service.sh
 	sh tests/test_samosa_detached_service.sh
 
 app-lifecycle-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_samosa_app_lifecycle.sh tests/test_samosa_llama_lifecycle.sh

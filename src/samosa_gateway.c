@@ -58,6 +58,7 @@ typedef struct {
     int summarizer_read_fd;
     int summarizer_warmed;
     pid_t job_pids[16];
+    pthread_mutex_t job_pid_mu;
     int upstream_fd;
     atomic_int generating;
     atomic_int interactive_active;
@@ -427,7 +428,7 @@ static int write_small_file(const char *path, const char *text) {
 }
 
 static void track_job_pid(Gateway *g, pid_t pid, int add) {
-    pthread_mutex_lock(&g->mu);
+    pthread_mutex_lock(&g->job_pid_mu);
     if (add) {
         for (size_t i = 0; i < sizeof(g->job_pids) / sizeof(g->job_pids[0]); ++i)
             if (!g->job_pids[i]) { g->job_pids[i] = pid; break; }
@@ -435,7 +436,7 @@ static void track_job_pid(Gateway *g, pid_t pid, int add) {
         for (size_t i = 0; i < sizeof(g->job_pids) / sizeof(g->job_pids[0]); ++i)
             if (g->job_pids[i] == pid) { g->job_pids[i] = 0; break; }
     }
-    pthread_mutex_unlock(&g->mu);
+    pthread_mutex_unlock(&g->job_pid_mu);
 }
 
 static void document_child_set(Gateway *g, pid_t pid) {
@@ -23878,6 +23879,7 @@ static int load_config(Gateway *g) {
     g->summarizer_write_fd = -1;
     g->summarizer_read_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
+    pthread_mutex_init(&g->job_pid_mu, NULL);
     pthread_mutex_init(&g->summarizer_mu, NULL);
     pthread_mutex_init(&g->install_mu, NULL);
     pthread_mutex_init(&g->selection_mu, NULL);
@@ -24174,6 +24176,7 @@ int main(int argc, char **argv) {
     backend_stop(&gateway);
     samosa_http_server_destroy(&server);
     samosa_mm_supervisor_destroy(&gateway.multimodal_supervisor);
+    pthread_mutex_destroy(&gateway.job_pid_mu);
     pthread_mutex_destroy(&gateway.mu);
     pthread_mutex_destroy(&gateway.summarizer_mu);
     pthread_mutex_destroy(&gateway.voice_mu);
