@@ -1755,7 +1755,7 @@
           </div>
           <div class="job-field">
             <label for="jobRecipe">Recipe</label>
-            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option></select>
+            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option><option value="classify_inbox">Classify an inbox</option></select>
           </div>
           <div class="job-field">
             <label id="jobGoalLabel" for="jobGoal">What should I find?</label>
@@ -8118,6 +8118,15 @@
             if (evt.skipped) md += `\n${evt.skipped} entries skipped by inventory policy.\n`;
             if (evt.deferred_files) md += `\n${evt.deferred_files} candidates deferred by a hashing safety limit.\n`;
             if (evt.partial) md += `\n**Partial duplicate search:** stopped at ${evt.limiting_reason || "a safety limit"}.\n`;
+            showJobResult(md); break;
+          }
+          case "inbox_classification": {
+            const names = ["billing", "medical", "work", "personal", "review"];
+            let md = "### Inbox classification (filename clues only)\n\n";
+            (evt.items || []).forEach(item => { md += `- **${item.category}** · \`${item.path}\` — ${item.signal}\n`; });
+            md += "\n" + names.map((name, i) => `${evt.counts?.[i] || 0} ${name}`).join(" · ");
+            if (evt.skipped) md += `\n\n${evt.skipped} entries skipped by inventory policy.`;
+            if (evt.partial) md += `\n\n**Partial classification:** stopped at ${evt.limiting_reason || "a safety limit"}.`;
             showJobResult(md); break;
           }
           case "indexing":

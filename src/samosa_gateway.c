@@ -6111,6 +6111,92 @@ sort_cleanup:
     return ok;
 }
 
+typedef struct { char *path; const char *category; const char *signal; } JobsInboxItem;
+
+static const char *jobs_inbox_category(const char *path, const char **signal) {
+    const char *base = strrchr(path, '/'); base = base ? base + 1 : path;
+    char lower[PATH_MAX]; size_t n = strlen(base); if (n >= sizeof(lower)) n = sizeof(lower) - 1;
+    for (size_t i = 0; i < n; i++) { unsigned char c = (unsigned char)base[i]; lower[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c); }
+    lower[n] = 0;
+    static const char *billing[] = {"invoice", "receipt", "payment", "billing", "statement", "tax", "bill", NULL};
+    static const char *medical[] = {"medical", "health", "doctor", "clinic", "vaccine", "vaccination", "prescription", "lab-result", NULL};
+    static const char *work[] = {"work", "meeting", "project", "resume", "cv", "proposal", "roadmap", "sprint", NULL};
+    static const char *personal[] = {"personal", "family", "travel", "diary", "journal", "photo", NULL};
+    const char *const *sets[] = {billing, medical, work, personal};
+    const char *names[] = {"billing", "medical", "work", "personal"};
+    int found = -1, categories = 0; int matched[4] = {0}; *signal = NULL;
+    for (int k = 0; k < 4; k++) for (const char *const *word = sets[k]; *word; word++) {
+        if (strstr(lower, *word) && !matched[k]) { matched[k] = 1; found = k; categories++; if (categories == 1) *signal = *word; }
+    }
+    if (categories != 1) { *signal = categories ? "conflicting filename clues" : "no clear filename clue"; return "review"; }
+    return names[found];
+}
+
+/* Bounded filename-only inbox triage. It exposes its matching filename clue,
+ * never reads file contents, and sends ambiguous/conflicting names to review. */
+static int jobs_classify_inbox(Gateway *g, int fd, const char *folder) {
+    enum { MAX_FILES = 10000 };
+    char *argv[] = {g->samosa_fs, (char *)"chutni-inventory", (char *)"--root",
+        (char *)folder, (char *)"--max-depth", (char *)"32",
+        (char *)"--max-files", (char *)"10000",
+        (char *)"--max-directories", (char *)"5000",
+        (char *)"--max-seconds", (char *)"20", NULL};
+    JobsInboxItem *items = calloc(MAX_FILES, sizeof(*items));
+    char *raw = NULL, job_id[64], reason[64] = "none";
+    int status = 0, partial = 0, saw_done = 0, ok = 0; size_t count = 0, skipped = 0;
+    if (!items) return 0;
+    raw = run_capture(g, g->samosa_fs, argv, 8 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) { free(raw); free(items); return samosa_http_json_error(fd, 400, "folder_scan_failed", "The inbox could not be inspected within the classification safety budget."); }
+    const char *line = raw;
+    while (*line) {
+        const char *end = strchr(line, '\n'); size_t len = end ? (size_t)(end - line) : strlen(line);
+        char *record = malloc(len + 1), *record_arena = NULL;
+        if (!record) goto inbox_cleanup;
+        memcpy(record, line, len); record[len] = 0;
+        jval *obj = json_parse(record, &record_arena); free(record);
+        if (!obj || obj->t != J_OBJ) { json_free(obj); free(record_arena); goto inbox_cleanup; }
+        jval *type = json_get(obj, "type");
+        if (type && type->t == J_STR && !strcmp(type->str, "file")) {
+            jval *path = json_get(obj, "rel_path");
+            if (!path || path->t != J_STR || count >= MAX_FILES) { json_free(obj); free(record_arena); goto inbox_cleanup; }
+            items[count].path = strdup(path->str);
+            if (!items[count].path) { json_free(obj); free(record_arena); goto inbox_cleanup; }
+            items[count].category = jobs_inbox_category(path->str, &items[count].signal); count++;
+        } else if (type && type->t == J_STR && !strcmp(type->str, "skip")) skipped++;
+        else if (type && type->t == J_STR && !strcmp(type->str, "done")) {
+            saw_done = 1; jval *v = json_get(obj, "partial"); partial = v && v->t == J_BOOL && v->boolean;
+            v = json_get(obj, "limiting_reason"); if (v && v->t == J_STR) path_copy(reason, sizeof(reason), v->str);
+        }
+        json_free(obj); free(record_arena);
+        if (!end) break; line = end + 1;
+    }
+    free(raw); raw = NULL; if (!saw_done) goto inbox_cleanup;
+    snprintf(job_id, sizeof(job_id), "job-%ld-%ld-%lld", (long)time(NULL), (long)getpid(), (long long)monotonic_millis());
+    if (!save_job_state(g, job_id, "Classify an inbox", folder) || !samosa_http_stream_headers(fd)) goto inbox_cleanup;
+    TextBuffer event = {0}; char num[32];
+    ok = text_add(&event, "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":") && text_json_string(&event, job_id) && text_add(&event, ",\"goal\":\"Classify an inbox\",\"folder\":") && text_json_string(&event, folder) && text_add(&event, "}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event = (TextBuffer){0};
+    unsigned long long totals[5] = {0};
+    ok = ok && text_add(&event, "{\"seq\":2,\"type\":\"inbox_classification\",\"items\":[");
+    for (size_t i = 0; ok && i < count; i++) {
+        int c = !strcmp(items[i].category, "billing") ? 0 : !strcmp(items[i].category, "medical") ? 1 : !strcmp(items[i].category, "work") ? 2 : !strcmp(items[i].category, "personal") ? 3 : 4;
+        totals[c]++; if (i) ok = text_add(&event, ",");
+        ok = ok && text_add(&event, "{\"path\":") && text_json_string(&event, items[i].path) && text_add(&event, ",\"category\":") && text_json_string(&event, items[i].category) && text_add(&event, ",\"signal\":") && text_json_string(&event, items[i].signal) && text_add(&event, "}");
+    }
+    ok = ok && text_add(&event, "],\"counts\":[");
+    for (int i = 0; ok && i < 5; i++) { if (i) ok = text_add(&event, ","); snprintf(num, sizeof(num), "%llu", totals[i]); ok = ok && text_add(&event, num); }
+    ok = ok && text_add(&event, "],\"skipped\":"); snprintf(num, sizeof(num), "%zu", skipped); ok = ok && text_add(&event, num) && text_add(&event, ",\"partial\":") && text_add(&event, partial ? "true" : "false") && text_add(&event, ",\"limiting_reason\":") && text_json_string(&event, reason) && text_add(&event, "}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data);
+    if (ok) {
+        char summary[160]; snprintf(summary, sizeof(summary), "%zu files classified by filename; %llu held for review%s.", count, totals[4], partial ? " (partial inventory)" : "");
+        TextBuffer done = {0}; ok = text_add(&done, "{\"seq\":3,\"type\":\"done\",\"job_id\":") && text_json_string(&done, job_id) && text_add(&done, ",\"summary\":") && text_json_string(&done, summary) && text_add(&done, "}") && job_sse_json(g, fd, job_id, done.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14); free(done.data);
+    }
+inbox_cleanup:
+    free(raw); for (size_t i = 0; i < count; i++) free(items[i].path); free(items); return ok;
+}
+
 static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder,
                        const char *existing_job_id) {
     char *argv[] = {g->samosa_fs, "survey", "--max-file-bytes", "104857600",
@@ -6195,16 +6281,18 @@ static int jobs_run(Gateway *g, int fd, const SamosaHttpRequest *request) {
     int folder_report = recipe && recipe->t == J_STR && !strcmp(recipe->str, "folder_report");
     int find_duplicates = recipe && recipe->t == J_STR && !strcmp(recipe->str, "find_duplicates");
     int sort_by_type = recipe && recipe->t == J_STR && !strcmp(recipe->str, "sort_by_type");
-    if ((!folder_report && !find_duplicates && !sort_by_type && (!goal || goal->t != J_STR || !goal->str[0])) ||
-        (recipe && (recipe->t != J_STR || (!folder_report && !find_duplicates && !sort_by_type))) ||
+    int classify_inbox = recipe && recipe->t == J_STR && !strcmp(recipe->str, "classify_inbox");
+    if ((!folder_report && !find_duplicates && !sort_by_type && !classify_inbox && (!goal || goal->t != J_STR || !goal->str[0])) ||
+        (recipe && (recipe->t != J_STR || (!folder_report && !find_duplicates && !sort_by_type && !classify_inbox))) ||
         !folder || folder->t != J_STR || !folder->str[0]) {
         json_free(root); free(arena);
         return samosa_http_json_error(fd, 400, "invalid_job", "A supported recipe or goal and a folder are required.");
     }
-    char *goal_copy = strdup(folder_report ? "Folder report" : find_duplicates ? "Find duplicates" : sort_by_type ? "Sort by file type" : goal->str), *folder_copy = strdup(folder->str);
+    char *goal_copy = strdup(folder_report ? "Folder report" : find_duplicates ? "Find duplicates" : sort_by_type ? "Sort by file type" : classify_inbox ? "Classify an inbox" : goal->str), *folder_copy = strdup(folder->str);
     json_free(root); free(arena);
     if (!goal_copy || !folder_copy) { free(goal_copy); free(folder_copy); return 0; }
-    int result = sort_by_type ? jobs_sort_by_type(g, fd, folder_copy)
+    int result = classify_inbox ? jobs_classify_inbox(g, fd, folder_copy)
+                               : sort_by_type ? jobs_sort_by_type(g, fd, folder_copy)
                                : find_duplicates ? jobs_find_duplicates(g, fd, folder_copy)
                                : folder_report ? jobs_folder_report(g, fd, folder_copy, NULL)
                                : jobs_report(g, fd, goal_copy, folder_copy, NULL);

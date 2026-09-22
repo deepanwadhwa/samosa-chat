@@ -52,6 +52,13 @@ while [ "$i" -le 129 ]; do
 done
 /bin/mkdir "$TMP/sort-stale-files"
 printf 'before preview\n' >"$TMP/sort-stale-files/item.txt"
+/bin/mkdir "$TMP/inbox-files"
+printf 'September invoice\n' >"$TMP/inbox-files/invoice-september.txt"
+printf 'Vaccination history\n' >"$TMP/inbox-files/vaccination-history.txt"
+printf 'Project sprint plan\n' >"$TMP/inbox-files/sprint-plan.txt"
+printf 'Family travel notes\n' >"$TMP/inbox-files/family-travel.txt"
+printf 'Conflicting evidence\n' >"$TMP/inbox-files/medical-invoice.pdf"
+printf 'Unclear document\n' >"$TMP/inbox-files/misc.pdf"
 /bin/mkdir "$TMP/interlock-files"
 printf "First interlock receipt.\n" >"$TMP/interlock-files/a.txt"
 printf "Second interlock receipt.\n" >"$TMP/interlock-files/b.txt"
@@ -260,6 +267,17 @@ printf '%s' "$unsorted" | /usr/bin/grep -q '"undone":4'
 [ -f "$TMP/report-files/third.csv" ]
 [ ! -e "$TMP/report-files/Sorted by type/txt/first.txt" ]
 [ ! -e "$TMP/report-files/Sorted by type/csv/third.csv" ]
+INBOX=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"classify_inbox\",\"folder\":\"$TMP/inbox-files\"}")
+printf '%s' "$INBOX" | /usr/bin/grep -q '"type":"inbox_classification"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"billing","signal":"invoice"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"medical","signal":"vaccination"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"work","signal":"sprint"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"personal","signal":"family"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"review","signal":"conflicting filename clues"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"review","signal":"no clear filename clue"'
+[ "$(/usr/bin/find "$TMP/inbox-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 6 ]
 STALE_SORT=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \
   --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$TMP/sort-stale-files\"}")

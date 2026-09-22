@@ -57,6 +57,7 @@ const app = readFileSync(new URL("../assets/app.html", import.meta.url), "utf8")
 assert.match(app, /id="jobRecipe"[\s\S]*value="folder_report"/);
 assert.match(app, /value="find_duplicates">Find duplicates/);
 assert.match(app, /value="sort_by_type">Sort by file type/);
+assert.match(app, /value="classify_inbox">Classify an inbox/);
 assert.match(app, /recipe !== "find" \? \{ recipe, folder \}/);
 assert.match(app, /jobEls\.goal\.disabled = deterministic/);
 const begin = app.indexOf("      const baseName =");
@@ -120,5 +121,12 @@ renderJobEvent({ type: "await_apply", job_id: "sort-job", moves: 4 }, ctx);
 assert.equal(ctx.awaitingApply, true);
 assert.equal(jobEls.barText.textContent, "4 files ready to move.");
 assert.equal(jobEls.barActions.children[0].textContent, "Apply moves");
+renderJobEvent({ type: "inbox_classification", counts: [1, 1, 0, 0, 1], items: [
+  { path: "invoice.pdf", category: "billing", signal: "invoice" },
+  { path: "medical-invoice.pdf", category: "review", signal: "conflicting filename clues" },
+] }, ctx);
+assert.match(jobEls.resultText.innerHTML, /filename clues only/);
+assert.match(jobEls.resultText.innerHTML, /invoice\.pdf/);
+assert.match(jobEls.resultText.innerHTML, /conflicting filename clues/);
 
 process.stdout.write("jobs UI DOM fixtures: PASS\n");
