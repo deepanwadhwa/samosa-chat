@@ -55,7 +55,7 @@ HTTP_ERROR_MEANINGS = {
 # API-version change, not a silent edit.
 CHUTNI_SCOPE_KINDS = {"folder", "drive", "computer"}
 CHUTNI_SCOPE_STATES = {
-    "unbuilt", "building", "ready", "checking", "updating", "rebuilding",
+    "unbuilt", "building", "ready", "ready_partial", "checking", "updating", "rebuilding",
     "paused_user", "paused_chat", "needs_permission", "disconnected",
     "needs_attention", "failed_initial", "canceled_initial", "forgetting",
 }
@@ -89,7 +89,7 @@ INSTALL_JOB_STATES = {
 SELECTION_STATES = {"queued", "loading", "ready", "failed"}
 DURABLE_JOB_STATES = {
     "queued", "running", "paused_user", "paused_chat", "canceling",
-    "canceled", "failed", "completed",
+    "canceled", "failed", "completed", "completed_partial",
 }
 SETUP_NEXT_STEPS = {"name", "welcome", "model", "download", "chat"}
 

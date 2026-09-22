@@ -67,6 +67,7 @@ SAMOSA_QWEN_ENGINE="$ROOT/$BUILD_DIR/test_fake_openai_backend" \
 SAMOSA_QWEN_MODEL="$TMP/home/qwen-model" \
 SAMOSA_TOKENIZER="$TMP/tokenizer.json" \
 SAMOSA_CHUTNI_SERVICE="$ROOT/$BUILD_DIR/chutni-mcp" \
+SAMOSA_FS="$ROOT/$BUILD_DIR/samosa-fs" \
 SAMOSA_EXTRACT="$SAMOSA_EXTRACT" \
 SAMOSA_OCR="$ROOT/tests/fake_ocr_sidecar.sh" \
 SAMOSA_APP_VERSION="test-enrichment-1" \
@@ -93,18 +94,45 @@ PF=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -
   --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/source\"}]}")
 PREFLIGHT=$(printf '%s' "$PF" | sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
 [ -n "$PREFLIGHT" ] || fail "missing preflight_id"
+POLICY=$(printf '%s' "$PF" | tr '\n' ' ' | sed -n 's/.*"policy_fingerprint":"\([^"]*\)".*/\1/p')
+[ -n "$POLICY" ] || fail "missing policy fingerprint"
+printf '%s' "$PF" | grep -q '"inventory":{"regular_files":'
+printf '%s' "$PF" | grep -q '"directories_entered":'
 printf '%s' "$PF" | grep -q '"action":"create_store"'
 printf '%s' "$PF" | grep -q '"store_path":'
 printf '%s' "$PF" | grep -q '\.chutni'
 STORE=$(printf '%s' "$PF" | sed -n 's/.*"store_path":"\([^"]*\)".*/\1/p')
 [ -n "$STORE" ] || fail "missing store_path"
 
+STALE_POLICY_CODE=$(curl -sS -o "$TMP/stale-policy.json" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/scopes" \
+  --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"policy_fingerprint\":\"wrong\",\"display_name\":\"Research\"}")
+[ "$STALE_POLICY_CODE" = 409 ] || fail "scope confirmation accepted a stale policy fingerprint"
+
 CREATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/scopes" \
-  --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"display_name\":\"Research\",\"summary_token_budget\":128}")
+  --data-binary "{\"preflight_id\":\"$PREFLIGHT\",\"policy_fingerprint\":\"$POLICY\",\"display_name\":\"Research\",\"summary_token_budget\":128}")
 SCOPE=$(printf '%s' "$CREATED" | sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
 JOB=$(printf '%s' "$CREATED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
 [ -n "$SCOPE" ] && [ -n "$JOB" ] || fail "scope ID missing from create response"
+
+# A matching policy token is insufficient if the selected directory itself was
+# replaced after preview.
+mkdir -p "$TMP/stale-source"
+printf 'stale root fixture\n' >"$TMP/stale-source/file.txt"
+STALE_PF=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/preflight" \
+  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/stale-source\"}]}")
+STALE_ID=$(printf '%s' "$STALE_PF" | sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
+STALE_POLICY=$(printf '%s' "$STALE_PF" | tr '\n' ' ' | sed -n 's/.*"policy_fingerprint":"\([^"]*\)".*/\1/p')
+mv "$TMP/stale-source" "$TMP/stale-source-old"
+mkdir "$TMP/stale-source"
+STALE_ROOT_CODE=$(curl -sS -o "$TMP/stale-root.json" -w '%{http_code}' \
+  -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/scopes" \
+  --data-binary "{\"preflight_id\":\"$STALE_ID\",\"policy_fingerprint\":\"$STALE_POLICY\",\"display_name\":\"Stale fixture\"}")
+[ "$STALE_ROOT_CODE" = 409 ] || fail "scope confirmation accepted a replaced folder root"
 
 i=0
 while [ "$i" -lt 300 ]; do

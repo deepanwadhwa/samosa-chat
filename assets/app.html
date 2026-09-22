@@ -7150,6 +7150,7 @@
       let chutniScopes = [];        // full summaries, server truth
       let chutniPollTimer = null;
       let chutniPreflightId = null; // set once a preflight has been accepted
+      let chutniPolicyFingerprint = null;
       let chutniForgetId = null;
 
       function activeChutniScope() {
@@ -7247,7 +7248,7 @@
         if (!jobEls.memoryAccess) return;
         const folder = (jobEls.folder.value || "").trim();
         const scope = folder && Array.isArray(chutniScopes)
-          ? chutniScopes.find(item => item.canonical_root === folder && item.state === "ready")
+          ? chutniScopes.find(item => item.canonical_root === folder && ["ready", "ready_partial"].includes(item.state))
           : null;
         jobEls.memoryAccess.innerHTML = "";
         const strong = document.createElement("strong");
@@ -7365,7 +7366,7 @@
             } catch (_) { return { ...entry, state: entry.state || "unknown", unreadable: true }; }
           }));
           chutniScopes = full;
-          readyChutniMemoryCount = full.filter(scope => scope.state === "ready").length;
+          readyChutniMemoryCount = full.filter(scope => ["ready", "ready_partial"].includes(scope.state)).length;
           chutniEls.error.hidden = true;
         } catch (err) {
           // A library that cannot be read is its own state: say so and offer
@@ -7438,6 +7439,10 @@
             return { chip: improving ? "ready · improving summaries" : "ready", tone: "ok",
                      why: warn.length ? null : null, actions: ["build", "forget"] };
           }
+          case "ready_partial":
+            return { chip: "partial index", tone: "warn",
+                     why: `The safety limit “${s.limiting_reason || "unspecified"}” stopped this build early. Searchable evidence is available, but this folder is not fully indexed. Refresh after adjusting the scope or limits.`,
+                     actions: ["ask", "build", "forget"] };
           default:
             return { chip: s.state || "unknown", tone: null, why: null, actions: ["build", "forget"] };
         }
@@ -7637,16 +7642,18 @@
         const chat = activeChat();
         const selectedHere = !!(chat && chat.directory_context &&
                                 chat.directory_context.scope_id === s.id);
-        if (s.state === "ready") {
+        if (s.state === "ready" || s.state === "ready_partial") {
           const ready = document.createElement("p");
           ready.className = "chutni-why";
-          ready.textContent = selectedHere
+          ready.textContent = s.state === "ready_partial"
+            ? "This partial memory is active in the current conversation. Search results may omit files beyond the scan limit."
+            : selectedHere
             ? "This memory is active in the current conversation. Ask questions in Chat."
             : "Memory is ready. Ask questions about these files in Chat.";
           li.appendChild(ready);
         }
         const actions = p.actions.slice();
-        if (s.state === "ready") {
+        if (s.state === "ready" || s.state === "ready_partial") {
           actions.unshift("ask");
           if (selectedHere) actions.splice(1, 0, "unuse");
         }
@@ -7753,7 +7760,7 @@
       }
       function closeChutniPanels() {
         chutniEls.addPanel.hidden = true; chutniEls.forgetPanel.hidden = true;
-        chutniPreflightId = null; chutniForgetId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null; chutniForgetId = null;
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
         chutniEls.addNext.textContent = "Check folder";
         renderChutni();
@@ -7764,7 +7771,7 @@
         chutniEls.summaryBudget.value = "3000";
         chutniEls.summaryBudget.setCustomValidity("");
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
-        chutniPreflightId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null;
         chutniEls.addNext.textContent = "Check folder";
         chutniEls.pane.hidden = true; chutniEls.empty.hidden = true;
         chutniEls.addPanel.hidden = false;
@@ -7795,6 +7802,7 @@
             if (!r.ok) throw new Error((body && body.error && body.error.message) || "That folder could not be checked.");
             renderPreflight(body);
             chutniPreflightId = body.preflight_id || "accepted";
+            chutniPolicyFingerprint = body.policy_fingerprint || null;
             chutniEls.addNext.textContent = "Build memory";
           } catch (err) {
             chutniEls.preflight.hidden = false;
@@ -7812,6 +7820,7 @@
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               preflight_id: chutniPreflightId,
+              policy_fingerprint: chutniPolicyFingerprint,
               display_name: baseName(path),
               summary_token_budget: summaryTokenBudget,
               client_request_id: `scope-${Date.now()}`
@@ -7830,6 +7839,7 @@
       function renderPreflight(pf) {
         const est = pf.estimate || {}, pol = pf.effective_policy || {};
         const chutni = pf.chutni || {};
+        const inventory = pf.inventory || {};
         const dl = document.createElement("dl");
         const row = (k, v) => {
           if (v === null || v === undefined) return;
@@ -7840,7 +7850,11 @@
         // "About" is honest for a sampled estimate; an exact-looking number
         // from a sample would be fake precision.
         const approx = est.sampled ? "About " : "";
-        if (typeof est.files === "number") row("Files", `${approx}${est.files}`);
+        if (typeof inventory.regular_files === "number") row("Files found", inventory.regular_files);
+        else if (typeof est.files === "number") row("Files", `${approx}${est.files}`);
+        if (typeof inventory.regular_file_bytes === "number") row("File size found", bytesLabel(inventory.regular_file_bytes));
+        if (typeof inventory.skipped === "number") row("Skipped", inventory.skipped);
+        if (inventory.partial) row("Inventory", `Partial: stopped at ${inventory.limiting_reason || "a safety limit"}`);
         row("Source size", bytesLabel(est.source_bytes));
         const need = bytesLabel(est.peak_additional_disk_bytes), free = bytesLabel(est.available_disk_bytes);
         if (need) row("Extra disk needed", free ? `${need} (${free} free)` : need);
@@ -7867,7 +7881,12 @@
           p.textContent = typeof w === "string" ? w : (w.message || JSON.stringify(w));
           chutniEls.preflight.appendChild(p);
         }
-        if (bad.length) { chutniEls.addNext.textContent = "Check folder"; chutniPreflightId = null; }
+        if (inventory.partial) {
+          const p = document.createElement("p"); p.className = "chutni-why";
+          p.textContent = "This preview reached a safety limit. Review the partial counts before building memory.";
+          chutniEls.preflight.appendChild(p);
+        }
+        if (bad.length) { chutniEls.addNext.textContent = "Check folder"; chutniPreflightId = null; chutniPolicyFingerprint = null; }
         chutniEls.preflight.hidden = false;
       }
 
@@ -8610,7 +8629,7 @@
         initialPath: chutniEls.path.value.trim() || undefined,
         onSelect: path => {
           chutniEls.path.value = path;
-          chutniPreflightId = null;
+          chutniPreflightId = null; chutniPolicyFingerprint = null;
           chutniEls.addNext.textContent = "Check folder";
           chutniEls.preflight.hidden = true;
           chutniEls.addNext.focus();
@@ -8624,7 +8643,7 @@
       // the user never confirmed.
       chutniEls.path.oninput = () => {
         if (!chutniPreflightId) return;
-        chutniPreflightId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null;
         chutniEls.addNext.textContent = "Check folder";
         chutniEls.preflight.hidden = true;
       };

@@ -278,7 +278,7 @@ test-native-summarizer-real: samosa-summarizer tests/test_native_summarizer.c
 	$(BUILD_DIR)/test_native_summarizer $(BUILD_DIR)/samosa-summarizer "$(SAMOSA_SUMMARIZER_TEST_MODEL)"
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
-chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
+chutni-gateway-test: samosa-gateway samosa-fs chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
 	sh tests/test_chutni_gateway.sh
 	sh tests/test_chutni_controls.sh
 

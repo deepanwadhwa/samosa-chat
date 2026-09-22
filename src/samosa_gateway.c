@@ -21346,6 +21346,7 @@ static int chutni_scope_root_exists(Gateway *g, const char *canonical_root) {
 static int chutni_scope_metadata_create(Gateway *g, const char *scope_id,
                                         const char *display_name,
                                         const char *canonical_root,
+                                        const char *policy_fingerprint,
                                         int summary_token_budget) {
     if (chutni_scope_root_exists(g, canonical_root)) return 0;
     char scopes_path[PATH_MAX], scope_path[PATH_MAX], metadata_path[PATH_MAX];
@@ -21379,8 +21380,9 @@ static int chutni_scope_metadata_create(Gateway *g, const char *scope_id,
         text_json_string(&json, identity) &&
         text_add(&json, ",\"summary_token_budget\":") &&
         text_add(&json, budget) &&
-        text_add(&json, ",\"policy_fingerprint\":\"chutni-reference-scan-v1\","
-                  "\"state\":\"unbuilt\",\"freshness_state\":\"complete\","
+        text_add(&json, ",\"policy_fingerprint\":") &&
+        text_json_string(&json, policy_fingerprint) &&
+        text_add(&json, ",\"state\":\"unbuilt\",\"freshness_state\":\"complete\","
                   "\"active_job_id\":\"\",\"phase\":\"idle\","
                   "\"evidence_generation\":0,\"enhancement_revision\":0,"
                   "\"regular_files_seen\":0,\"files_indexed\":0,"
@@ -21401,10 +21403,19 @@ static int chutni_scope_metadata_create(Gateway *g, const char *scope_id,
         text_json_string(&json, now) &&
         text_add(&json, ",\"active_database\":\"\","
                   "\"effective_policy\":{\"include_hidden\":false,"
-                  "\"cross_filesystems\":false,\"maximum_file_bytes\":67108864,"
+                  "\"cross_filesystems\":false,\"follow_symlinks\":false,"
+                  "\"maximum_depth\":32,\"maximum_files\":10000,"
+                  "\"maximum_directories\":5000,\"maximum_seconds\":20,"
+                  "\"maximum_file_bytes\":67108864,"
                   "\"mandatory_exclusions\":[\".git\",\".svn\",\".hg\","
                   "\"node_modules\",\".cache\",\"__pycache__\",\".venv\","
-                  "\"venv\",\"target\",\".Trash\"],\"user_exclusions\":[]},"
+                  "\"venv\",\"env\",\"target\",\"build\",\"dist\","
+                  "\"DerivedData\",\".Trash\",\".mypy_cache\","
+                  "\".pytest_cache\",\".ruff_cache\",\"site-packages\","
+                  "\".next\",\".nuxt\",\".yarn\",\".pnpm-store\","
+                  "\".gradle\",\"coverage\",\".idea\"],"
+                  "\"marker_exclusions\":[\"directory containing pyvenv.cfg\"],"
+                  "\"user_exclusions\":[]},"
                   "\"warnings\":[]}\n") &&
         write_small_file(metadata_path, json.data) &&
         chutni_scope_registry_write(g);
@@ -21461,6 +21472,29 @@ static void chutni_json_set_number(jval *object, const char *key, double value) 
     if (field->t == J_STR) { free(field->str); field->str = NULL; }
     field->t = J_NUM;
     field->num = value;
+}
+
+static void chutni_json_set_bool(jval *object, const char *key, int value) {
+    jval *field = object && object->t == J_OBJ ? json_get(object, key) : NULL;
+    if (!field && object && object->t == J_OBJ) {
+        char **keys = realloc(object->keys, (size_t)(object->len + 1) * sizeof(*keys));
+        if (!keys) return;
+        object->keys = keys;
+        jval **kids = realloc(object->kids, (size_t)(object->len + 1) * sizeof(*kids));
+        if (!kids) return;
+        object->kids = kids;
+        field = calloc(1, sizeof(*field));
+        char *key_copy = strdup(key);
+        if (!field || !key_copy) { free(field); free(key_copy); return; }
+        field->t = J_NULL;
+        object->keys[object->len] = key_copy;
+        object->kids[object->len] = field;
+        object->len++;
+    }
+    if (!field) return;
+    if (field->t == J_STR) { free(field->str); field->str = NULL; }
+    field->t = J_BOOL;
+    field->boolean = !!value;
 }
 
 static int chutni_scope_summary_token_budget_write(Gateway *g,
@@ -21567,11 +21601,17 @@ static int chutni_scope_publish(Gateway *g, const char *scope_id,
             content_artifacts && content_artifacts->t == J_NUM
                 ? content_artifacts->num : (text && text->t == J_NUM ? text->num : 0);
         char now[32] = {0}; rfc3339_now_to(now, sizeof(now));
-        chutni_json_set_string(scope, "state", "ready");
+        jval *partial_value = json_get(scan, "partial");
+        int partial = partial_value && partial_value->t == J_BOOL && partial_value->boolean;
+        jval *limiting_reason = json_get(scan, "limiting_reason");
+        chutni_json_set_string(scope, "state", partial ? "ready_partial" : "ready");
         chutni_json_set_string(scope, "active_job_id", "");
         chutni_json_set_string(scope, "phase", "complete");
         chutni_json_set_string(scope, "current_file", "");
-        chutni_json_set_string(scope, "freshness_state", "complete");
+        chutni_json_set_string(scope, "freshness_state", partial ? "partial" : "complete");
+        chutni_json_set_bool(scope, "build_partial", partial);
+        if (limiting_reason && limiting_reason->t == J_STR)
+            chutni_json_set_string(scope, "limiting_reason", limiting_reason->str);
         chutni_json_set_number(scope, "evidence_generation", (double)generation);
         chutni_json_set_number(scope, "regular_files_seen", seen->num);
         chutni_json_set_number(scope, "files_indexed", indexed->num);
@@ -21596,7 +21636,7 @@ static int chutni_scope_publish(Gateway *g, const char *scope_id,
             (progress_raw = read_file_limit(progress_path, 1 << 20)))
             progress = json_parse(progress_raw, &progress_arena);
         chutni_scope_overlay_progress(scope, progress);
-        chutni_json_set_string(scope, "phase", "complete");
+        chutni_json_set_string(scope, "phase", partial ? "partial" : "complete");
         chutni_json_set_string(scope, "current_file", "");
         json_free(progress); free(progress_arena); free(progress_raw);
         TextBuffer output = {0};
@@ -21681,8 +21721,10 @@ static void *chutni_worker(void *opaque) {
         chutni_scope_summary_token_budget(g, args->scope_id);
     int prepared =
         chutni_scope_metadata(g, args->scope_id, root_path, display_name) &&
-        text_add(&request_json, "{\"path\":") &&
+        text_add(&request_json, "{") &&
+        text_add(&request_json, "\"path\":") &&
         text_json_string(&request_json, root_path) &&
+        text_add(&request_json, ",\"max_depth\":32,\"max_files\":10000,\"max_directories\":5000,\"max_seconds\":20,\"max_file_size_bytes\":67108864") &&
         text_add(&request_json, ",\"confirmed\":true,\"register\":true,\"label\":") &&
         text_json_string(&request_json, display_name) &&
         text_add(&request_json, ",\"app_name\":\"Samosa\",\"app_version\":") &&
@@ -21804,16 +21846,22 @@ static void *chutni_worker(void *opaque) {
             write_small_file(protocol_path, service_output) &&
             chutni_scope_publish(g, args->scope_id, service_output,
                                  args->generation)) {
-            final_state = "completed";
-            message = enrichment.failed
+            char *result_arena = NULL;
+            jval *result = json_parse(service_output, &result_arena);
+            jval *result_scan = result && result->t == J_OBJ ? json_get(result, "scan") : NULL;
+            jval *result_partial = result_scan && result_scan->t == J_OBJ ? json_get(result_scan, "partial") : NULL;
+            int partial = result_partial && result_partial->t == J_BOOL && result_partial->boolean;
+            final_state = partial ? "completed_partial" : "completed";
+            message = partial ? "Chutni saved a partial index because a scan safety limit was reached." : enrichment.failed
                 ? "Portable Chutni memory is ready; some optional enrichment was unavailable."
                 : "Portable Chutni memory is ready with reusable content artifacts.";
+            json_free(result); free(result_arena);
         } else {
             message = "Chutni completed but Samosa could not publish its status.";
         }
     }
     path_copy(progress.phase, sizeof(progress.phase),
-              !strcmp(final_state, "completed") ? "complete" :
+              (!strcmp(final_state, "completed") || !strcmp(final_state, "completed_partial")) ? "complete" :
               !strcmp(final_state, "paused_user") ? "paused" :
               !strcmp(final_state, "canceled") ? "canceled" : "failed");
     progress.current_file[0] = 0;
@@ -21822,6 +21870,7 @@ static void *chutni_worker(void *opaque) {
     chutni_job_write(g, args->scope_id, args->job_id, final_state, phase,
                      args->generation, message);
     chutni_job_event(g, args->scope_id, args->job_id,
+                     !strcmp(final_state, "completed_partial") ? "completed_partial" :
                      !strcmp(final_state, "completed") ? "completed" :
                      !strcmp(final_state, "paused_user") ? "paused_user" :
                      !strcmp(final_state, "canceled") ? "canceled" : "failed",
@@ -21911,6 +21960,113 @@ static void chutni_wait_worker_idle(Gateway *g, const char *scope_id, const char
     }
 }
 
+typedef struct {
+    char reason[64];
+    char representative[128];
+    unsigned long long count;
+} ChutniPreflightSkip;
+
+static int chutni_preflight_inventory(Gateway *g, const char *canonical,
+                                      TextBuffer *out,
+                                      char fingerprint_out[65]) {
+    char *argv[] = {g->samosa_fs, (char *)"chutni-inventory", (char *)"--root",
+        (char *)canonical, (char *)"--max-depth", (char *)"32",
+        (char *)"--max-files", (char *)"10000",
+        (char *)"--max-directories", (char *)"5000",
+        (char *)"--max-seconds", (char *)"20", NULL};
+    int status = 0, saw_done = 0, partial = 0;
+    char *raw = run_capture(g, g->samosa_fs, argv, 8 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        free(raw);
+        return 0;
+    }
+
+    unsigned long long files = 0, bytes = 0, skipped = 0;
+    unsigned long long directories_seen = 0, directories_entered = 0;
+    char limiting_reason[64] = "none", fingerprint[65] = "";
+    ChutniPreflightSkip reasons[8] = {0};
+    size_t reason_count = 0;
+    const char *line = raw;
+    while (*line) {
+        const char *end = strchr(line, '\n');
+        size_t length = end ? (size_t)(end - line) : strlen(line);
+        char *record = malloc(length + 1), *arena = NULL;
+        if (!record) { free(raw); return 0; }
+        memcpy(record, line, length); record[length] = 0;
+        jval *item = json_parse(record, &arena);
+        free(record);
+        if (!item || item->t != J_OBJ) {
+            json_free(item); free(arena); free(raw); return 0;
+        }
+        jval *type = json_get(item, "type");
+        if (type && type->t == J_STR && !strcmp(type->str, "file")) {
+            files++;
+            jval *size = json_get(item, "size");
+            if (size && size->t == J_NUM && size->num > 0)
+                bytes += (unsigned long long)size->num;
+        } else if (type && type->t == J_STR && !strcmp(type->str, "skip")) {
+            skipped++;
+            jval *reason = json_get(item, "reason");
+            jval *path = json_get(item, "rel_path");
+            if (reason && reason->t == J_STR) {
+                size_t slot = 0;
+                while (slot < reason_count && strcmp(reasons[slot].reason, reason->str)) slot++;
+                if (slot == reason_count && reason_count < sizeof(reasons) / sizeof(reasons[0])) {
+                    snprintf(reasons[slot].reason, sizeof(reasons[slot].reason), "%s", reason->str);
+                    if (path && path->t == J_STR)
+                        snprintf(reasons[slot].representative, sizeof(reasons[slot].representative), "%s", path->str);
+                    reason_count++;
+                }
+                if (slot < reason_count) reasons[slot].count++;
+            }
+        } else if (type && type->t == J_STR && !strcmp(type->str, "done")) {
+            saw_done = 1;
+            jval *value = json_get(item, "partial");
+            partial = value && value->t == J_BOOL && value->boolean;
+            value = json_get(item, "directories_seen");
+            if (value && value->t == J_NUM && value->num >= 0) directories_seen = (unsigned long long)value->num;
+            value = json_get(item, "directories_entered");
+            if (value && value->t == J_NUM && value->num >= 0) directories_entered = (unsigned long long)value->num;
+            value = json_get(item, "limiting_reason");
+            if (value && value->t == J_STR) snprintf(limiting_reason, sizeof(limiting_reason), "%s", value->str);
+            value = json_get(item, "policy_fingerprint");
+            if (value && value->t == J_STR) snprintf(fingerprint, sizeof(fingerprint), "%s", value->str);
+        }
+        json_free(item); free(arena);
+        if (!end) break;
+        line = end + 1;
+    }
+    free(raw);
+    if (!saw_done || !fingerprint[0]) return 0;
+    path_copy(fingerprint_out, 65, fingerprint);
+
+    char n_files[32], n_bytes[32], n_skipped[32], n_seen[32], n_entered[32];
+    snprintf(n_files, sizeof(n_files), "%llu", files);
+    snprintf(n_bytes, sizeof(n_bytes), "%llu", bytes);
+    snprintf(n_skipped, sizeof(n_skipped), "%llu", skipped);
+    snprintf(n_seen, sizeof(n_seen), "%llu", directories_seen);
+    snprintf(n_entered, sizeof(n_entered), "%llu", directories_entered);
+    if (!text_add(out, "{\"regular_files\":") || !text_add(out, n_files) ||
+        !text_add(out, ",\"regular_file_bytes\":") || !text_add(out, n_bytes) ||
+        !text_add(out, ",\"skipped\":") || !text_add(out, n_skipped) ||
+        !text_add(out, ",\"directories_seen\":") || !text_add(out, n_seen) ||
+        !text_add(out, ",\"directories_entered\":") || !text_add(out, n_entered) ||
+        !text_add(out, partial ? ",\"complete\":false,\"partial\":true,\"limiting_reason\":" :
+                                ",\"complete\":true,\"partial\":false,\"limiting_reason\":" ) ||
+        !text_json_string(out, limiting_reason) ||
+        !text_add(out, ",\"policy_fingerprint\":") || !text_json_string(out, fingerprint) ||
+        !text_add(out, ",\"skip_reasons\":[")) return 0;
+    for (size_t i = 0; i < reason_count; i++) {
+        char count[32]; snprintf(count, sizeof(count), "%llu", reasons[i].count);
+        if ((i && !text_add(out, ",")) ||
+            !text_add(out, "{\"reason\":") || !text_json_string(out, reasons[i].reason) ||
+            !text_add(out, ",\"count\":") || !text_add(out, count) ||
+            !text_add(out, ",\"representative_path\":") ||
+            !text_json_string(out, reasons[i].representative) || !text_add(out, "}")) return 0;
+    }
+    return text_add(out, "]}");
+}
+
 static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request) {
     char *arena = NULL; jval *root = json_parse(request->body, &arena);
     jval *kind = root && root->t == J_OBJ ? json_get(root, "kind") : NULL;
@@ -21924,7 +22080,14 @@ static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request
         json_free(root); free(arena);
         return samosa_http_json_error(fd, 400, "invalid_preflight", "A readable folder root is required.");
     }
-    char id[40]; if (!durable_job_id_generate(id)) { json_free(root); free(arena); return samosa_http_json_error(fd, 500, "id_generation_failed", "A preflight could not be created."); }
+    TextBuffer inventory = {0};
+    char policy_fingerprint[65] = {0};
+    if (!chutni_preflight_inventory(g, canonical, &inventory, policy_fingerprint)) {
+        json_free(root); free(arena); free(inventory.data);
+        return samosa_http_json_error(fd, 503, "inventory_unavailable",
+                                      "The selected folder could not be inventoried within its safety budget.");
+    }
+    char id[40]; if (!durable_job_id_generate(id)) { json_free(root); free(arena); free(inventory.data); return samosa_http_json_error(fd, 500, "id_generation_failed", "A preflight could not be created."); }
     char dir[PATH_MAX], file[PATH_MAX];
     int ok = path_join(dir, sizeof(dir), g->chutni_root, "preflights") && mkdirs(dir) && path_join(file, sizeof(file), dir, id);
     TextBuffer service_args = {0};
@@ -21948,7 +22111,7 @@ static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request
                      action && action->t == J_STR;
     if (!service_ok) {
         json_free(status_json); free(status_arena); free(folder_status);
-        json_free(root); free(arena);
+        json_free(root); free(arena); free(inventory.data);
         return samosa_http_json_error(fd, 503, "chutni_unavailable",
                                       "The bundled Chutni service could not inspect that folder.");
     }
@@ -21956,7 +22119,7 @@ static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request
         !strcmp(action->str, "unsupported_store") ||
         !strcmp(action->str, "invalid_store")) {
         json_free(status_json); free(status_arena); free(folder_status);
-        json_free(root); free(arena);
+        json_free(root); free(arena); free(inventory.data);
         return samosa_http_json_error(fd, 409, action->str,
                                       "The adjacent memory path exists but cannot be opened safely.");
     }
@@ -21968,18 +22131,29 @@ static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request
          text_add(&b, ",\"kind\":\"folder\",\"canonical_root\":") && text_json_string(&b, canonical) &&
          text_add(&b, ",\"volume_identity\":") && text_json_string(&b, volume) &&
          text_add(&b, ",\"root_file_identity\":") && text_json_string(&b, identity) &&
+         text_add(&b, ",\"policy_fingerprint\":") && text_json_string(&b, policy_fingerprint) &&
          text_add(&b, ",\"effective_policy\":{\"include_hidden\":false,"
-                     "\"cross_filesystems\":false,\"maximum_file_bytes\":67108864,"
+                     "\"cross_filesystems\":false,\"maximum_depth\":32,"
+                     "\"maximum_files\":10000,\"maximum_directories\":5000,"
+                     "\"maximum_seconds\":20,\"maximum_file_bytes\":67108864,"
+                     "\"follow_symlinks\":false,"
                      "\"mandatory_exclusions\":[\".git\",\".svn\",\".hg\","
                      "\"node_modules\",\".cache\",\"__pycache__\",\".venv\","
-                     "\"venv\",\"target\",\".Trash\"],\"user_exclusions\":[]},"
+                     "\"venv\",\"env\",\"target\",\"build\",\"dist\","
+                     "\"DerivedData\",\".Trash\",\".mypy_cache\","
+                     "\".pytest_cache\",\".ruff_cache\",\"site-packages\","
+                     "\".next\",\".nuxt\",\".yarn\",\".pnpm-store\","
+                     "\".gradle\",\"coverage\",\".idea\"],"
+                     "\"marker_exclusions\":[\"directory containing pyvenv.cfg\"],"
+                     "\"user_exclusions\":[]},"
                      "\"chutni\":") &&
          text_add(&b, folder_status) &&
+         text_add(&b, ",\"inventory\":") && text_add(&b, inventory.data) &&
          text_add(&b, ",\"warnings\":[]}\n") &&
          write_small_file(file, b.data);
     free(b.data);
     json_free(status_json); free(status_arena); free(folder_status);
-    json_free(root); free(arena);
+    json_free(root); free(arena); free(inventory.data);
     if (!ok) return samosa_http_json_error(fd, 500, "preflight_failed", "The preflight could not be saved.");
     char *saved = read_file_limit(file, 8192);
     int sent = saved && samosa_http_response(fd, 200, "application/json", saved, NULL); free(saved); return sent;
@@ -22012,10 +22186,17 @@ static int chutni_scope_create(Gateway *g, int fd, const SamosaHttpRequest *requ
         return samosa_http_json_error(fd, 400, "invalid_preflight", "That preflight is unavailable.");
     }
     jval *kind = json_get(p, "kind"), *canonical = json_get(p, "canonical_root");
+    jval *saved_fingerprint = json_get(p, "policy_fingerprint");
+    jval *accepted_fingerprint = root && root->t == J_OBJ
+        ? json_get(root, "policy_fingerprint") : NULL;
     if (!kind || kind->t != J_STR || !canonical || canonical->t != J_STR ||
+        !saved_fingerprint || saved_fingerprint->t != J_STR ||
+        !accepted_fingerprint || accepted_fingerprint->t != J_STR ||
+        strcmp(saved_fingerprint->str, accepted_fingerprint->str) ||
         !name || name->t != J_STR || !*name->str) {
         json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
-        return samosa_http_json_error(fd, 400, "invalid_scope", "display_name and a valid preflight are required.");
+        return samosa_http_json_error(fd, 409, "stale_policy",
+                                      "The accepted inventory policy changed. Check the folder again.");
     }
     char canonical_copy[PATH_MAX], name_copy[256];
     if (!path_copy(canonical_copy, sizeof(canonical_copy), canonical->str) ||
@@ -22024,9 +22205,28 @@ static int chutni_scope_create(Gateway *g, int fd, const SamosaHttpRequest *requ
         return samosa_http_json_error(fd, 400, "invalid_scope",
                                       "The folder path or display name is too long.");
     }
+    jval *saved_identity = json_get(p, "root_file_identity");
+    char resolved_root[PATH_MAX], current_identity[96];
+    struct stat current_root;
+    if (!saved_identity || saved_identity->t != J_STR ||
+        !realpath(canonical_copy, resolved_root) || strcmp(resolved_root, canonical_copy) ||
+        stat(canonical_copy, &current_root) != 0 || !S_ISDIR(current_root.st_mode)) {
+        json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
+        return samosa_http_json_error(fd, 409, "stale_root",
+                                      "The selected folder changed after preview. Check it again.");
+    }
+    snprintf(current_identity, sizeof(current_identity), "%llu:%llu",
+             (unsigned long long)current_root.st_dev,
+             (unsigned long long)current_root.st_ino);
+    if (strcmp(saved_identity->str, current_identity)) {
+        json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
+        return samosa_http_json_error(fd, 409, "stale_root",
+                                      "The selected folder changed after preview. Check it again.");
+    }
     char scope_id[40]; if (!durable_job_id_generate(scope_id)) { json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight); return samosa_http_json_error(fd, 500, "id_generation_failed", "A scope could not be created."); }
     int created_ok = chutni_scope_metadata_create(
-        g, scope_id, name_copy, canonical_copy, summary_token_budget);
+        g, scope_id, name_copy, canonical_copy, saved_fingerprint->str,
+        summary_token_budget);
     json_free(root); free(arena); json_free(p); free(pf_arena); free(preflight);
     if (!created_ok) return samosa_http_json_error(fd, 409, "scope_exists", "That folder already has a Chutni scope or cannot be registered.");
     char job_id[40]; if (!durable_job_id_generate(job_id) || !chutni_start_worker(g, scope_id, job_id, 1, "queued"))
@@ -22051,7 +22251,7 @@ static int chutni_scope_show(Gateway *g, int fd, const char *scope_id) {
        lifecycle state without claiming that unfinished evidence is ready. */
     char job_id[96] = {0}, job_state[32] = {0}; unsigned long long generation = 0;
     if (chutni_job_load(g, scope_id, job_id, job_state, &generation) &&
-        strcmp(job_state, "completed")) {
+        strcmp(job_state, "completed") && strcmp(job_state, "completed_partial")) {
         char *arena = NULL; jval *root = json_parse(raw, &arena);
         jval *state = root && root->t == J_OBJ ? json_get(root, "state") : NULL;
         const char *visible = !strcmp(job_state, "paused_user") ? "paused_user" :

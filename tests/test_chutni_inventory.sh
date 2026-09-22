@@ -93,6 +93,48 @@ grep -q '"type":"done","canceled":false' "$OUT" || { echo "FAIL: missing clean d
 sh "$GEN" fix-perms "$ROOT"
 rm -rf "$ROOT"
 
+# --- explicit traversal budgets stop work and report a truthful partial result ---
+mkdir -p "$TMP/budget/child"
+i=0
+while [ "$i" -lt 8 ]; do
+  printf 'budget fixture %s\n' "$i" >"$TMP/budget/file-$i.txt"
+  i=$((i + 1))
+done
+printf 'nested fixture\n' >"$TMP/budget/child/nested.txt"
+"$FS" chutni-inventory --root "$TMP/budget" --max-files 2 >"$TMP/budget-files.ndjson"
+FILE_COUNT=$(grep -c '"type":"file"' "$TMP/budget-files.ndjson")
+[ "$FILE_COUNT" = 2 ] || { echo "FAIL: --max-files 2 emitted $FILE_COUNT file records"; cat "$TMP/budget-files.ndjson"; exit 1; }
+grep -q '"type":"done".*"partial":true.*"limiting_reason":"maximum_files"' "$TMP/budget-files.ndjson" \
+  || { echo "FAIL: file limit did not produce a truthful partial summary"; cat "$TMP/budget-files.ndjson"; exit 1; }
+
+"$FS" chutni-inventory --root "$TMP/budget" --max-depth 0 >"$TMP/budget-depth.ndjson"
+grep -q '"rel_path":"child","reason":"depth_limit"' "$TMP/budget-depth.ndjson" \
+  || { echo "FAIL: depth limit did not prune the child directory"; cat "$TMP/budget-depth.ndjson"; exit 1; }
+grep -q '"type":"done".*"partial":true.*"limiting_reason":"maximum_depth"' "$TMP/budget-depth.ndjson" \
+  || { echo "FAIL: depth limit did not produce a truthful partial summary"; cat "$TMP/budget-depth.ndjson"; exit 1; }
+
+# --- generated trees and marker-detected environments are pruned in inventory ---
+mkdir -p "$TMP/policy/.venv" "$TMP/policy/NODE_MODULES" "$TMP/policy/build" \
+  "$TMP/policy/custom-python-env"
+printf 'decoy\n' >"$TMP/policy/.venv/decoy.txt"
+printf 'decoy\n' >"$TMP/policy/NODE_MODULES/decoy.txt"
+printf 'decoy\n' >"$TMP/policy/build/decoy.txt"
+printf 'home = /python\n' >"$TMP/policy/custom-python-env/pyvenv.cfg"
+printf 'decoy\n' >"$TMP/policy/custom-python-env/decoy.txt"
+"$FS" chutni-inventory --root "$TMP/policy" --include-hidden >"$TMP/policy.ndjson"
+for name in .venv NODE_MODULES build; do
+  grep -q "\"rel_path\":\"$name\",\"reason\":\"generated_tree\"" "$TMP/policy.ndjson" \
+    || { echo "FAIL: generated directory $name was not pruned"; cat "$TMP/policy.ndjson"; exit 1; }
+  if grep -q "\"rel_path\":\"$name/decoy.txt\"" "$TMP/policy.ndjson"; then
+    echo "FAIL: inventory entered generated directory $name"; exit 1
+  fi
+done
+grep -q '"rel_path":"custom-python-env","reason":"python_environment_marker"' "$TMP/policy.ndjson" \
+  || { echo "FAIL: custom Python environment was not recognized by marker"; cat "$TMP/policy.ndjson"; exit 1; }
+if grep -q '"rel_path":"custom-python-env/decoy.txt"' "$TMP/policy.ndjson"; then
+  echo "FAIL: inventory entered custom Python environment"; exit 1
+fi
+
 # --- chutni-hash: a complete SHA-256, never a prefix, with identity checks ---
 sh "$GEN" build "$ROOT"
 EXPECTED=$(sha256_file "$ROOT/plain/report.md") || exit 1

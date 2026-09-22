@@ -33,6 +33,7 @@ REAL_CHUTNI_MCP="$ROOT/$BUILD_DIR/chutni-mcp" \
 SAMOSA_HOME="$TMP/home" SAMOSA_PORT="$PORT" \
 SAMOSA_BACKEND_URL="http://127.0.0.1:$((PORT + 1))" \
 SAMOSA_CHUTNI_SERVICE="$ROOT/tests/fake_chutni_slow.sh" \
+SAMOSA_FS="$ROOT/$BUILD_DIR/samosa-fs" \
 SAMOSA_APP_HTML="$ROOT/assets/app.html" \
   "$ROOT/$BUILD_DIR/samosa-gateway" >"$TMP/gateway.log" 2>&1 &
 GW_PID=$!
@@ -53,9 +54,11 @@ PREFLIGHT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/
   --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/source\"}]}")
 PREFLIGHT_ID=$(printf '%s' "$PREFLIGHT" | sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
 [ -n "$PREFLIGHT_ID" ] || fail "failed to get preflight id"
+POLICY=$(printf '%s' "$PREFLIGHT" | tr '\n' ' ' | sed -n 's/.*"policy_fingerprint":"\([^"]*\)".*/\1/p')
+[ -n "$POLICY" ] || fail "preflight did not include a policy fingerprint"
 CREATED=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' \
   -X POST "http://127.0.0.1:$PORT/v1/chutni/scopes" \
-  --data-binary "{\"preflight_id\":\"$PREFLIGHT_ID\",\"display_name\":\"Control fixture\"}")
+  --data-binary "{\"preflight_id\":\"$PREFLIGHT_ID\",\"policy_fingerprint\":\"$POLICY\",\"display_name\":\"Control fixture\"}")
 SCOPE=$(printf '%s' "$CREATED" | sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
 JOB=$(printf '%s' "$CREATED" | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')
 [ -n "$SCOPE" ] && [ -n "$JOB" ] || fail "scope ID missing from create response"
