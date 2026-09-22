@@ -37,6 +37,21 @@ printf 'png\n' >"$TMP/logo.png"
 printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
 printf "Miso vaccination record.\n" >"$TMP/files/miso-record.txt"
 printf "Cafe total 4.50\n" >"$TMP/files/receipt-b.txt"
+/bin/mkdir "$TMP/report-files"
+printf 'same size A\n' >"$TMP/report-files/first.txt"
+printf 'same size B\n' >"$TMP/report-files/second.txt"
+/bin/cp "$TMP/report-files/first.txt" "$TMP/report-files/copy.txt"
+printf 'a tiny csv value\n' >"$TMP/report-files/third.csv"
+printf 'outside secret\n' >"$TMP/outside-report-secret.txt"
+/bin/ln -s "$TMP/outside-report-secret.txt" "$TMP/report-files/escape-link"
+/bin/mkdir "$TMP/duplicate-limit-files"
+i=1
+while [ "$i" -le 129 ]; do
+  printf 'same-size candidate\n' >"$TMP/duplicate-limit-files/item-$i.txt"
+  i=$((i + 1))
+done
+/bin/mkdir "$TMP/sort-stale-files"
+printf 'before preview\n' >"$TMP/sort-stale-files/item.txt"
 /bin/mkdir "$TMP/interlock-files"
 printf "First interlock receipt.\n" >"$TMP/interlock-files/a.txt"
 printf "Second interlock receipt.\n" >"$TMP/interlock-files/b.txt"
@@ -181,6 +196,84 @@ report=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   --data-binary "{\"goal\":\"report what is here\",\"folder\":\"$TMP/files\"}")
 printf '%s' "$report" | /usr/bin/grep -q '"type":"report"'
 printf '%s' "$report" | /usr/bin/grep -q '"type":"done"'
+
+# The productized Folder report recipe takes the bounded metadata inventory,
+# reports size-only duplicate candidates honestly, and leaves the source tree
+# untouched. It does not invoke model intent classification.
+report_recipe=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"recipe":"folder_report"'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"total":4'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"duplicate_candidates":3'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"duplicate_size_groups":1'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"symlink":1'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"size_bands":\['
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"age":\['
+[ "$(/usr/bin/find "$TMP/report-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 4 ]
+report_again=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$TMP/report-files\"}")
+REPORT_SNAPSHOT=$(printf '%s' "$report_recipe" | /usr/bin/grep '"type":"report"' | /usr/bin/sed 's/.*"type":"report"/"type":"report"/')
+REPORT_AGAIN_SNAPSHOT=$(printf '%s' "$report_again" | /usr/bin/grep '"type":"report"' | /usr/bin/sed 's/.*"type":"report"/"type":"report"/')
+[ "$REPORT_SNAPSHOT" = "$REPORT_AGAIN_SNAPSHOT" ] || { echo "Folder report was not deterministic" >&2; exit 1; }
+DUPLICATES=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"find_duplicates\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"type":"duplicates"'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"candidate_files":3'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"hashed_files":3'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"duplicate_groups":1'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'first.txt'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'copy.txt'
+! printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'second.txt'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"partial":false'
+[ "$(/usr/bin/find "$TMP/report-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 4 ]
+LIMITED_DUPLICATES=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"find_duplicates\",\"folder\":\"$TMP/duplicate-limit-files\"}")
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"candidate_files":129'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"hashed_files":0'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"deferred_files":129'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"partial":true'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"limiting_reason":"hash_file_limit"'
+SORT_PREVIEW=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"type":"plan"'
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"moves":4'
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q 'Sorted by type/txt/first.txt'
+[ -f "$TMP/report-files/first.txt" ]
+[ ! -e "$TMP/report-files/Sorted by type" ]
+SORT_JOB=$(printf '%s' "$SORT_PREVIEW" | /usr/bin/sed -n 's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$SORT_JOB" ]
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"type":"done"'
+sorted=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$SORT_JOB\"}")
+printf '%s' "$sorted" | /usr/bin/grep -q '"applied":4'
+[ -f "$TMP/report-files/Sorted by type/txt/first.txt" ]
+[ -f "$TMP/report-files/Sorted by type/csv/third.csv" ]
+unsorted=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/undo" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$SORT_JOB\"}")
+printf '%s' "$unsorted" | /usr/bin/grep -q '"undone":4'
+[ -f "$TMP/report-files/first.txt" ]
+[ -f "$TMP/report-files/third.csv" ]
+[ ! -e "$TMP/report-files/Sorted by type/txt/first.txt" ]
+[ ! -e "$TMP/report-files/Sorted by type/csv/third.csv" ]
+STALE_SORT=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$TMP/sort-stale-files\"}")
+STALE_SORT_JOB=$(printf '%s' "$STALE_SORT" | /usr/bin/sed -n 's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$STALE_SORT_JOB" ]
+printf 'changed after preview with a different size\n' >"$TMP/sort-stale-files/item.txt"
+STALE_APPLY=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$STALE_SORT_JOB\"}")
+printf '%s' "$STALE_APPLY" | /usr/bin/grep -q '"applied":0,"skipped":1'
+/usr/bin/grep -q 'changed after preview' "$TMP/sort-stale-files/item.txt"
+[ ! -e "$TMP/sort-stale-files/Sorted by type" ]
+REPORT_JOB=$(printf '%s' "$report_recipe" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -f "$HOME_DIR/jobs/$REPORT_JOB/events.jsonl" ]
+/usr/bin/grep -q '"recipe":"folder_report"' "$HOME_DIR/jobs/$REPORT_JOB/events.jsonl"
 
 # Phase JI find: model triages every filename (Phase A), the verify loop reads
 # content and ends with a structured finish() result card (JI.2/JI.4/JI.5). No

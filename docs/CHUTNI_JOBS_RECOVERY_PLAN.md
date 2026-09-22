@@ -1,6 +1,6 @@
 # Chutni and Jobs recovery plan
 
-**Status:** implementation plan; no product changes from this document alone
+**Status:** in progress; Phase C recipes are being implemented incrementally
 
 **Updated:** 2026-09-22
 
@@ -297,6 +297,14 @@ goal may map into one of them, but pasted internal JSON is not required.
    - run a chosen recipe only on added/changed files;
    - scheduled write actions always produce a review batch unless the user has
      explicitly enabled a narrowly defined safe rule.
+
+**Implementation checkpoint (2026-09-22):** Folder report, Find files about…,
+and Find duplicates are exposed in Jobs. Find duplicates hashes only bounded
+same-size candidates and reports a partial result when work is capped or a
+candidate cannot be read. Sort by file type is now being added through the
+existing persisted move-plan, explicit Apply, and Undo path. Inbox
+classification and watch-folder deltas remain unimplemented Phase C work; this
+checkpoint does not claim the Phase C acceptance gates are complete.
 
 ### C2. Durable `JobSpec`
 

@@ -50,8 +50,15 @@ globalThis.jobEls = {
   result: new Element(), resultLabel: new Element(), resultText: new Element(), review: new Element(), reviewList: new Element(), reviewMeta: new Element(),
 };
 globalThis.lastJobId = null;
+globalThis.bytesLabel = n => `${n} bytes`;
+globalThis.showJobResult = text => { jobEls.resultText.innerHTML = text; jobEls.result.hidden = false; };
 
 const app = readFileSync(new URL("../assets/app.html", import.meta.url), "utf8");
+assert.match(app, /id="jobRecipe"[\s\S]*value="folder_report"/);
+assert.match(app, /value="find_duplicates">Find duplicates/);
+assert.match(app, /value="sort_by_type">Sort by file type/);
+assert.match(app, /recipe !== "find" \? \{ recipe, folder \}/);
+assert.match(app, /jobEls\.goal\.disabled = deterministic/);
 const begin = app.indexOf("      const baseName =");
 const end = app.indexOf("      async function streamJob");
 assert.ok(begin >= 0 && end > begin, "Jobs renderer block must remain extractable");
@@ -94,5 +101,24 @@ renderJobEvent({ type: "result", matches: [{ path: "Titli/certificate.pdf", evid
 assert.match(jobEls.resultText.innerHTML, /certificate\.pdf/);
 assert.match(jobEls.resultText.innerHTML, /Rabies vaccination/);
 assert.match(jobEls.resultText.innerHTML, /scan\.png/);
+
+renderJobEvent({ type: "report", total: 3, bytes: 42, by_type: { ".txt": 2, ".csv": 1 }, age: [1, 1, 1, 0], size_bands: [3, 0, 0], duplicate_candidates: 2, duplicate_size_groups: 1, skip_reasons: {}, partial: true, limiting_reason: "maximum_files" }, ctx);
+assert.match(jobEls.resultText.innerHTML, /Folder report/);
+assert.match(jobEls.resultText.innerHTML, /2 \.txt/);
+assert.match(jobEls.resultText.innerHTML, /size only; contents not compared/);
+assert.match(jobEls.resultText.innerHTML, /Partial report.*maximum_files/);
+
+renderJobEvent({ type: "duplicates", duplicate_groups: 1, candidate_files: 3, hashed_files: 3, deferred_files: 0, skipped: 1, partial: false, groups: [{ size: 12, sha256: "a".repeat(64), files: ["first.txt", "copy.txt"] }] }, ctx);
+assert.match(jobEls.resultText.innerHTML, /1 verified duplicate group/);
+assert.match(jobEls.resultText.innerHTML, /first\.txt/);
+assert.match(jobEls.resultText.innerHTML, /SHA-256/);
+renderJobEvent({ type: "duplicates", duplicate_groups: 0, candidate_files: 129, hashed_files: 0, deferred_files: 129, skipped: 0, partial: true, limiting_reason: "hash_file_limit", groups: [] }, ctx);
+assert.match(jobEls.resultText.innerHTML, /129 candidates deferred/);
+assert.match(jobEls.resultText.innerHTML, /Partial duplicate search.*hash_file_limit/);
+
+renderJobEvent({ type: "await_apply", job_id: "sort-job", moves: 4 }, ctx);
+assert.equal(ctx.awaitingApply, true);
+assert.equal(jobEls.barText.textContent, "4 files ready to move.");
+assert.equal(jobEls.barActions.children[0].textContent, "Apply moves");
 
 process.stdout.write("jobs UI DOM fixtures: PASS\n");

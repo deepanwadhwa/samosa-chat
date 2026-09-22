@@ -1754,7 +1754,11 @@
             <div class="job-memory-access" id="jobMemoryAccess"><strong>Jobs reads the folder directly.</strong> It does not use Chutni memory; it checks the current files on disk for this run.</div>
           </div>
           <div class="job-field">
-            <label for="jobGoal">Task</label>
+            <label for="jobRecipe">Recipe</label>
+            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option></select>
+          </div>
+          <div class="job-field">
+            <label id="jobGoalLabel" for="jobGoal">What should I find?</label>
             <textarea id="jobGoal" rows="3" placeholder="Find my cat's medical records"></textarea>
           </div>
           <div class="row">
@@ -6580,7 +6584,7 @@
       }
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
       const jobEls = {
-        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
+        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"), recipe: $("jobRecipe"),
         browse: $("jobBrowse"), memoryAccess: $("jobMemoryAccess"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
         progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
@@ -8088,6 +8092,34 @@
             const parts = Object.entries(grouped).map(([kind, count]) => `${count} ${kind}`).join(", ");
             const l = jobLine("▦", `${evt.total} files found`, "step-done"); if (parts) addSub(l, parts); break;
           }
+          case "report": {
+            const ageLabels = ["under 30 days", "30–365 days", "over a year", "unknown/future"];
+            const sizeLabels = ["up to 1 MB", "1–10 MB", "over 10 MB"];
+            const types = Object.entries(evt.by_type || {}).map(([ext, n]) => `${n} ${ext}`).join(", ") || "No files found";
+            let md = `### Folder report\n\n- **${evt.total} files** · ${bytesLabel(evt.bytes)}\n- **File types:** ${types}\n`;
+            md += `- **Age:** ${(evt.age || []).map((n, i) => `${n} ${ageLabels[i]}`).join(", ")}\n`;
+            md += `- **Size:** ${(evt.size_bands || []).map((n, i) => `${n} ${sizeLabels[i]}`).join(", ")}\n`;
+            md += `- **Duplicate candidates:** ${evt.duplicate_candidates || 0} files in ${evt.duplicate_size_groups || 0} same-size groups (size only; contents not compared)\n`;
+            const skips = Object.entries(evt.skip_reasons || {});
+            if (skips.length) md += `- **Skipped:** ${skips.map(([reason, n]) => `${n} ${reason}`).join(", ")}\n`;
+            if (evt.partial) md += `\n**Partial report:** stopped at ${evt.limiting_reason || "a safety limit"}.\n`;
+            showJobResult(md); break;
+          }
+          case "duplicates": {
+            let md = `### Duplicate files\n\n${evt.duplicate_groups || 0} verified duplicate group${evt.duplicate_groups === 1 ? "" : "s"}. `
+              + `${evt.candidate_files || 0} same-size candidates checked; ${evt.hashed_files || 0} files hashed.`;
+            if (evt.groups && evt.groups.length) {
+              md += "\n\n";
+              evt.groups.forEach(group => {
+                md += `- **${bytesLabel(group.size)}** · SHA-256 \`${group.sha256}\`\n`;
+                group.files.forEach(path => { md += `  - \`${path}\`\n`; });
+              });
+            }
+            if (evt.skipped) md += `\n${evt.skipped} entries skipped by inventory policy.\n`;
+            if (evt.deferred_files) md += `\n${evt.deferred_files} candidates deferred by a hashing safety limit.\n`;
+            if (evt.partial) md += `\n**Partial duplicate search:** stopped at ${evt.limiting_reason || "a safety limit"}.\n`;
+            showJobResult(md); break;
+          }
           case "indexing":
             ctx.indexLine = jobLine("·", `Checking ${evt.total} filenames`); break;
           case "index_complete": {
@@ -8112,6 +8144,7 @@
           }
           case "await_apply":
             ctx.jobId = evt.job_id; lastJobId = evt.job_id;
+            ctx.awaitingApply = true;
             showBar(`${evt.moves} file${evt.moves === 1 ? "" : "s"} ready to move.`, [["Apply moves", "apply", () => applyJob(evt.job_id, ctx)]]);
             break;
           case "await_user": {
@@ -8256,7 +8289,7 @@
             if (jobEls.result.hidden) showJobResult(summary);
             loadReviewQueue(ctx.jobId || lastJobId, ctx);
             if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
-            else jobEls.bar.hidden = true;
+            else if (!ctx.awaitingApply) jobEls.bar.hidden = true;
             break;
           }
           case "error": showJobResult(evt.message, true); break;
@@ -8319,11 +8352,11 @@
       }
       async function runJob() {
         if (jobRunning) return;
-        const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
-        if (!folder || !goal) { jobEls.folder.focus(); return; }
+        const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim(), recipe = jobEls.recipe.value;
+        if (!folder || (recipe === "find" && !goal)) { jobEls.folder.focus(); return; }
         jobRunning = true; jobEls.run.disabled = true; jobEls.run.textContent = "Running"; clearJobOutput();
         const ctx = { folder };
-        try { await streamJob("/v1/jobs/run", { goal, folder, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
+        try { await streamJob("/v1/jobs/run", recipe !== "find" ? { recipe, folder } : { goal, folder, recipe, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
         finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Run job"; }
       }
@@ -8685,6 +8718,14 @@
         await refreshChutni();
       };
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
+      const syncJobRecipe = () => {
+        const deterministic = jobEls.recipe.value !== "find";
+        jobEls.goal.disabled = deterministic;
+        jobEls.goal.placeholder = deterministic ? "No description needed for this recipe" : "Find my cat's medical records";
+        $("jobGoalLabel").textContent = deterministic ? "Task description (optional)" : "What should I find?";
+      };
+      jobEls.recipe.onchange = syncJobRecipe;
+      syncJobRecipe();
       jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
       jobEls.previewDef.onclick=previewDefinitionJob;
       jobEls.runDef.onclick=runDefinitionJob;

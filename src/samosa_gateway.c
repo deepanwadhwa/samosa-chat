@@ -5744,6 +5744,373 @@ static int model_find_intent(Gateway *g, const char *goal) {
     return is_find;
 }
 
+typedef struct {
+    char key[32];
+    unsigned long long count;
+    unsigned long long bytes;
+} JobsReportGroup;
+
+static int jobs_u64_cmp(const void *a, const void *b) {
+    unsigned long long x = *(const unsigned long long *)a;
+    unsigned long long y = *(const unsigned long long *)b;
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static void jobs_report_type(const char *path, char out[32]) {
+    const char *base = strrchr(path, '/');
+    const char *dot;
+    size_t n;
+    base = base ? base + 1 : path;
+    dot = strrchr(base, '.');
+    if (!dot || dot == base || !dot[1]) { path_copy(out, 32, "[no extension]"); return; }
+    n = strlen(dot);
+    if (n > 31) n = 31;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)dot[i];
+        out[i] = (char)(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+    }
+    out[n] = 0;
+}
+
+/* Productized read-only report recipe. It consumes the same bounded,
+ * metadata-only walk as Chutni preflight; no file contents or hashes are
+ * read. Size-equal files are called duplicate candidates, never duplicates. */
+static int jobs_folder_report(Gateway *g, int fd, const char *folder,
+                              const char *existing_job_id) {
+    char *argv[] = {g->samosa_fs, (char *)"chutni-inventory", (char *)"--root",
+        (char *)folder, (char *)"--max-depth", (char *)"32",
+        (char *)"--max-files", (char *)"10000",
+        (char *)"--max-directories", (char *)"5000",
+        (char *)"--max-seconds", (char *)"20", NULL};
+    int status = 0;
+    char *raw = run_capture(g, g->samosa_fs, argv, 8 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        free(raw);
+        return samosa_http_json_error(fd, 400, "folder_scan_failed", "The folder could not be inspected within the report safety budget.");
+    }
+    JobsReportGroup types[64] = {0}, skips[32] = {0};
+    unsigned long long sizes[10000], file_count = 0, total_bytes = 0;
+    unsigned long long age[4] = {0}, size_band[3] = {0};
+    size_t type_count = 0, skip_count = 0;
+    int partial = 0, saw_done = 0;
+    char limiting_reason[64] = "none", job_id[64];
+    time_t now = time(NULL);
+    const char *line = raw;
+    while (*line) {
+        const char *end = strchr(line, '\n');
+        size_t len = end ? (size_t)(end - line) : strlen(line);
+        char *record = malloc(len + 1), *arena = NULL;
+        if (!record) { free(raw); return 0; }
+        memcpy(record, line, len); record[len] = 0;
+        jval *obj = json_parse(record, &arena); free(record);
+        if (!obj || obj->t != J_OBJ) { json_free(obj); free(arena); free(raw); return samosa_http_json_error(fd, 500, "invalid_inventory", "The folder inventory returned invalid data."); }
+        jval *type = json_get(obj, "type");
+        if (type && type->t == J_STR && !strcmp(type->str, "file")) {
+            jval *path = json_get(obj, "rel_path"), *size = json_get(obj, "size"), *mtime = json_get(obj, "mtime");
+            unsigned long long bytes = size && size->t == J_NUM && size->num > 0 ? (unsigned long long)size->num : 0;
+            if (!path || path->t != J_STR || file_count >= 10000) { json_free(obj); free(arena); free(raw); return samosa_http_json_error(fd, 500, "invalid_inventory", "The folder inventory exceeded its declared budget."); }
+            sizes[file_count++] = bytes; total_bytes += bytes;
+            char ext[32]; jobs_report_type(path->str, ext);
+            size_t k = 0; while (k < type_count && strcmp(types[k].key, ext)) k++;
+            if (k == type_count && type_count < 64) { path_copy(types[k].key, sizeof(types[k].key), ext); type_count++; }
+            if (k < type_count) { types[k].count++; types[k].bytes += bytes; }
+            if (bytes <= 1024ull*1024ull) size_band[0]++; else if (bytes <= 10ull*1024ull*1024ull) size_band[1]++; else size_band[2]++;
+            if (!mtime || mtime->t != J_NUM || mtime->num > (double)now + 86400.0) age[3]++;
+            else { double days = ((double)now - mtime->num) / 86400.0; age[days < 30 ? 0 : days < 365 ? 1 : 2]++; }
+        } else if (type && type->t == J_STR && !strcmp(type->str, "skip")) {
+            jval *reason = json_get(obj, "reason");
+            if (reason && reason->t == J_STR) {
+                size_t k = 0; while (k < skip_count && strcmp(skips[k].key, reason->str)) k++;
+                if (k == skip_count && skip_count < 32) { path_copy(skips[k].key, sizeof(skips[k].key), reason->str); skip_count++; }
+                if (k < skip_count) skips[k].count++;
+            }
+        } else if (type && type->t == J_STR && !strcmp(type->str, "done")) {
+            saw_done = 1; jval *v = json_get(obj, "partial"); partial = v && v->t == J_BOOL && v->boolean;
+            v = json_get(obj, "limiting_reason"); if (v && v->t == J_STR) path_copy(limiting_reason, sizeof(limiting_reason), v->str);
+        }
+        json_free(obj); free(arena);
+        if (!end) break;
+        line = end + 1;
+    }
+    free(raw);
+    if (!saw_done) return samosa_http_json_error(fd, 500, "invalid_inventory", "The folder inventory did not finish.");
+    qsort(sizes, (size_t)file_count, sizeof(sizes[0]), jobs_u64_cmp);
+    unsigned long long duplicate_groups = 0, duplicate_candidates = 0;
+    for (size_t i = 0; i < file_count;) { size_t j = i + 1; while (j < file_count && sizes[j] == sizes[i]) j++; if (j - i > 1) { duplicate_groups++; duplicate_candidates += j - i; } i = j; }
+    if (!samosa_http_stream_headers(fd)) return 0;
+    if (existing_job_id) path_copy(job_id, sizeof(job_id), existing_job_id);
+    else snprintf(job_id, sizeof(job_id), "job-%ld-%ld-%lld", (long)time(NULL), (long)getpid(), (long long)monotonic_millis());
+    if (!save_job_state(g, job_id, "Folder report", folder)) return 0;
+    TextBuffer event = {0}; char num[64];
+    int ok = text_add(&event, "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":") && text_json_string(&event, job_id) &&
+        text_add(&event, ",\"goal\":\"Folder report\",\"folder\":") && text_json_string(&event, folder) && text_add(&event, "}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event = (TextBuffer){0};
+    if (!ok) goto report_done;
+    snprintf(num, sizeof(num), "%llu", file_count);
+    ok = text_add(&event, "{\"seq\":2,\"type\":\"report\",\"recipe\":\"folder_report\",\"total\":") && text_add(&event, num) && text_add(&event, ",\"bytes\":");
+    snprintf(num, sizeof(num), "%llu", total_bytes); ok = ok && text_add(&event, num) && text_add(&event, ",\"partial\":") && text_add(&event, partial ? "true" : "false") && text_add(&event, ",\"limiting_reason\":") && text_json_string(&event, limiting_reason) && text_add(&event, ",\"by_type\":{");
+    for (size_t i = 0; ok && i < type_count; i++) { if (i) ok = text_add(&event, ","); snprintf(num, sizeof(num), "%llu", types[i].count); ok = ok && text_json_string(&event, types[i].key) && text_add(&event, ":") && text_add(&event, num); }
+    ok = ok && text_add(&event, "},\"age\":[");
+    for (int i = 0; ok && i < 4; i++) { if (i) ok = text_add(&event, ","); snprintf(num, sizeof(num), "%llu", age[i]); ok = ok && text_add(&event, num); }
+    ok = ok && text_add(&event, "],\"size_bands\":[");
+    for (int i = 0; ok && i < 3; i++) { if (i) ok = text_add(&event, ","); snprintf(num, sizeof(num), "%llu", size_band[i]); ok = ok && text_add(&event, num); }
+    snprintf(num, sizeof(num), "%llu", duplicate_candidates); ok = ok && text_add(&event, "],\"duplicate_candidates\":") && text_add(&event, num);
+    snprintf(num, sizeof(num), "%llu", duplicate_groups); ok = ok && text_add(&event, ",\"duplicate_size_groups\":") && text_add(&event, num) && text_add(&event, ",\"skip_reasons\":{");
+    for (size_t i = 0; ok && i < skip_count; i++) { if (i) ok = text_add(&event, ","); snprintf(num, sizeof(num), "%llu", skips[i].count); ok = ok && text_json_string(&event, skips[i].key) && text_add(&event, ":") && text_add(&event, num); }
+    ok = ok && text_add(&event, "}}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event.data = NULL;
+    if (ok) {
+        snprintf(num, sizeof(num), "{\"seq\":3,\"type\":\"done\",\"summary\":\"%llu files inspected%s.\"}", file_count, partial ? "; report is partial" : "");
+        ok = job_sse_json(g, fd, job_id, num) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+    }
+report_done:
+    free(event.data);
+    return ok;
+}
+
+typedef struct { unsigned long long size; char *path; char hash[65]; } JobsDuplicateFile;
+
+static int jobs_duplicate_file_cmp(const void *a, const void *b) {
+    const JobsDuplicateFile *x = a, *y = b;
+    if (x->size != y->size) return x->size < y->size ? -1 : 1;
+    return strcmp(x->path, y->path);
+}
+
+/* Exact duplicate recipe. Size groups are only candidates; only matching
+ * complete SHA-256 values are reported as duplicates. Hashing is bounded to
+ * 128 candidate files / 128 MiB, with the inventory's own limits in front. */
+static int jobs_find_duplicates(Gateway *g, int fd, const char *folder) {
+    enum { MAX_FILES = 10000, MAX_HASH_FILES = 128 };
+    const unsigned long long max_hash_bytes = 128ull * 1024ull * 1024ull;
+    char *argv[] = {g->samosa_fs, (char *)"chutni-inventory", (char *)"--root",
+        (char *)folder, (char *)"--max-depth", (char *)"32",
+        (char *)"--max-files", (char *)"10000",
+        (char *)"--max-directories", (char *)"5000",
+        (char *)"--max-seconds", (char *)"20", NULL};
+    unsigned long long start = monotonic_millis(), total = 0, skipped = 0, candidate_files = 0,
+        hashed_files = 0, deferred = 0, hashed_bytes = 0;
+    JobsDuplicateFile *files = calloc(MAX_FILES, sizeof(*files));
+    char *raw = NULL, job_id[64], reason[64] = "none";
+    int status = 0, partial = 0, saw_done = 0, ok = 0;
+    if (!files) return 0;
+    raw = run_capture(g, g->samosa_fs, argv, 8 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        free(raw); free(files);
+        return samosa_http_json_error(fd, 400, "folder_scan_failed", "The folder could not be inspected within the duplicate search safety budget.");
+    }
+    const char *line = raw;
+    while (*line) {
+        const char *end = strchr(line, '\n'); size_t len = end ? (size_t)(end - line) : strlen(line);
+        char *record = malloc(len + 1), *record_arena = NULL;
+        if (!record) goto cleanup;
+        memcpy(record, line, len); record[len] = 0;
+        jval *obj = json_parse(record, &record_arena); free(record);
+        if (!obj || obj->t != J_OBJ) { json_free(obj); free(record_arena); goto cleanup; }
+        jval *type = json_get(obj, "type");
+        if (type && type->t == J_STR && !strcmp(type->str, "file")) {
+            jval *path = json_get(obj, "rel_path"), *size = json_get(obj, "size");
+            if (!path || path->t != J_STR || !size || size->t != J_NUM || size->num < 0 || total >= MAX_FILES) {
+                json_free(obj); free(record_arena); goto cleanup;
+            }
+            files[total].size = (unsigned long long)size->num;
+            files[total].path = strdup(path->str);
+            if (!files[total].path) { json_free(obj); free(record_arena); goto cleanup; }
+            total++;
+        } else if (type && type->t == J_STR && !strcmp(type->str, "skip")) skipped++;
+        else if (type && type->t == J_STR && !strcmp(type->str, "done")) {
+            saw_done = 1; jval *v = json_get(obj, "partial"); partial = v && v->t == J_BOOL && v->boolean;
+            v = json_get(obj, "limiting_reason"); if (v && v->t == J_STR) path_copy(reason, sizeof(reason), v->str);
+        }
+        json_free(obj); free(record_arena);
+        if (!end) break; line = end + 1;
+    }
+    free(raw); raw = NULL;
+    if (!saw_done) goto cleanup;
+    qsort(files, (size_t)total, sizeof(*files), jobs_duplicate_file_cmp);
+    for (size_t i = 0; i < total;) {
+        size_t end = i + 1; while (end < total && files[end].size == files[i].size) end++;
+        if (end - i > 1) {
+            size_t group_count = end - i;
+            candidate_files += group_count;
+            unsigned long long group_bytes = files[i].size * (unsigned long long)group_count;
+            if (files[i].size > 64ull * 1024ull * 1024ull || hashed_files + group_count > MAX_HASH_FILES) {
+                deferred += group_count; partial = 1; path_copy(reason, sizeof(reason), "hash_file_limit"); i = end; continue;
+            }
+            if (hashed_bytes > max_hash_bytes || group_bytes > max_hash_bytes - hashed_bytes) {
+                deferred += group_count; partial = 1; path_copy(reason, sizeof(reason), "hash_byte_limit"); i = end; continue;
+            }
+            if (monotonic_millis() - start >= 20000ull) {
+                deferred += group_count; partial = 1; path_copy(reason, sizeof(reason), "hash_time_limit"); i = end; continue;
+            }
+            for (size_t k = i; k < end; k++) {
+                char *hash_argv[] = {g->samosa_fs, (char *)"chutni-hash", (char *)"--root",
+                    (char *)folder, files[k].path, NULL};
+                int hash_status = 0; char *hash_raw = run_capture(g, g->samosa_fs, hash_argv, 4096, &hash_status);
+                char *hash_arena = NULL; jval *hash_obj = hash_raw ? json_parse(hash_raw, &hash_arena) : NULL;
+                jval *hash = hash_obj && hash_obj->t == J_OBJ ? json_get(hash_obj, "sha256") : NULL;
+                if (!hash_raw || !WIFEXITED(hash_status) || WEXITSTATUS(hash_status) || !hash || hash->t != J_STR || strlen(hash->str) != 64) {
+                    deferred++; partial = 1; path_copy(reason, sizeof(reason), "hash_error");
+                } else { path_copy(files[k].hash, sizeof(files[k].hash), hash->str); hashed_files++; hashed_bytes += files[k].size; }
+                json_free(hash_obj); free(hash_arena); free(hash_raw);
+            }
+        }
+        i = end;
+    }
+    if (!samosa_http_stream_headers(fd)) goto cleanup;
+    snprintf(job_id, sizeof(job_id), "job-%ld-%ld-%lld", (long)time(NULL), (long)getpid(), (long long)monotonic_millis());
+    if (!save_job_state(g, job_id, "Find duplicates", folder)) goto cleanup;
+    TextBuffer event = {0}; char num[64];
+    ok = text_add(&event, "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":") && text_json_string(&event, job_id) && text_add(&event, ",\"goal\":\"Find duplicates\",\"folder\":") && text_json_string(&event, folder) && text_add(&event, "}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event = (TextBuffer){0};
+    unsigned long long duplicate_groups = 0;
+    if (ok) {
+        ok = text_add(&event, "{\"seq\":2,\"type\":\"duplicates\",\"recipe\":\"find_duplicates\",\"candidate_files\":");
+        snprintf(num, sizeof(num), "%llu", candidate_files); ok = ok && text_add(&event, num) && text_add(&event, ",\"hashed_files\":");
+        snprintf(num, sizeof(num), "%llu", hashed_files); ok = ok && text_add(&event, num) && text_add(&event, ",\"deferred_files\":");
+        snprintf(num, sizeof(num), "%llu", deferred); ok = ok && text_add(&event, num) && text_add(&event, ",\"skipped\":");
+        snprintf(num, sizeof(num), "%llu", skipped); ok = ok && text_add(&event, num) && text_add(&event, ",\"partial\":") && text_add(&event, partial ? "true" : "false") && text_add(&event, ",\"limiting_reason\":") && text_json_string(&event, reason) && text_add(&event, ",\"groups\":[");
+        int first_group = 1;
+        for (size_t i = 0; ok && i < total;) {
+            size_t end = i + 1; while (end < total && files[end].size == files[i].size) end++;
+            for (size_t k = i; k < end; k++) {
+                if (!files[k].hash[0]) continue;
+                size_t matches = 0; for (size_t x = i; x < end; x++) if (!strcmp(files[k].hash, files[x].hash)) matches++;
+                if (matches < 2) continue;
+                int earlier = 0; for (size_t x = i; x < k; x++) if (!strcmp(files[k].hash, files[x].hash)) earlier = 1;
+                if (earlier) continue;
+                if (!first_group) ok = text_add(&event, ","); first_group = 0; duplicate_groups++;
+                snprintf(num, sizeof(num), "%llu", files[k].size);
+                ok = ok && text_add(&event, "{\"size\":") && text_add(&event, num) && text_add(&event, ",\"sha256\":") && text_json_string(&event, files[k].hash) && text_add(&event, ",\"files\":[");
+                int first_path = 1;
+                for (size_t x = i; ok && x < end; x++) if (!strcmp(files[k].hash, files[x].hash)) {
+                    if (!first_path) ok = text_add(&event, ","); first_path = 0; ok = ok && text_json_string(&event, files[x].path);
+                }
+                ok = ok && text_add(&event, "]}");
+            }
+            i = end;
+        }
+        ok = ok && text_add(&event, "],\"duplicate_groups\":"); snprintf(num, sizeof(num), "%llu", duplicate_groups); ok = ok && text_add(&event, num) && text_add(&event, "}");
+        if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    }
+    free(event.data);
+    if (ok) {
+        snprintf(num, sizeof(num), "{\"seq\":3,\"type\":\"done\",\"summary\":\"%llu verified duplicate group%s%s.\"}", duplicate_groups, duplicate_groups == 1 ? "" : "s", partial ? "; some candidates need another pass" : "");
+        ok = job_sse_json(g, fd, job_id, num) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+    }
+cleanup:
+    free(raw);
+    for (size_t i = 0; i < total; i++) free(files[i].path);
+    free(files);
+    return ok;
+}
+
+/* Sort-by-type is a deterministic preview recipe. It stages only moves within
+ * the selected folder; the ordinary apply endpoint revalidates each operation
+ * and the existing undo journal records successful moves. */
+static int jobs_sort_by_type(Gateway *g, int fd, const char *folder) {
+    enum { MAX_FILES = 10000 };
+    char *argv[] = {g->samosa_fs, (char *)"chutni-inventory", (char *)"--root",
+        (char *)folder, (char *)"--max-depth", (char *)"32",
+        (char *)"--max-files", (char *)"10000",
+        (char *)"--max-directories", (char *)"5000",
+        (char *)"--max-seconds", (char *)"20", NULL};
+    typedef struct { char *src; char *dst; unsigned long long size; double mtime; } Move;
+    Move *moves = calloc(MAX_FILES, sizeof(*moves));
+    char *raw = NULL, job_id[64], plan_path[PATH_MAX];
+    int status = 0, partial = 0, saw_done = 0, ok = 0;
+    size_t count = 0;
+    if (!moves) return 0;
+    raw = run_capture(g, g->samosa_fs, argv, 8 << 20, &status);
+    if (!raw || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        free(raw); free(moves);
+        return samosa_http_json_error(fd, 400, "folder_scan_failed", "The folder could not be inspected within the sort safety budget.");
+    }
+    const char *line = raw;
+    while (*line) {
+        const char *end = strchr(line, '\n'); size_t len = end ? (size_t)(end - line) : strlen(line);
+        char *record = malloc(len + 1), *record_arena = NULL;
+        if (!record) goto sort_cleanup;
+        memcpy(record, line, len); record[len] = 0;
+        jval *obj = json_parse(record, &record_arena); free(record);
+        if (!obj || obj->t != J_OBJ) { json_free(obj); free(record_arena); goto sort_cleanup; }
+        jval *type = json_get(obj, "type");
+        if (type && type->t == J_STR && !strcmp(type->str, "file")) {
+            jval *path = json_get(obj, "rel_path"), *size = json_get(obj, "size"), *mtime = json_get(obj, "mtime");
+            if (!path || path->t != J_STR || !size || size->t != J_NUM || !mtime || mtime->t != J_NUM || count >= MAX_FILES) { json_free(obj); free(record_arena); goto sort_cleanup; }
+            if (!strncmp(path->str, "Sorted by type/", 15)) { json_free(obj); free(record_arena); if (!end) break; line = end + 1; continue; }
+            char ext[32], src[PATH_MAX], dst[PATH_MAX];
+            jobs_report_type(path->str, ext);
+            const char *label = !strcmp(ext, "[no extension]") ? "no-extension" : ext + 1;
+            if (snprintf(src, sizeof(src), "%s/%s", folder, path->str) >= (int)sizeof(src) ||
+                snprintf(dst, sizeof(dst), "%s/Sorted by type/%s/%s", folder, label, path->str) >= (int)sizeof(dst)) {
+                json_free(obj); free(record_arena); goto sort_cleanup;
+            }
+            if (strcmp(src, dst)) {
+                moves[count].src = strdup(src); moves[count].dst = strdup(dst);
+                if (!moves[count].src || !moves[count].dst) { json_free(obj); free(record_arena); goto sort_cleanup; }
+                moves[count].size = (unsigned long long)size->num; moves[count].mtime = mtime->num;
+                count++;
+            }
+        } else if (type && type->t == J_STR && !strcmp(type->str, "done")) {
+            saw_done = 1; jval *v = json_get(obj, "partial"); partial = v && v->t == J_BOOL && v->boolean;
+        }
+        json_free(obj); free(record_arena);
+        if (!end) break; line = end + 1;
+    }
+    free(raw); raw = NULL;
+    if (!saw_done) goto sort_cleanup;
+    snprintf(job_id, sizeof(job_id), "job-%ld-%ld-%lld", (long)time(NULL), (long)getpid(), (long long)monotonic_millis());
+    if (!save_job_state(g, job_id, "Sort by file type", folder) ||
+        !job_state_path(g, job_id, "plan.jsonl", plan_path, 1)) goto sort_cleanup;
+    TextBuffer plan_file = {0}, event = {0};
+    for (size_t i = 0; i < count; i++) {
+        TextBuffer rec = {0};
+        char size[32], mtime[64]; snprintf(size, sizeof(size), "%llu", moves[i].size);
+        snprintf(mtime, sizeof(mtime), "%.9f", moves[i].mtime);
+        int added = text_add(&rec, "{\"src\":") && text_json_string(&rec, moves[i].src) &&
+            text_add(&rec, ",\"dst\":") && text_json_string(&rec, moves[i].dst) &&
+            text_add(&rec, ",\"size\":") && text_add(&rec, size) &&
+            text_add(&rec, ",\"mtime\":") && text_add(&rec, mtime) && text_add(&rec, "}\n");
+        if (!added || !text_add(&plan_file, rec.data)) { free(rec.data); free(plan_file.data); goto sort_cleanup; }
+        free(rec.data);
+    }
+    if (!write_small_file(plan_path, plan_file.data ? plan_file.data : "")) { free(plan_file.data); goto sort_cleanup; }
+    free(plan_file.data);
+    if (!samosa_http_stream_headers(fd)) goto sort_cleanup;
+    ok = text_add(&event, "{\"seq\":1,\"type\":\"decode_intent\",\"job_id\":") && text_json_string(&event, job_id) && text_add(&event, ",\"goal\":\"Sort by file type\",\"folder\":") && text_json_string(&event, folder) && text_add(&event, "}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event = (TextBuffer){0};
+    ok = ok && text_add(&event, "{\"seq\":2,\"type\":\"plan\",\"moves\":[");
+    for (size_t i = 0; ok && i < count; i++) {
+        if (i) ok = text_add(&event, ",");
+        ok = ok && text_add(&event, "{\"src\":") && text_json_string(&event, moves[i].src) && text_add(&event, ",\"dst\":") && text_json_string(&event, moves[i].dst) && text_add(&event, "}");
+    }
+    ok = ok && text_add(&event, "],\"skips\":[]}");
+    if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    free(event.data); event = (TextBuffer){0};
+    if (ok && !partial && count) {
+        char number[32]; snprintf(number, sizeof(number), "%zu", count);
+        ok = text_add(&event, "{\"seq\":3,\"type\":\"await_apply\",\"job_id\":") && text_json_string(&event, job_id) && text_add(&event, ",\"moves\":") && text_add(&event, number) && text_add(&event, "}");
+        if (ok) ok = job_sse_json(g, fd, job_id, event.data);
+    }
+    free(event.data); event = (TextBuffer){0};
+    if (ok) {
+        char summary[160]; snprintf(summary, sizeof(summary), partial
+            ? "Inventory was partial; no moves can be applied. Raise the folder limit or retry."
+            : "Prepared %zu type-based move%s.", count, count == 1 ? "" : "s");
+        ok = text_add(&event, "{\"seq\":4,\"type\":\"done\",\"job_id\":") && text_json_string(&event, job_id) && text_add(&event, ",\"summary\":") && text_json_string(&event, summary) && text_add(&event, "}") && job_sse_json(g, fd, job_id, event.data) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
+    }
+    free(event.data);
+sort_cleanup:
+    free(raw);
+    for (size_t i = 0; i < count; i++) { free(moves[i].src); free(moves[i].dst); }
+    free(moves);
+    return ok;
+}
+
 static int jobs_report(Gateway *g, int fd, const char *goal, const char *folder,
                        const char *existing_job_id) {
     char *argv[] = {g->samosa_fs, "survey", "--max-file-bytes", "104857600",
@@ -5824,14 +6191,23 @@ static int jobs_run(Gateway *g, int fd, const SamosaHttpRequest *request) {
     char *arena = NULL; jval *root = json_parse(request->body, &arena);
     jval *goal = root && root->t == J_OBJ ? json_get(root, "goal") : NULL;
     jval *folder = root && root->t == J_OBJ ? json_get(root, "folder") : NULL;
-    if (!goal || goal->t != J_STR || !folder || folder->t != J_STR) {
+    jval *recipe = root && root->t == J_OBJ ? json_get(root, "recipe") : NULL;
+    int folder_report = recipe && recipe->t == J_STR && !strcmp(recipe->str, "folder_report");
+    int find_duplicates = recipe && recipe->t == J_STR && !strcmp(recipe->str, "find_duplicates");
+    int sort_by_type = recipe && recipe->t == J_STR && !strcmp(recipe->str, "sort_by_type");
+    if ((!folder_report && !find_duplicates && !sort_by_type && (!goal || goal->t != J_STR || !goal->str[0])) ||
+        (recipe && (recipe->t != J_STR || (!folder_report && !find_duplicates && !sort_by_type))) ||
+        !folder || folder->t != J_STR || !folder->str[0]) {
         json_free(root); free(arena);
-        return samosa_http_json_error(fd, 400, "invalid_job", "goal and folder are required.");
+        return samosa_http_json_error(fd, 400, "invalid_job", "A supported recipe or goal and a folder are required.");
     }
-    char *goal_copy = strdup(goal->str), *folder_copy = strdup(folder->str);
+    char *goal_copy = strdup(folder_report ? "Folder report" : find_duplicates ? "Find duplicates" : sort_by_type ? "Sort by file type" : goal->str), *folder_copy = strdup(folder->str);
     json_free(root); free(arena);
     if (!goal_copy || !folder_copy) { free(goal_copy); free(folder_copy); return 0; }
-    int result = jobs_report(g, fd, goal_copy, folder_copy, NULL);
+    int result = sort_by_type ? jobs_sort_by_type(g, fd, folder_copy)
+                               : find_duplicates ? jobs_find_duplicates(g, fd, folder_copy)
+                               : folder_report ? jobs_folder_report(g, fd, folder_copy, NULL)
+                               : jobs_report(g, fd, goal_copy, folder_copy, NULL);
     free(goal_copy); free(folder_copy); return result;
 }
 
@@ -6296,13 +6672,26 @@ static int jobs_apply_or_undo(Gateway *g, int fd, const SamosaHttpRequest *reque
     if (!job_state_path(g, job_id, undo ? "applied.jsonl" : "plan.jsonl", plan_path, 0) ||
         !job_state_path(g, job_id, "applied.jsonl", applied_path, 1)) { free(folder); return 0; }
     char *raw = read_file_limit(plan_path, 1 << 20); if (!raw) { free(folder); return samosa_http_json_error(fd, 404, "plan_not_found", "There is no pending move plan."); }
-    if (!samosa_http_stream_headers(fd)) { free(raw); free(folder); return 0; }
+    char *iteration = strdup(raw);
+    if (!iteration) { free(raw); free(folder); return 0; }
+    if (!samosa_http_stream_headers(fd)) { free(iteration); free(raw); free(folder); return 0; }
     int moved = 0, total = 0; char *save = NULL;
-    for (char *line = strtok_r(raw, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+    for (char *line = strtok_r(iteration, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
         char *line_arena = NULL; jval *move = json_parse(line, &line_arena);
         jval *src = json_get(move, "src"), *dst = json_get(move, "dst");
         if (!src || src->t != J_STR || !dst || dst->t != J_STR) { json_free(move); free(line_arena); continue; }
-        char *argv[] = {g->samosa_fs, undo ? "undo" : "move", "--root", folder, src->str, dst->str, NULL};
+        jval *size = json_get(move, "size"), *mtime = json_get(move, "mtime");
+        char size_text[32], mtime_text[64];
+        char *argv[12]; int argc = 0;
+        argv[argc++] = g->samosa_fs; argv[argc++] = undo ? "undo" : "move";
+        argv[argc++] = "--root"; argv[argc++] = folder;
+        if (!undo && size && size->t == J_NUM && size->num >= 0 && mtime && mtime->t == J_NUM) {
+            snprintf(size_text, sizeof(size_text), "%.0f", size->num);
+            snprintf(mtime_text, sizeof(mtime_text), "%.9f", mtime->num);
+            argv[argc++] = "--size"; argv[argc++] = size_text;
+            argv[argc++] = "--mtime"; argv[argc++] = mtime_text;
+        }
+        argv[argc++] = src->str; argv[argc++] = dst->str; argv[argc] = NULL;
         int status = 0; char *result = run_capture(g, g->samosa_fs, argv, 65536, &status); ++total;
         int ok_move = result && WIFEXITED(status) && !WEXITSTATUS(status) && strstr(result, "\"moved\":true");
         if (ok_move) ++moved;
@@ -6321,7 +6710,7 @@ static int jobs_apply_or_undo(Gateway *g, int fd, const SamosaHttpRequest *reque
     snprintf(event, sizeof(event), "{\"type\":\"done\",\"job_id\":\"%s\",\"summary\":\"%s %d file%s.\"}",
              job_id, undo ? "Restored" : "Moved", moved, moved == 1 ? "" : "s");
     ok = ok && sse_json(fd, event) && samosa_send_all(fd, "data: [DONE]\n\n", 14);
-    free(raw); free(folder); return ok;
+    free(iteration); free(raw); free(folder); return ok;
 }
 
 static int backend_available(Gateway *g, const char *name) {
