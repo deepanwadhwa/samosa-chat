@@ -1,0 +1,3 @@
+{"forgotten": {"forgotten": true, "portable_store_preserved": true}}
+{"question": "What appointment date is stated in Person X appointment.txt? Cite this selected source.", "answer": "The appointment date stated in Person X appointment.txt is 17 May 2031. This is found in the text: \"Person X appointment date is 17 May 2031. Reference: WX-482.\" (Source: Person X appointment.txt, text bytes 0-61).", "seconds": 20.76}
+forget preserves portable store, source hashes, saved selection and cited follow-up: PASS

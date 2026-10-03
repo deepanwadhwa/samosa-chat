@@ -1,0 +1,34 @@
+{"stage": "model_clone", "model": "ornith", "source_job": "job-1790888832-27164-373742674", "job_id": "fork-1790895226-72632-380136366", "conversation": "workflow-live-2aee55bfe5c4", "seconds": 0.01}
+{"stage": "answer", "model": "ornith", "question": "What verification code appears on page 37 of Person X records.pdf? Cite the file and page.", "answer": "The verification code on page 37 of Person X records.pdf is **QZ-731**.\n\nSource: Person X records.pdf, page 37.", "seconds": 18.34, "evidence_chars": 2454}
+{"stage": "answer", "model": "ornith", "question": "What is Person X's appointment date? Cite the source. Use only the selected files.", "answer": "Person X's appointment date is 17 May 2031.\n\nSource: Person X appointment.txt, text at bytes 0-61: \"Person X appointment date is 17 May 2031. Reference: WX-482.\"", "seconds": 80.23, "evidence_chars": 6286}
+{"stage": "answer", "model": "ornith", "question": "What scan reference appears on page 1 of Person X scan.pdf? Cite the source.", "answer": "The scan reference on page 1 of Person X scan.pdf is **SC-913**.\n\nSource: Person X scan.pdf, page 1, OCR text: \"Scan reference: SC-913\".", "seconds": 19.16, "evidence_chars": 2331}
+test_file_workflow_live.py questions: PASS
+{"stage": "copy_reopen_undo", "files": 12, "job_id": "action-1790895343-72632-380254111"}
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_file_workflow_live.py", line 156, in <module>
+    reply = request("/v1/chat/completions", {
+        "conversation_id": conversation, "model_id": health["backend"],
+        "model_version": health["model_version"], "stream": False, "max_tokens": 1024,
+        "analysis_depth": "fast", "messages": [{"role": "user", "content":
+        "What is Person X's appointment date? Cite its current selected source file."}]})
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_file_workflow_live.py", line 30, in request
+    with urllib.request.urlopen(urllib.request.Request(base + path, data=body,
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                headers=headers, method=method), timeout=300) as response:
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 531, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 611, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 422: Error

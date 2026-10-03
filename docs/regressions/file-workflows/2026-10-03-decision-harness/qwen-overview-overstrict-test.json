@@ -1,0 +1,28 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "qwen"
+  },
+  {
+    "stage": "memory_ready",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "state": "ready",
+    "files": 5
+  },
+  {
+    "stage": "memory_ready",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "state": "ready",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Give me the gist of this directory in two sentences.",
+    "answer": "The \"General Harness Qwen\" directory contains five files, including a synthetic PDF fixture and four text documents related to gardening diaries, project notes for Mira Lee, and a shopping list. The content appears to be test data or placeholders, featuring fictional meeting references, release codes, and simple item lists rather than substantive professional records.",
+    "seconds": 124.357
+  },
+  {
+    "stage": "failed",
+    "error": "Missing fact: Cedar"
+  }
+]

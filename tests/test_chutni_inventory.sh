@@ -113,22 +113,59 @@ grep -q '"rel_path":"child","reason":"depth_limit"' "$TMP/budget-depth.ndjson" \
 grep -q '"type":"done".*"partial":true.*"limiting_reason":"maximum_depth"' "$TMP/budget-depth.ndjson" \
   || { echo "FAIL: depth limit did not produce a truthful partial summary"; cat "$TMP/budget-depth.ndjson"; exit 1; }
 
+printf '12345\n' >"$TMP/budget/too-large.txt"
+"$FS" chutni-inventory --root "$TMP/budget" --max-file-bytes 4 >"$TMP/budget-file-bytes.ndjson"
+grep -q '"rel_path":"too-large.txt","reason":"file_size_limit"' "$TMP/budget-file-bytes.ndjson" \
+  || { echo "FAIL: per-file byte cap did not skip the oversized file"; cat "$TMP/budget-file-bytes.ndjson"; exit 1; }
+grep -q '"type":"done".*"partial":true.*"limiting_reason":"maximum_file_bytes"' "$TMP/budget-file-bytes.ndjson" \
+  || { echo "FAIL: per-file byte cap did not report partial inventory"; cat "$TMP/budget-file-bytes.ndjson"; exit 1; }
+
+mkdir -p "$TMP/eligible-byte-budget"
+printf '12345678' >"$TMP/eligible-byte-budget/a.txt"
+printf 'abcdefgh' >"$TMP/eligible-byte-budget/b.txt"
+"$FS" chutni-inventory --root "$TMP/eligible-byte-budget" --max-file-bytes 32 \
+  --max-eligible-bytes 10 >"$TMP/budget-total-bytes.ndjson"
+[ "$(grep -c '"type":"file"' "$TMP/budget-total-bytes.ndjson")" = 1 ] \
+  || { echo "FAIL: aggregate byte cap did not bound eligible files"; cat "$TMP/budget-total-bytes.ndjson"; exit 1; }
+grep -q '"type":"done".*"partial":true.*"limiting_reason":"maximum_eligible_bytes"' "$TMP/budget-total-bytes.ndjson" \
+  || { echo "FAIL: aggregate byte cap did not report partial inventory"; cat "$TMP/budget-total-bytes.ndjson"; exit 1; }
+
 # --- generated trees and marker-detected environments are pruned in inventory ---
-mkdir -p "$TMP/policy/.venv" "$TMP/policy/NODE_MODULES" "$TMP/policy/build" \
+mkdir -p "$TMP/policy/.venv" "$TMP/policy/node_modules" "$TMP/policy/build" \
   "$TMP/policy/custom-python-env"
-printf 'decoy\n' >"$TMP/policy/.venv/decoy.txt"
-printf 'decoy\n' >"$TMP/policy/NODE_MODULES/decoy.txt"
+mkdir -p "$TMP/policy/NODE_MODULES"
+mkdir -p "$TMP/policy/Documents.chutni/objects" "$TMP/policy/Other.CHUTNI"
+printf 'generated catalog\n' >"$TMP/policy/Documents.chutni/catalog.sqlite"
+printf 'generated artifact\n' >"$TMP/policy/Documents.chutni/objects/evidence.txt"
+printf 'generated catalog\n' >"$TMP/policy/Other.CHUTNI/catalog.sqlite"
+printf 'ordinary source with a suffix\n' >"$TMP/policy/source.chutni"
+decoy=0
+while [ "$decoy" -lt 10000 ]; do
+  : >"$TMP/policy/.venv/decoy-$decoy.txt"
+  : >"$TMP/policy/node_modules/decoy-$decoy.js"
+  : >"$TMP/policy/NODE_MODULES/decoy-$decoy.js"
+  decoy=$((decoy + 1))
+done
 printf 'decoy\n' >"$TMP/policy/build/decoy.txt"
 printf 'home = /python\n' >"$TMP/policy/custom-python-env/pyvenv.cfg"
 printf 'decoy\n' >"$TMP/policy/custom-python-env/decoy.txt"
 "$FS" chutni-inventory --root "$TMP/policy" --include-hidden >"$TMP/policy.ndjson"
-for name in .venv NODE_MODULES build; do
+for name in .venv node_modules build Documents.chutni Other.CHUTNI; do
   grep -q "\"rel_path\":\"$name\",\"reason\":\"generated_tree\"" "$TMP/policy.ndjson" \
     || { echo "FAIL: generated directory $name was not pruned"; cat "$TMP/policy.ndjson"; exit 1; }
-  if grep -q "\"rel_path\":\"$name/decoy.txt\"" "$TMP/policy.ndjson"; then
+  if grep -q "\"rel_path\":\"$name/" "$TMP/policy.ndjson"; then
     echo "FAIL: inventory entered generated directory $name"; exit 1
   fi
 done
+grep -q '"type":"file","rel_path":"source.chutni"' "$TMP/policy.ndjson" \
+  || { echo "FAIL: ordinary .chutni file was excluded"; exit 1; }
+if [ "$(find "$TMP/policy" -maxdepth 1 -type d -name NODE_MODULES | wc -l | tr -d ' ')" -gt 0 ]; then
+  grep -q '"rel_path":"NODE_MODULES","reason":"generated_tree"' "$TMP/policy.ndjson" \
+    || { echo "FAIL: uppercase generated directory was not pruned"; cat "$TMP/policy.ndjson"; exit 1; }
+  if grep -q '"rel_path":"NODE_MODULES/' "$TMP/policy.ndjson"; then
+    echo "FAIL: inventory entered uppercase generated directory"; exit 1
+  fi
+fi
 grep -q '"rel_path":"custom-python-env","reason":"python_environment_marker"' "$TMP/policy.ndjson" \
   || { echo "FAIL: custom Python environment was not recognized by marker"; cat "$TMP/policy.ndjson"; exit 1; }
 if grep -q '"rel_path":"custom-python-env/decoy.txt"' "$TMP/policy.ndjson"; then

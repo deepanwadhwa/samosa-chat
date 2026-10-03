@@ -1,0 +1,6 @@
+{"stage": "model_clone", "model": "qwen", "source_job": "job-1790888832-27164-373742674", "job_id": "fork-1790897329-17785-382239381", "conversation": "workflow-live-4b9f398f4d58", "seconds": 0.01}
+{"stage": "answer", "model": "qwen", "question": "What verification code appears on page 37 of Person X records.pdf? Cite the file and page.", "answer": "The verification code on page 37 of Person X records.pdf is QZ-731.", "seconds": 93.24, "evidence_chars": 2454}
+{"stage": "answer", "model": "qwen", "question": "What is Person X's appointment date? Cite the source. Use only the selected files.", "answer": "Person X's appointment date is 17 May 2031, as stated in Person X appointment.txt.", "seconds": 119.5, "evidence_chars": 2202}
+{"stage": "answer", "model": "qwen", "question": "What scan reference appears on page 1 of Person X scan.pdf? Cite the source.", "answer": "The scan reference on page 1 of Person X scan.pdf is SC-913.", "seconds": 89.7, "evidence_chars": 2331}
+test_file_workflow_live.py questions: PASS
+test_file_workflow_live.py: PASS

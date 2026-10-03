@@ -9,6 +9,14 @@ function extractFunction(name) {
   return app.slice(start, end + "\n      }\n".length);
 }
 const coverageSource = extractFunction("chutniCoverageFacts");
+const chutniPresentation = eval(`(${extractFunction("chutniPresentation")})`);
+const unreadablePresentation = chutniPresentation({ state: "ready_partial", scan_errors: 1 });
+assert.match(unreadablePresentation.why, /1 file could not be read completely/);
+assert.doesNotMatch(unreadablePresentation.why, /safety limit|unspecified/);
+assert.match(chutniPresentation({ state: "ready_partial", limiting_reason: "maximum_files" }).why,
+  /safety limit.*maximum_files/);
+assert.doesNotMatch(chutniPresentation({ state: "ready_partial", limiting_reason: "none" }).why,
+  /safety limit|unspecified/);
 const monitorSource = extractFunction("chutniMonitorFacts");
 const payloadSource = extractFunction("chutniActionPayload");
 const { chutniCoverageFacts, chutniMonitorFacts, chutniActionPayload } = eval(
@@ -61,7 +69,7 @@ assert.deepEqual(
   }),
   [
     ["Plain-text files read", "8"],
-    ["Metadata-only at scan", "4"],
+    ["File records written", "4"],
     ["PDF pages read", "19"],
     ["OCR outputs", "3"],
     ["Image captions", "2"],
@@ -82,4 +90,57 @@ assert.match(app, /token_budget: tokenBudget/);
 assert.match(app, /Used on the next Refresh/);
 assert.match(app, /limits summary input only; searchable content extraction remains separate/);
 
+// Folder memory must not expand a saved file task's evidence scope. Execute
+// the shipped action handler with a completed and an interrupted chat switch.
+const actionBegin = app.indexOf("      async function chutniAction(scope, action)");
+const actionEnd = app.indexOf("      function openChutniForget(scope)", actionBegin);
+assert.ok(actionBegin >= 0 && actionEnd > actionBegin);
+const scopeFixture = eval(`(() => {
+  const original = { id: "selected-conversation", workflow_job_id: "selected-task", directory_context: null };
+  const chats = [original]; let current = original; let interrupted = true;
+  const activeChat = () => current;
+  const ensureChat = () => current;
+  const newChat = async () => {
+    if (interrupted) return;
+    current = { id: "memory-conversation", directory_context: null }; chats.push(current);
+  };
+  const saveState = () => {}; const renderChutni = () => {}; const updateActiveMemoryContext = () => {};
+  const showView = () => {}; const els = { prompt: { focus() {} } };
+  ${app.slice(actionBegin, actionEnd)}
+  return { ask: () => chutniAction({ id: "folder-memory" }, "ask"),
+    retry: () => { interrupted = false; }, inspect: () => ({ original, chats, current }) };
+})()`);
+await scopeFixture.ask();
+assert.equal(scopeFixture.inspect().chats.length, 1);
+assert.equal(scopeFixture.inspect().original.directory_context, null);
+scopeFixture.retry();
+await scopeFixture.ask();
+assert.equal(scopeFixture.inspect().chats.length, 2);
+assert.equal(scopeFixture.inspect().original.workflow_job_id, "selected-task");
+assert.equal(scopeFixture.inspect().original.directory_context, null);
+assert.deepEqual(scopeFixture.inspect().current.directory_context, { scope_id: "folder-memory" });
+assert.equal(scopeFixture.inspect().current.workflow_job_id, undefined);
+
 console.log("test_chutni_ui.mjs: PASS");
+
+const filterModelContent = eval(`(${extractFunction("filterModelContent")})`);
+const visibleModelContent = eval(`(${extractFunction("visibleModelContent")})`);
+assert.equal(visibleModelContent('<think>private reasoning</think>Final answer'), 'Final answer');
+assert.equal(visibleModelContent('<think>unfinished private reasoning'), '');
+assert.equal(visibleModelContent('Normal <b>markup</b> and 2 < 3'), 'Normal <b>markup</b> and 2 < 3');
+for (let split = 0; split <= 52; split++) {
+  const raw = '<think>private reasoning</think>The grounded answer.';
+  const state = {};
+  const pieces = [raw.slice(0, split), raw.slice(split)];
+  let answer = '';
+  for (const piece of pieces) answer += filterModelContent(state, piece);
+  answer += filterModelContent(state, '', true);
+  assert.equal(answer, 'The grounded answer.', `SSE boundary ${split}`);
+  assert.doesNotMatch(answer, /private|think/);
+}
+const characterState = {};
+let characterAnswer = '';
+for (const char of '<think>secret</think>Safe <em>answer</em>')
+  characterAnswer += filterModelContent(characterState, char);
+characterAnswer += filterModelContent(characterState, '', true);
+assert.equal(characterAnswer, 'Safe <em>answer</em>');

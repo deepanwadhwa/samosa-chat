@@ -23,6 +23,7 @@ AUDIO_DECODE="$BUILD_DIR/samosa-audio-decode"
 JOBSD="$BUILD_DIR/samosa-jobsd"
 CHUTNI_SERVICE="$BUILD_DIR/chutni-mcp"
 OCR="$BUILD_DIR/samosa-ocr"
+DECISION_PYTHON=${SAMOSA_DECISION_PYTHON:-"$(dirname "$ROOT")/projects/OpenDecision/.venv/bin/python"}
 SUMMARIZER_RUNTIME="$BUILD_DIR/native-summarizer-runtime"
 SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
 SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
@@ -34,14 +35,14 @@ BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
 # any release hash or validating inputs. Set SAMOSA_INSTALL_SKIP_BUILD=1 only
 # for an external packaging workflow that has already built the exact source.
 if [ "${SAMOSA_INSTALL_SKIP_BUILD:-0}" != "1" ]; then
-  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd samosa-ocr
+  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd samosa-fs samosa-ocr
 fi
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
@@ -108,7 +109,7 @@ case "$(uname -s)" in
 esac
 "$ROOT/tools/validate_local_document_runtime.sh" "$EXTRACT_BIN" "$EXTRACT_LIB"
 
-set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
+set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
   "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/tools/stage_tesseract_runtime.sh" \
@@ -175,6 +176,20 @@ if [ -f "$BUILD_DIR/samosa-visionpsy" ]; then
 fi
 cp "$ROOT/tools/samosa_voice_runtime.sh" "$stage/bin/samosa-voice-runtime"
 cp "$ROOT/tools/samosa_kokoro_runtime.sh" "$stage/bin/samosa-kokoro-runtime"
+cp "$ROOT/tools/samosa_decision.py" "$stage/bin/samosa-decision.py"
+printf '%s\n' "$DECISION_PYTHON" >"$stage/bin/samosa-decision-python.txt"
+cat >"$stage/bin/samosa-decision" <<'EOF'
+#!/bin/sh
+set -eu
+BIN_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+read -r DECISION_PYTHON_DEFAULT <"$BIN_DIR/samosa-decision-python.txt"
+DECISION_PYTHON=${SAMOSA_DECISION_PYTHON:-$DECISION_PYTHON_DEFAULT}
+if [ ! -x "$DECISION_PYTHON" ]; then
+  printf '%s\n' '{"ok":false,"error":"The local OpenDecision Python runtime is unavailable."}'
+  exit 0
+fi
+exec "$DECISION_PYTHON" "$BIN_DIR/samosa-decision.py" "$@"
+EOF
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
 cp "$ROOT/assets/models.json" "$stage/models.json"
@@ -184,6 +199,7 @@ for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do
   cp "$file" "$stage/voice/browser/$relative"
 done
 chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime" "$stage/bin/samosa-molmo2" "$stage/bin/molmo2-pack"
+chmod +x "$stage/bin/samosa-decision"
 chmod +x "$stage/bin/samosa-maple"
 
 if [ "$SUMMARIZER_OK" = "1" ]; then

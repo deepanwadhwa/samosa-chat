@@ -1,0 +1,20 @@
+{"stage": "backend_ready", "backend": "ornith"}
+{"stage": "memory_reused", "scope": "556a286809767ef7c35d43f641aff87f", "files": 5}
+{"stage": "memory_reused", "scope": "4a937476a37450b042743cd8d8c11529", "files": 0}
+{"stage": "answer", "question": "Give me the gist of this directory in two sentences.", "answer": "The \"General Harness Qwen\" directory contains a mix of synthetic test fixtures and personal notes, including a 7-page PDF used as a fixture for extractor tests, a gardening diary, and several project-related notes referencing a \"Cedar project\" and a shopping list.", "seconds": 41.197}
+{"stage": "failed", "error": "Missing fact: Mira Lee"}
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 176, in <module>
+    run()
+    ~~~^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 144, in <lambda>
+    ('overview', lambda: ask('Give me the gist of this directory in two sentences.',
+                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        expected=('Mira Lee', r'project|notes', r'shopping|grocer'),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        forbidden=(r'no indexed passages', r"cannot summarize"))),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 130, in ask
+    assert re.search(pattern, answer, re.I), f'Missing fact: {pattern}'
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Missing fact: Mira Lee

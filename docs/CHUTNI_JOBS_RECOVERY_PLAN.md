@@ -1,6 +1,52 @@
 # Chutni and Jobs recovery plan
 
-**Status:** in progress; Phase C recipes are being implemented incrementally
+**2026-09-23 Jobs direction:** The earlier deterministic-only decision and
+"complete" language below no longer describes the current Jobs interface.
+The user now enters a folder and a natural-language request. A local pinned
+DeBERTa model through OpenDecision chooses among the allowlisted Jobs
+actions. For a find request, Jobs scores direct files in the selected folder
+before deciding which subfolders to enter. DeBERTa chooses whether each
+subfolder is plausible before Jobs enters it. Application bundles and generated
+dependency trees are excluded even if the model gives them a high score.
+Jobs then inventories the selected subfolders, reads each filename and up to
+100 characters of extracted content, and asks DeBERTa to choose `plausible`
+or `unrelated` using OpenDecision `choice()`. The premise contains the
+natural-language request, filename, and extracted excerpt. If extraction
+returns no readable text, the file is labeled as filename-only evidence.
+The checked-file panel is collapsible, searchable, sortable, and limited in
+height. Each file exposes the exact premise and candidate descriptions sent to DeBERTa
+on expansion. The user can select up to 50 files, ask a question about one or more,
+or read more of just the selected files without repeating folder inventory.
+A later natural-language request can narrow the shortlist, read up to 400
+characters, continue with remaining files, or show all scores. During a find
+run, Jobs writes each folder check, folder
+decision, file check, and file decision to the durable event log. The Jobs
+screen polls that log and shows paths, selected or skipped status, and model
+scores. File excerpts are collapsed in the result panel. The
+same trace and saved shortlist can be reopened from Recent jobs.
+The model scores are ranking signals, not calibrated chances
+that a file is relevant. This local development integration depends on the
+OpenDecision Python environment and the pinned cached DeBERTa snapshot;
+native packaging and broad accuracy qualification remain open.
+
+**2026-09-23 fixture check:** `tests/test_samosa_decision.py` passed with the
+cached DeBERTa model, an extracted PDF, an OCR image, and a text file. It also
+checks that all direct files are scored before folder decisions, even when
+there are more than 250 direct files. The existing PDFium routing, PDF OCR runtime, and
+OCR smoke checks passed on repository fixtures. No personal Downloads content
+was used for these checks.
+
+**Status:** deterministic recovery implementation and its synthetic acceptance
+scope are complete. The shared bounded inventory is enforced by Chutni and
+Jobs; policy mismatches offer a confirmed rebuild; durable Jobs events survive
+gateway restarts; and both pinned decision candidates fail the measured
+development screen, so Jobs stays deterministic. The mixed-folder fixture
+covers PDF and text evidence, report/inventory parity, unrelated-query misses,
+full-tree move undo, and controlled interruptions during report inventory,
+Chutni indexing, classification, and a move batch. Browser-based visual
+acceptance and broader real-folder and format qualification remain outside the
+verified scope; see §9.
+
 
 **Updated:** 2026-09-22
 
@@ -28,7 +74,11 @@ The filesystem remains the source of truth. Models may make bounded semantic
 decisions; they may not construct paths, choose arbitrary tools, overwrite
 files, delete files, or bypass the approval policy.
 
-## 2. Verified baseline and why the current behavior fails
+## 2. Pre-repair baseline and why the current behavior failed
+
+The observations below describe the behavior that motivated this plan. The
+2026-09-22 checkpoints in §§5–7 record which items now have regression
+evidence; all listed acceptance gates remain authoritative.
 
 ### Chutni
 
@@ -309,9 +359,104 @@ read content or move files. Watch folder saves a complete metadata baseline and
 checks every five minutes; the supported read-only inbox or report recipe runs
 only on added or changed paths. An incomplete inventory does not advance its
 checkpoint. Watch runs are stoppable and remain scheduled until stopped. These
-recipes complete the Phase C productized recipe list, while the durability,
-restart-history, and exact-tree acceptance gates still need their full dogfood
-evidence; this checkpoint does not claim the overall recovery plan is complete.
+recipes complete the Phase C productized recipe list. The current recovery
+slice below adds persistent history replay and restart assertions; broader
+dogfood and model qualification are still open. The latest compiled-gateway
+fixture covers generated-tree pruning, indexed retrieval, excluded-content
+misses, deterministic Jobs recipes, triage review, sort/apply/undo, watch
+deltas, and a gateway crash after one durably journaled move.
+
+**Recovery implementation checkpoint (2026-09-22):** `GET /v1/jobs/history`
+lists the 100 most recently updated persisted jobs. `GET
+/v1/jobs/history/events?job_id=…` replays their durable event JSONL, and the
+Jobs screen can reopen that event stream after a browser reload. The compiled
+gateway regression verifies a completed report can be listed and replayed
+after a gateway restart. `tests/test_chutni_controls.sh` now kills the gateway
+during a Chutni build, verifies restart marks it paused, resumes it with the
+new UI session token, and waits for ready. `tests/test_chutni_inventory.sh`
+creates 10,000-file `.venv` and `node_modules` trees and verifies no descendant
+is emitted. The shared inventory enforces a 64 MiB per-file limit and a 2 GiB
+aggregate byte limit, includes both in its policy fingerprint, and reports a
+partial result when either limit is reached; the inventory regression covers
+both limits. `tests/test_chutni_gateway.sh` verifies dependency and hidden
+environment decoys are absent from preflight/indexed retrieval, and retrieves
+an HTML sentinel with its `fixture.html` citation. That gateway fixture also
+checks text, Markdown, and supported PDF evidence, source changes on refresh,
+and explicit no-match behavior. Refresh also has a regression for deleted files:
+the query route must discard Chutni hits whose source freshness is no longer
+`current`, matching the chat evidence path.
+
+The 64 MiB per-file and 2 GiB aggregate ceilings are now sent to both the
+metadata inventory and Chutni's reference scanner. The scanner records a
+partial result when either ceiling is reached. Users can enter up to 16
+additional exact directory names before preflight; names are validated,
+normalized case-insensitively, included in the fingerprint, saved with the
+scope, and applied by both traversals. The 64 MiB per-file and 2 GiB aggregate
+ceilings are retained in the Chutni root policy and used as defaults on later
+scans, so a manual/resumed scan cannot silently widen the byte policy. The
+gateway test confirms the serialized policy and a differently cased directory
+is skipped during preflight and absent from indexed search. Chutni now applies
+file and byte budgets in native directory enumeration order, matching the
+streaming inventory's order; saved directory hashes remain canonically sorted.
+A shared comparison helper verifies exact preflight-selected paths, Chutni's
+present file sources, and the limiting reason at aggregate-byte, file-count,
+directory-count, per-file-byte, depth, and deadline boundaries. These fixtures
+use small top-level and single-child trees. They establish matching behavior
+for those unchanged fixtures, but do not prove parity for a large mixed tree,
+concurrent changes during a scan, unreadable-entry races, or every filesystem
+implementation. Root policy now records inventory policy version 1; preflight
+marks an already-authorized index with a missing or unsupported version, as
+well as an exclusion mismatch, as requiring a rebuild. The fixture verifies
+both legacy and future-version indexes receive the rebuild preview. The
+unchanged gateway fixture also confirms
+that preflight's five eligible files equal the reference scanner's five
+observed files after the custom exclusion. User rules currently accept exact directory names rather
+than arbitrary globs. If an already-authorized portable store lacks a newly
+requested exclusion in its recorded root policy, preflight marks it as
+requiring a rebuild. The UI explains that existing passages will be withdrawn
+and offers a separate **Rebuild existing memory** confirmation. Rebuild resets
+the authorized root's old sources, artifacts, relations, and index entries in
+one store transaction, preserves the portable root, applies the accepted
+policy, and starts a durable scan in the existing scope. The gateway regression
+verifies an unconfirmed request is rejected, a confirmed rebuild advances the
+evidence generation, and a previously searchable passage under the newly
+excluded directory is no longer returned. The compiled-gateway fixture now covers a mixed folder through Chutni and
+Jobs, including synthetic searchable PDF evidence, report parity against the
+shared inventory, unrelated-query no-match behavior, and a complete path/hash
+manifest comparison after undo. Separate interruption fixtures kill Folder
+report during inventory, the real Chutni scanner during indexing, and Jobs
+classification after a durable batch; they verify restart and either explicit
+resume or a persisted honest interrupted state. The existing move-batch
+interruption fixture verifies journal replay and undo. These are controlled
+synthetic acceptance cases, not arbitrary power-loss or concurrent-writer
+proofs.
+
+**Evidence run (2026-09-22):** The final `make test` run passed, including
+installer and runtime-only release, compiled gateway with the mixed-folder
+dogfood and injected move crash, Jobs UI, Chutni inventory/gateway/controls,
+detached service, lifecycle, LAN access, Kimi converter, and backend limits.
+Then `make jobs-test` passed four filesystem-sidecar unit tests, Jobs UI DOM
+fixtures, and the compiled-gateway acceptance flow. `make test-ui-setup`
+passed, including 20 Chutni UI contract checks and chooser/conversation setup
+fixtures. `make -C vendor/chutni test` passed 42 conformance cases (including
+one documented upstream GAP for moved-root remapping), 32 CLI checks, 130 MCP
+checks, the compatibility contract, and the Python binding test. The focused
+Chutni gateway/control fixtures compare all six traversal-limit boundaries
+across preflight and Chutni; the gateway fixture also exercises confirmation,
+stale-passage withdrawal, exclusion addition/removal, and legacy/future policy
+previews. Five decision-evaluation harness unit tests pass; they validate
+metric calculations and strict input validation, not model behavior. Repository
+and vendor `git diff --check` pass.
+The Chutni gateway fixture exercises uppercase user input against a `Private`
+directory, rejects a path-like exclusion, verifies the persisted policy, and
+confirms the excluded sentinel is not searchable. A direct reference-scanner
+fixture verifies the aggregate byte limit returns a partial result with the
+exact limiting reason; other checks confirm existing indexes require and
+complete an explicit rebuild when exclusions are added or removed and
+legacy/future policy versions are replaced by the supported policy. These are
+offline fixture gates. They
+do not qualify a real model, all supported file formats, or broader real-world
+folder conditions beyond the controlled mixed-folder scenarios above.
 
 ### C2. Durable `JobSpec`
 
@@ -382,6 +527,48 @@ closed schemas.
 
 ### D2. Development evaluation before catalogue exposure
 
+**Implementation checkpoint (2026-09-22):** Added an initial 36-case English
+gold JSONL and a dependency-free prediction validator/reporter at
+`tests/decision/`. It covers Jobs intent, five-category inbox triage, 2-, 3-,
+7-, and 12-option decisions, support/contradiction/unknown relations,
+instruction-bearing evidence, ambiguous/review cases, and decisive evidence at
+the beginning, middle, and end. The reporter validates one pinned model
+revision and exact token budget, requires per-case calibration and runtime
+measurements, and computes accuracy, macro-F1, 10-bin ECE, abstention
+precision/recall, p50/p95 latency, peak RSS, swap growth, and temperature.
+Macro-F1 is reported over separate task and option-count groups; memory-pressure
+levels are recorded per sample and summarized. Five unit tests cover
+perfect-run metrics, missing predictions, mixed revisions, over-budget inputs,
+and unavailable thermal telemetry. The runner uses locally cached pinned
+snapshots and validates measured paired-token input for ModernBERT and
+model-reported input length for Laya.
+
+**Measured development run (2026-09-22):** Both candidates ran at their
+supported 512/1,024-token budgets on a 16 GiB M3 MacBook Air with PyTorch MPS;
+ModernBERT additionally ran at 2,048/4,096/8,192. Each budget used the same 36
+hand-authored English cases, with decisive evidence preserved at the beginning,
+middle, or end of a near-budget input. Raw rows, reports, package pins, upstream
+revisions, and safetensors SHA-256 values are under `docs/evidence/decision/`.
+
+Neither candidate is a release candidate. Laya typed reached 77.8% accuracy,
+0.210 ECE, and 0.60 abstention recall at both budgets; it scored 61.5% on
+five-option inbox cases and 50% on 12-option cases. Its package warned that
+the 12+ option temperature was out of range. ModernBERT scored 58.3% and 61.1%
+at 512 and 1,024 tokens, then 55.6% at each longer budget. From 2K through 8K
+it missed all three long-position cases; at 8K p95 latency was 52.4 seconds
+and peak process RSS was 2.49 GB. Both candidates had zero measured swap
+growth and normal sampled memory pressure. Celsius telemetry was unavailable.
+The evidence README records the full metrics and the model-free no-go decision.
+This small development set is not independent validation and does not qualify
+either model.
+
+The no-go result follows the §D4 contingency: keep deterministic Jobs and
+review handling, and do not add an unqualified decision checkpoint to the
+catalogue. Native runtime parity, larger held-out and multilingual evaluation,
+and catalogue download/verify/repair/remove remain conditional on a candidate
+passing that evaluation. The deterministic synthetic dogfood gates are recorded
+in §9; larger real-folder and broader format qualification remain open.
+
 Use OpenDecision at its pinned commit as a development oracle/harness, not as
 the shipped Python server. Build a Samosa-specific gold set covering:
 
@@ -398,6 +585,14 @@ candidate additionally at 2,048, 4,096, and 8,192 tokens with the decisive
 evidence placed at the beginning, middle, and end. Record accuracy, macro-F1,
 abstention precision/recall, expected calibration error, p50/p95 latency, peak
 RSS, memory pressure, swap growth, and thermal behavior.
+
+For this recovery, a candidate may proceed to native-runtime qualification
+only if the development screen reaches at least 90% overall and inbox accuracy,
+0.85 macro-F1, 0.10 ECE, and 0.90 abstention recall, with no missed decisive
+evidence-position case and p95 below two seconds at its intended input budget.
+These are screening thresholds, not proof of production reliability; a passing
+candidate still requires a larger held-out evaluation before catalogue
+exposure.
 
 An 8K candidate passes only if it improves Samosa decisions enough to justify
 its latency and memory cost. Retrieval plus a smaller packed input remains the
@@ -447,7 +642,40 @@ accuracy, memory, and licensing gates pass. If neither candidate passes, ship
 the deterministic recipes without semantic classification rather than
 pretending the model is reliable.
 
+**Current decision (2026-09-22):** Neither candidate met the development
+screen in §D2. The two measured checkpoints are not registered in
+`assets/models.json`; deterministic inbox suggestions and review handling
+remain the supported Jobs behavior. Reopen native conversion and catalogue UI
+work only after a new candidate passes a larger held-out Samosa evaluation.
+
 ## 9. Phase E — made-up-folder dogfood
+
+**Automated coverage in `tests/test_compiled_gateway.sh` and related recovery
+fixtures:** A temporary mixed root with 10,000 decoys in each generated or
+environment tree runs Chutni preflight, indexing and evidence retrieval
+alongside Jobs find, folder report, inbox triage, sort/apply/undo, and a
+scheduled changed-file delta. It checks private content misses, symlink
+boundary protection, root-relative skip reasons, deterministic review of the
+ambiguous inbox item, unchanged-file delta behavior, and full path/hash
+manifest restoration after undo. The anonymous PDF find case invokes the real
+extractor and requires the exact extracted vaccination fact in the model
+request; Chutni separately retrieves its text sentinel, and an unrelated
+question remains an explicit miss. Report counts and skip reasons are compared
+with the same shared inventory. Folder report interruption is persisted as
+non-resumable and retryable; a real Chutni process killed after scan progress
+resumes after gateway restart and indexes all 30 fixture files; classification
+restart resumes after its durable batch; move restart replays its journal and
+undoes the recorded operation. The RSS sampler observed 6,672 KiB peak across
+the gateway and Chutni worker in one synthetic run on the 16 GiB M3 Air. These
+are fixture measurements, not a general production memory guarantee.
+
+The shipped Jobs JavaScript submit handler, SSE reader, and event renderers are
+exercised with a DOM/HTTP fixture, and compiled-gateway tests exercise the
+product API flow. The in-app Browser runtime was unavailable in this session,
+so no interactive visual browser run is claimed. Broader real-folder,
+multilingual, OCR/image, and format coverage also remains unqualified. The
+machine-readable run record and scope notes are in
+[`docs/evidence/dogfood/`](evidence/dogfood/README.md).
 
 Create the fixture outside the repository, under a new temporary directory:
 
@@ -532,9 +760,14 @@ The recovery is complete only when all of the following are evidenced:
 - Filesystem changes are previewed, revalidated, journaled, non-overwriting,
   and undoable.
 - Semantic ambiguity is held for review rather than forced into a move.
-- The selected decision model has measured Samosa accuracy and calibration,
-  native-runtime parity, pinned artifacts, and a safe 16 GB M3 profile.
-- Model download/verify/repair/remove works through the app.
+- The decision-runtime gate has one of two evidenced outcomes: a candidate
+  passes Samosa accuracy/calibration, native-runtime parity, pinned-artifact,
+  and safe 16 GB M3 gates; or both candidates fail and Jobs stays on its
+  deterministic recipes with ambiguous cases held for review. The latter
+  outcome must not be presented as semantic classification.
+- If a candidate passes, model download/verify/repair/remove works through the
+  app. If neither passes, no unqualified decision model is exposed in the
+  catalogue.
 - Documentation reports the exact tested scope and does not convert a single
   fixture or upstream benchmark into a broad reliability claim.
 

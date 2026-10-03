@@ -1,0 +1,14 @@
+/Applications/Xcode-26.5.0.app/Contents/Developer/usr/bin/make -C "vendor/chutni" BUILD="/Users/deepanwadhwa/Documents/samosa-chat/build/chutni" OPT="-O2 -Wno-error=implicit-function-declaration" "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp"
+make[1]: `/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp' is up to date.
+cp "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp" "build/chutni-mcp"
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/samosa-gateway 
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/fake_openai_backend.c -o build/test_fake_openai_backend
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_document_reader_contract.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c \
+	  -o build/test-document-reader-contract 
+build/test-document-reader-contract
+test_document_reader_contract: PASS
+BUILD_DIR="build" python3 tests/test_document_harness.py
+test_document_harness.py: PASS (metadata, bounded pages, adaptive jump, cache, follow-up, compaction, invalid/repeated plans, full read, text, multiple sources, cancellation)

@@ -1,0 +1,19 @@
+{"stage": "backend_ready", "backend": "ornith"}
+{"stage": "memory_reused", "scope": "556a286809767ef7c35d43f641aff87f", "files": 5}
+{"stage": "memory_reused", "scope": "4a937476a37450b042743cd8d8c11529", "files": 0}
+{"stage": "answer", "question": "What is in notes.txt?", "answer": "There are two files named `notes.txt` in the folder:\n\n1. **`alpha/notes.txt`** \u2014 contains:\n   ```\n   Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.\n   ```\n\n2. **`beta/notes.txt`** \u2014 contains:\n   ```\n   Cedar project: Mira Lee owns the launch checklist. Release code BETA-619.\n   ```\n\nBoth are text files with the same content repeated twice.", "seconds": 65.149}
+{"stage": "answer", "question": "Are there any documents about Mira Wen?", "answer": "Yes, there are documents about Mira Wen. The folder contains four files with supported matches:\n\n1. **Mira Lee brief.pdf** \u2013 A 7-page PDF document.\n2. **Mira Leena diary.txt** \u2013 A text file containing a gardening diary.\n3. **alpha/notes.txt** \u2013 A text file with notes about a Cedar project meeting.\n4. **beta/notes.txt** \u2013 A text file with notes about a Cedar project release.\n\nThese files are associated with \"Mira Wen\" based on the folder's context, though the names in the files vary slightly (Mira Lee, Mira Leena).", "seconds": 61.585}
+{"stage": "failed", "error": "Missing fact: no\\b|zero|\\b0\\b|none|not found"}
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 169, in <module>
+    run()
+    ~~~^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 158, in <lambda>
+    ('missing_subject', lambda: ask('Are there any documents about Mira Wen?',
+                                ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        expected=(r'no\b|zero|\b0\b|none|not found',), forbidden=(r'yes[, ]',))),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 130, in ask
+    assert re.search(pattern, answer, re.I), f'Missing fact: {pattern}'
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Missing fact: no\b|zero|\b0\b|none|not found

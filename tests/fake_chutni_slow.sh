@@ -2,6 +2,9 @@
 set -eu
 
 REAL=${REAL_CHUTNI_MCP:?REAL_CHUTNI_MCP is required}
+if [ -n "${SAMOSA_FAKE_CHUTNI_PID_FILE:-}" ]; then
+  printf '%s\n' "$$" >"$SAMOSA_FAKE_CHUTNI_PID_FILE"
+fi
 
 if [ "${1:-}" = "--call" ] && [ "${2:-}" = "chutni_folder_activate" ]; then
   i=0

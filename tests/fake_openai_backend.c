@@ -54,6 +54,23 @@ static int handler(SamosaHttpServer *server, int fd,
         if (log) { fprintf(log, "%s\n", request->body); fclose(log); }
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Choose selected file sources to inspect")) {
+        const char *content = strstr(request->body, "invalid source selection probe")
+            ? "{\\\"read\\\":[999]}" : strstr(request->body, "all source selection probe")
+            ? "{\\\"read\\\":\\\"all\\\"}" : "{\\\"read\\\":[0]}";
+        char response[512];
+        snprintf(response, sizeof(response), "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", content);
+        return samosa_http_response(fd, 200, "application/json", response, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Read this consecutive section of a document")) {
+        const char *content = getenv("SAMOSA_FAKE_DOCUMENT_REVIEW_FAIL") ? "not JSON" :
+            "{\\\"notes\\\":\\\"SYNTHETIC SECTION REVIEW: the harbor crew checked its records.\\\"}";
+        char response[512];
+        snprintf(response, sizeof(response), "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", content);
+        return samosa_http_response(fd, 200, "application/json", response, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Plan the next document evidence action")) {
         const char *decision = "{\\\"action\\\":\\\"read_all\\\"}";
         if (strstr(request->body, "harness cancellation probe")) sleep_ms(1000);
@@ -399,6 +416,24 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
             "\"id\":\"call_ask_receipt\",\"type\":\"function\",\"function\":{"
             "\"name\":\"ask_user\",\"arguments\":\"{\\\"question\\\":\\\"Which receipt: the cafe or the coffee shop?\\\"}\"}}]}}]}", NULL);
+    /* Cat-medical verify: after reading cat-medical-note.txt, finish (JI.5). */
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "find anonymous Titli PDF fixture") && strstr(request->body, "\"role\":\"tool\"") &&
+        strstr(request->body, "Titli vaccination date is 2026-06-14"))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_finish_titli_pdf\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"finish\",\"arguments\":\"{\\\"matches\\\":[{\\\"path\\\":\\\"anonymous-scan.pdf\\\","
+            "\\\"evidence\\\":\\\"Titli vaccination date is 2026-06-14\\\",\\\"confidence\\\":\\\"high\\\"}],"
+            "\\\"rejected_count\\\":2,\\\"notes\\\":\\\"Found the planted vaccination fact.\\\"}\"}}]}}]}", NULL);
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "find anonymous Titli PDF fixture") && !strstr(request->body, "\"role\":\"tool\""))
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"tool_calls\","
+            "\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{"
+            "\"id\":\"call_read_titli_pdf\",\"type\":\"function\",\"function\":{"
+            "\"name\":\"fs_read_text\",\"arguments\":\"{\\\"path\\\":\\\"anonymous-scan.pdf\\\"}\"}}]}}]}", NULL);
     /* Cat-medical verify: after reading cat-medical-note.txt, finish (JI.5). */
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "\"role\":\"tool\"") && strstr(request->body, "cat medical"))
@@ -795,6 +830,19 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "selected workflow probe")) {
+        const char *reply = strstr(request->body, "WORKFLOW_X_QUARTZ") &&
+                            !strstr(request->body, "WORKFLOW_Y_DISTRACTOR") &&
+                            strstr(request->body, "[Source:")
+            ? "selected workflow evidence and citation received"
+            : "selected workflow scope or citation missing";
+        char body[512];
+        snprintf(body, sizeof(body),
+            "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
+            "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
+        return samosa_http_response(fd, 200, "application/json", body, NULL);
+    }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "attachment text probe")) {
         /* Phase 1 deep-file regression: the decisive fact is deliberately
            beyond both the old native-summary and opening-excerpt budgets. */
@@ -1096,9 +1144,9 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "\"seed\":424242"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Selected folder memory inventory") &&
+            strstr(request->body, "--- Folder/file action evidence") &&
             strstr(request->body, "Selected folder display name: Research") &&
-            strstr(request->body, "Chutni is the feature name, not the folder name") &&
+            strstr(request->body, "inventory records supplied:") &&
             strstr(request->body, "[File: notes.md]") &&
             strstr(request->body, "[File: report.txt]")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -1108,8 +1156,9 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "\"seed\":424243"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Chutni local memory status") &&
-            strstr(request->body, "no current indexed passage matched")
+            strstr(request->body, "--- Folder/file action evidence") &&
+            strstr(request->body, "Decision runtime unavailable or invalid") &&
+            strstr(request->body, "Index coverage:")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw honest no-match status\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
@@ -1117,8 +1166,8 @@ static int handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "chutni memory probe"))
         return samosa_http_response(fd, 200, "application/json",
-            strstr(request->body, "--- Chutni local memory") &&
-            strstr(request->body, "[Source: report.txt]") &&
+            strstr(request->body, "--- Folder/file action evidence") &&
+            strstr(request->body, "[File: report.txt]") &&
             strstr(request->body, "renewal date June")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw Chutni memory\"}}]}"

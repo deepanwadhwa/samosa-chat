@@ -1,0 +1,60 @@
+/Applications/Xcode-26.5.0.app/Contents/Developer/usr/bin/make -C "vendor/chutni" BUILD="/Users/deepanwadhwa/Documents/samosa-chat/build/chutni" OPT="-O2 -Wno-error=implicit-function-declaration" "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp"
+make[1]: `/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp' is up to date.
+cp "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp" "build/chutni-mcp"
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/samosa-gateway 
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/fake_openai_backend.c -o build/test_fake_openai_backend
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_document_reader_contract.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c \
+	  -o build/test-document-reader-contract 
+build/test-document-reader-contract
+test_document_reader_contract: PASS
+BUILD_DIR="build" python3 tests/test_document_harness.py
+test_document_harness.py: PASS (metadata, bounded pages, adaptive jump, cache, follow-up, compaction, invalid/repeated plans, full read, text, multiple sources, cancellation)
+node tests/test_document_detail_ui.mjs
+test_document_detail_ui.mjs: PASS
+cc -O3 -Wno-unused-function -I/opt/homebrew/Cellar/tesseract/5.5.3/include -I/opt/homebrew/Cellar/leptonica/1.87.0/include/leptonica -std=c11 -Isrc src/samosa_ocr.c -L/opt/homebrew/Cellar/tesseract/5.5.3/lib -ltesseract -L/opt/homebrew/opt/libarchive/lib -larchive -lcurl -L/opt/homebrew/Cellar/leptonica/1.87.0/lib -lleptonica -o build/samosa-ocr -lm
+ld: warning: building for macOS-26.0, but linking with dylib '/opt/homebrew/opt/tesseract/lib/libtesseract.5.dylib' which was built for newer version 26.6.2
+BUILD_DIR="build" .venv/bin/python tests/test_document_mixed_pdf.py
+{"depth": "fast", "pages": 40, "ocr_pages": 27, "seconds": 51.59, "review_calls": 0, "all_page_facts_reached_model": true}
+{"depth": "detailed", "pages": 40, "ocr_pages": 27, "seconds": 0.02, "review_calls": 0, "all_page_facts_reached_model": true}
+test_document_mixed_pdf.py: PASS
+BUILD_DIR="build" SAMOSA_MIXED_TEST_CONTEXT=8192 .venv/bin/python tests/test_document_mixed_pdf.py
+{"depth": "fast", "pages": 40, "ocr_pages": 27, "seconds": 56.12, "review_calls": 2, "all_page_facts_reached_model": true}
+{"depth": "detailed", "pages": 40, "ocr_pages": 27, "seconds": 0.02, "review_calls": 4, "all_page_facts_reached_model": true}
+test_document_mixed_pdf.py: PASS
+BUILD_DIR="build" SAMOSA_MIXED_TEST_CONTEXT=8192 SAMOSA_FAKE_DOCUMENT_REVIEW_FAIL=1 .venv/bin/python tests/test_document_mixed_pdf.py
+test_document_mixed_pdf.py: PASS (failed section review blocks synthesis)
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Ivendor/pdfium-headers-152.0.7961.0 -Ivendor/miniz \
+	  src/samosa_extract.c src/samosa_html.c src/samosa_docx.c vendor/miniz/miniz.c vendor/miniz/miniz_tinfl.c vendor/miniz/miniz_zip.c \
+	  dist/libpdfium.dylib -Wl,-rpath,@loader_path -Wl,-rpath,dist/ \
+	  -o build/samosa-extract
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/samosa-jobsd 
+cc -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o build/samosa-fs
+cc -O2 -Wall -Wextra -Werror -std=c11 tests/fake_native_summarizer.c \
+	  -o build/test_fake_native_summarizer
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_native_summarizer_supervisor.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/test_native_summarizer_supervisor 
+build/test_native_summarizer_supervisor \
+	  build/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
+test_native_summarizer_supervisor: PASS
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_runtime_settings.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/test_runtime_settings 
+build/test_runtime_settings
+test_runtime_settings: PASS
+BUILD_DIR="build" \
+	SAMOSA_COMPILED_GATEWAY="$PWD/build/samosa-gateway" \
+	SAMOSA_COMPILED_JOBSD="$PWD/build/samosa-jobsd" \
+	SAMOSA_FAKE_BACKEND="$PWD/build/test_fake_openai_backend" \
+	SAMOSA_FS="$PWD/build/samosa-fs" \
+	sh tests/test_compiled_gateway.sh
+automatic folder memory before: PASS
+compiled gateway durable selection (before restart): PASS
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/assert_jobs_report_inventory.py", line 15, in <module>
+    assert report["total"] == done["files"], (report["total"], done["files"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (16, 18)
+make: *** [compiled-gateway-test] Error 1

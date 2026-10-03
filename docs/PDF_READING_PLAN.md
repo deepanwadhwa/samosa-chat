@@ -1,5 +1,11 @@
 # PDF reading plan
 
+Current selected-file workflow scope and acceptance gates: [file workflow tickets](TASKS_FILE_WORKFLOWS.md). Historical plans below do not supersede those gates.
+
+Latest repair: [40-page reading/OCR coverage, 2026-10-02](regressions/file-workflows/2026-10-02-document-coverage/README.md).
+Complete-reading requests now bypass page-selection planning. Small model
+contexts use bounded consecutive-section review instead of dropping later pages.
+
 Status: native text/image reading and the Tesseract OCR replacement are implemented.
 Scanned, mixed, dense-text and multipage fixtures pass through the document reader.
 See [OCR_TESSERACT.md](OCR_TESSERACT.md) for architecture, measured limits and
@@ -42,8 +48,9 @@ Before the Tesseract replacement, the user reported this error after `make insta
 > The document reader failed (ocr_timeout). This does not mean the requested information is absent from the file.
 
 The slow custom OCR implementation has been removed. The direct PDF OCR command
-uses Tesseract without a timeout; the gateway retains its cancellation/watchdog
-controls. Dense-page and clean-install tests supplement the tiny fixture.
+uses Tesseract; the gateway bounds reader subprocesses and whole-document work,
+including helpers that close stdout without exiting. Dense-page, mixed 40-page,
+and clean-install tests supplement the tiny fixture.
 Failed OCR must never be interpreted as evidence that requested information is absent.
 
 ## Verification required

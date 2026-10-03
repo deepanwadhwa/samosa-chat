@@ -1,0 +1,5 @@
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_document_reader_contract.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c \
+	  -o build/test-document-reader-contract 
+build/test-document-reader-contract
+test_document_reader_contract: PASS

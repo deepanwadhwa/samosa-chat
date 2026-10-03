@@ -1,0 +1,23 @@
+{"stage": "backend_ready", "backend": "ornith"}
+{"stage": "memory_reused", "scope": "556a286809767ef7c35d43f641aff87f", "files": 5}
+{"stage": "memory_reused", "scope": "4a937476a37450b042743cd8d8c11529", "files": 0}
+{"stage": "answer", "question": "Give me the gist of this directory in two sentences.", "answer": "The \"General Harness Qwen\" directory contains a mix of synthetic test fixtures and personal notes, including a 7-page PDF used as a fixture for extractor tests, a gardening diary, and several project-related notes referencing a \"Cedar project\" and a shopping list.", "seconds": 28.076}
+{"stage": "answer", "question": "How long is Mira Lee brief.pdf in pages?", "answer": "Mira Lee brief.pdf is 7 pages long.", "seconds": 26.951}
+{"stage": "answer", "question": "What is in notes.txt?", "answer": "There are two files matching `notes.txt`:\n\n1. **`alpha/notes.txt`** \u2014 contains: \"Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.\"\n2. **`beta/notes.txt`** \u2014 contains: \"Cedar project: Mira Lee owns the launch checklist. Release code BETA-619.\"\n\nBoth are text files with complete content coverage (1 of 1 indexed).", "seconds": 52.145}
+{"stage": "answer", "question": "What is in absent.txt?", "answer": "There is no confirmed match for `absent.txt` in the supplied evidence. The folder \"General Harness Qwen\" contains five files: `Mira Lee brief.pdf`, `Mira Leena diary.txt`, `alpha/notes.txt`, `beta/notes.txt`, and `groceries.txt`. None of these files are named `absent.txt`. One uncertain association was noted, but it was not fully checked and does not constitute a confirmed match.", "seconds": 75.07}
+{"stage": "failed", "error": "Missing fact: not (?:found|present|listed|available)|no (?:file|document|match)|cannot|couldn.t|does not (?:exist|appear)|don.t"}
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 176, in <module>
+    run()
+    ~~~^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 165, in <lambda>
+    ('missing_file', lambda: ask('What is in absent.txt?',
+                             ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+        expected=(r'not (?:found|present|listed|available)|no (?:file|document|match)|cannot|couldn.t|does not (?:exist|appear)|don.t',),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        forbidden=(r'absent.txt[^\n]{0,60}(?:contains|records|states) (?:Cedar|Mira|Shopping)',))),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_live.py", line 130, in ask
+    assert re.search(pattern, answer, re.I), f'Missing fact: {pattern}'
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Missing fact: not (?:found|present|listed|available)|no (?:file|document|match)|cannot|couldn.t|does not (?:exist|appear)|don.t

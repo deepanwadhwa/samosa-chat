@@ -1,0 +1,63 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "qwen"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Give me the gist of this directory in two sentences.",
+    "answer": "The \"General Harness Qwen\" directory contains five files, including a synthetic PDF fixture and four text documents related to gardening diaries, project notes for Mira Lee, and a shopping list. The content appears to be test data or placeholders, featuring fictional meeting references, release codes, and simple item lists rather than substantive professional records.",
+    "seconds": 142.931
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents concern Mira Lee, and how many are there?",
+    "answer": "The documents concerning Mira Lee are:\n1. **Mira Lee brief.pdf** (PDF, 7 pages)\n2. **alpha/notes.txt** (Text file)\n3. **beta/notes.txt** (Text file)\n\nThere are **3** supported matches in total (1 PDF and 2 text files).\n\nNote: *Mira Leena diary.txt* is listed as an uncertain association because it concerns \"Mira Leena,\" a different person. *groceries.txt* does not match.",
+    "seconds": 323.614
+  },
+  {
+    "stage": "answer",
+    "question": "How long is Mira Lee brief.pdf in pages?",
+    "answer": "7",
+    "seconds": 61.121
+  },
+  {
+    "stage": "answer",
+    "question": "What is the release code in beta/notes.txt?",
+    "answer": "BETA-619",
+    "seconds": 75.759
+  },
+  {
+    "stage": "answer",
+    "question": "What is the meeting date and its reference?",
+    "answer": "Meeting date: 11 June 2032\nReference: CE-405",
+    "seconds": 195.115
+  },
+  {
+    "stage": "answer",
+    "question": "How many files are indexed here?",
+    "answer": "5",
+    "seconds": 110.988
+  },
+  {
+    "stage": "answer",
+    "question": "Summarize this empty folder.",
+    "answer": "The folder \"General Harness Qwen-empty\" contains no files. The inventory and index records both report a count of 0, and the computed matching-file counts confirm there are zero PDFs, text files, or other files present.",
+    "seconds": 68.551
+  },
+  {
+    "stage": "passed",
+    "backend": "qwen",
+    "questions": 7
+  }
+]

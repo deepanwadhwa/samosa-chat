@@ -155,7 +155,7 @@ serve_remote
 SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   SAMOSA_BASE_URL="http://127.0.0.1:$SERVER_PORT" SAMOSA_HOME="$HOME_DIR" \
   sh "$ROOT/dist/install.sh" >"$TMP/install-1.log" 2>&1 ||
-  { sed -n '1,200p' "$TMP/install-1.log" >&2; fail "clean runtime-only install failed"; }
+  { tail -n 200 "$TMP/install-1.log" >&2; fail "clean runtime-only install failed"; }
 
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ] || fail "gateway binary missing after install"
 [ -x "$HOME_DIR/current/bin/samosa-fs" ] || fail "filesystem sidecar missing after install"

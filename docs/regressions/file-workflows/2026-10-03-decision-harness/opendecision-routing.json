@@ -1,0 +1,376 @@
+[
+  {
+    "question": "Give me the gist of this directory.",
+    "scope": "folder",
+    "required_actions": [
+      "overview"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.7525147497653961,
+        "files": 0.2474852344021201
+      },
+      "actions": [
+        "overview",
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.9922444224357605,
+        "inventory": 0.8310744762420654,
+        "metadata": 0.06383161246776581,
+        "content": 0.9536217451095581
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 9.424,
+    "passed": true
+  },
+  {
+    "question": "Which documents mention the Beacon project?",
+    "scope": "files",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.15264527988620102,
+        "files": 0.8473547101020813
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.0041743675246834755,
+        "inventory": 0.9661878347396851,
+        "metadata": 0.0019006215734407306,
+        "content": 0.6278941631317139
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 10.332,
+    "passed": true
+  },
+  {
+    "question": "How many pages are in the lease.pdf, and what does it say about rent?",
+    "scope": "files",
+    "required_actions": [
+      "metadata",
+      "content"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.10753115266561508,
+        "files": 0.8924688696861267
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.769946277141571,
+        "inventory": 0.9666946530342102,
+        "metadata": 0.9956346154212952,
+        "content": 0.9056565761566162
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 24.314,
+    "passed": true
+  },
+  {
+    "question": "When is the meeting scheduled?",
+    "scope": "files",
+    "required_actions": [
+      "content"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.558520495891571,
+        "files": 0.44147951900959015
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.0033831915352493525,
+        "inventory": 0.0038468718994408846,
+        "metadata": 0.0005725465598516166,
+        "content": 0.002570867771282792
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 15.688,
+    "passed": false
+  },
+  {
+    "question": "Count everything indexed here.",
+    "scope": "folder",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.9474547505378723,
+        "files": 0.05254520755261183
+      },
+      "actions": [
+        "inventory"
+      ],
+      "action_scores": {
+        "overview": 0.45389339327812195,
+        "inventory": 0.9973887801170349,
+        "metadata": 0.17738297581672668,
+        "content": 0.011463796719908714
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 6.314,
+    "passed": true
+  },
+  {
+    "question": "Summarise archive.txt in one sentence.",
+    "scope": "files",
+    "required_actions": [
+      "content"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.39187130331993103,
+        "files": 0.6081287264823914
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.5750511288642883,
+        "inventory": 0.1532321274280548,
+        "metadata": 0.012920472770929337,
+        "content": 0.9771755933761597
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 7.301,
+    "passed": true
+  },
+  {
+    "question": "Show files about Ada, and describe them briefly.",
+    "scope": "files",
+    "required_actions": [
+      "inventory",
+      "content"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.2715501934289932,
+        "files": 0.7284497916698456
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.890912652015686,
+        "inventory": 0.9219217896461487,
+        "metadata": 0.4681067168712616,
+        "content": 0.6641319990158081
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 11.607,
+    "passed": true
+  },
+  {
+    "question": "Which folder am I asking about?",
+    "scope": "folder",
+    "required_actions": [],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.5309662222862244,
+        "files": 0.4690338373184204
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.004407976288348436,
+        "inventory": 0.22918999195098877,
+        "metadata": 0.0011972112115472555,
+        "content": 0.06656918674707413
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 9.957,
+    "passed": true
+  },
+  {
+    "question": "what is this folder about? summarize it for me in about 2 sentences.",
+    "scope": "folder",
+    "required_actions": [
+      "overview"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.5660709738731384,
+        "files": 0.43392904102802277
+      },
+      "actions": [
+        "overview",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.9989935755729675,
+        "inventory": 0.055056069046258926,
+        "metadata": 0.0007931760628707707,
+        "content": 0.9994105100631714
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 8.86,
+    "passed": true
+  },
+  {
+    "question": "does Person X have any files in this folder?",
+    "scope": "files",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.2799523249268532,
+        "files": 0.7200476825237274
+      },
+      "actions": [
+        "inventory"
+      ],
+      "action_scores": {
+        "overview": 0.030646776780486107,
+        "inventory": 0.9743373394012451,
+        "metadata": 0.0030634168069809675,
+        "content": 0.05802474915981293
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 10.808,
+    "passed": true
+  },
+  {
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+    "scope": "files",
+    "required_actions": [
+      "inventory",
+      "metadata",
+      "content"
+    ],
+    "engine": "opendecision",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.023984873667359352,
+        "files": 0.9760150909423828
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.8669230937957764,
+        "inventory": 0.9984573125839233,
+        "metadata": 0.9724932312965393,
+        "content": 0.9791356921195984
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "seconds": 14.49,
+    "passed": true
+  }
+]

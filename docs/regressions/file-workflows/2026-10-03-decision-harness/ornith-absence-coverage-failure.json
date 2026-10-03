@@ -1,0 +1,30 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "ornith"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Are there any documents about Mira Wen?",
+    "answer": "No, there are no documents about Mira Wen. The folder contains files related to other individuals (Mira Lee, Mira Leena) but none specifically about Mira Wen.",
+    "seconds": 63.198
+  },
+  {
+    "stage": "passed",
+    "backend": "ornith",
+    "cases": [
+      "missing_subject"
+    ],
+    "questions": 1
+  }
+]

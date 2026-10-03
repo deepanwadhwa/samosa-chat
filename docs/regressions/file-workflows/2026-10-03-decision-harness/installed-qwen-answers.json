@@ -1,0 +1,43 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "qwen"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents concern Mira Lee, and how many are there?",
+    "answer": "The documents concerning Mira Lee are:\n1. **Mira Lee brief.pdf** (PDF, 7 pages)\n2. **alpha/notes.txt** (Text file)\n3. **beta/notes.txt** (Text file)\n\nThere are **3** such documents in total (1 PDF and 2 text files).",
+    "seconds": 281.799
+  },
+  {
+    "stage": "answer",
+    "question": "What meeting date is recorded in alpha/notes.txt?",
+    "answer": "11 June 2032",
+    "seconds": 230.628
+  },
+  {
+    "stage": "answer",
+    "question": "And what is its reference?",
+    "answer": "CE-405",
+    "seconds": 130.957
+  },
+  {
+    "stage": "passed",
+    "backend": "qwen",
+    "cases": [
+      "membership",
+      "reference"
+    ],
+    "questions": 3
+  }
+]

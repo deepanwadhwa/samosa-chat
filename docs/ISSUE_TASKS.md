@@ -1,5 +1,12 @@
 # Issue task program — index
 
+**Current file workflow and UI priorities (2026-10-01):**
+[Simpler UI and useful file workflows — FW-1 through FW-7](TASKS_FILE_WORKFLOWS.md).
+These open repository tickets prioritize persistent selections, grounded answers,
+file organization, integrated memory, and deletion of redundant paths before
+recurring automation. They supersede conflicting product direction in older
+Jobs/UI plans for that scope; see the new program for tests and acceptance gates.
+
 Task specifications for GitHub issues #1–#5, written to be executed by an
 agent with no prior context on this repo. Each issue has its own document;
 this one holds what they share: verified ground truth, the conflicts between

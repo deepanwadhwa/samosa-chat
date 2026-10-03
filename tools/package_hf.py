@@ -65,6 +65,7 @@ SOURCE_FILES = [
     # them unconditionally, not as an opt-in capability with a raw-Qwen
     # HTTP-serve fallback.
     "samosa_gateway.c",
+    "samosa_memory.h",
     "samosa_audio_decode.mm",
     "samosa_multimodal.c",
     "samosa_multimodal.h",

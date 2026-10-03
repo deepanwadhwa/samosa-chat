@@ -34,6 +34,7 @@ typedef struct {
        unlinks it after the handler returns. */
     char body_file[PATH_MAX];
     int is_background;
+    int is_document_turn; /* set by the document handler, never from a header */
     char range[128]; /* raw `Range:` header value, empty if absent */
     char ui_token[80]; /* raw `X-Samosa-Token:` header value, empty if absent */
     char host[256]; /* raw `Host:` value, used for same-origin validation */

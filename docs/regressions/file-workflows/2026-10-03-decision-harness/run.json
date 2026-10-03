@@ -1,0 +1,20 @@
+{
+  "full_local_suite_exit": 0,
+  "host": "Darwin MacBook-Air.local 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:19 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8122 arm64",
+  "macos": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.1\nBuildVersion:\t\t25F80",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "source_base": "20175987e142c7363dbebbc87488e03b5740ae03",
+  "ci": "not run",
+  "personal_documents": "not opened",
+  "installed_release": "dev-55fedfef0c8c",
+  "installed_gateway_sha256": "ff6a41d7947d0ca9975a1348c2ac30b120054b15050152204a81452f40167cbb",
+  "installed_decision_sha256": "d863eea8bbcb2eeba56f500762d754888dd85cfab12e5ee085b11695d7d3d71e",
+  "browser": "Google Chrome 154.0.8037.95",
+  "validation_status": "Final Qwen and multipart browser qualification pending; full local suite passed with final source.",
+  "source_hashes": {
+    "src/samosa_memory.h": "b2eac5c59d6f9ed53f17fa1e07799f9681cfd7dfef8afe7555b3d2a46288a9e5",
+    "src/samosa_gateway.c": "6d09c5c532551fc030e02535a43be01ce5562b9d15e4dfcc099238c592b61d1d",
+    "assets/app.html": "8aa080a11979460947f7484eccc99f69ef68740dd3ea6ba48061f34b86599ba1",
+    "tools/samosa_decision.py": "d863eea8bbcb2eeba56f500762d754888dd85cfab12e5ee085b11695d7d3d71e"
+  }
+}

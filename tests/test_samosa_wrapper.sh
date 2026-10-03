@@ -3,6 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMP=${TMPDIR:-/tmp}/samosa-wrapper-test.$$
+WRAPPER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+WRAPPER_NO_GATEWAY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/bin" "$TMP/model"
 : >"$TMP/model/experts.bin"
@@ -30,8 +32,18 @@ printf 'chutni=%s\n' "${SAMOSA_CHUTNI_SERVICE:-}"
 EOF
 chmod +x "$TMP/bin/samosa-gateway"
 
+# Argument/passthrough checks must not discover the owner's real running app
+# on the fixture port. Tests that exercise an existing server supply their
+# own successful curl stub below.
+cat >"$TMP/fake-unavailable-curl" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$TMP/fake-unavailable-curl"
+
 run() {
-  SAMOSA_DISABLE_LAUNCHD=1 SAMOSA_HOME="$TMP" SAMOSA_PORT=18642 \
+  SAMOSA_CURL="${SAMOSA_CURL:-$TMP/fake-unavailable-curl}" \
+    SAMOSA_DISABLE_LAUNCHD=1 SAMOSA_HOME="$TMP" SAMOSA_PORT=$WRAPPER_PORT \
     sh "$ROOT/dist/samosa" "$@"
 }
 
@@ -65,7 +77,7 @@ printf '%s\n' "$custom_context" | grep -qx -- '--context-tokens'
 printf '%s\n' "$custom_context" | grep -qx -- '65536'
 
 serve=$(run serve --foreground)
-printf '%s\n' "$serve" | grep -qx -- 'port=18642'
+printf "%s\n" "$serve" | grep -qx -- "port=$WRAPPER_PORT"
 printf '%s\n' "$serve" | grep -qx -- 'bind=127.0.0.1'
 printf '%s\n' "$serve" | grep -qx -- 'lan=0'
 printf '%s\n' "$serve" | grep -qx -- 'context=auto'
@@ -90,17 +102,17 @@ printf 'OPEN %s\n' "$1"
 EOF
 chmod +x "$TMP/fake-curl" "$TMP/fake-open"
 app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" run app)
-printf '%s\n' "$app" | grep -qx -- 'http://127.0.0.1:18642'
-printf '%s\n' "$app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
+printf "%s\n" "$app" | grep -qx -- "http://127.0.0.1:$WRAPPER_PORT"
+printf "%s\n" "$app" | grep -qx -- "OPEN http://127.0.0.1:$WRAPPER_PORT"
 lan_app=$(SAMOSA_CURL="$TMP/fake-curl" SAMOSA_OPEN="$TMP/fake-open" \
   SAMOSA_LAN_HOST=192.168.50.12 run app --lan)
 printf '%s\n' "$lan_app" | grep -qx -- 'Samosa LAN access is on.'
 printf '%s\n' "$lan_app" | grep -qx -- \
-  'Other devices: http://192.168.50.12:18642/'
+  "Other devices: http://192.168.50.12:$WRAPPER_PORT/"
 printf '%s\n' "$lan_app" | grep -qx -- 'Password:      password1234'
-printf '%s\n' "$lan_app" | grep -qx -- 'OPEN http://127.0.0.1:18642'
+printf "%s\n" "$lan_app" | grep -qx -- "OPEN http://127.0.0.1:$WRAPPER_PORT"
 already=$(SAMOSA_CURL="$TMP/fake-curl" run serve)
-printf '%s\n' "$already" | grep -q -- 'Samosa server running independently at http://127.0.0.1:18642'
+printf "%s\n" "$already" | grep -q -- "Samosa server running independently at http://127.0.0.1:$WRAPPER_PORT"
 if printf '%s\n' "$already" | grep -q -- 'answer a question'; then
   echo "serve fell through to usage after reporting an existing server" >&2
   exit 1
@@ -136,7 +148,7 @@ NO_GATEWAY_TMP=${TMPDIR:-/tmp}/samosa-wrapper-test-no-gateway.$$
 trap 'rm -rf "$TMP" "$NO_GATEWAY_TMP"' EXIT HUP INT TERM
 mkdir -p "$NO_GATEWAY_TMP/bin"
 cp "$TMP/bin/qwen36b" "$NO_GATEWAY_TMP/bin/qwen36b"
-no_gateway_out=$(SAMOSA_HOME="$NO_GATEWAY_TMP" SAMOSA_PORT=18643 sh "$ROOT/dist/samosa" serve 2>&1) && {
+no_gateway_out=$(SAMOSA_CURL="$TMP/fake-unavailable-curl" SAMOSA_HOME="$NO_GATEWAY_TMP" SAMOSA_PORT=$WRAPPER_NO_GATEWAY_PORT sh "$ROOT/dist/samosa" serve 2>&1) && {
   echo "serve unexpectedly succeeded with no gateway binary present" >&2
   exit 1
 }

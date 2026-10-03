@@ -1,5 +1,7 @@
 # Issue #7 — Samosa Jobs (batch, scheduled, local multimodal work)
 
+Current selected-file workflow scope and acceptance gates: [file workflow tickets](TASKS_FILE_WORKFLOWS.md). Historical plans below do not supersede those gates.
+
 **Status: J1 implementation is landed on `issue-7-jobs`; its offline suite is
 green. E-J1 is closed for the labeled JSS PDF batch and the live chat interlock.
 Single-image extraction now produces passing records — Qwen vision read a real

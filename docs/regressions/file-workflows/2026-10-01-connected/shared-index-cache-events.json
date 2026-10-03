@@ -1,0 +1,15 @@
+[
+  {
+    "schema": "samosa.developer.trace.v1",
+    "session_id": "28eec3c08699b35bdc1b074e7be61b10",
+    "sequence": 12,
+    "wall_ms": 1790893585945,
+    "session_elapsed_ms": 100,
+    "pid": 24598,
+    "event": "document_reader_complete",
+    "turn_id": "ed79ca807e4bd1e154a94f54ea0ab4c1",
+    "fields": {
+      "outcome": "shared_full_cache_hit"
+    }
+  }
+]

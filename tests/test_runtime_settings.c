@@ -7,9 +7,38 @@
 
 #include <assert.h>
 
+static void check_first_find_without_saved_jobs(const char *temporary) {
+    Gateway *gateway = calloc(1, sizeof(*gateway));
+    assert(gateway);
+    pthread_mutex_init(&gateway->mu, NULL);
+    assert(path_copy(gateway->home, sizeof(gateway->home), temporary));
+    assert(path_join(gateway->jobs_root, sizeof(gateway->jobs_root), temporary, "new-jobs"));
+    assert(path_join(gateway->samosa_decision, sizeof(gateway->samosa_decision), temporary, "decision-helper"));
+    assert(write_small_file(gateway->samosa_decision,
+        "#!/bin/sh\n"
+        "while [ \"$1\" != --request ]; do shift; done\n"
+        "shift\n"
+        "read -r request <\"$1\"\n"
+        "[ \"$request\" = '{\"goal\":\"find Person X\"}' ] || exit 1\n"
+        "printf '%s\\n' '{\"ok\":true,\"action\":\"find\"}'\n"));
+    assert(chmod(gateway->samosa_decision, 0700) == 0);
+    assert(access(gateway->jobs_root, F_OK) != 0);
+    char error[256] = {0};
+    char *reply = jobs_decision_invoke(gateway, "route", "{\"goal\":\"find Person X\"}",
+                                     NULL, NULL, error, sizeof(error));
+    assert(reply && strstr(reply, "\"action\":\"find\""));
+    free(reply);
+    /* No temporary request remains after successful first-use routing. */
+    assert(rmdir(gateway->jobs_root) == 0);
+    assert(unlink(gateway->samosa_decision) == 0);
+    pthread_mutex_destroy(&gateway->mu);
+    free(gateway);
+}
+
 int main(void) {
     char temporary[] = "/tmp/samosa-runtime-settings-XXXXXX";
     assert(mkdtemp(temporary));
+    check_first_find_without_saved_jobs(temporary);
     Gateway gateway = {0};
     assert(path_copy(gateway.home, sizeof(gateway.home), temporary));
     assert(path_copy(gateway.backend, sizeof(gateway.backend), "qwen"));

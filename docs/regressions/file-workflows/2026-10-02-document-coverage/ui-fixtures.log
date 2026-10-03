@@ -1,0 +1,16 @@
+chooser UI DOM fixtures: PASS
+test_chutni_ui.mjs: PASS
+test_composer_ui.mjs: PASS
+conversation migration/binding UI DOM fixtures: PASS
+Developer mode Settings UI fixtures: PASS
+test_document_detail_ui.mjs: PASS
+jobs UI DOM fixtures: PASS
+settings model catalog UI DOM fixtures: PASS
+runtime settings UI DOM fixtures: PASS
+test_session_token_ui.mjs: PASS
+setup flow UI DOM fixtures: PASS
+sidebar UI fixtures: PASS
+VisionPsy download-and-continue UI fixtures: PASS
+voice UI fixtures: PASS
+wake-word UI fixtures: PASS
+web activity UI fixtures: PASS

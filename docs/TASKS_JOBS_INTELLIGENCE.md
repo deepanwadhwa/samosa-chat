@@ -1,5 +1,7 @@
 # Phase JI — generally intelligent document jobs (find, rebuilt)
 
+Current selected-file workflow scope and acceptance gates: [file workflow tickets](TASKS_FILE_WORKFLOWS.md). Historical plans below do not supersede those gates.
+
 > **Status: COMPLETE — approved direction from the owner, 2026-07-23, after the
 > second dogfood failure of the Titli scenario.** Evidence:
 > [regressions/jobs/titli-find-2026-07-23.md](regressions/jobs/titli-find-2026-07-23.md)

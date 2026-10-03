@@ -29,6 +29,7 @@ cp "$ROOT/assets/app.html" "$TMP/release/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$TMP/release/samosa-chat.png"
 printf 'fixture\n' >"$TMP/release/model/experts.bin"
 printf '{}\n' >"$TMP/release/tokenizer_qwen36.json"
+cp -R "$ROOT/tests/fixtures/chutni_browser_e2e" "$TMP/chutni-preflight"
 
 cat >"$TMP/launch-shell.sh" <<EOF
 #!/bin/sh
@@ -86,12 +87,14 @@ printf '%s' "$HEALTH" | grep -q '"managed_by":"samosa"'
 printf '%s' "$HEALTH" | grep -q '"can_create_memory":true'
 
 # Prove this surviving Samosa process can invoke its bundled Chutni runtime.
-# Preflight reads only a repository fixture and does not create a memory.
+# Preflight reads only a temporary fixture and does not create a memory. The
+# launchd test process has no macOS privacy grant for the repository's
+# ~/Documents path, so keep this fixture outside protected user folders.
 TOKEN=$(tr -d '\n' <"$TMP/home/run/ui-token")
 PREFLIGHT=$(curl -fsS --max-time 30 \
   -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/preflight" \
-  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$ROOT/tests/fixtures/chutni_browser_e2e\"}]}") || {
+  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/chutni-preflight\"}]}") || {
   echo "FAIL: detached service Chutni preflight request failed" >&2
   cat "$TMP/home/server.log" >&2 2>/dev/null || true
   exit 1
