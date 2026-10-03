@@ -43,7 +43,8 @@ UI cleanup continuation, 2026-10-02: grouped existing actions, simplified
 sorting/progress, removed the stale folder-memory disclaimer, and fixed Show
 all and keyboard-focus continuity in the shortlist. DOM regression evidence
 is recorded in [UI cleanup](regressions/file-workflows/2026-10-01-connected/ui-cleanup.md).
-The browser connection still exposes no browser; visual acceptance remains open.
+That browser connection exposed no browser. The later folder-chat walkthrough
+uses an isolated Playwright fallback; broader workflow visual acceptance remains open.
 
 ## Product direction
 
@@ -52,7 +53,9 @@ cleaned up, and stale app-name/slogan checks were corrected. A larger-section
 Ornith experiment improved one run from 397 to 315 seconds, but two retries
 failed; it was reverted to the proven review limits. Browser setup remains
 unavailable, report/inventory parity failed, and the corrected installer smoke
-check still needs rerunning. FW-6 stays open; FW-7 stays gated. See
+check still needed rerunning at that checkpoint. The later harness qualification
+below supersedes these folder-chat browser, installer and local parity blockers.
+FW-6 stays open; FW-7 stays gated. See
 [continuation evidence](regressions/file-workflows/2026-10-03-fw6-continuation/README.md).
 
 Walkthrough correction, 2026-10-03: folder chat now uses the existing local
@@ -64,8 +67,15 @@ suite pass. Earlier browser checks passed seven folder questions, but manual
 review found an unsupported unique-file assumption that their gate missed.
 Subsequent checks found false subject associations and an erroneous root-only
 interpretation of duplicate basenames. Grounded quoted membership proofs and
-authoritative inventory filename resolution address these failures. The final
-installed Qwen/browser qualification is in progress. OpenDecision routing passed 10/11 cases; Laya passed
+authoritative inventory filename resolution address these failures. Separate
+subject extraction prevents document-selection words from becoming a person's
+name. Semantic membership uses OpenDecision over every supplied literal preview;
+unverified content is withheld from final generation. The final installed Qwen
+multipart browser check passed: 12 files, two PDFs of 40 and 1 page, no thinking
+text, neutral composer focus and one Ask action. Fast general cases cover changed
+names, duplicate basenames, missing subjects/files, empty folders, content, page
+totals and follow-up references; negative runs and manual corrections are retained.
+OpenDecision routing passed 10/11 cases; Laya passed
 5/11 and has not replaced it. See the
 [harness contract](FOLDER_FILE_DECISION_HARNESS.md) and
 [evidence](regressions/file-workflows/2026-10-03-decision-harness/).

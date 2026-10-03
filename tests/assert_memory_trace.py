@@ -16,6 +16,7 @@ parser.add_argument('--subject', required=True)
 parser.add_argument('--matches', type=int, required=True)
 parser.add_argument('--uncertain', type=int, required=True)
 parser.add_argument('--action', action='append', default=[])
+parser.add_argument('--require-subject-step', action='store_true')
 parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
 events = []
@@ -36,12 +37,14 @@ rows = [row for row in events if row.get('turn_id') == turn]
 started = next(row for row in rows if row['event'] == 'chat_turn_started')
 assert started['fields']['backend'] == args.backend, 'Wrong real backend'
 facts = {row['event']: json.loads(row['fields']['payload']) for row in rows
-         if row['event'] in ('memory_route', 'memory_decision', 'memory_membership_validated')}
+         if row['event'] in ('memory_route', 'memory_decision', 'memory_subject', 'memory_membership_validated')}
 report = {'turn_id': turn, 'backend': args.backend, 'question': args.question, 'facts': facts}
 args.output.parent.mkdir(parents=True, exist_ok=True)
 args.output.write_text(json.dumps(report, indent=2) + '\n')
 plan = facts['memory_decision']
 assert set(args.action) <= set(plan['actions']), 'Required operation was not executed'
+if args.require_subject_step:
+    assert facts['memory_subject']['subject'].casefold() == args.subject.casefold(), 'Wrong selected subject'
 membership = facts['memory_membership_validated']
 assert membership['subject'].casefold() == args.subject.casefold(), 'Wrong membership subject'
 assert len(membership['match']) == args.matches, 'Wrong gateway-validated count'

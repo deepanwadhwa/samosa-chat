@@ -1,0 +1,44 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "ornith"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Are there any documents about Mira Wen?",
+    "answer": "No confirmed documents about Mira Wen were found in the checked evidence. One uncertain association exists: *Mira Lee brief.pdf*, which may relate to a similarly named individual but is not a confirmed match for Mira Wen.",
+    "seconds": 54.919
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents are about horticulture?",
+    "answer": "The only confirmed match for horticulture is **Mira Leena diary.txt**, which is described as a \"gardening diary\" \u2014 directly related to horticulture.\n\nThere is one uncertain association: **Mira Lee brief.pdf**, which could potentially relate to horticulture but was not fully checked.\n\nNo other files in the inventory are confirmed or strongly associated with horticulture.",
+    "seconds": 59.224
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents relate to food purchases?",
+    "answer": "The document that relates to food purchases is:\n\n- **groceries.txt** \u2014 contains the text \"Shopping: apples, oats, coffee,\" which clearly pertains to food purchases.\n\nThe other files are not confirmed matches:\n- **Mira Lee brief.pdf** \u2014 uncertain; not checked for content.\n- **Mira Leena diary.txt**, **alpha/notes.txt**, **beta/notes.txt** \u2014 explicitly not matching the requested subject.",
+    "seconds": 63.203
+  },
+  {
+    "stage": "passed",
+    "backend": "ornith",
+    "cases": [
+      "missing_subject",
+      "semantic_topic",
+      "semantic_shopping"
+    ],
+    "questions": 3
+  }
+]

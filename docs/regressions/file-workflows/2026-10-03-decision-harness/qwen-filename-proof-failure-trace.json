@@ -1,0 +1,175 @@
+{
+  "turn_id": "c544c87190ce6fac47b632eee9bfa8fb",
+  "backend": "qwen",
+  "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+  "facts": {
+    "memory_route": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.023984873667359352,
+        "files": 0.9760150909423828
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.8669230937957764,
+        "inventory": 0.9984573125839233,
+        "metadata": 0.9724932312965393,
+        "content": 0.9791356921195984
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_decision": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.023984873667359352,
+        "files": 0.9760150909423828
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.8669230937957764,
+        "inventory": 0.9984573125839233,
+        "metadata": 0.9724932312965393,
+        "content": 0.9791356921195984
+      },
+      "sources": [
+        {
+          "number": 0,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 1,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 2,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 3,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 4,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 5,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 6,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 7,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 8,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 9,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 10,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 11,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 12,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 13,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 14,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 15,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 16,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 17,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 18,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 19,
+          "choice": "plausible",
+          "score": 1.0
+        }
+      ],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_membership_validated": {
+      "subject": "Person X",
+      "match": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        17,
+        18,
+        19
+      ],
+      "uncertain": [
+        7
+      ]
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "turn_id": "febfd0ce6d142c1403d1bc610658c18f",
+  "backend": "ornith",
+  "question": "Which documents concern Mira Lee, and how many are there?",
+  "facts": {
+    "memory_route": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.24671900551766157,
+        "files": 0.7532810270786285
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.6344017386436462,
+        "inventory": 0.9958174824714661,
+        "metadata": 0.6044572591781616,
+        "content": 0.9326989054679871
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_decision": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.24671900551766157,
+        "files": 0.7532810270786285
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.6344017386436462,
+        "inventory": 0.9958174824714661,
+        "metadata": 0.6044572591781616,
+        "content": 0.9326989054679871
+      },
+      "sources": [
+        {
+          "number": 0,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 1,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 2,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 3,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 4,
+          "choice": "plausible",
+          "score": 1.0
+        }
+      ],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_subject": {
+      "subject": "Mira Lee"
+    },
+    "memory_membership_validated": {
+      "subject": "Mira Lee",
+      "match": [
+        0,
+        2,
+        3
+      ],
+      "uncertain": [],
+      "filename_proofs": []
+    }
+  }
+}

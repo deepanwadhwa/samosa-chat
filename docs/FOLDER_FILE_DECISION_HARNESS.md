@@ -18,13 +18,24 @@ for the walkthrough questions, fixture people or reference codes.
    ambiguous basename may identify multiple files. Otherwise rank candidates
    with the decision model. Inventory operations inspect every supplied record.
 4. For subject/group membership, the decision model distinguishes named
-   identities from general topics. The current local chat backend checks every
-   supplied inventory record and returns a requested subject, source IDs and
-   literal supporting quotes. The gateway checks each quote against the actual
+   identities from general topics. Subject selection is a separate local JSON judgement: it copies a
+   complete name or topic from the question, excluding surrounding file-selection
+   wording. The gateway requires a bounded span present in the current question;
+   the subsequent membership judgement must keep that subject unchanged.
+   For named membership, the current local chat backend checks every supplied
+   inventory record and returns source IDs and literal supporting quotes.
+   The gateway checks each quote against the actual
    relative filename or indexed preview. Named matches require the complete
-   requested identity at word boundaries; a shared first name or prefix cannot
-   establish membership. Topic quotes receive an additional OpenDecision
-   relevance check. Invalid, unsupported and uncertain matches cannot increase
+   requested identity at word boundaries in the source, including beyond the
+   quote's end; a cropped prefix cannot establish membership. If a model-selected
+   named match has a deficient quote, its actual inventory filename can provide
+   the full identity proof. Derived summaries and captions cannot serve as
+   literal quote proof. For semantic membership, OpenDecision checks EVERY
+   supplied source's actual filename and literal preview against a dynamic
+   topic hypothesis. It does not depend on a generative shortlist, which
+   previously omitted a synonym match. Probe inputs have at most 128 bytes of
+   path and 1,000 bytes of literal preview; derived text is excluded. A negative
+   decision over incomplete evidence remains uncertain. Invalid, unsupported and uncertain matches cannot increase
    the supported count. The gateway owns uniqueness and file-type arithmetic.
 5. Collect current indexed evidence for the selected actions and generate the
    answer. Include all supplied filenames independently of content selection.
@@ -54,7 +65,13 @@ Literal source text takes precedence over stored model summaries, and derived
 summaries or image captions are labelled when used as fallback evidence.
 Duplicate artifacts with equal content and equal page selectors are supplied
 once. Equal content on different numbered pages remains distinct. Previews
-are not repeated when full selected content is already present.
+are not repeated when full selected content is already present. Once association
+is verified, unrelated and uncertain previews are omitted from the answer; their inventory
+paths and statuses remain supplied. Answers group similar files unless the
+user requests a full listing.
+Uncertain files are not content candidates for the final answer. Their unverified
+excerpts previously prompted unsupported descriptions and absence claims even
+after the gateway correctly marked the association uncertain.
 
 An unavailable or invalid decision runtime supplies bounded inventory/previews
 with an explicit limitation. Low-confidence questions with no selected action
@@ -68,7 +85,8 @@ child termination and removal of the temporary request. The quoted association
 judgement has a separate 300-second budget: a real Qwen 20-file batch took
 246.550 seconds and exceeded its earlier 180-second allowance. This does not
 change the document review limits. Final generation uses
-the existing document-turn timeout. Raw `<think>` blocks are filtered across
+the existing document-turn timeout. Subject extraction has a separate 120-second
+allowance and uses the same existing local JSON judgement path. Raw `<think>` blocks are filtered across
 stream chunk boundaries before rendering or voice playback, including older
 stored responses. Folder turns also request reasoning disabled from the backend.
 

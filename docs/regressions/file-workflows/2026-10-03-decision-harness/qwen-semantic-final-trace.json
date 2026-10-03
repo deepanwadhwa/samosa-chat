@@ -1,0 +1,92 @@
+{
+  "turn_id": "c50884117b1ae2a2d777361f63ae64c8",
+  "backend": "qwen",
+  "question": "Which documents relate to food purchases?",
+  "facts": {
+    "memory_route": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.17522326670587063,
+        "files": 0.8247767090797424
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.06394842267036438,
+        "inventory": 0.953880250453949,
+        "metadata": 0.008251599036157131,
+        "content": 0.9081302285194397
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_decision": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.17522326670587063,
+        "files": 0.8247767090797424
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.06394842267036438,
+        "inventory": 0.953880250453949,
+        "metadata": 0.008251599036157131,
+        "content": 0.9081302285194397
+      },
+      "sources": [
+        {
+          "number": 0,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 1,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 2,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 3,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 4,
+          "choice": "plausible",
+          "score": 1.0
+        }
+      ],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_subject": {
+      "subject": "food purchases"
+    },
+    "memory_membership_validated": {
+      "subject": "food purchases",
+      "match": [
+        4
+      ],
+      "uncertain": [
+        0
+      ],
+      "filename_proofs": []
+    }
+  }
+}

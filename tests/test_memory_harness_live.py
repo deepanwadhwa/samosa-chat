@@ -29,7 +29,6 @@ parser.add_argument('--case', action='append', help='Run only named cases (repea
 args = parser.parse_args()
 home = Path(os.environ.get('SAMOSA_HOME', str(Path.home() / '.samosa')))
 base = os.environ.get('SAMOSA_TEST_URL', 'http://127.0.0.1:8642')
-token = (home / 'run/ui-token').read_text().strip()
 evidence = []
 
 def record(row):
@@ -40,6 +39,8 @@ def record(row):
 
 def request(path, body=None, method=None):
     data = json.dumps(body).encode() if body is not None else None
+    # A freshly restarted isolated gateway rotates its local UI token.
+    token = (home / 'run/ui-token').read_text().strip()
     with urllib.request.urlopen(urllib.request.Request(base + path, data=data, method=method,
         headers={'X-Samosa-Token': token, 'Content-Type': 'application/json'}), timeout=600) as response:
         return json.load(response)
@@ -158,10 +159,17 @@ cases = [
         forbidden=(r'repeat(?:ed|s)? twice', r'no confirmed match', r'uncertain associations', r'not confirmed matches'))),
     ('missing_subject', lambda: ask('Are there any documents about Mira Wen?',
         expected=(r'no\b|zero|\b0\b|none|not found', r'confirm|uncertain|checked|preview|partial|incomplete|unverified'),
-        forbidden=(r'yes[, ]', r'there are no documents about Mira Wen',))),
+        forbidden=(r'yes[, ]', r'there are no documents about Mira Wen', r'does not contain the requested identity'))),
     ('reference', reference_case),
     ('semantic_topic', lambda: ask('Which documents are about horticulture?',
-        expected=('Mira Leena', r'garden|horticultur'), forbidden=(r'four (?:files|matches)',))),
+        expected=('Mira Leena', r'garden|horticultur'),
+        forbidden=(r'four (?:files|matches)', r'no (?:confirmed )?match', r'zero (?:confirmed )?match',
+                   r'diary[^\n]{0,100}(?:not matching|not related|unrelated)',
+                   r'no other files[^\n]{0,100}(?:related|match)', r'no horticultural content', r'does not qualify as a match'))),
+    ('semantic_shopping', lambda: ask('Which documents relate to food purchases?',
+        expected=('groceries.txt',),
+        forbidden=(r'no (?:confirmed )?match', r'zero (?:confirmed )?match',
+                   r'so it does not relate', r'no substantive text'))),
     ('missing_file', lambda: ask('What is in absent.txt?',
         expected=(r'not (?:found|present|listed|available)|no (?:confirmed )?(?:file|document|match)|cannot|couldn.t|does not (?:exist|appear)|don.t',),
         forbidden=(r'absent.txt[^\n]{0,60}(?:contains|records|states) (?:Cedar|Mira|Shopping)',))),

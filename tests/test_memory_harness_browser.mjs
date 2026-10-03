@@ -5,6 +5,7 @@ const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.SAMOSA_PLAYWRIGHT_ROOT ? process.env.SAMOSA_PLAYWRIGHT_ROOT+'/node_modules/playwright' : 'playwright');
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import {assertMultipartAnswer} from './assert_memory_browser.mjs';
 const out=process.env.SAMOSA_TEST_EVIDENCE || '/tmp/samosa-memory-browser-'+Date.now();fs.mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.SAMOSA_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});const evidence=[];
@@ -29,10 +30,10 @@ const started=Date.now();await page.locator('#prompt').fill(question);await page
 await page.waitForFunction(()=>!document.body.classList.contains('generating'),null,{timeout:900000});
 const node=page.locator('.message.assistant').last();const answer=await node.locator('.response').innerText();const error=await node.locator('.error-note').innerText();
 record({question,answer,error,seconds:(Date.now()-started)/1000});
+// Allow the independent five-second health poll to catch up with stream closure.
+await page.waitForFunction(()=>!document.querySelector('#modelStatus').textContent.includes('is generating'),null,{timeout:15000});
 await page.screenshot({path:out+'/multipart-answer.png',fullPage:true});
-assert(!error);assert(!/<\/?think>|I should answer/.test(answer));assert(/40/.test(answer));assert(/12|twelve/i.test(answer));
-assert(/multiple|several|more than one|not a single|not one|ambiguous|two PDFs|2 PDFs/i.test(answer),'Ambiguous reference was not explained');
-assert(!/other files.*all.*Person Y/i.test(answer));
+assertMultipartAnswer({answer,error});
 }
 assert(!evidence.some(row=>row.error),'Browser reported an error');
 record({stage:'passed',ui_only:!!process.env.SAMOSA_BROWSER_UI_ONLY});

@@ -1,0 +1,30 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "qwen"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents relate to food purchases?",
+    "answer": "The document that relates to food purchases is:\n\n*   **groceries.txt**: Contains content about shopping for apples, oats, and coffee.\n\nThere is one uncertain association (**Mira Lee brief.pdf**) which was not fully checked for this subject.",
+    "seconds": 146.229
+  },
+  {
+    "stage": "passed",
+    "backend": "qwen",
+    "cases": [
+      "semantic_shopping"
+    ],
+    "questions": 1
+  }
+]

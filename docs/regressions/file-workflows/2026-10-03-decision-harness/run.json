@@ -6,15 +6,25 @@
   "source_base": "20175987e142c7363dbebbc87488e03b5740ae03",
   "ci": "not run",
   "personal_documents": "not opened",
-  "installed_release": "dev-55fedfef0c8c",
-  "installed_gateway_sha256": "ff6a41d7947d0ca9975a1348c2ac30b120054b15050152204a81452f40167cbb",
+  "installed_release": "dev-11c95ffcb46c",
+  "installed_gateway_sha256": "1640d5a60ac124bf46172cf7e8a0be13e4cb60a3ace5ce1765373ce6e45b7174",
   "installed_decision_sha256": "d863eea8bbcb2eeba56f500762d754888dd85cfab12e5ee085b11695d7d3d71e",
   "browser": "Google Chrome 154.0.8037.95",
-  "validation_status": "Final Qwen and multipart browser qualification pending; full local suite passed with final source.",
+  "validation_status": "Final installed Qwen multipart browser and changed-topic API passed. Final Fast missing-person and two semantic-topic cases passed with uncertainty preserved. Other unchanged general cases and Fast multipart passed on preceding builds; negative results retained. Broader FW-6 gates open.",
   "source_hashes": {
-    "src/samosa_memory.h": "b2eac5c59d6f9ed53f17fa1e07799f9681cfd7dfef8afe7555b3d2a46288a9e5",
-    "src/samosa_gateway.c": "6d09c5c532551fc030e02535a43be01ce5562b9d15e4dfcc099238c592b61d1d",
+    "src/samosa_memory.h": "34d91cc2ccc200d18f20b7672b4ab19921b320d5a75c8e0c1cfcc33dc81e9bb6",
+    "src/samosa_gateway.c": "7bab09b3a6a37779e8546c024eea0fbf5c8dc0fa2685577c7e5a130e79f9fbd8",
     "assets/app.html": "8aa080a11979460947f7484eccc99f69ef68740dd3ea6ba48061f34b86599ba1",
     "tools/samosa_decision.py": "d863eea8bbcb2eeba56f500762d754888dd85cfab12e5ee085b11695d7d3d71e"
-  }
+  },
+  "full_local_suite_scope": "Full make test predates final proof/subject/semantic changes. Compiled gateway suite passed after semantic changes, before final uncertain-content guard; compiled binaries and memory harness passed after all final changes.",
+  "final_focused_checks_exit": 0,
+  "observed_qwen_multipart_seconds": 610.93,
+  "observed_ornith_multipart_seconds": 210.329,
+  "qwen_final_browser_exit": 0,
+  "qwen_semantic_final_exit": 0,
+  "ornith_uncertainty_final_exit": 0,
+  "observed_qwen_semantic_seconds": 146.229,
+  "final_selected_backend": "ornith",
+  "final_ui_only_exit": 0
 }

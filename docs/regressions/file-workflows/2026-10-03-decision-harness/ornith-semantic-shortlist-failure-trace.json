@@ -1,0 +1,41 @@
+{
+  "memory_route": {
+    "ok": true,
+    "version": 1,
+    "scope": "files",
+    "scope_scores": {
+      "folder": 0.17683561146259308,
+      "files": 0.8231643736362457
+    },
+    "actions": [
+      "inventory",
+      "content"
+    ],
+    "action_scores": {
+      "overview": 0.17709815502166748,
+      "inventory": 0.9908567667007446,
+      "metadata": 0.003721708431839943,
+      "content": 0.9619649052619934
+    },
+    "sources": [],
+    "membership_kind": "semantic",
+    "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+    "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+  },
+  "memory_subject": {
+    "subject": "horticulture"
+  },
+  "memory_membership": {
+    "subject": "horticulture",
+    "match": [],
+    "uncertain": []
+  },
+  "memory_membership_validated": {
+    "subject": "horticulture",
+    "match": [],
+    "uncertain": [
+      0
+    ],
+    "filename_proofs": []
+  }
+}

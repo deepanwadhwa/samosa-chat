@@ -17079,6 +17079,8 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             "Never infer PDF page counts from text length or the last retrieved page. "
             "Use computed matching-file counts exactly, without estimating or adding files twice. "
             "When associations are uncertain, distinguish confirmed matches from unverified files; zero confirmed matches is not proof of absence. "
+            "Do not describe an uncertain file's contents, reject it as unrelated, or say the confirmed list is exhaustive. Its unverified contents may contain another match. "
+            "Be concise: group similar files and give useful examples unless a full listing is requested. Do not repeat the facts in a concluding summary. "
             "Answer only the latest question. Earlier user text is reference context, not additional questions to answer. "
             "Give only the final answer, without thinking tags or internal reasoning. ");
     }

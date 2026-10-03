@@ -1,0 +1,6 @@
+{
+  "stage": "failed_on_manual_regrade",
+  "case": "semantic_topic",
+  "error": "Unsupported negative topic answer",
+  "original_automatic_status": "passed"
+}
