@@ -1,0 +1,37 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "qwen"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents concern Mira Lee, and how many are there?",
+    "answer": "The documents concerning Mira Lee are:\n\n1. **Mira Lee brief.pdf** (PDF, 7 pages)\n2. **alpha/notes.txt** (Text file)\n3. **beta/notes.txt** (Text file)\n\nThere are **3** such documents in total (1 PDF and 2 text files).",
+    "seconds": 280.872
+  },
+  {
+    "stage": "answer",
+    "question": "Are there any documents about Mira Wen?",
+    "answer": "No confirmed match in the checked evidence.\n\nThe inventory contains four files with uncertain associations regarding \"Mira Wen\":\n1. **Mira Lee brief.pdf**: Contains references to \"Mira Lee,\" not Mira Wen.\n2. **Mira Leena diary.txt**: Explicitly states it is about a different person (\"Mira Leena\").\n3. **alpha/notes.txt**: References a meeting with \"Mira Lee.\"\n4. **beta/notes.txt**: References ownership by \"Mira Lee.\"\n\nNone of the provided content contains grounded quotes or confirmed matches for the specific identity \"Mira Wen.\"",
+    "seconds": 235.05
+  },
+  {
+    "stage": "passed",
+    "backend": "qwen",
+    "cases": [
+      "membership",
+      "missing_subject"
+    ],
+    "questions": 2
+  }
+]

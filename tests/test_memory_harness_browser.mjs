@@ -26,7 +26,7 @@ await card.getByRole('button',{name:/Ask (?:about this folder|another question)/
 if(!process.env.SAMOSA_BROWSER_UI_ONLY){
 const question='tell me what is in the Person X file? How many pages in that file? are there files related to person X?';
 const started=Date.now();await page.locator('#prompt').fill(question);await page.locator('#send').click();
-await page.waitForFunction(()=>!document.body.classList.contains('generating'),null,{timeout:600000});
+await page.waitForFunction(()=>!document.body.classList.contains('generating'),null,{timeout:900000});
 const node=page.locator('.message.assistant').last();const answer=await node.locator('.response').innerText();const error=await node.locator('.error-note').innerText();
 record({question,answer,error,seconds:(Date.now()-started)/1000});
 await page.screenshot({path:out+'/multipart-answer.png',fullPage:true});

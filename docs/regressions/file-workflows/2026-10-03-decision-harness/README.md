@@ -49,6 +49,13 @@ accurate partial/error wording and visible normal Documents fixture paths.
   rejected known positive topic evidence. `topic-proof-probe.log` records the
   successful natural topic hypothesis and negative controls, rather than hiding
   the failed predicate.
+- `qwen-browser-timeout-failure/` and its trace/runtime logs: the first original
+  multipart browser run failed. Its 180-second association deadline expired,
+  although the native Qwen backend finished that check in 246.550 seconds.
+  The browser's 600-second overall deadline also expired before the answer
+  finished. The new association allowance is 300 seconds; the browser test
+  allows 900 seconds for routing, verification and final generation together.
+  Document review still uses the retained 150-second call and six-minute limits.
 
 ## Decision-model comparison
 
@@ -95,3 +102,12 @@ answers are retained separately, rather than presented as evidence for changes
 made after those runs. Timings include overlapping local regression load and are
 not controlled benchmarks. The mixed-document review and broader FW-6 gates
 remain open; scheduling stays gated.
+
+The final local `make test` exited 0, including the clean runtime-only installer,
+inventory parity, compiled gateway, decision-contract and UI checks. No CI run
+is claimed. `qwen-identity-final.json` records the final installed Qwen membership
+and missing-subject answers: 3 confirmed matches and 0 confirmed matches,
+respectively, with uncertainty disclosed in the negative answer. Their observed
+times were 280.872 and 235.050 seconds. `tests/assert_memory_trace.py` independently
+checks executed actions and the gateway's validated unique counts, preventing a
+plausible final answer from hiding a missing verification step.

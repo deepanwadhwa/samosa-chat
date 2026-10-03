@@ -64,7 +64,10 @@ scope was misclassified, despite selecting the safe content fallback.
 
 Memory decision subprocesses have a local 120-second budget and are owned by
 the Stop control. The cancellation regression exercises the actual invocation,
-child termination and removal of the temporary request. Final generation uses
+child termination and removal of the temporary request. The quoted association
+judgement has a separate 300-second budget: a real Qwen 20-file batch took
+246.550 seconds and exceeded its earlier 180-second allowance. This does not
+change the document review limits. Final generation uses
 the existing document-turn timeout. Raw `<think>` blocks are filtered across
 stream chunk boundaries before rendering or voice playback, including older
 stored responses. Folder turns also request reasoning disabled from the backend.
