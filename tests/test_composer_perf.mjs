@@ -314,13 +314,13 @@ function timeRender(fns, els, messages) {
   assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"), "it should appear escaped instead");
   globalThis.profileName = "Deepan";
   const personalized = fns.welcomeHTML();
-  assert.ok(personalized.includes("Welcome, Deepan"), "a normal name personalizes the heading");
+  assert.ok(personalized.includes("<h1>Hi, Deepan.</h1>"), "a normal name personalizes the heading");
   assert.ok(!personalized.includes(globalThis.backend.label),
     "the welcome copy must not bake the active model into its prose");
-  assert.ok(personalized.includes("Your conversations are stored on this computer."),
-    "the local-storage promise should remain clear without naming a model");
+  assert.ok(personalized.includes("Ask a question, work with your files, or make a plan."),
+    "the welcome copy should explain the available starting actions without naming a model");
   globalThis.profileName = "";
-  assert.ok(fns.welcomeHTML().includes("Your model. Your machine."), "no name falls back to the generic heading");
+  assert.ok(fns.welcomeHTML().includes("<h1>What can I help with?</h1>"), "no name falls back to the generic heading");
 }
 
 console.log("test_composer_perf.mjs: PASS");
