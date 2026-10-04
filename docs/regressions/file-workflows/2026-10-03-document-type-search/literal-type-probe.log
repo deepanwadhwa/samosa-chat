@@ -1,0 +1,11 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 8281.37it/s]
+{"path": "opaque-form.pdf", "method": "literal", "scores": {"plausible": 0.9794832468032837, "unrelated": 0.02051674574613571}}
+{"path": "opaque-form.pdf", "method": "labelled", "scores": {"plausible": 0.8782098293304443, "unrelated": 0.12179016321897507}}
+{"path": "instructions.pdf", "method": "literal", "scores": {"plausible": 0.6482437252998352, "unrelated": 0.3517562747001648}}
+{"path": "instructions.pdf", "method": "labelled", "scores": {"plausible": 0.5489153265953064, "unrelated": 0.4510846734046936}}
+{"path": "receipt.pdf", "method": "literal", "scores": {"plausible": 0.8773980736732483, "unrelated": 0.12260198593139648}}
+{"path": "receipt.pdf", "method": "labelled", "scores": {"plausible": 0.8457514047622681, "unrelated": 0.15424856543540955}}

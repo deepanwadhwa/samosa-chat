@@ -750,7 +750,7 @@
     .job-progress:not([open]) .job-activity { display: none; }
     .job-progress[hidden], .job-result[hidden] { display: none; }
     .job-section-label { margin-bottom: 7px; color: var(--ink-2); font-size: 12px; font-weight: 600; }
-    .job-activity { display: grid; border-top: 1px solid var(--line); max-height: 390px; overflow: auto; }
+    .job-activity { display: grid; border-top: 1px solid var(--line); }
     .job-line { display: flex; align-items: flex-start; gap: 9px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.4; animation: jobin .16s ease-out; }
     @keyframes jobin { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
     .job-line .dot { flex: none; width: 15px; text-align: center; color: var(--ink-2); }
@@ -772,16 +772,28 @@
     .job-decision-tools input, .job-decision-tools select { min-height: 36px; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 6px 9px; font: inherit; }
     .job-decision-tools input { flex: 1 1 200px; min-width: 0; }
     .job-decision-tools button { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 6px 9px; cursor: pointer; font: inherit; }
-    .job-decision-list { max-height: 390px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
-    .job-decision-row { display: flex; gap: 9px; padding: 9px 10px; border-bottom: 1px solid var(--line); }
-    .job-decision-row:last-child { border-bottom: 0; }
-    .job-decision-row input[type="checkbox"] { flex: none; margin-top: 5px; }
-    .job-decision-row-content { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+    .job-progress-stage, .job-progress-count { margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
+    .job-progress-count { color: var(--ink-2); }
+    .job-table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+    .job-file-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; white-space: normal; }
+    .job-file-table th { position: sticky; top: 0; background: var(--inset); text-align: left; font-weight: 600; z-index: 1; }
+    .job-file-table th, .job-file-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    .job-file-table th:first-child { width: 64px; }
+    .job-file-table th:nth-last-child(2) { width: 125px; }
+    .job-file-table th:last-child { width: 108px; }
+    .job-progress-table th:first-child { width: auto; }
+    .job-file-table td input[type="checkbox"] { margin: 2px 0; }
     .job-decision-row-content strong { display: block; font-size: 13px; }
-    .job-decision-row-content small { display: block; color: var(--ink-2); }
-    .job-decision-preview { margin: 5px 0; font-size: 13px; line-height: 1.45; }
     .job-decision-row-content details { margin-top: 4px; font-size: 12px; }
-    .job-decision-row-content details summary { cursor: pointer; }
+    .job-decision-row-content summary { cursor: pointer; color: var(--ink-2); }
+    .job-decision-preview { margin: 8px 0; font-size: 13px; line-height: 1.45; }
+    @media (max-width: 600px) {
+      .job-file-table th, .job-file-table td { padding: 7px 5px; font-size: 12px; }
+      .job-file-table th:first-child { width: 48px; }
+      .job-file-table th:nth-last-child(2) { width: 82px; }
+      .job-file-table th:last-child { width: 70px; }
+      .job-progress-table th:first-child { width: auto; }
+    }
     .job-followup { margin-top: 15px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .job-followup[hidden] { display: none; }
     .job-followup label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
@@ -1804,7 +1816,7 @@
           </div>
           <label for="jobFollowupInput">Refine this search</label>
           <div class="job-followup-row">
-            <input id="jobFollowupInput" placeholder="Find vaccination records within these matches">
+            <input id="jobFollowupInput" placeholder="Add a condition or ask to read more">
             <button class="job-run" id="jobFollowupRun" type="button">Continue</button>
             <button class="chutni-secondary" id="jobCheckSelected" type="button" hidden>Read a longer preview</button>
           </div>
@@ -8529,48 +8541,59 @@
       }
 
       const decisionLiveRows = new Map(), decisionProgressSeen = new Map();
+      function decisionProgressTable() {
+        let table = jobEls.activity.querySelector(".job-progress-table");
+        if (table) return table;
+        jobEls.progress.hidden = false; jobEls.progress.open = true;
+        const stage = document.createElement("p"); stage.className = "job-progress-stage"; stage.setAttribute("role", "status");
+        const count = document.createElement("p"); count.className = "job-progress-count";
+        const wrap = document.createElement("div"); wrap.className = "job-table-scroll";
+        table = document.createElement("table"); table.className = "job-file-table job-progress-table";
+        table.setAttribute("aria-label", "File search progress");
+        const head = document.createElement("thead"), header = document.createElement("tr");
+        for (const label of ["File", "Status", "Preview read"]) {
+          const cell = document.createElement("th"); cell.scope = "col"; cell.textContent = label; header.appendChild(cell);
+        }
+        head.appendChild(header); table.append(head, document.createElement("tbody")); wrap.appendChild(table);
+        jobEls.activity.append(stage, count, wrap); return table;
+      }
       function renderDecisionProgress(evt) {
         const type = String(evt?.type || "");
-        if (type === "decision_stage") {
-          jobLine("·", evt.message || "Working", "");
-          return;
+        const table = decisionProgressTable();
+        const stage = jobEls.activity.querySelector(".job-progress-stage");
+        if (type === "search_intent") { stage.textContent = `Looking for: ${evt.target}`; return; }
+        if (type === "decision_stage" || type === "decision_error") {
+          stage.textContent = evt.message || "Working";
+          stage.classList.toggle("step-error", type === "decision_error"); return;
         }
         if (type === "action_decision") {
-          const actionName = { refine: "Filter the shortlist", deepen: "Read longer previews", continue: "Check the remaining files", show_all: "Show all checked files" }[evt.action] || evt.action;
-          jobLine("✓", actionName, "step-done");
-          return;
+          stage.textContent = { refine: "Filtering checked files", deepen: "Reading longer previews", continue: "Checking remaining files", show_all: "Showing checked files" }[evt.action] || evt.action; return;
         }
-        if (type === "decision_error") {
-          jobLine("!", evt.message || "The decision stopped", "step-error");
-          return;
+        if (type.startsWith("folder_")) {
+          stage.textContent = type === "folder_checking" ? `Checking subfolder: ${evt.path}` : `Subfolder ${evt.path}: ${evt.search ? "included" : "excluded"}`; return;
         }
-        const folder = type.startsWith("folder_");
-        const file = type.startsWith("file_");
-        if (!folder && !file) return;
-        const key = `${folder ? "folder" : "file"}:${evt.path}`;
-        let line = decisionLiveRows.get(key);
-        if (!line) {
-          line = jobLine("·", `Checking ${folder ? "folder" : "file"}: ${evt.path}`, "");
-          decisionLiveRows.set(key, line);
+        if (!type.startsWith("file_") || typeof evt.path !== "string") return;
+        let row = decisionLiveRows.get(evt.path);
+        if (!row) {
+          row = document.createElement("tr"); row.dataset.decision = type === "file_pending" ? "pending" : "checking";
+          for (const value of [evt.path, type === "file_pending" ? "Pending" : "Checking", "—"]) {
+            const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
+          }
+          table.children[1].appendChild(row); decisionLiveRows.set(evt.path, row);
         }
-        if (type === "folder_checking" || type === "file_checking") return;
-        const title = line.querySelector(".title");
-        const dot = line.querySelector(".dot");
-        if (type === "folder_decision") {
-          const action = evt.search ? "checking files inside" : "excluded — skipped";
-          title.textContent = `Folder: ${evt.path} — ${action}`;
-          dot.textContent = evt.search ? "✓" : "×";
-          const reason = evt.reason === "application_bundle" ? "Application bundle excluded" : evt.reason === "generated_tree" ? "Generated or hidden folder excluded" : evt.reason === "model_skipped" ? "Earlier search skipped this folder; rerun to check its files" : evt.reason === "inventory_policy" ? "Included by source policy" : "Earlier search included this folder";
-          addSub(line, reason);
-          return;
+        if (type === "file_reading" || type === "file_checking") {
+          row.dataset.decision = "checking"; row.children[1].textContent = evt.message || "Checking";
+        } else if (type === "file_decision") {
+          row.dataset.decision = evt.decision;
+          row.children[1].textContent = evt.decision === "match" ? "Likely match" : evt.decision === "needs_check" ? "Needs review" : "No match in preview";
+          row.children[2].textContent = `${Number(evt.excerpt_chars_actual) || 0} characters`;
         }
-        if (type === "file_decision") {
-          const label = evt.decision === "possible" ? "possible match" : evt.decision === "needs_check" ? "needs review" : "less likely";
-          title.textContent = `File: ${evt.path} — ${label}`;
-          dot.textContent = evt.decision === "possible" ? "✓" : evt.decision === "needs_check" ? "?" : "×";
-          const read = `${Number(evt.excerpt_chars_actual) || 0} preview characters read`;
-          addSub(line, evt.decision === "needs_check" ? "No readable preview; check this file before using it." : read);
-        }
+        const rows = [...decisionLiveRows.values()];
+        const matches = rows.filter(row => row.dataset.decision === "match").length;
+        const reviews = rows.filter(row => row.dataset.decision === "needs_check").length;
+        const checking = rows.filter(row => row.dataset.decision === "checking").length;
+        const pending = rows.filter(row => row.dataset.decision === "pending").length;
+        jobEls.activity.querySelector(".job-progress-count").textContent = `${rows.length - checking - pending} checked of ${rows.length} listed · ${matches} likely matches · ${reviews} need review · ${pending} pending · ${checking} checking`;
       }
       async function trackDecisionProgress(jobId, requestPromise) {
         let seen = decisionProgressSeen.get(jobId) || 0, polling = false;
@@ -8658,7 +8681,7 @@
         jobEls.selectionStatus.textContent = `${decisionSelectedPaths.size} selected · saved`;
         if (result.goal) jobEls.goal.value = result.goal;
         if (result.folder) jobEls.folder.value = result.folder;
-        if (result.schema_version !== 5) {
+        if (result.schema_version !== 7) {
           lastJobId = null;
           jobEls.resultLabel.textContent = "Old result";
           jobEls.result.classList.remove("error");
@@ -8671,16 +8694,19 @@
         const checked = Number(result.checked_files) || 0;
         const skippedFolders = Number(result.skipped_folders) || 0;
         if (result.folder_decisions?.length) jobLine("✓", `Considered ${result.folder_decisions.length} folders; skipped ${skippedFolders}`, "step-done");
-        jobLine("✓", `Checked ${checked} file${checked === 1 ? "" : "s"} using names and short excerpts`, "step-done");
+        jobLine("✓", `Checked ${checked} file${checked === 1 ? "" : "s"} against the interpreted search`, "step-done");
         jobEls.progress.open = false;
-        jobEls.resultLabel.textContent = "Shortlist";
+        jobEls.resultLabel.textContent = "Search results";
         jobEls.result.classList.remove("error");
         jobEls.resultText.replaceChildren();
         const intro = document.createElement("p");
         intro.textContent = result.folders_pending
-          ? `${checked} direct files checked. Subfolders are still pending. Matches use filenames and short previews; review the selection before asking or organizing.`
-          : `${checked} of ${result.total_files} candidate files checked. Matches use filenames and short previews; review the selection before asking or organizing.`;
+          ? `${checked} direct files checked. Subfolders are still pending. Classification uses bounded previews; a missing match does not rule out content beyond those previews.`
+          : `${checked} of ${result.total_files} candidate files checked. Classification uses bounded previews; a missing match does not rule out content beyond those previews.`;
         jobEls.resultText.appendChild(intro);
+        if (result.search_intent?.target) {
+          const target = document.createElement("p"); target.textContent = `Looking for: ${result.search_intent.target}`; intro.appendChild(target);
+        }
         if (data.folder_memory) {
           const memory = data.folder_memory;
           const scope = memory.scope;
@@ -8700,19 +8726,21 @@
         const items = Array.isArray(result.items) ? result.items : [];
         const currentPaths = new Set(items.map(item => item.path));
         for (const path of decisionSelectedPaths) if (!currentPaths.has(path)) decisionSelectedPaths.delete(path);
-        const likelyCount = items.filter(item => !item.needs_check && Number(item.score) >= 0.5).length;
+        const likelyCount = items.filter(item => item.decision === "match").length;
+        const reviewCount = items.filter(item => item.needs_check).length;
         const panel = document.createElement("details"); panel.className = "job-decision-results"; panel.open = true;
         const heading = document.createElement("summary");
-        heading.textContent = `Files · ${likelyCount} possible · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
+        heading.textContent = `Files · ${likelyCount} likely matches · ${reviewCount} need review · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
         panel.appendChild(heading);
         const tools = document.createElement("div"); tools.className = "job-decision-tools";
         const search = document.createElement("input"); search.type = "search"; search.placeholder = "Search filenames or excerpts"; search.setAttribute("aria-label", "Search checked files");
         const filter = document.createElement("select"); filter.setAttribute("aria-label", "Filter files");
-        for (const [value, label] of [["all", "All checked files"], ["likely", "Possible matches"], ["needs_check", "Needs more evidence"], ["rejected", "Less likely"], ["selected", "Selected files"]]) {
+        for (const [value, label] of [["all", "All checked files"], ["likely", "Likely matches"], ["needs_check", "Needs more evidence"], ["rejected", "No match in preview"], ["selected", "Selected files"]]) {
           const option = document.createElement("option"); option.value = value; option.textContent = label; filter.appendChild(option);
         }
         if (result.selected_action === "show_all") filter.value = "all";
         else if (decisionSelectedPaths.size) filter.value = "selected";
+        else filter.value = "all";
         const sort = document.createElement("select"); sort.setAttribute("aria-label", "Sort files");
         for (const [value, label] of [["score_desc", "Best matches first"], ["name_asc", "Name: A to Z"]]) {
           const option = document.createElement("option"); option.value = value; option.textContent = label; sort.appendChild(option);
@@ -8721,9 +8749,16 @@
         const clearSelected = document.createElement("button"); clearSelected.type = "button"; clearSelected.textContent = "Clear selection";
         tools.append(search, filter, sort, selectVisible, clearSelected); panel.appendChild(tools);
         const count = document.createElement("small"); panel.appendChild(count);
-        const list = document.createElement("div"); list.className = "job-decision-list"; panel.appendChild(list);
+        const wrap = document.createElement("div"); wrap.className = "job-table-scroll";
+        const table = document.createElement("table"); table.className = "job-file-table"; table.setAttribute("aria-label", "Checked files");
+        const head = document.createElement("thead"), header = document.createElement("tr");
+        for (const label of ["Select", "File and evidence", "Status", "Preview read"]) {
+          const cell = document.createElement("th"); cell.scope = "col"; cell.textContent = label; header.appendChild(cell);
+        }
+        const list = document.createElement("tbody"); list.className = "job-decision-list";
+        head.appendChild(header); table.append(head, list); wrap.appendChild(table); panel.appendChild(wrap);
         const updateSelection = () => {
-          heading.textContent = `Files · ${likelyCount} possible · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
+          heading.textContent = `Files · ${likelyCount} likely matches · ${reviewCount} need review · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
           jobEls.checkSelected.hidden = decisionSelectedPaths.size === 0;
           jobEls.checkSelected.textContent = `Read longer previews of ${decisionSelectedPaths.size} selected`;
         };
@@ -8731,7 +8766,7 @@
         const renderRows = () => {
           const term = search.value.trim().toLocaleLowerCase();
           visible = items.filter(item => {
-            const category = item.needs_check ? "needs_check" : Number(item.score) >= 0.5 ? "likely" : "rejected";
+            const category = item.needs_check ? "needs_check" : item.decision === "match" ? "likely" : "rejected";
             const matches = !term || `${item.path} ${item.excerpt || ""}`.toLocaleLowerCase().includes(term);
             return matches && (filter.value === "all" || filter.value === category || (filter.value === "selected" && decisionSelectedPaths.has(item.path)));
           });
@@ -8740,12 +8775,12 @@
           count.textContent = `Showing ${visible.length} of ${items.length} checked files. Select up to 50 for a follow-up.`;
           list.replaceChildren();
           if (!visible.length) {
-            const empty = document.createElement("p"); empty.style.padding = "10px";
-            empty.textContent = filter.value === "likely" ? "No possible matches in the files checked so far. Choose ‘All checked files’ to inspect every decision." : "No files match these filters.";
-            list.appendChild(empty);
+            const emptyRow = document.createElement("tr"), empty = document.createElement("td"); empty.colSpan = 4;
+            empty.textContent = filter.value === "likely" ? "No likely matches in the previews checked so far. Choose ‘All checked files’ to inspect every decision." : "No files match these filters.";
+            emptyRow.appendChild(empty); list.appendChild(emptyRow);
           }
           for (const item of visible) {
-            const row = document.createElement("div"); row.className = "job-decision-row";
+            const row = document.createElement("tr"); row.className = "job-decision-row";
             const box = document.createElement("input"); box.type = "checkbox"; box.checked = decisionSelectedPaths.has(item.path); box.setAttribute("aria-label", `Select ${item.path}`);
             box.onchange = () => {
               if (box.checked && decisionSelectedPaths.size >= 50) { box.checked = false; count.textContent = "Select up to 50 files for a follow-up."; return; }
@@ -8757,31 +8792,27 @@
                 renderRows();
                 if (hadFocus) {
                   const next = list.children[Math.min(index, visible.length - 1)];
-                  (visible.length ? next.children[0] : filter).focus();
+                  (visible.length ? next.children[0].children[0] : filter).focus();
                 }
               }
             };
-            const content = document.createElement("div"); content.className = "job-decision-row-content";
-            const name = document.createElement("strong"); name.textContent = item.path;
-            const status = document.createElement("small");
-            const chosen = item.model_choice || (Number(item.score) >= 0.5 ? "plausible" : "unrelated");
-            status.textContent = item.source === "changed_source"
-              ? "File changed since this search · run a new search before using it"
-              : item.source === "unreadable"
-              ? "File unavailable · it may have moved or access may be blocked"
-              : item.needs_check
-              ? "Needs review · filename only; no readable preview"
-              : `${chosen === "plausible" ? "Possible match" : "Less likely"} · ${item.excerpt?.length || 0} preview characters read`;
-            content.append(name, status);
-            if (item.excerpt) {
-              const preview = document.createElement("p"); preview.className = "job-decision-preview";
-              preview.textContent = item.excerpt; content.appendChild(preview);
-            }
-            const detail = document.createElement("details"); const summary = document.createElement("summary"); summary.textContent = "Match details";
-            const text = document.createElement("pre"); text.style.whiteSpace = "pre-wrap"; text.style.overflowWrap = "anywhere";
-            text.textContent = `STATE:\n${item.model_state || "Unavailable for this saved job"}\n\nCHOICES:\nplausible: ${item.model_criteria?.plausible || "Unavailable"}\nunrelated: ${item.model_criteria?.unrelated || "Unavailable"}\n\nScores: plausible ${Math.round(Number(item.model_scores?.plausible || 0) * 100)}%, unrelated ${Math.round(Number(item.model_scores?.unrelated || 0) * 100)}%`;
-            detail.append(summary, text); content.appendChild(detail);
-            row.append(box, content); list.appendChild(row);
+            const selectCell = document.createElement("td"); selectCell.appendChild(box);
+            const content = document.createElement("td"); content.className = "job-decision-row-content";
+            const name = document.createElement("strong"); name.textContent = item.path; content.appendChild(name);
+            const status = document.createElement("td");
+            status.textContent = item.source === "changed_source" ? "File changed; rerun" : item.source === "unreadable" ? "Unavailable"
+              : item.needs_check ? "Needs review" : item.decision === "match" ? "Likely match" : "No match in preview";
+            const read = document.createElement("td"); read.textContent = `${item.excerpt?.length || 0} characters`;
+            const detail = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "View evidence";
+            const preview = document.createElement("p"); preview.className = "job-decision-preview";
+            preview.textContent = item.excerpt || "No readable preview. This file cannot be confirmed as a match.";
+            const rationale = document.createElement("p"); rationale.textContent = item.reason === "different_document_identifier" ? "The form identifier differs from the requested one."
+              : item.reason === "identifier_and_role" ? "The document identifier and document type match the request; any extra conditions were checked separately."
+              : item.reason === "literal_evidence_judgement" ? "An additional check supported the requested document type using this preview."
+              : item.reason === "ambiguous_preview" ? "The preview did not support a clear decision. Read more evidence or inspect the file."
+              : "Classification uses the evidence shown here. This preview does not cover the complete document.";
+            detail.append(summary, preview, rationale); content.appendChild(detail);
+            row.append(selectCell, content, status, read); list.appendChild(row);
           }
           updateSelection();
         };
@@ -8792,7 +8823,7 @@
         renderRows(); jobEls.resultText.appendChild(panel);
         if (result.needs_check_count) {
           const note = document.createElement("p");
-          note.textContent = `${result.needs_check_count} file${result.needs_check_count === 1 ? "" : "s"} had no readable excerpt. They were scored using filenames only and kept for review.`;
+          note.textContent = `${result.needs_check_count} file${result.needs_check_count === 1 ? "" : "s"} need more evidence or a clearer decision. They remain visible for review.`;
           jobEls.resultText.appendChild(note);
         }
         if (result.remaining_files || result.folders_pending || result.partial) {
@@ -9059,7 +9090,7 @@
         if (!chooser.entries.length) {
           const empty = document.createElement("div");
           empty.className = "chooser-empty"; empty.textContent = "No subfolders here.";
-          chooserEls.list.appendChild(empty);
+          chooserEls.emptyRow.appendChild(empty); list.appendChild(emptyRow);
           chooserEls.list.removeAttribute("aria-activedescendant");
           return;
         }

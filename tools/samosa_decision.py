@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -211,8 +212,8 @@ def memory_plan(model, request: dict) -> dict:
             "action_scores": scores, "sources": selections,
             "membership_kind": membership_kind,
             "model": MODEL_NAME, "revision": MODEL_REVISION}
-SHORT_CHARS = 100
-DEEP_CHARS = 400
+SHORT_CHARS = 1200
+DEEP_CHARS = 3200
 BATCH_FILES = 250
 MAX_EXTRACT_BYTES = 64 * 1024 * 1024
 MAX_INVENTORY_FILES = 10000
@@ -578,32 +579,205 @@ def excerpt(root_fd: int, row: dict, extract: str, ocr: str,
         os.close(descriptor)
 
 
-def score(model, goal: str, items: list[dict]) -> None:
+def search_intent(request: dict) -> dict:
+    intent = request.get("search_intent")
+    if (not isinstance(intent, dict) or intent.get("kind") not in ("document_type", "topic", "name")
+            or not isinstance(intent.get("subject"), str) or not 2 <= len(intent["subject"]) <= 256
+            or not isinstance(intent.get("target"), str) or not 2 <= len(intent["target"]) <= 768):
+        raise DecisionError("A validated search interpretation is required. Run the request again.")
+    constraints = intent.get("constraints")
+    if (not isinstance(constraints, list) or len(constraints) > 4 or
+            any(not isinstance(text, str) or not 2 <= len(text) <= 160 for text in constraints)):
+        raise DecisionError("Validated search conditions are required. Run the request again.")
+    result = {key: intent[key] for key in ("subject", "kind", "target", "constraints")}
+    if "requested_role" in intent:
+        if intent["requested_role"] not in (*DOCUMENT_ROLES, "any"):
+            raise DecisionError("Invalid requested document role.")
+        result["requested_role"] = intent["requested_role"]
+    if "document_role" in intent:
+        result["document_role"] = checked_choice(intent["document_role"], DOCUMENT_ROLES)
+    return result
+
+
+# A general document-role hierarchy separates forms from instructions/notices.
+# Topic and identity searches intentionally span roles; type searches do not.
+DOCUMENT_IDENTIFIER = re.compile(r"(?<!\w)[A-Za-z]{1,5}[- ]?\d{1,6}[A-Za-z0-9]*(?!\w)")
+FORM_IDENTIFIER = re.compile(r"\bform\s+([A-Za-z]{1,5}[- ]?\d{1,6}[A-Za-z0-9]*)(?!\w)", re.I)
+
+
+def identifier_decision(intent: dict, text: str) -> str | None:
+    expected = {re.sub(r"[^a-z0-9]", "", match.group().lower()) for match in DOCUMENT_IDENTIFIER.finditer(intent["subject"])}
+    if not expected:
+        return None
+    if (intent.get("document_role") or {}).get("choice") != "form":
+        observed = {re.sub(r"[^a-z0-9]", "", match.group().lower()) for match in DOCUMENT_IDENTIFIER.finditer(text)}
+        return "supported" if observed & expected else "identifier_not_readable"
+    actual = FORM_IDENTIFIER.search(text)
+    if actual:
+        identity = re.sub(r"[^a-z0-9]", "", actual.group(1).lower())
+        return "supported" if identity in expected else "different_identifier"
+    return "identifier_not_readable"
+
+
+DOCUMENT_ROLES = {
+    "form": "This is an application form or a blank or completed form with fields to fill in.",
+    "instructions": "This is an instruction guide explaining how to fill in or submit a form.",
+    "notice": "This is a notice, confirmation or receipt reporting the status of an application.",
+    "other": "This is a narrative document such as a report, research paper, essay, letter or meeting notes.",
+}
+
+
+def checked_choice(answer: dict, criteria: dict) -> dict:
+    try:
+        scores = {key: float(answer["probabilities"][key]) for key in criteria}
+        valid = (answer["choice"] in criteria and all(math.isfinite(value) and 0 <= value <= 1 for value in scores.values()))
+    except (KeyError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise DecisionError("The decision model returned invalid file scores.")
+    return {"choice": answer["choice"], "probabilities": scores}
+
+
+def interpret_document_role(model, intent: dict) -> dict:
+    if intent["kind"] == "document_type" and "document_role" not in intent:
+        intent["document_role"] = checked_choice(model.choice_fast(state=intent["target"],
+            instructions="What kind of document is requested?", criteria=DOCUMENT_ROLES), DOCUMENT_ROLES)
+    if intent["kind"] == "document_type" and intent.get("requested_role") in DOCUMENT_ROLES:
+        # The validated query interpretation chooses the requested scope; the
+        # NLI role probabilities remain diagnostics, never invented confidence.
+        intent["document_role"]["choice"] = intent["requested_role"]
+    return intent
+
+
+def covered_type_variants(model, intent: dict) -> dict[str, dict]:
+    """Recognize an inclusive union already covered by the chosen type.
+
+    Both literal grounding in the fixed role definition and independent NLI
+    entailment are required. This cannot erase a new name, date, signature or
+    approval requirement, and does not recognize any form number or question.
+    """
+    expected = intent.get("document_role")
+    if intent["kind"] != "document_type" or not expected:
+        return {}
+    definition = DOCUMENT_ROLES[expected["choice"]]
+    words = set(re.findall(r"\w+", definition.casefold()))
+    covered = {}
+    for requirement in intent["constraints"]:
+        terms = set(re.findall(r"\w+", requirement.casefold()))
+        if "or" not in terms or not terms <= words:
+            continue
+        answer = checked_choice(model.choice_fast(state=definition,
+            instructions="Does this definition already cover the requested alternatives?",
+            criteria={"covered": f"This document is {requirement}.",
+                      "additional": f"This requirement is not established: {requirement}."}),
+            {"covered": "", "additional": ""})
+        if answer["choice"] == "covered" and answer["probabilities"]["covered"] >= .9:
+            covered[requirement] = answer
+    return covered
+
+
+def preview_windows(model, text: str) -> list[str]:
+    classifier = vars(model).get("classifier")
+    tokenizer = getattr(classifier, "tokenizer", None) if classifier is not None else None
+    windows, offset = [], 0
+    while offset < max(1, len(text)):
+        width = min(1000, max(1, len(text) - offset))
+        if tokenizer is not None:
+            while width > 1 and len(tokenizer.encode(text[offset:offset + width], add_special_tokens=False)) > 256:
+                width = max(1, width // 2)
+        windows.append(text[offset:offset + width])
+        if offset + width >= len(text):
+            break
+        offset += width - min(160, width // 5)
+    return windows
+
+
+def score(model, intent: dict, items: list[dict]) -> None:
+    intent = interpret_document_role(model, search_intent({"search_intent": intent}))
+    target = intent["target"].strip().rstrip(".")
+    variants = covered_type_variants(model, intent)
+    criteria = {"plausible": f"This document is {target}.",
+                "unrelated": f"This document is not {target}."}
     for item in items:
         progress({"type": "file_checking", "path": item["path"]})
-        state = (f"User request: {goal}\n"
-                 f"File name: {item['path']}\n"
-                 f"Preview: {item['excerpt']}")
-        answer = model.choice(
-            state=state,
-            instructions="Is this file worth inspecting next?",
-            criteria=FILE_CRITERIA,
-        )
-        value = float(answer["probabilities"]["plausible"])
+        # Bound source tokens independently from the dynamic hypotheses.
+        # Inspect overlapping windows rather than silently losing later text.
+        text = item["excerpt"]
+        windows = preview_windows(model, text)
+        answers = []
+        for window in windows:
+            state = window if intent["kind"] == "document_type" and window.strip() else f"File name: {item['path'][:128]}\nPreview: {window}"
+            answer = model.choice_fast(state=state, instructions="Classify the document itself.", criteria=criteria)
+            answer = checked_choice(answer, criteria)
+            value = answer["probabilities"]["plausible"]
+            role = None
+            identity = None
+            if intent["kind"] == "document_type" and window.strip():
+                # The primary identifier belongs to the document, not each
+                # window. Later references cannot replace a different header ID.
+                identity = identifier_decision(intent, text)
+            if intent["kind"] == "document_type" and (value > 0.2 or identity == "supported") and window.strip():
+                expected = intent["document_role"]
+                role = checked_choice(model.choice_fast(state=window,
+                    instructions="What kind of document is this?", criteria=DOCUMENT_ROLES), DOCUMENT_ROLES)
+                explicit_role = intent.get("requested_role") == expected["choice"]
+                expected_score = expected["probabilities"][expected["choice"]]
+                actual_score = role["probabilities"][role["choice"]]
+                if (not explicit_role and expected_score < 0.5) or actual_score < 0.6:
+                    value = min(value, 0.5)  # unresolved role stays in review
+                elif role["choice"] != expected["choice"]:
+                    value = min(value, 0.19)  # a mention is not the requested type
+                if identity == "different_identifier":
+                    value = min(value, 0.19)
+                elif identity == "identifier_not_readable":
+                    value = min(value, 0.5)
+            supported_type = (identity == "supported" and role is not None and
+                role["choice"] == intent["document_role"]["choice"] and
+                role["probabilities"][role["choice"]] >= .6 and
+                (intent.get("requested_role") == intent["document_role"]["choice"] or
+                 intent["document_role"]["probabilities"][intent["document_role"]["choice"]] >= .5))
+            conditions = []
+            for constraint in intent["constraints"]:
+                if constraint in variants:
+                    continue
+                condition = checked_choice(model.choice_fast(state=state,
+                    instructions="Does the source satisfy this additional requirement?",
+                    criteria={"plausible": f"This document satisfies the requirement: {constraint}.",
+                              "unrelated": f"This document does not satisfy the requirement: {constraint}."}), criteria)
+                conditions.append({"requirement": constraint, **condition})
+            if conditions:
+                condition_score = min(check["probabilities"]["plausible"] for check in conditions)
+                if supported_type:
+                    value = condition_score
+                supported_type = supported_type and condition_score >= .8
+                if condition_score < .8:
+                    value = min(value, condition_score)
+            answers.append((value, state, answer, role, identity, supported_type, conditions))
+        value, state, answer, role, identity, typed_support, conditions = max(answers, key=lambda row: (row[5], row[0]))
+        item["search_intent"] = intent
+        item["type_variant_evidence"] = variants
+        item["condition_evidence"] = conditions
+        item["identifier_evidence"] = identity
+        item["document_role"] = role
         item["model_state"] = state
-        item["model_instructions"] = "Is this file worth inspecting next?"
-        item["model_criteria"] = FILE_CRITERIA
+        item["model_instructions"] = "Classify the document itself."
+        item["model_criteria"] = criteria
         item["model_choice"] = answer["choice"]
         item["model_scores"] = answer["probabilities"]
-        item["needs_check"] = item["source"] in ("name_only", "unreadable", "changed_source")
+        missing = item["source"] in ("name_only", "unreadable", "changed_source") or not text.strip()
+        # Exact identifier evidence plus agreement on document role provides
+        # independent support. NLI probabilities alone are not calibrated
+        # probabilities of correctness; a strong literal ID must still be the
+        # requested type, and a merely similar ID cannot pass this gate.
+        item["needs_check"] = missing or (0.2 < value < 0.8 and not typed_support)
+        item["decision"] = "needs_check" if item["needs_check"] else "match" if value >= 0.8 or typed_support else "rejected"
         item["score"] = value
-        item["reason"] = "no_readable_excerpt" if item["needs_check"] else "model_choice"
+        item["reason"] = "no_readable_excerpt" if missing else "ambiguous_preview" if item["needs_check"] else "different_document_identifier" if identity == "different_identifier" else "identifier_and_role" if typed_support else "model_choice"
         progress({"type": "file_decision", "path": item["path"],
                   "score": item["score"], "model_score": value,
                   "model_choice": answer["choice"],
                   "choice_score": answer["probabilities"][answer["choice"]],
-                  "decision": "needs_check" if item["needs_check"] else
-                              ("possible" if answer["choice"] == "plausible" else "rejected"),
+                  "decision": item["decision"],
                   "reason": item["reason"], "source": item["source"],
                   "excerpt_chars_actual": len(item["excerpt"])})
 
@@ -615,9 +789,9 @@ def sorted_items(items: list[dict]) -> list[dict]:
 def result(goal: str, folder: str, items: list[dict], count: int,
            next_offset: int, done: dict, steps: list[dict]) -> dict:
     ranked = sorted_items(items)
-    shortlist_count = min(30, sum(item["score"] >= 0.5 for item in ranked))
+    shortlist_count = sum(item.get("decision") == "match" for item in ranked)
     return {
-        "ok": True, "schema_version": 5, "goal": goal, "folder": folder,
+        "ok": True, "schema_version": 7, "goal": goal, "folder": folder,
         "items": ranked, "shortlist_count": shortlist_count,
         "total_files": count, "checked_files": len(items),
         "next_offset": next_offset, "remaining_files": max(0, count - next_offset),
@@ -638,6 +812,8 @@ def start(model, request: dict, fs: str, extract: str, ocr: str,
     goal = request.get("goal") or (previous or {}).get("goal")
     if not isinstance(folder, str) or not folder or not isinstance(goal, str) or not goal:
         raise DecisionError("A folder and a natural-language request are required.")
+    intent = interpret_document_role(model, search_intent(request))
+    progress({"type": "search_intent", **intent})
     root = os.path.realpath(folder)
     if not os.path.isdir(root):
         raise DecisionError("The selected folder cannot be opened by Samosa.")
@@ -651,13 +827,20 @@ def start(model, request: dict, fs: str, extract: str, ocr: str,
     added = []
     def check_rows(batch: list[dict]) -> None:
         for row in batch:
+            progress({"type": "file_pending", "path": row["rel_path"]})
+        for row in batch:
             progress({"type": "file_checking", "path": row["rel_path"]})
             text, source = excerpt(root_fd, row, extract, ocr, SHORT_CHARS)
             item = {"path": row["rel_path"], "excerpt": text, "source": source,
                     "excerpt_chars": SHORT_CHARS,
                     "dev": row["dev"], "ino": row["ino"], "size": row["size"],
                     **({"mtime_ns": row["mtime_ns"]} if "mtime_ns" in row else {})}
-            score(model, goal, [item])
+            score(model, intent, [item])
+            if item["needs_check"] and source not in ("name_only", "unreadable", "changed_source") and len(text) == SHORT_CHARS:
+                progress({"type": "file_reading", "path": item["path"], "message": "Reading more evidence"})
+                item["excerpt"], item["source"] = excerpt(root_fd, row, extract, ocr, DEEP_CHARS)
+                item["excerpt_chars"] = DEEP_CHARS
+                score(model, intent, [item])
             added.append(item)
             processed_paths.add(row["rel_path"])
     try:
@@ -674,17 +857,17 @@ def start(model, request: dict, fs: str, extract: str, ocr: str,
         {"action": "decide_folders", "folders": len(done["folder_decisions"]),
          "skipped": done["skipped_folders"]},
         {"action": "inventory", "files": len(rows), "partial": bool(done.get("partial"))},
-        {"action": "read_100_characters", "files": len(added)},
+        {"action": "read_previews", "characters_per_file": SHORT_CHARS, "files": len(added)},
         {"action": "score_matches", "files": len(added)},
         {"action": "show_shortlist", "files": len(prior_items) + len(added)},
     ]
-    return result(goal, root, prior_items + added, len(rows), len(processed_paths),
-                  done, steps)
+    response = result(goal, root, prior_items + added, len(rows), len(processed_paths), done, steps)
+    response["search_intent"] = intent
+    return response
 
 
-def next_action(model, request: dict, previous: dict, fs: str, extract: str,
-                ocr: str) -> dict:
-    if previous.get("schema_version") != 5:
+def next_action_choice(model, request: dict, previous: dict) -> dict:
+    if previous.get("schema_version") != 7:
         raise DecisionError("This shortlist used the old scoring method. Run the request again.")
     followup = request.get("followup", "")
     if not isinstance(followup, str):
@@ -720,17 +903,24 @@ def next_action(model, request: dict, previous: dict, fs: str, extract: str,
         progress({"type": "action_decision", "action": selected,
                   "score": action_answer["probabilities"][selected],
                   "chosen_by": "model"})
+    return {"ok": True, "action": selected, "followup": followup, "selected_paths": selected_paths}
+
+
+def next_action(model, request: dict, previous: dict, fs: str, extract: str,
+                ocr: str) -> dict:
+    choice = next_action_choice(model, request, previous)
+    selected, followup, selected_paths = choice["action"], choice["followup"], choice["selected_paths"]
     if selected == "continue":
         response = start(model, previous, fs, extract, ocr, previous)
     elif selected == "show_all":
         response = dict(previous)
-        response["shortlist_count"] = len(response["items"])
         response["steps"] = [{"action": "show_all_scores", "files": len(response["items"])}]
     else:
         response = dict(previous)
         ranked = sorted_items(list(previous["items"]))
-        count = min(30, len(ranked))
-        target_paths = set(selected_paths) if selected_paths else {item["path"] for item in ranked[:count]}
+        target_paths = set(selected_paths) if selected_paths else {item["path"] for item in ranked if
+            selected == "refine" or item.get("decision") != "rejected"}
+        intent = interpret_document_role(model, search_intent(request if selected == "refine" else previous))
         if selected == "deepen":
             if not selected_paths:
                 target_paths.update(item["path"] for item in ranked if item["source"] == "name_only")
@@ -752,17 +942,25 @@ def next_action(model, request: dict, previous: dict, fs: str, extract: str,
             finally:
                 os.close(root_fd)
             selected_items = [item for item in response["items"] if item["path"] in target_paths]
-            question = followup if selected_paths and request.get("action") != "deepen" else previous["goal"]
-            score(model, question, selected_items)
-            response["steps"] = [{"action": "read_400_characters", "files": len(selected_items)},
+            groups = {}
+            for item in selected_items:
+                item_intent = search_intent({"search_intent": item.get("search_intent", intent)})
+                key = json.dumps(item_intent, sort_keys=True)
+                groups.setdefault(key, (item_intent, []))[1].append(item)
+            for item_intent, group in groups.values():
+                score(model, item_intent, group)
+            response["steps"] = [{"action": "read_previews", "characters_per_file": DEEP_CHARS, "files": len(selected_items)},
                                   {"action": "score_matches", "files": len(selected_items)}]
         else:
             selected_items = [item for item in response["items"] if item["path"] in target_paths]
-            score(model, followup, selected_items)
+            score(model, intent, selected_items)
+            if not selected_paths:
+                response["search_intent"] = intent
+                response["goal"] = previous["goal"] + "\nAdditional constraints: " + followup
             response["steps"] = [{"action": "refine_shortlist", "files": len(selected_items)}]
         response["items"] = sorted_items(response["items"])
         response["needs_check_count"] = sum(bool(item.get("needs_check")) for item in response["items"])
-        response["shortlist_count"] = min(30, sum(item["score"] >= 0.5 for item in selected_items))
+        response["shortlist_count"] = sum(item.get("decision") == "match" for item in response["items"])
     response["selected_action"] = selected
     response["focus_paths"] = selected_paths
     response["asked"] = followup
@@ -771,7 +969,7 @@ def next_action(model, request: dict, previous: dict, fs: str, extract: str,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("route", "start", "next", "memory"), required=True)
+    parser.add_argument("--mode", choices=("route", "start", "next", "next_route", "memory"), required=True)
     parser.add_argument("--request", required=True)
     parser.add_argument("--previous")
     parser.add_argument("--fs")
@@ -803,7 +1001,7 @@ def main() -> None:
         else:
             if not previous:
                 raise DecisionError("The saved shortlist is unavailable.")
-            response = next_action(model, request, previous, args.fs, args.extract, args.ocr)
+            response = next_action_choice(model, request, previous) if args.mode == "next_route" else next_action(model, request, previous, args.fs, args.extract, args.ocr)
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
         message = str(error) or type(error).__name__

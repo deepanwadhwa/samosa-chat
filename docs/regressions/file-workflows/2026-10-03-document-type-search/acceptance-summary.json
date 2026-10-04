@@ -1,0 +1,76 @@
+{
+  "live_searches": [
+    {
+      "case": "form",
+      "goal": "find all documents that look like I539 in this folder.",
+      "matches": [
+        "scan-042.pdf",
+        "scan-087.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 133.4
+    },
+    {
+      "case": "instructions",
+      "goal": "Find I-539 instruction guides only.",
+      "matches": [
+        "guide-019.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 72.065
+    },
+    {
+      "case": "different_form",
+      "goal": "Find W-9 forms in this folder.",
+      "matches": [
+        "scan-205.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 56.894
+    },
+    {
+      "case": "employment_form",
+      "goal": "Find completed or blank I-765 applications in this folder.",
+      "matches": [
+        "scan-118.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 77.987
+    },
+    {
+      "case": "novel_identifier",
+      "goal": "Find AB-731 application forms.",
+      "matches": [
+        "opaque-731.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 56.285
+    },
+    {
+      "case": "topic",
+      "goal": "Find research papers about semiconductor thermal conductivity.",
+      "matches": [
+        "research.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 56.169
+    },
+    {
+      "case": "receipt",
+      "goal": "Find receipt notices for I-539 applications.",
+      "matches": [
+        "notice-022.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 74.098
+    }
+  ],
+  "fixture_files": 15,
+  "unit_tests": {
+    "total": 23,
+    "optional_skipped": 3
+  },
+  "browser_passed": true,
+  "normal_app_ready": true,
+  "source_folder_excluded": true
+}

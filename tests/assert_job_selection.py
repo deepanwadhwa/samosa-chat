@@ -114,6 +114,9 @@ if phase == "before":
     helper.write_text(f"#!{sys.executable}\n" + '''import json, sys
 from pathlib import Path
 args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+if args["--mode"] == "next_route":
+    print(json.dumps({"ok": True, "action": "refine"}))
+    sys.exit(0)
 assert args["--mode"] == "next"
 request = json.loads(Path(args["--request"]).read_text())
 result = json.loads(Path(args["--previous"]).read_text())

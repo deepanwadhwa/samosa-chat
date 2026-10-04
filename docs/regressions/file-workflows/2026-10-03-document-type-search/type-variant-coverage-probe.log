@@ -1,0 +1,13 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 14127.06it/s]
+{"requirement": "completed or blank", "hypothesis": "This document satisfies the requirement: completed or blank.", "answer": {"type": "choice", "choice": "covered", "probabilities": {"covered": 0.942506730556488, "additional": 0.05749327689409256}, "confidence": 0.6825872824511244}}
+{"requirement": "completed or blank", "hypothesis": "This document is completed or blank.", "answer": {"type": "choice", "choice": "covered", "probabilities": {"covered": 0.9240047931671143, "additional": 0.07599520683288574}, "confidence": 0.6120915945828964}}
+{"requirement": "approved", "hypothesis": "This document satisfies the requirement: approved.", "answer": {"type": "choice", "choice": "covered", "probabilities": {"covered": 0.8185192942619324, "additional": 0.18148070573806763}, "confidence": 0.3166944146703664}}
+{"requirement": "approved", "hypothesis": "This document is approved.", "answer": {"type": "choice", "choice": "additional", "probabilities": {"covered": 0.4139508605003357, "additional": 0.5860490798950195}, "confidence": 0.021471431724099266}}
+{"requirement": "signed", "hypothesis": "This document satisfies the requirement: signed.", "answer": {"type": "choice", "choice": "covered", "probabilities": {"covered": 0.6712551116943359, "additional": 0.32874491810798645}, "confidence": 0.08636110662827423}}
+{"requirement": "signed", "hypothesis": "This document is signed.", "answer": {"type": "choice", "choice": "additional", "probabilities": {"covered": 0.30012983083724976, "additional": 0.699870228767395}, "confidence": 0.11855050973777337}}
+{"requirement": "for Alex Example", "hypothesis": "This document satisfies the requirement: for Alex Example.", "answer": {"type": "choice", "choice": "covered", "probabilities": {"covered": 0.5698526501655579, "additional": 0.43014734983444214}, "confidence": 0.014125110554579212}}
+{"requirement": "for Alex Example", "hypothesis": "This document is for Alex Example.", "answer": {"type": "choice", "choice": "additional", "probabilities": {"covered": 0.44384148716926575, "additional": 0.5561585426330566}, "confidence": 0.009119129032734374}}

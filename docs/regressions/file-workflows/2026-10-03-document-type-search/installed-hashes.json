@@ -1,0 +1,19 @@
+{
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "release": "/private/tmp/fw6-walkthrough-home/releases/dev-6e7e7e0b8193",
+  "deferred_pending_memory": true,
+  "hashes": {
+    "gateway": {
+      "sha256": "818cd9cc43f2d6a7c5f80f2cca23ef971ae6b73da204917ebc72c013efe98c65",
+      "installed": "/private/tmp/fw6-walkthrough-home/releases/dev-6e7e7e0b8193/bin/samosa-gateway"
+    },
+    "decision": {
+      "sha256": "5b399108d8dd089c313ca93f5abd8b00513b667d451e563549d3c31c5cc9dc16",
+      "installed": "/private/tmp/fw6-walkthrough-home/releases/dev-6e7e7e0b8193/bin/samosa-decision.py"
+    },
+    "ui": {
+      "sha256": "2ce507754a0278d282a6275c91a9698004192149fb5e6f1e60a85fca7290b251",
+      "installed": "/private/tmp/fw6-walkthrough-home/releases/dev-6e7e7e0b8193/app.html"
+    }
+  }
+}

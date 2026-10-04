@@ -16,12 +16,16 @@ sys.path.insert(0, str(ROOT / "tools"))
 import samosa_decision as decision
 
 
+VETERINARY_INTENT = {"subject": "medical record", "kind": "name", "target": "a veterinary medical record for Titli the cat", "constraints": []}
+
 class FakeModel:
     def __init__(self):
         self.calls = []
 
     def choice(self, *, state, instructions, criteria):
         self.calls.append((state, instructions, criteria))
+        if criteria == decision.DOCUMENT_ROLES:
+            return {"choice": "form", "probabilities": {"form": .95, "instructions": .02, "notice": .02, "other": .01}}
         if "Folder name:" in state:
             plausible = "possible" in state
         elif "File name:" in state:
@@ -33,6 +37,8 @@ class FakeModel:
             "probabilities": {"plausible": 0.9 if plausible else 0.23,
                               "unrelated": 0.1 if plausible else 0.77},
         }
+
+    choice_fast = choice
 
 
 class DecisionChecks(unittest.TestCase):
@@ -150,15 +156,132 @@ class DecisionChecks(unittest.TestCase):
         model = FakeModel()
         item = {"path": "notice.pdf", "excerpt": "Immigration Services receipt notice",
                 "source": "pdf_text", "excerpt_chars": 100}
-        decision.score(model, "Find Titli's medical record", [item])
+        decision.score(model, VETERINARY_INTENT, [item])
         state, instructions, criteria = model.calls[0]
-        self.assertEqual(state, "User request: Find Titli's medical record\n"
-                         "File name: notice.pdf\n"
+        self.assertEqual(state, "File name: notice.pdf\n"
                          "Preview: Immigration Services receipt notice")
-        self.assertEqual(instructions, "Is this file worth inspecting next?")
-        self.assertEqual(criteria, decision.FILE_CRITERIA)
+        self.assertEqual(instructions, "Classify the document itself.")
+        self.assertIn(VETERINARY_INTENT["target"], criteria["plausible"])
+        self.assertNotIn("User request:", state)
         self.assertEqual(item["model_choice"], "unrelated")
         self.assertAlmostEqual(item["score"], 0.23)
+
+    def test_missing_intent_never_scans_folder(self):
+        with mock.patch.object(decision, "inventory") as scan:
+            with self.assertRaises(decision.DecisionError):
+                decision.start(FakeModel(), {"folder": "/unopened", "goal": "Find files"}, "", "", "", None)
+            scan.assert_not_called()
+
+    def test_document_type_uses_literal_evidence_and_dynamic_hypothesis(self):
+        intent = {"subject": "purchase orders", "kind": "document_type", "target": "a purchase order", "constraints": []}
+        model = FakeModel()
+        item = {"path": "purchase-order.pdf", "excerpt": "A school research paper.", "source": "pdf_text"}
+        decision.score(model, intent, [item])
+        state, _, criteria = model.calls[1]
+        self.assertEqual(state, item["excerpt"])
+        self.assertNotIn(item["path"], state)
+        self.assertEqual(criteria["plausible"], "This document is a purchase order.")
+        # A filename without content cannot establish the document type, even
+        # when the model assigns an artificially strong positive score.
+        item = {"path": "purchase-order.pdf", "excerpt": "", "source": "name_only"}
+        decision.score(model, intent, [item])
+        self.assertEqual(item["decision"], "needs_check")
+
+    def test_invalid_model_scores_fail_instead_of_claiming_match(self):
+        for value in (float("nan"), float("inf"), -1, 2):
+            model = mock.Mock()
+            model.choice_fast.return_value = {"choice": "plausible", "probabilities": {"plausible": value, "unrelated": .1}}
+            with self.assertRaises(decision.DecisionError):
+                decision.score(model, VETERINARY_INTENT, [{"path": "record", "excerpt": "Literal record", "source": "text"}])
+
+    def test_type_match_requires_the_requested_document_role(self):
+        intent = {"subject": "forms", "kind": "document_type", "target": "an application form", "constraints": [],
+            "document_role": {"choice": "form", "probabilities": {"form": .96, "instructions": .02, "notice": .01, "other": .01}}}
+        model = mock.Mock()
+        model.choice_fast.side_effect = [
+            {"choice": "plausible", "probabilities": {"plausible": .91, "unrelated": .09}},
+            {"choice": "notice", "probabilities": {"form": .02, "instructions": .01, "notice": .96, "other": .01}}]
+        item = {"path": "opaque.pdf", "excerpt": "Notice confirming receipt of the application.", "source": "pdf_text"}
+        decision.score(model, intent, [item])
+        self.assertEqual(item["decision"], "rejected")
+        self.assertEqual(item["document_role"]["choice"], "notice")
+        self.assertLessEqual(item["score"], .2)
+
+    def test_explicit_request_role_is_stable_with_weak_target_role_scores(self):
+        # An opaque identifier does not tell NLI what role the user requested.
+        # The query decision sets that scope; actual source role is independent.
+        intent = {"subject": "ZX902", "kind": "document_type", "target": "ZX902 documents",
+                  "constraints": [], "requested_role": "form"}
+        model = mock.Mock()
+        model.choice_fast.side_effect = [
+            {"choice": "notice", "probabilities": {"form": .3, "instructions": .1, "notice": .5, "other": .1}},
+            {"choice": "plausible", "probabilities": {"plausible": .7, "unrelated": .3}},
+            {"choice": "form", "probabilities": {"form": .95, "instructions": .02, "notice": .02, "other": .01}}]
+        interpreted = decision.interpret_document_role(model, decision.search_intent({"search_intent": intent}))
+        item = {"path": "opaque.pdf", "excerpt": "Form ZX-902. Application fields. Applicant name: Example.", "source": "pdf_text"}
+        decision.score(model, interpreted, [item])
+        self.assertEqual(item["decision"], "match")
+        self.assertEqual(interpreted["document_role"]["probabilities"]["form"], .3)
+        # Rescoring the same evidence uses the saved query scope, not a new
+        # weak guess from the abbreviated target phrase.
+        model.choice_fast.side_effect = [
+            {"choice": "plausible", "probabilities": {"plausible": .7, "unrelated": .3}},
+            {"choice": "form", "probabilities": {"form": .95, "instructions": .02, "notice": .02, "other": .01}}]
+        decision.score(model, interpreted, [item])
+        self.assertEqual(item["decision"], "match")
+
+    def test_identifier_proof_does_not_bypass_additional_conditions(self):
+        intent = {"subject": "AB123", "kind": "document_type", "target": "an application form", "constraints": ["approved"],
+            "document_role": {"choice": "form", "probabilities": {"form": .96, "instructions": .02, "notice": .01, "other": .01}}}
+        for condition_score, expected in ((.9, "match"), (.5, "needs_check"), (.1, "rejected")):
+            model = mock.Mock()
+            model.choice_fast.side_effect = [
+                {"choice": "unrelated", "probabilities": {"plausible": .02, "unrelated": .98}},
+                {"choice": "form", "probabilities": {"form": .96, "instructions": .02, "notice": .01, "other": .01}},
+                {"choice": "plausible" if condition_score >= .5 else "unrelated", "probabilities": {"plausible": condition_score, "unrelated": 1-condition_score}}]
+            item = {"path": "opaque.pdf", "excerpt": "Form AB-123. Applicant information and approval status.", "source": "pdf_text"}
+            decision.score(model, intent, [item])
+            self.assertEqual(item["decision"], expected)
+
+    def test_inclusive_type_variants_require_literal_and_semantic_coverage(self):
+        intent = {"kind": "document_type", "document_role": {"choice": "form"},
+                  "constraints": ["blank or completed", "approved or signed", "blank"]}
+        model = mock.Mock()
+        model.choice_fast.return_value = {"choice": "covered", "probabilities": {"covered": .95, "additional": .05}}
+        self.assertEqual(set(decision.covered_type_variants(model, intent)), {"blank or completed"})
+        self.assertEqual(model.choice_fast.call_count, 1)
+        model.choice_fast.return_value = {"choice": "covered", "probabilities": {"covered": .6, "additional": .4}}
+        self.assertEqual(decision.covered_type_variants(model, intent), {})
+
+    def test_form_identifier_requires_complete_identity(self):
+        intent = {"subject": "AB123", "document_role": {"choice": "form"}}
+        self.assertEqual(decision.identifier_decision(intent, "Form AB-123. Applicant fields."), "supported")
+        self.assertEqual(decision.identifier_decision(intent, "Form AB-123A. Supplement."), "different_identifier")
+        self.assertEqual(decision.identifier_decision(intent, "Form CD456. AB123 is mentioned in a field."), "different_identifier")
+        self.assertEqual(decision.identifier_decision(intent, "The identifier could not be read."), "identifier_not_readable")
+        # Notices can identify a case using a different notice-form identifier.
+        intent["document_role"]["choice"] = "notice"
+        self.assertEqual(decision.identifier_decision(intent, "Form CD456. Case type AB-123."), "supported")
+
+    def test_later_reference_cannot_replace_primary_form_identifier(self):
+        intent = {"subject": "ZX902", "kind": "document_type", "target": "ZX902 application forms",
+                  "constraints": [], "requested_role": "form"}
+        model = FakeModel()
+        text = "Form CD-456. Application fields. " + "x" * 1000 + " Form ZX-902 is referenced in an attachment."
+        item = {"path": "opaque.pdf", "excerpt": text, "source": "pdf_text"}
+        decision.score(model, intent, [item])
+        self.assertEqual(item["decision"], "rejected")
+        self.assertEqual(item["identifier_evidence"], "different_identifier")
+
+    def test_later_preview_window_is_checked(self):
+        model = mock.Mock()
+        model.choice_fast.side_effect = [
+            {"choice": "unrelated", "probabilities": {"plausible": .01, "unrelated": .99}},
+            {"choice": "plausible", "probabilities": {"plausible": .95, "unrelated": .05}}]
+        item = {"path": "record", "excerpt": "x" * 1100, "source": "text"}
+        decision.score(model, VETERINARY_INTENT, [item])
+        self.assertEqual(model.choice_fast.call_count, 2)
+        self.assertEqual(item["decision"], "match")
 
     def test_direct_file_precedes_subfolder_decisions(self):
         with tempfile.TemporaryDirectory(prefix="samosa-decision-order-") as temporary:
@@ -172,7 +295,7 @@ class DecisionChecks(unittest.TestCase):
             model = FakeModel()
             with mock.patch.object(decision, "progress", side_effect=events.append):
                 result = decision.start(model, {"folder": str(root),
-                                                "goal": "Find a veterinary record"}, "", "", "", None)
+                                                "goal": "Find a veterinary record", "search_intent": VETERINARY_INTENT}, "", "", "", None)
             direct = next(i for i, event in enumerate(events)
                           if event.get("type") == "file_decision" and event.get("path") == "direct.txt")
             folder = next(i for i, event in enumerate(events)
@@ -200,7 +323,7 @@ class DecisionChecks(unittest.TestCase):
             events = []
             with mock.patch.object(decision, "progress", side_effect=events.append):
                 result = decision.start(model, {"folder": str(root),
-                                                "goal": "Find a veterinary record"}, "", "", "", None)
+                                                "goal": "Find a veterinary record", "search_intent": VETERINARY_INTENT}, "", "", "", None)
             self.assertEqual(result["checked_files"], decision.BATCH_FILES + 2)
             self.assertEqual(result["remaining_files"], 0)
             last_direct = next(i for i, event in enumerate(events)
@@ -210,6 +333,29 @@ class DecisionChecks(unittest.TestCase):
                                 if event.get("type") == "folder_checking")
             self.assertLess(last_direct, first_folder)
             self.assertIn("possible/inside.txt", {item["path"] for item in result["items"]})
+
+    def test_selected_refinement_survives_longer_read_without_changing_other_files(self):
+        with tempfile.TemporaryDirectory(prefix="samosa-refinement-") as temporary:
+            root = Path(temporary)
+            items = []
+            for name in ("Veterinary-a.txt", "Veterinary-b.txt"):
+                path = root / name; path.write_text("Veterinary record for Titli.")
+                info = path.stat()
+                items.append({"path": name, "excerpt": path.read_text(), "source": "text",
+                              "dev": info.st_dev, "ino": info.st_ino, "size": info.st_size, "mtime_ns": str(info.st_mtime_ns)})
+            model = FakeModel(); decision.score(model, VETERINARY_INTENT, items)
+            before_other = json.loads(json.dumps(items[1]))
+            previous = {"schema_version": 7, "goal": "Find veterinary records", "folder": str(root),
+                        "items": items, "checked_files": 2, "search_intent": VETERINARY_INTENT}
+            narrowed = {**VETERINARY_INTENT, "constraints": ["approved"]}
+            refined = decision.next_action(model, {"action": "refine", "followup": "only approved", "selected_paths": [items[0]["path"]],
+                                          "search_intent": narrowed}, previous, "", "", "")
+            deeper = decision.next_action(model, {"action": "deepen", "selected_paths": [items[0]["path"]]}, refined, "", "", "")
+            by_path = {item["path"]: item for item in deeper["items"]}
+            self.assertEqual(by_path[items[0]["path"]]["search_intent"]["constraints"], ["approved"])
+            self.assertEqual([c["requirement"] for c in by_path[items[0]["path"]]["condition_evidence"]], ["approved"])
+            self.assertEqual(by_path[items[1]["path"]], before_other)
+            self.assertEqual(deeper["search_intent"], VETERINARY_INTENT)
 
     @unittest.skipUnless(os.environ.get("SAMOSA_EXTRACT") and os.environ.get("SAMOSA_OCR"),
                          "Set installed PDFium and OCR binary paths")
@@ -248,7 +394,7 @@ class DecisionChecks(unittest.TestCase):
              "excerpt": "United States Citizenship and Immigration Services receipt and priority date",
              "source": "pdf_text", "excerpt_chars": 100},
         ]
-        decision.score(model, request, items)
+        decision.score(model, VETERINARY_INTENT, items)
         self.assertEqual(items[0]["model_choice"], "plausible")
         self.assertEqual(items[1]["model_choice"], "unrelated")
 
@@ -265,7 +411,7 @@ class DecisionChecks(unittest.TestCase):
                 encoding="utf-8")
             model = decision.engine()
             result = decision.start(model, {"folder": str(root),
-                                            "goal": "Find my cat Titli's medical record"}, "",
+                                            "goal": "Find my cat Titli's medical record", "search_intent": VETERINARY_INTENT}, "",
                                     os.environ["SAMOSA_EXTRACT"], os.environ["SAMOSA_OCR"], None)
             by_path = {item["path"]: item for item in result["items"]}
             self.assertEqual(result["checked_files"], 3)

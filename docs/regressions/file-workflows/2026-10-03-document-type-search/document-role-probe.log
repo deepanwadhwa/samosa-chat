@@ -1,0 +1,15 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 7569.66it/s]
+{"path": "target", "result": {"type": "choice", "choice": "form", "probabilities": {"form": 0.9570828080177307, "instructions": 0.030540868639945984, "notice": 0.010627039708197117, "other": 0.0017492767656221986}, "confidence": 0.8500110789590132}}
+{"path": "target-guide", "result": {"type": "choice", "choice": "instructions", "probabilities": {"form": 0.28151369094848633, "instructions": 0.7146705389022827, "notice": 0.00149174511898309, "other": 0.0023240377195179462}, "confidence": 0.5522427451212306}}
+{"path": "target-w9", "result": {"type": "choice", "choice": "form", "probabilities": {"form": 0.6239641904830933, "instructions": 0.31729230284690857, "notice": 0.05161980912089348, "other": 0.007123767398297787}, "confidence": 0.389201975680902}}
+{"path": "opaque-form.pdf", "result": {"type": "choice", "choice": "form", "probabilities": {"form": 0.9682968258857727, "instructions": 0.014027807861566544, "notice": 0.015679745003581047, "other": 0.00199564709328115}, "confidence": 0.8783737609907508}}
+{"path": "research.pdf", "result": {"type": "choice", "choice": "other", "probabilities": {"form": 0.09124663472175598, "instructions": 0.07774309813976288, "notice": 0.0919622853398323, "other": 0.7390480041503906}, "confidence": 0.37965296535288995}}
+{"path": "investing.pdf", "result": {"type": "choice", "choice": "form", "probabilities": {"form": 0.7133758068084717, "instructions": 0.10009714961051941, "notice": 0.03931361436843872, "other": 0.147213414311409}, "confidence": 0.36478595774920275}}
+{"path": "writing.pdf", "result": {"type": "choice", "choice": "other", "probabilities": {"form": 0.3504166305065155, "instructions": 0.10903209447860718, "notice": 0.11766177415847778, "other": 0.4228895604610443}, "confidence": 0.11647017373057278}}
+{"path": "other-form.pdf", "result": {"type": "choice", "choice": "form", "probabilities": {"form": 0.9606965780258179, "instructions": 0.019992239773273468, "notice": 0.017855418846011162, "other": 0.0014556770911440253}, "confidence": 0.857084074859862}}
+{"path": "instructions.pdf", "result": {"type": "choice", "choice": "instructions", "probabilities": {"form": 0.07450690865516663, "instructions": 0.9192766547203064, "notice": 0.0012782118283212185, "other": 0.004938316997140646}, "confidence": 0.77955620718268}}
+{"path": "receipt.pdf", "result": {"type": "choice", "choice": "notice", "probabilities": {"form": 0.03229823336005211, "instructions": 0.0021564634516835213, "notice": 0.9629794359207153, "other": 0.0025658700615167618}, "confidence": 0.8732275393818252}}

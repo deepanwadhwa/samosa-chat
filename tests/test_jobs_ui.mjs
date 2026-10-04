@@ -167,12 +167,12 @@ Object.assign(jobEls, {
 const uiRequests = [];
 let failSelectionSave = false;
 const shortlist = { ok: true, job_id: "decision-ui", result: {
-  schema_version: 5,
+  schema_version: 7,
   checked_files: 2, total_files: 2, remaining_files: 0, partial: false,
   shortlist_count: 1, items: [
-    { path: "Titli-vaccination.txt", excerpt: "Titli feline vaccination", source: "text", score: 0.96,
+    { path: "Titli-vaccination.txt", excerpt: "Titli feline vaccination", source: "text", decision: "match", score: 0.96,
       model_choice: "plausible", model_scores: { plausible: 0.96, unrelated: 0.04 } },
-    { path: "groceries.txt", excerpt: "Apples and bananas", source: "text", score: 0.12,
+    { path: "groceries.txt", excerpt: "Apples and bananas", source: "text", decision: "rejected", score: 0.12,
       model_choice: "unrelated", model_scores: { plausible: 0.12, unrelated: 0.88 } },
   ],
 } };
@@ -254,19 +254,23 @@ const startBody = JSON.parse(uiRequests[1].options.body);
 assert.equal(startBody.goal, "Find Titli's medical records");
 assert.equal(startBody.folder, "/tmp/ui-folder");
 assert.match(startBody.job_id, /^job-/);
-assert.equal(jobEls.resultLabel.textContent, "Shortlist", jobEls.resultText.textContent);
-assert.match(jobEls.resultText.children[1].children[0].textContent, /1 possible/);
+assert.equal(jobEls.resultLabel.textContent, "Search results", jobEls.resultText.textContent);
+assert.match(jobEls.resultText.children[1].children[0].textContent, /1 likely matches/);
 assert.equal(jobEls.followup.hidden, false);
-const checkedRows = jobEls.resultText.children[1].children[3].children;
+const firstPanel = jobEls.resultText.children[1];
+assert.equal(firstPanel.querySelector(".job-decision-list").children.length, 2, "Every checked file and its status should be visible initially");
+firstPanel.children[1].children[1].value = "all";
+firstPanel.children[1].children[1].onchange();
+const checkedRows = jobEls.resultText.children[1].querySelector(".job-decision-list").children;
 assert.equal(checkedRows.length, 2, "a low relevance estimate hid a checked file by default");
-assert.equal(checkedRows[1].children[1].children[2].textContent, "Apples and bananas");
+assert.equal(checkedRows[1].children[1].children[1].children[1].textContent, "Apples and bananas");
 await runUiFollowup();
 assert.equal(uiRequests[2].path, "/v1/jobs/selection");
 assert.deepEqual(JSON.parse(uiRequests[2].options.body), { job_id: "decision-ui", selected_paths: [] });
 assert.equal(uiRequests[3].path, "/v1/jobs/decision/next");
 assert.deepEqual(JSON.parse(uiRequests[3].options.body), { job_id: "decision-ui", followup: "Filter to vaccinations" });
-const list = jobEls.resultText.children[1].children[3];
-const checkbox = list.children[0].children[0];
+const list = jobEls.resultText.children[1].querySelector(".job-decision-list");
+const checkbox = list.children[0].children[0].children[0];
 checkbox.checked = true;
 checkbox.onchange();
 await flushSelection();
@@ -275,28 +279,28 @@ assert.equal(jobEls.checkSelected.hidden, false);
 // Reopening restores server state, including deliberate deselection. Opening
 // another job must not inherit the previous job's selected paths.
 reopen(structuredClone(shortlist));
-assert.equal(jobEls.resultText.children[1].children[3].children[0].children[0].checked, true);
+assert.equal(jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0].checked, true);
 const other = structuredClone(shortlist);
 other.job_id = "other-job"; other.selected_paths = [];
 reopen(other);
-assert.equal(jobEls.resultText.children[1].children[3].children[0].children[0].checked, false);
+assert.equal(jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0].checked, false);
 reopen(structuredClone(shortlist));
 jobEls.followupInput.value = "Find vaccination records";
 await runUiFollowup();
 assert.deepEqual(JSON.parse(uiRequests.at(-1).options.body), {
   job_id: "decision-ui", followup: "Find vaccination records",
 });
-assert.equal(jobEls.resultText.children[1].children[3].children[0].children[0].checked, true);
+assert.equal(jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0].checked, true);
 assert.equal(jobEls.run.disabled, false);
 // Rapid checkbox edits are serialized and the final state is durable.
-const savedCheckbox = jobEls.resultText.children[1].children[3].children[0].children[0];
+const savedCheckbox = jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0];
 savedCheckbox.checked = false; savedCheckbox.onchange();
 savedCheckbox.checked = true; savedCheckbox.onchange();
 savedCheckbox.checked = false; savedCheckbox.onchange();
 await flushSelection();
 assert.deepEqual(shortlist.selected_paths, []);
 reopen(structuredClone(shortlist));
-assert.equal(jobEls.resultText.children[1].children[3].children[0].children[0].checked, false);
+assert.equal(jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0].checked, false);
 
 // Showing all files must reveal unselected candidates without changing the
 // saved selection. Otherwise a refinement can leave the user trapped in it.
@@ -304,10 +308,10 @@ const showAll = structuredClone(shortlist);
 showAll.selected_paths = ["Titli-vaccination.txt"];
 showAll.result.selected_action = "show_all";
 reopen(showAll);
-const allRows = jobEls.resultText.children[1].children[3].children;
+const allRows = jobEls.resultText.children[1].querySelector(".job-decision-list").children;
 assert.equal(allRows.length, 2);
-assert.equal(allRows[0].children[0].checked, true);
-assert.equal(allRows[1].children[0].checked, false);
+assert.equal(allRows[0].children[0].children[0].checked, true);
+assert.equal(allRows[1].children[0].children[0].checked, false);
 
 // Deselecting with the keyboard keeps focus in the selected-file list, then
 // returns to the filter when the last row disappears.
@@ -315,11 +319,11 @@ const keyboardSelection = structuredClone(shortlist);
 keyboardSelection.selected_paths = ["Titli-vaccination.txt", "groceries.txt"];
 reopen(keyboardSelection);
 const keyboardPanel = jobEls.resultText.children[1];
-const keyboardList = keyboardPanel.children[3];
-const firstSelected = keyboardList.children[0].children[0];
+const keyboardList = keyboardPanel.querySelector(".job-decision-list");
+const firstSelected = keyboardList.children[0].children[0].children[0];
 firstSelected.focus(); firstSelected.checked = false; firstSelected.onchange();
 assert.equal(keyboardList.children.length, 1);
-const lastSelected = keyboardList.children[0].children[0];
+const lastSelected = keyboardList.children[0].children[0].children[0];
 assert.equal(document.activeElement, lastSelected);
 assert.equal(lastSelected.checked, true);
 lastSelected.checked = false; lastSelected.onchange();
@@ -330,7 +334,7 @@ reopen(structuredClone(shortlist));
 
 // A failed save blocks the follow-up while leaving its scope and question
 // visible. Retrying succeeds without requiring another checkbox selection.
-const retryCheckbox = jobEls.resultText.children[1].children[3].children[0].children[0];
+const retryCheckbox = jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0];
 failSelectionSave = true;
 retryCheckbox.checked = true; retryCheckbox.onchange();
 await flushSelection();
@@ -360,7 +364,7 @@ await openFiles();
 assert.equal(workflowState().state.chats.length, 1);
 await reviewFiles();
 assert.equal(workflowState().state.view, "jobs");
-assert.equal(jobEls.resultText.children[1].children[3].children[0].children[0].checked, true);
+assert.equal(jobEls.resultText.children[1].querySelector(".job-decision-list").children[0].children[0].children[0].checked, true);
 
 jobEls.destination = new Element("input"); jobEls.destination.value = "selected-records";
 jobEls.operation = new Element("select"); jobEls.operation.value = "copy";
@@ -370,6 +374,28 @@ assert.equal(workflowState().state.reviewContext.selectionJobId, "decision-ui");
 assert.equal(workflowState().state.approved, undefined, "preview applied without approval");
 await workflowState().state.actions[0][2]();
 assert.deepEqual(workflowState().state.approved, { jobId: "copy-ui-action", planId: "reviewable-plan-token", selectionJobId: "decision-ui" });
+
+// Actual live progress renderer: one table row per file, updates replace
+// provisional status, and counts derive from those rows rather than event totals.
+const progressBegin = app.indexOf("      const decisionLiveRows = new Map(), decisionProgressSeen = new Map();");
+const progressEnd = app.indexOf("      async function trackDecisionProgress", progressBegin);
+const progressFixture = eval(`(() => {${app.slice(progressBegin, progressEnd)}; return { renderDecisionProgress };})()`);
+jobEls.activity.replaceChildren();
+progressFixture.renderDecisionProgress({type: "search_intent", target: "a purchase order"});
+progressFixture.renderDecisionProgress({type: "file_checking", path: "<example>.pdf"});
+progressFixture.renderDecisionProgress({type: "file_checking", path: "<example>.pdf"});
+progressFixture.renderDecisionProgress({type: "file_decision", path: "<example>.pdf", decision: "needs_check", excerpt_chars_actual: 1200});
+progressFixture.renderDecisionProgress({type: "file_reading", path: "<example>.pdf", message: "Reading more evidence"});
+assert.match(jobEls.activity.querySelector(".job-progress-count").textContent, /0 checked.*1 checking/);
+progressFixture.renderDecisionProgress({type: "file_decision", path: "<example>.pdf", decision: "match", excerpt_chars_actual: 1800});
+progressFixture.renderDecisionProgress({type: "file_decision", path: "unrelated.pdf", decision: "rejected", excerpt_chars_actual: 600});
+const progressTable = jobEls.activity.querySelector(".job-progress-table");
+assert.equal(progressTable.tagName, "table");
+assert.equal(progressTable.children[1].children.length, 2);
+assert.equal(progressTable.children[1].children[0].children[0].textContent, "<example>.pdf");
+assert.equal(progressTable.children[1].children[0].children[1].textContent, "Likely match");
+assert.equal(progressTable.children[1].children[0].children[2].textContent, "1800 characters");
+assert.match(jobEls.activity.querySelector(".job-progress-count").textContent, /2 checked.*1 likely matches.*0 need review.*0 checking/);
 
 // Execute the shipped asynchronous model-fork handoff. A failed clone must
 // leave the original conversation usable; retry preserves messages and binds

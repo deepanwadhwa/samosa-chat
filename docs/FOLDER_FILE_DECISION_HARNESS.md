@@ -133,3 +133,84 @@ person, a semantic topic and an empty folder. It exercises the public chat API r
 answers. Real browser and model evidence, including failures, lives in
 [`2026-10-03-decision-harness`](regressions/file-workflows/2026-10-03-decision-harness/).
 These checks do not close the separate mixed-document review or scheduling gates.
+
+## Jobs: document searches and progress
+
+Jobs uses the same installed OpenDecision adapter and pinned checkpoint. Its
+read-only hierarchy is request action → search kind and document role → source
+identity/type evidence → extra properties → selected-file follow-up.
+
+The current local chat backend first returns a bounded structured interpretation:
+`kind` (document type, topic or name), a question-derived `subject`, a short
+`target`, the requested document role and additional narrowing constraints. A bounded adapter also accepts a role in the
+search-kind field only when the separate role agrees; it normalizes that reply
+to document-type search. Unknown or contradictory labels remain invalid.
+The gateway validates the vocabulary, lengths and question spans before opening
+the folder. Acronym expansion is a local model judgement; it does not browse the
+web. An unavailable or invalid interpretation stops the search with an error.
+There is no production catalogue of form numbers, fixture names or questions.
+
+Each source preview is evaluated against hypotheses derived from that
+interpretation. The user's request is never pasted into a document-type premise;
+readable document-type decisions use literal extracted content, excluding the
+filename. Overlapping windows preserve later preview evidence within the NLI
+model's token limit. Generic complete-identifier checks distinguish a form from
+another identifier or a suffix variant. A later reference cannot replace a
+conflicting primary form identifier. Document role is classified independently:
+a receipt, instruction guide or narrative merely referring to a requested form
+does not establish that it is the form. Topic and name searches retain their
+separate broader hypotheses.
+
+The validated query chooses the requested role. NLI scores for the abbreviated
+target remain diagnostics; they do not override that choice or become fabricated
+confidence values. The actual source role must still have independent support.
+A complete identifier plus source-role agreement can support a likely match even
+when a verbose semantic description has a weak NLI score. Inclusive variants already covered by the chosen type require literal grounding
+in the role definition and an independent entailment decision before being
+treated as type variants. New names, dates and approval/signature requirements
+cannot pass that literal gate. Every remaining extra constraint
+is checked separately and cannot be bypassed by this identity evidence. Type
+variants accepted as alternatives belong in the type interpretation rather than
+becoming simultaneous narrowing requirements.
+
+For uncertain readable previews, the gateway may ask the current local backend
+for a bounded secondary evidence judgement. It accepts only supplied source
+numbers and literal supporting quotes checked against the supplied previews.
+This step cannot admit filename-only candidates, bypass per-file constraints,
+reclassify files outside an explicit selection, or supply executable actions.
+Invalid or ambiguous responses leave files in review. OCR can confuse identifiers;
+such files remain candidates for review rather than being asserted as absent.
+
+Initial previews read up to 1,200 characters. Ambiguous previews reaching that
+limit may be expanded to the existing 3,200-character follow-up budget. Both are
+bounded previews, not proof of complete-document coverage. NLI scores are not
+calibrated probabilities of correctness. Results say “Likely match”, “Needs
+review” or “No match in preview”; unreadable and changed sources remain visible.
+The saved schema is version 7; older saved searches require rerunning.
+
+A follow-up first chooses a permitted action (`refine`, `deepen`, `continue` or
+`show_all`). Longer reading preserves the saved query interpretation. Only a
+refinement interprets new search conditions. An explicit selection restricts
+both reading and secondary verification to those saved paths. Each scored file
+retains its own validated interpretation, so longer reads preserve earlier
+selected-file constraints without changing other files. A secondary judgement
+using the parent query cannot override a differing per-file query. Existing identity,
+mtime and no-follow source checks still apply. Displaying all checked files does
+not turn rejected files into matches.
+
+The UI has native progress and results tables with sticky column headings,
+checked/pending counts, compact status cells and expandable evidence. Results
+initially show all checked files and support filters, text search, sorting and durable selection of up to 50 files.
+The table has one bounded scroll area, and progress updates replace each file's
+row rather than appending repeated events. DOM regression tests cover counts,
+row deduplication, checkbox persistence and keyboard focus. Installed API and
+browser acceptance use a separate generated fixture containing forms, notices,
+guides, OCR, misleading names, unrelated papers and an invented form identifier.
+They never inventory the folder shown in the user's failed run.
+
+A controlled deployment can set `SAMOSA_DEFER_PENDING_MEMORY=1` to leave earlier
+automatic folder-memory handoffs queued during restart. Explicit new searches
+and Refresh actions remain available. This permits deployment without reopening
+a previously selected source folder. The privacy regression checks that the
+queued handoff stays untouched, then exercises its normal unavailable-source
+result after clearing the flag, using a generated test home.

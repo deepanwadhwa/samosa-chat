@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "viewport": 390,
+  "table": {
+    "x": 34,
+    "y": 358.40625,
+    "width": 322,
+    "height": 958.484375
+  },
+  "cells": [
+    {
+      "text": "Select",
+      "width": 48
+    },
+    {
+      "text": "File and evidence",
+      "width": 122
+    },
+    {
+      "text": "Status",
+      "width": 82
+    },
+    {
+      "text": "Preview read",
+      "width": 70
+    }
+  ],
+  "errors": []
+}

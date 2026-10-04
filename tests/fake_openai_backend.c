@@ -894,6 +894,14 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"message\":{\"role\":\"assistant\",\"content\":\"%s\"}}]}", reply);
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
+    if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
+        strstr(request->body, "Interpret a file-search request into a precise document criterion")) {
+        if (!strstr(request->body, "\"response_format\":{\"type\":\"json_object\"}") ||
+            !strstr(request->body, "\"thinking\":\"off\""))
+            return samosa_http_json_error(fd, 400, "missing_controls", "Search interpretation must request structured output without thinking.");
+        return samosa_http_response(fd, 200, "application/json",
+            "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"subject\\\":\\\"Person X\\\",\\\"kind\\\":\\\"name\\\",\\\"target\\\":\\\"records pertaining to Person X\\\",\\\"constraints\\\":[],\\\"requested_role\\\":\\\"any\\\"}\"}}]}", NULL);
+    }
     /* Explicit Web research plans a dynamic number of focused queries locally
        before any public request. The contextual case only succeeds when the
        gateway supplied the prior assistant answer; without it the fixture
