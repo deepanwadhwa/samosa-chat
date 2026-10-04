@@ -349,7 +349,17 @@ DOGFOOD_FIND=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \
   --data-binary "{\"goal\":\"find anonymous Titli PDF fixture\",\"folder\":\"$DOGFOOD/Documents\",\"recipe\":\"find\",\"mode\":\"confirm\"}")
 printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'anonymous-scan.pdf'
-printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'Titli vaccination date is 2026-06-14'
+if "$EXTRACTOR" --version 2>/dev/null | /usr/bin/grep -F ';pdfium)' >/dev/null; then
+  printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'Titli vaccination date is 2026-06-14'
+else
+  [ "${SAMOSA_REQUIRE_PDF_ATTACHMENTS:-0}" != 1 ] || {
+    echo 'mixed-folder test requires the configured PDFium reader' >&2; exit 1;
+  }
+  # The minimal Debian gate deliberately builds the portable reader. It must
+  # disclose the missing capability rather than invent the PDF's contents.
+  printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q '"source":"pdf_extractor_unavailable"'
+  ! printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'Titli vaccination date is 2026-06-14'
+fi
 
 "$PYTHON" "$ROOT/tests/tree_manifest.py" "$DOGFOOD/Inbox" >"$TMP/dogfood-inbox-before.json"
 /usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
