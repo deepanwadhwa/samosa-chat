@@ -26,7 +26,15 @@ int main(int argc, char **argv) {
     path_copy(g->home, sizeof(g->home), argv[2]); g->backend_port = atoi(argv[1]);
     int lifetime[2]; assert(!pipe(lifetime));
     pid_t child = fork(); assert(child >= 0);
-    if (!child) { close(lifetime[1]); char byte; (void)read(lifetime[0], &byte, 1); _exit(0); }
+    if (!child) {
+        close(lifetime[1]);
+        char byte;
+        ssize_t received;
+        do { received = read(lifetime[0], &byte, 1); }
+        while (received < 0 && errno == EINTR);
+        close(lifetime[0]);
+        _exit(received < 0 ? 1 : 0);
+    }
     close(lifetime[0]);
     g->backend_pid = child; g->upstream_fd = -1;
     pthread_mutex_init(&g->mu, NULL); pthread_mutex_init(&g->generation_gate_mu, NULL);
