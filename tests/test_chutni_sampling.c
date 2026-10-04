@@ -159,7 +159,8 @@ static int check_text_samples(const char *directory) {
     int ok = sample && strlen(sample) == 3003 && !strstr(sample, "UNREAD_TAIL"); free(sample);
     /* Invalid continuation-only data must not overflow the sample buffer. */
     f = fopen(input, "w"); if (!f) return 0;
-    for (int i = 0; i < 20000; i++) fputc(0x80, f); fclose(f);
+    for (int i = 0; i < 20000; i++) fputc(0x80, f);
+    fclose(f);
     sample = chutni_read_character_sample(input, 3000); ok = ok && !sample; free(sample);
     return ok;
 }
