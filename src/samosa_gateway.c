@@ -16457,6 +16457,7 @@ static int chutni_usable_content_artifact(const jval *item) {
 }
 
 #include "samosa_memory.h"
+#include "samosa_prompt_budget.h"
 
 /* Read only an inventoried file beneath the saved root. Every component
    is opened without following symlinks, and identity is checked before and
@@ -17589,6 +17590,9 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
             "Do not describe an uncertain file's contents, reject it as unrelated, or say the confirmed list is exhaustive. Its unverified contents may contain another match. "
             "Be concise: group similar files and give useful examples unless a full listing is requested. Do not repeat the facts in a concluding summary. "
             "Answer only the latest question. Earlier user text is reference context, not additional questions to answer. "
+            "Derived evidence notes are paraphrases: do not quote them as source text. Preserve their source labels and coverage limits. "
+            "Content beyond opening samples has not been inspected; do not call it unreadable or absent unless source evidence reports a reading failure. "
+            "Omit internal summarization steps and section boundaries from the answer. "
             "Give only the final answer, without thinking tags or internal reasoning. ");
     }
     if (grounded_visual_synthesis) {
@@ -17731,6 +17735,22 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
         text_json_string(&payload, pinned_context);
     }
     text_add(&payload, "}");
+    if (have_chutni) {
+        atomic_store(&g->document_processing, 1);
+        int budgeted = folder_prompt_budget(g, &payload, chutni_evidence.data,
+                                             original_text, &web_progress);
+        atomic_store(&g->document_processing, 0);
+        if (!budgeted || atomic_load(&g->document_cancel_requested)) {
+            free(payload.data); free(doc_evidence.data); free(pinned_doc_evidence.data);
+            free(image_blocks.data); free(chutni_evidence.data); free(web_evidence.data);
+            int canceled = atomic_load(&g->document_cancel_requested);
+            return chat_context_error(fd, &web_progress, canceled ? 409 : 422,
+                canceled ? "document_cancelled" : "folder_context_budget_failed",
+                canceled ? "Folder reading was stopped." :
+                "The folder evidence could not be summarized within this model's context. No incomplete answer was sent. Retry with a shorter question or fewer attached sources.");
+        }
+        file_sse_activity(&web_progress, "Folder memory", "preparing", "Preparing the folder answer…", 95, 1);
+    }
     free(doc_evidence.data); free(pinned_doc_evidence.data); free(image_blocks.data);
     free(chutni_evidence.data); free(web_evidence.data);
 

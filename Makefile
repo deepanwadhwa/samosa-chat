@@ -234,7 +234,7 @@ motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_
 tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_escalation.sh
 	sh tests/test_tier2_escalation.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
+samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
@@ -296,7 +296,7 @@ test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.s
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
-samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
+samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
@@ -311,19 +311,19 @@ test_fake_native_summarizer: tests/fake_native_summarizer.c
 	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
 	  -o $(BUILD_DIR)/test_fake_native_summarizer
 
-test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_native_summarizer_supervisor.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_native_summarizer_supervisor \
 	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
-test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_runtime_settings.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_runtime_settings
 
-test-memory-harness: tests/test_memory_harness.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-memory-harness: tests/test_memory_harness.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_memory_harness.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_memory_harness $(DL_LDFLAGS)
@@ -392,7 +392,7 @@ compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test
 # regression for the PDF page-batch-cap fix. The required routing gate below
 # must fail when PDFium is absent; it must never turn a portable build into a
 # false passing/skip result.
-test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samosa_memory.h $(GATEWAY_SUPPORT_SRCS)
+test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_chutni_sampling.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test-chutni-sampling $(DL_LDFLAGS)
 	$(BUILD_DIR)/test-chutni-sampling
@@ -400,7 +400,7 @@ test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samo
 test-chutni-throughput: samosa-gateway test-chutni-sampling test_fake_native_summarizer
 	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_chutni_throughput.py
 
-test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_document_reader_contract.c $(GATEWAY_SUPPORT_SRCS) \
@@ -547,6 +547,7 @@ test: pagecache-residency-test test-evidence-contract test-html-extractor test-d
 	python3 tests/test_decision_eval.py
 	python3 tests/test_samosa_decision.py
 	$(MAKE) test-memory-harness
+	$(MAKE) test-prompt-budget
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 # The compiled gateway, Chutni, and the Kimi preflight are part of the default
@@ -896,3 +897,9 @@ test-visionpsy-real: samosa-visionpsy tests/test_visionpsy_real.cpp
 	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-visionpsy-real "$(VISIONPSY_MODEL_DIR)" "$$tmp_ppm"
 test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc $^ -o build/$@ $(MLX_LDFLAGS)
+
+.PHONY: test-prompt-budget
+test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.py src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_prompt_budget.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_prompt_budget $(DL_LDFLAGS)
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_prompt_budget.py
