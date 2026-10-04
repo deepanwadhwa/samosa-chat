@@ -687,6 +687,7 @@
     .chutni-monitor-grid div { min-width: 0; }
     .chutni-monitor-grid dt { margin: 0 0 2px; color: var(--ink-3); font-size: 10px; }
     .chutni-monitor-grid dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .chutni-activity { margin: 6px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .chutni-current { margin: 8px 0 0; overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .chutni-summary-setting { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
     .chutni-summary-setting-row { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
@@ -1721,11 +1722,7 @@
             <input type="text" id="chutniExcludeNames" placeholder="e.g. archive, vendor-copy" autocomplete="off">
           </div>
           <p class="chutni-note">Comma-separated folder names. Matching is case-insensitive. Built-in safety and generated-folder exclusions cannot be removed.</p>
-          <div class="chutni-budget-field">
-            <label for="chutniSummaryBudget">Summary input budget (approx. tokens per file)</label>
-            <input type="number" id="chutniSummaryBudget" min="128" max="16384" step="128" value="3000" inputmode="numeric">
-          </div>
-          <p class="chutni-note">This caps the leading content used to make each short summary, regardless of file type. Full searchable extraction is separate.</p>
+          <p class="chutni-note">Memory uses an opening sample of about 3,000 characters per file. PDF pages and images are read as complete units; OCR stops once the target is reached.</p>
           <div class="chutni-preflight" id="chutniPreflight" hidden></div>
           <div class="chutni-panel-actions">
             <button type="button" class="chutni-secondary" id="chutniAddCancel">Cancel</button>
@@ -7284,7 +7281,6 @@
         add: $("chutniAdd"), addEmpty: $("chutniAddEmpty"),
         addPanel: $("chutniAddPanel"), path: $("chutniPath"), browse: $("chutniBrowse"), preflight: $("chutniPreflight"),
         excludeNames: $("chutniExcludeNames"),
-        summaryBudget: $("chutniSummaryBudget"),
         addNext: $("chutniAddNext"), addCancel: $("chutniAddCancel"),
         forgetPanel: $("chutniForgetPanel"), forgetWhat: $("chutniForgetWhat"),
         forgetConfirm: $("chutniForgetConfirm"), forgetCancel: $("chutniForgetCancel")
@@ -7421,7 +7417,7 @@
           if (typeof s.enrichment_files_done === "number" &&
               typeof s.enrichment_files_total === "number" &&
               s.enrichment_files_total > 0)
-            facts.push(["Reader pass", `${s.enrichment_files_done} of ${s.enrichment_files_total}`]);
+            facts.push(["Files finished", `${s.enrichment_files_done} of ${s.enrichment_files_total}`]);
           return facts;
         }
         if (typeof s.files_indexed === "number") {
@@ -7446,6 +7442,11 @@
         return minutes < 60 ? `${minutes}m ${rest}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
       }
 
+      function chutniRateLabel(rate) {
+        if (!(rate > 0)) return "";
+        return rate < 0.01 ? "<0.01 files/s" : `${rate.toFixed(rate < 0.1 ? 2 : 1)} files/s`;
+      }
+
       function chutniMonitorFacts(s) {
         if (!(s.progress_started_ms > 0) && !(s.evidence_generation > 0)) return [];
         const facts = [];
@@ -7453,7 +7454,8 @@
           if (show && typeof value === "number" && isFinite(value))
             facts.push([label, `${value}`]);
         };
-        add("Plain-text files read", s.scan_text_artifacts);
+        const sampled = s.content_reading_policy === "opening_sample_v1";
+        add(sampled ? "Text samples read" : "Plain-text artifacts stored", sampled ? s.text_files_sampled : s.scan_text_artifacts);
         add("Unchanged files reused", s.scan_unchanged, s.scan_unchanged > 0);
         // Chutni 0.2 writes a {size_bytes, depth} record for every file, not
         // only for the ones it could not read, so this counter stopped meaning
@@ -7462,8 +7464,13 @@
         // The honest metadata-only number is the post-build "Metadata only"
         // fact above, which comes from counts.metadata_only_sources.
         add("File records written", s.scan_metadata_artifacts);
-        add("PDF pages read", s.pdf_pages_read);
-        add("OCR outputs", s.ocr_outputs);
+        add(sampled ? "PDF pages processed" : "Native PDF pages stored", sampled ? s.pdf_pages_processed : s.pdf_pages_read);
+        add(sampled ? "OCR units completed" : "OCR artifacts stored", sampled ? s.ocr_units_completed : s.ocr_outputs);
+        add("Characters collected", s.characters_read);
+        add("Files read in full", s.files_fully_read);
+        add("Files sampled", s.files_sampled);
+        add("Files with reading failures", s.files_read_failed);
+        add("Summaries unavailable", s.summary_failures, s.summary_failures > 0);
         add("Image captions", s.image_captions);
         add("Summaries", s.summaries_created);
         const errors = (s.scan_errors || 0) + (s.enrichment_failures || 0);
@@ -7539,7 +7546,7 @@
                      why: "Samosa no longer has permission to read this folder. Grant access in System Settings › Privacy & Security, then re-check.",
                      actions: ["recheck", "forget"] };
           case "paused_user":
-            return { chip: "paused", tone: "busy", why: "You paused this build. It resumes exactly where it stopped.",
+            return { chip: "paused", tone: "busy", why: "Build paused. Resume checks the catalog again and reuses cached samples where available.",
                      actions: ["resume", "cancel"] };
           case "paused_chat":
             return { chip: "paused for chat", tone: "busy",
@@ -7607,7 +7614,7 @@
         };
         if (CHUTNI_BUSY.has(s.state)) {
           add("Scanning files", s.scan_files_seen, null, phase === "scan" || !phase);
-          add("Reading file content", s.enrichment_files_done, s.enrichment_files_total, phase === "extract");
+          add(s.content_reading_policy === "opening_sample_v1" ? "Sampling and summarizing files" : "Processing files", s.enrichment_files_done, s.enrichment_files_total, phase === "extract");
           add("Indexing searchable content", s.chunks_indexed, s.chunks_total,
               phase === "tokenize");
           add("Publishing", null, null, phase === "publish");
@@ -7686,7 +7693,7 @@
           const elapsed = durationLabel(s.elapsed_seconds);
           if (elapsed) timingParts.push(elapsed);
           if (typeof s.files_per_second === "number" && s.files_per_second > 0)
-            timingParts.push(`${s.files_per_second.toFixed(1)} files/s`);
+            timingParts.push(chutniRateLabel(s.files_per_second));
           timing.textContent = timingParts.join(" · ");
           monitorHead.appendChild(monitorTitle); monitorHead.appendChild(timing);
           monitor.appendChild(monitorHead);
@@ -7700,45 +7707,35 @@
           monitor.appendChild(grid);
           if (s.current_file) {
             const current = document.createElement("p"); current.className = "chutni-current";
-            current.textContent = `Now: ${s.current_file}`;
+            current.textContent = `${s.content_reading_policy === "opening_sample_v1" ? "Current file" : "Last completed file"}: ${s.current_file}`;
             current.title = s.current_file;
             monitor.appendChild(current);
+          }
+          if (s.activity) {
+            const activity = document.createElement("p"); activity.className = "chutni-activity";
+            activity.textContent = s.activity;
+            monitor.appendChild(activity);
+          }
+          if (s.current_file && s.content_reading_policy === "opening_sample_v1") {
+            const sample = document.createElement("p"); sample.className = "chutni-activity";
+            const page = s.current_page > 0 ? `Page ${s.current_page} of ${s.current_page_total} · ` : "";
+            sample.textContent = `${page}${(s.current_file_characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()} target characters`;
+            monitor.appendChild(sample);
           }
           li.appendChild(monitor);
         }
 
-        const summarySetting = document.createElement("section");
-        summarySetting.className = "chutni-summary-setting";
-        const summaryRow = document.createElement("div");
-        summaryRow.className = "chutni-summary-setting-row";
-        const summaryLabel = document.createElement("label");
-        summaryLabel.textContent = "Summary input budget (approx. tokens per file)";
-        const summaryInput = document.createElement("input");
-        summaryInput.type = "number";
-        summaryInput.min = "128";
-        summaryInput.max = "16384";
-        summaryInput.step = "128";
-        summaryInput.inputMode = "numeric";
-        summaryInput.value = String(s.summary_token_budget || 3000);
-        summaryLabel.appendChild(summaryInput);
-        const summarySave = document.createElement("button");
-        summarySave.type = "button";
-        summarySave.className = "chutni-secondary";
-        summarySave.textContent = "Save budget";
-        const saveBudget = () =>
-          chutniSetSummaryBudget(s, Number(summaryInput.value), summaryInput, summarySave);
-        summarySave.onclick = saveBudget;
-        summaryInput.onkeydown = event => {
-          if (event.key === "Enter") { event.preventDefault(); saveBudget(); }
-        };
-        summaryRow.appendChild(summaryLabel);
-        summaryRow.appendChild(summarySave);
-        const summaryHelp = document.createElement("p");
-        summaryHelp.textContent =
-          "Used on the next Refresh. It limits summary input only; searchable content extraction remains separate.";
-        summarySetting.appendChild(summaryRow);
-        summarySetting.appendChild(summaryHelp);
-        li.appendChild(summarySetting);
+        const readingPolicy = document.createElement("section");
+        readingPolicy.className = "chutni-summary-setting";
+        const policyTitle = document.createElement("strong");
+        const sampled = s.content_reading_policy === "opening_sample_v1";
+        policyTitle.textContent = sampled ? `Reading target: ${(s.read_character_target || 3000).toLocaleString()} characters per file` : "Reading policy";
+        const policyHelp = document.createElement("p");
+        policyHelp.textContent = sampled
+          ? `Opening samples are indexed and summarized. Complete pages may exceed the target. Sparse PDFs stop after ${s.sample_page_guard || 12} pages. Content beyond these samples is not verified by this build.`
+          : "This memory was started with the previous reading policy. New builds sample about 3,000 characters per file, keeping complete PDF pages and images.";
+        readingPolicy.append(policyTitle, policyHelp);
+        li.appendChild(readingPolicy);
 
         // Exclusions are shown because a user who cannot see why a file is
         // missing has no way to tell an exclusion from a bug.
@@ -7821,41 +7818,6 @@
         return li;
       }
 
-      async function chutniSetSummaryBudget(scope, tokenBudget, input, button) {
-        if (!Number.isInteger(tokenBudget) || tokenBudget < 128 || tokenBudget > 16384) {
-          input.setCustomValidity("Enter a whole number from 128 to 16384.");
-          input.reportValidity();
-          return;
-        }
-        input.setCustomValidity("");
-        input.disabled = true;
-        button.disabled = true;
-        button.textContent = "Saving…";
-        try {
-          const response = await authFetch(
-            `/v1/chutni/scopes/${encodeURIComponent(scope.id)}/summary-budget`,
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token_budget: tokenBudget }) });
-          const body = await response.json().catch(() => null);
-          if (!response.ok)
-            throw new Error((body && body.error && body.error.message) ||
-                            "The summary budget could not be saved.");
-          scope.summary_token_budget = tokenBudget;
-          chutniEls.error.hidden = true;
-          button.textContent = "Saved";
-          setTimeout(() => {
-            if (button.isConnected) button.textContent = "Save budget";
-          }, 1200);
-        } catch (err) {
-          chutniEls.error.hidden = false;
-          chutniEls.error.textContent = err.message || "The summary budget could not be saved.";
-          button.textContent = "Save budget";
-        } finally {
-          input.disabled = false;
-          button.disabled = false;
-        }
-      }
-
       async function chutniAction(scope, action) {
         if (action === "ask" || action === "unuse") {
           if (action === "ask" && activeChat()?.workflow_job_id) {
@@ -7919,8 +7881,6 @@
       function openChutniAdd() {
         chutniEls.path.value = "";
         chutniEls.excludeNames.value = "";
-        chutniEls.summaryBudget.value = "3000";
-        chutniEls.summaryBudget.setCustomValidity("");
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
         chutniPreflightId = null; chutniPolicyFingerprint = null;
         chutniPreflightRequiresRebuild = false;
@@ -7935,15 +7895,6 @@
       async function chutniAddNext() {
         const path = (chutniEls.path.value || "").trim();
         if (!path) { chutniEls.path.focus(); return; }
-        const summaryTokenBudget = Number(chutniEls.summaryBudget.value);
-        if (!Number.isInteger(summaryTokenBudget) ||
-            summaryTokenBudget < 128 || summaryTokenBudget > 16384) {
-          chutniEls.summaryBudget.setCustomValidity(
-            "Enter a whole number from 128 to 16384.");
-          chutniEls.summaryBudget.reportValidity();
-          return;
-        }
-        chutniEls.summaryBudget.setCustomValidity("");
         const userExclusions = [...new Set(chutniEls.excludeNames.value.split(",")
           .map(name => name.trim().toLowerCase()).filter(Boolean))];
         if (userExclusions.length > 16 || userExclusions.some(name =>
@@ -7985,7 +7936,6 @@
               preflight_id: chutniPreflightId,
               policy_fingerprint: chutniPolicyFingerprint,
               display_name: baseName(path),
-              summary_token_budget: summaryTokenBudget,
               confirm_rebuild: !!(chutniPreflightId && chutniPreflightRequiresRebuild),
               client_request_id: `scope-${Date.now()}`
             })
@@ -9321,8 +9271,6 @@
         }
       });
       chutniEls.path.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); chutniAddNext(); } };
-      chutniEls.summaryBudget.oninput = () =>
-        chutniEls.summaryBudget.setCustomValidity("");
       // A new path invalidates an accepted preflight: the estimate on screen
       // describes the old folder, and building from it would scan something
       // the user never confirmed.

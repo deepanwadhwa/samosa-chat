@@ -539,8 +539,7 @@ static int handler(SamosaHttpServer *server, int fd,
             "\"{\\\"caption\\\":\\\"A small repository OCR fixture containing printed text.\\\"}\"}}]}", NULL);
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/chat/completions") &&
         strstr(request->body, "Summarize this file in two or three factual sentences")) {
-        if (strstr(request->body, "Page 7 of 7") ||
-            strstr(request->body, "TAIL_CONTENT_LEAK"))
+        if (strstr(request->body, "TAIL_CONTENT_LEAK"))
             return samosa_http_response(fd, 200, "application/json",
                 "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                 "\"message\":{\"role\":\"assistant\",\"content\":"
@@ -1166,7 +1165,7 @@ static int handler(SamosaHttpServer *server, int fd,
         return samosa_http_response(fd, 200, "application/json",
             strstr(request->body, "--- Folder/file action evidence") &&
             strstr(request->body, "Decision runtime unavailable or invalid") &&
-            strstr(request->body, "Index coverage:")
+            strstr(request->body, "Inventory coverage:")
                 ? "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","
                   "\"message\":{\"role\":\"assistant\",\"content\":\"saw honest no-match status\"}}]}"
                 : "{\"choices\":[{\"index\":0,\"finish_reason\":\"stop\","

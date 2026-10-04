@@ -114,7 +114,7 @@ static void memory_source_context(Gateway *g, const char *store, MemorySource *s
     TextBuffer args = {0};
     text_add(&args, "{\"store_path\":"); text_json_string(&args, store);
     text_add(&args, ",\"source_id\":"); text_json_string(&args, source->id);
-    text_add(&args, want_content ? ",\"max_text_chars\":14000}" : ",\"max_text_chars\":128}");
+    text_add(&args, want_content ? ",\"max_text_chars\":14000}" : ",\"max_text_chars\":512}");
     source->context = memory_service_json(g, "chutni_source_context", args.data,
                                          &source->context_raw, &source->context_arena);
     free(args.data);
@@ -129,6 +129,12 @@ static void memory_source_context(Gateway *g, const char *store, MemorySource *s
             jval *pages = meta ? json_get(meta, "page_count") : NULL;
             if (pages && pages->t == J_NUM && pages->num > 0 && pages->num <= 10000 &&
                 pages->num == (int)pages->num) source->pages = (int)pages->num;
+            jval *sampled = meta ? json_get(meta, "sampled") : NULL;
+            if (sampled && sampled->t == J_BOOL && sampled->boolean)
+                source->preview_complete = 0;
+            jval *review = meta ? json_get(meta, "needs_review") : NULL;
+            if (review && review->t == J_BOOL && review->boolean)
+                source->preview_complete = 0;
             json_free(meta); free(arena);
         }
         if (!memory_unique_content(artifacts, i) || !content->str[0]) continue;
@@ -571,8 +577,11 @@ static int chutni_chat_evidence(Gateway *g, jval *directory_context, const char 
     jval *state = scope_raw ? json_parse(scope_raw, &scope_arena) : NULL;
     jval *complete = state ? json_get(state, "complete_for_policy") : NULL;
     text_add(evidence, complete && complete->t == J_BOOL && complete->boolean
-        ? "Index coverage: complete for the saved folder policy; snapshot, not live filesystem.\n"
-        : "Index coverage: incomplete or unknown; unindexed files may exist. No absence or exact whole-folder count claims.\n");
+        ? "Inventory coverage: complete for the saved folder policy; snapshot, not live filesystem.\n"
+        : "Inventory coverage: incomplete or unknown; unindexed files may exist. No absence or exact whole-folder count claims.\n");
+    jval *reading_policy = state ? json_get(state, "content_reading_policy") : NULL;
+    if (reading_policy && reading_policy->t == J_STR && !strcmp(reading_policy->str, "opening_sample_v1"))
+        text_add(evidence, "Content coverage: opening samples, targeting 3000 characters and keeping complete pages. Later content may be unread. Inventory completeness is not full-content completeness. Absence from sampled content is not absence from a file. Source metadata reports sampled pages separately from total page count.\n");
     json_free(state); free(scope_arena); free(scope_raw);
     if (valid) { text_add(evidence, "Executed read-only actions: "); text_json_value(evidence, json_get(plan, "actions")); text_add(evidence, "\n"); }
     else text_add(evidence, "Decision runtime unavailable or invalid. Only inventory and bounded previews supplied; disclose this limit when it prevents answering.\n");

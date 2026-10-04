@@ -206,10 +206,10 @@ if "$SAMOSA_EXTRACT" --version 2>/dev/null | grep -q ';pdfium)'; then
   PDFIUM_ENABLED=1
   EXPECT_READABLE=5
   EXPECT_METADATA_ONLY=0
-  EXPECT_CONTENT_ARTIFACTS=17
+  EXPECT_CONTENT_ARTIFACTS=16
   EXPECT_PDF_PAGES=7
   EXPECT_SUMMARIES=5
-  EXPECT_MODEL_ARTIFACTS=6
+  EXPECT_MODEL_ARTIFACTS=5
   EXPECT_ENRICHMENT_FAILURES=0
 else
   # Runtime-only releases deliberately retain text/HTML/DOCX extraction but
@@ -218,10 +218,10 @@ else
   PDFIUM_ENABLED=0
   EXPECT_READABLE=4
   EXPECT_METADATA_ONLY=1
-  EXPECT_CONTENT_ARTIFACTS=9
+  EXPECT_CONTENT_ARTIFACTS=8
   EXPECT_PDF_PAGES=0
   EXPECT_SUMMARIES=4
-  EXPECT_MODEL_ARTIFACTS=5
+  EXPECT_MODEL_ARTIFACTS=4
   EXPECT_ENRICHMENT_FAILURES=1
 fi
 
@@ -377,7 +377,7 @@ printf '%s' "$STATUS" | grep -q '"enrichment_files_total":5'
 printf '%s' "$STATUS" | grep -q '"enrichment_files_done":5'
 printf '%s' "$STATUS" | grep -q "\"pdf_pages_read\":$EXPECT_PDF_PAGES"
 printf '%s' "$STATUS" | grep -q '"ocr_outputs":1'
-printf '%s' "$STATUS" | grep -q '"image_captions":1'
+printf '%s' "$STATUS" | grep -q '"image_captions":0'
 printf '%s' "$STATUS" | grep -q "\"summaries_created\":$EXPECT_SUMMARIES"
 printf '%s' "$STATUS" | grep -q "\"enrichment_failures\":$EXPECT_ENRICHMENT_FAILURES"
 printf '%s' "$STATUS" | grep -q '"elapsed_seconds":'
@@ -421,9 +421,11 @@ fi
 OCR_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"Poličar 2019\",\"limit\":20}")
 printf '%s' "$OCR_RESULT" | grep -q '"artifact_kind":"ocr_text"'
-CAPTION_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
-  "{\"store_path\":\"$STORE\",\"query\":\"small repository OCR fixture\",\"limit\":20}")
-printf '%s' "$CAPTION_RESULT" | grep -q '"artifact_kind":"image_caption"'
+# OCR-readable images need no extra chat-model caption pass.
+sqlite3 "file:$STORE/catalog.sqlite?immutable=1" "SELECT count(*) FROM artifacts WHERE artifact_kind='image_caption' AND status='active';" | grep -q '^0$'
+# Samples must not make unread tail text searchable or mislabel their coverage.
+sqlite3 "file:$STORE/catalog.sqlite?immutable=1" "SELECT length(a.inline_text) FROM artifacts a JOIN sources s USING(source_id) WHERE a.artifact_kind='extracted_text' AND a.status='active' AND json_extract(s.locator_json,'$.display_path') LIKE '%/report.txt';" | grep -q '^3000$'
+sqlite3 "file:$STORE/catalog.sqlite?immutable=1" "SELECT count(*) FROM artifacts WHERE artifact_kind IN ('extracted_text','summary_short') AND status='active' AND inline_text LIKE '%TAIL_CONTENT_LEAK%';" | grep -q '^0$'
 SUMMARY_RESULT=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_search \
   "{\"store_path\":\"$STORE\",\"query\":\"portable Chutni memory\",\"limit\":20}")
 printf '%s' "$SUMMARY_RESULT" | grep -q '"artifact_kind":"summary_short"'
@@ -436,10 +438,10 @@ sqlite3 "$DB_URI" \
   "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) JOIN producers p USING(producer_id) WHERE a.artifact_kind IN ('image_caption','summary_short') AND a.status='active' AND p.producer_kind='model' AND p.model_id='qwen3.6-35b-a3b' AND p.model_revision<>'' AND p.app_name='Samosa';" \
   | grep -q "^$EXPECT_MODEL_ARTIFACTS\$"
 sqlite3 "$DB_URI" \
-  "SELECT count(*) FROM artifacts a JOIN sources s USING(source_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND json_extract(s.locator_json,'$.display_path') LIKE '%/guide.pdf' AND a.selector_json='{\"type\":\"pages\",\"start\":1,\"end\":3}' AND a.inline_text NOT LIKE 'ERROR:%';" \
-  | grep -q "^$PDFIUM_ENABLED\$"
+  "SELECT count(*) FROM artifacts a JOIN sources s USING(source_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND json_extract(s.locator_json,'$.display_path') LIKE '%/guide.pdf' AND a.selector_json='{\"type\":\"pages\",\"start\":1,\"end\":7}' AND a.inline_text NOT LIKE 'ERROR:%';" \
+  | grep -q "^$PDFIUM_ENABLED\$" || { sqlite3 "$DB_URI" "SELECT a.selector_json,d.parameters_json FROM artifacts a JOIN derivations d USING(derivation_id) WHERE a.artifact_kind='summary_short' AND a.status='active';" >&2; fail "summary page selectors"; }
 sqlite3 "$DB_URI" \
-  "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND d.recipe_hash='samosa-summary-leading-content-v1' AND json_extract(d.parameters_json,'$.summary_input')='leading_content_window' AND json_extract(d.parameters_json,'$.token_budget')=128 AND json_extract(d.parameters_json,'$.token_estimator')='utf8_bytes_div_4_v1' AND json_extract(d.parameters_json,'$.max_input_bytes')=512 AND a.inline_text NOT LIKE 'ERROR:%';" \
+  "SELECT count(*) FROM artifacts a JOIN derivations d USING(derivation_id) WHERE a.artifact_kind='summary_short' AND a.status='active' AND d.recipe_hash='samosa-summary-opening-sample-v2' AND json_extract(d.parameters_json,'$.summary_input')='opening_sample' AND json_extract(d.parameters_json,'$.token_budget')>0 AND json_extract(d.parameters_json,'$.token_estimator')='utf8_bytes_div_4_v1' AND json_extract(d.parameters_json,'$.max_input_bytes')>0 AND a.inline_text NOT LIKE 'ERROR:%';" \
   | grep -q "^$EXPECT_SUMMARIES\$"
 
 RESULT=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \

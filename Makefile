@@ -366,7 +366,7 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	node tests/test_web_activity_ui.mjs
 	node tests/test_developer_mode_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
+compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-chutni-sampling test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
 	BUILD_DIR="$(BUILD_DIR)" \
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
@@ -392,6 +392,11 @@ compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test
 # regression for the PDF page-batch-cap fix. The required routing gate below
 # must fail when PDFium is absent; it must never turn a portable build into a
 # false passing/skip result.
+test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samosa_memory.h $(GATEWAY_SUPPORT_SRCS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_chutni_sampling.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test-chutni-sampling $(DL_LDFLAGS)
+	$(BUILD_DIR)/test-chutni-sampling
+
 test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \

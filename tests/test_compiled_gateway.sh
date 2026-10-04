@@ -708,7 +708,8 @@ while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-triage-delay" ]; do
 done
 [ -f "$TMP/fake-triage-first" ]
 [ -f "$TMP/fake-triage-delay" ]
-TRIAGE_JOB=$(/bin/ls -dt "$HOME_DIR"/jobs/job-* | /usr/bin/head -1 | /usr/bin/xargs /usr/bin/basename)
+TRIAGE_JOB=$(/usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' "$TMP/triage-crash.sse" | /usr/bin/head -1)
+[ -n "$TRIAGE_JOB" ]
 [ "$(/usr/bin/grep -c '"rel_path":' "$HOME_DIR/jobs/$TRIAGE_JOB/verdicts.jsonl")" = 16 ]
 kill_main_for_crash
 wait "$TRIAGE_CRASH_CURL" 2>/dev/null || true

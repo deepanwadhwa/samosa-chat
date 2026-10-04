@@ -1,0 +1,8 @@
+{
+  "release": "dev-6909b5cecf67",
+  "matches_source": {
+    "bin/samosa-gateway": true,
+    "bin/chutni-mcp": true,
+    "app.html": true
+  }
+}

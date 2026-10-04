@@ -298,6 +298,8 @@ enum {
 #define NATIVE_SUMMARIZER_CHUNK_CHARS 1400
 #define NATIVE_SUMMARIZER_MAX_WEB_CHUNKS 3
 #define NATIVE_SUMMARIZER_MAX_DOC_CHUNKS 10
+#define CHUTNI_READ_CHAR_TARGET 3000
+#define CHUTNI_SAMPLE_MAX_PAGES 12
 /* WK1 (docs/TASKS_WEB_SEARCH.md Phase WK): the provider used when config.json
    names none. It is the one preset that needs no credential, which is what
    lets search work on a fresh install without a signup. */
@@ -4260,6 +4262,13 @@ static char *reshape_doc_read_result(const char *full_lines_json, const char *re
     jval *retryable = json_get(root, "retryable");
     if ((retryable && retryable->t == J_BOOL && retryable->boolean) || any_incomplete)
         text_add(&out, ",\"retryable\":true");
+    static const char *sample_keys[] = {"sampled", "characters_read", "pages_read", "character_target", "stop_reason", NULL};
+    for (const char **key = sample_keys; *key; key++) {
+        jval *value = json_get(root, *key);
+        if (value) {
+            text_add(&out, ","); text_json_string(&out, *key); text_add(&out, ":"); text_json_value(&out, value);
+        }
+    }
     text_add(&out, "}");
 
     free(text_buf.data);
@@ -4442,6 +4451,25 @@ typedef struct {
     const char *filename;
 } DocumentReadProgress;
 
+/* Count Unicode code points, rather than UTF-8 bytes. Page separators and
+   reader warnings are not document content and do not spend the sample. */
+static size_t document_character_count(const char *text) {
+    size_t count = 0;
+    for (const unsigned char *p = (const unsigned char *)(text ? text : ""); *p; p++)
+        if ((*p & 0xc0) != 0x80) count++;
+    return count;
+}
+
+static size_t document_page_character_count(jval *page) {
+    jval *lines = page ? json_get(page, "lines") : NULL;
+    size_t count = 0;
+    for (int i = 0; lines && lines->t == J_ARR && i < lines->len; i++) {
+        jval *text = json_get(lines->kids[i], "text");
+        if (text && text->t == J_STR) count += document_character_count(text->str);
+    }
+    return count;
+}
+
 static int doc_read_progress(Gateway *g, const DocumentReadProgress *progress,
                              const char *stage, const char *message) {
     if (atomic_load(&g->document_processing) && atomic_load(&g->document_cancel_requested)) return 0;
@@ -4450,18 +4478,42 @@ static int doc_read_progress(Gateway *g, const DocumentReadProgress *progress,
     return 0;
 }
 
+static size_t doc_read_page_complete(Gateway *g, const DocumentReadProgress *progress,
+                                     const char *page_json, int total_pages) {
+    char *arena = NULL;
+    jval *page = json_parse(page_json, &arena);
+    size_t chars = document_page_character_count(page);
+    jval *index = page ? json_get(page, "index") : NULL;
+    jval *source = page ? json_get(page, "source") : NULL;
+    char event[256];
+    snprintf(event, sizeof(event),
+        "{\"page\":%d,\"total_pages\":%d,\"characters\":%zu,\"ocr\":%s}",
+        index && index->t == J_NUM ? (int)index->num : 0, total_pages, chars,
+        source && source->t == J_STR && !strncmp(source->str, "ocr", 3) ? "true" : "false");
+    doc_read_progress(g, progress, "page_complete", event);
+    json_free(page); free(arena);
+    return chars;
+}
+
 static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args,
                                     const DocumentReadProgress *progress) {
     const long long read_deadline = monotonic_millis() + 180000;
     size_t path_len = strlen(absolute);
     int is_pdf = (path_len >= 4 && strcasecmp(absolute + path_len - 4, ".pdf") == 0);
     const char *detail = "text";
+    jval *sample_value = args ? json_get(args, "sample_characters") : NULL;
+    int sample_target = sample_value && sample_value->t == J_NUM &&
+        sample_value->num >= 128 && sample_value->num <= 65536
+        ? (int)sample_value->num : 0;
+    size_t sample_characters = 0;
     jval *detail_v = args ? json_get(args, "detail") : NULL;
     if (detail_v && detail_v->t == J_STR && (!strcmp(detail_v->str, "lines") || !strcmp(detail_v->str, "text"))) {
         detail = detail_v->str;
     }
     int page_start = 1, page_count_req = -1;
     jval *pages_v = args ? json_get(args, "pages") : NULL;
+    if (sample_target && pages_v)
+        return strdup("{\"ok\":false,\"error\":\"invalid_sample_range\"}");
     if (pages_v && pages_v->t == J_ARR && pages_v->len >= 2) {
         if (pages_v->kids[0]->t == J_NUM) page_start = (int)pages_v->kids[0]->num;
         if (pages_v->kids[1]->t == J_NUM) page_count_req = (int)pages_v->kids[1]->num;
@@ -4489,11 +4541,13 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
        the range in the key so a title-page read stays a title-page read on
        both cold and warm paths. v1 also prefers existing text to OCR. */
     char contract_ver[80];
-    if (page_count_req > 0)
+    if (sample_target)
+        snprintf(contract_ver, sizeof(contract_ver), "reader-v4-sample-%d-pages-%d", sample_target, CHUTNI_SAMPLE_MAX_PAGES);
+    else if (page_count_req > 0)
         snprintf(contract_ver, sizeof(contract_ver), "reader-v3-pages-%d-%d", page_start, page_count_req);
     else
         path_copy(contract_ver, sizeof(contract_ver), "reader-v3");
-    if (page_count_req > 0) {
+    if (page_count_req > 0 || sample_target) {
         RcSha range_key; unsigned char digest[32];
         rc_sha_init(&range_key);
         rc_sha_update(&range_key, hex_key, strlen(hex_key));
@@ -4506,7 +4560,7 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
     char *cached_lines_json = NULL;
     if (!refresh) {
         cached_lines_json = read_cache_get(cache_root, hex_key, contract_ver, pack_fp);
-        if (!cached_lines_json && page_count_req > 0) {
+        if (!cached_lines_json && page_count_req > 0 && !sample_target) {
             /* Chutni enrichment reads the complete source through this same
                reader. Reuse that exact byte/fingerprint version for a bounded
                question, but hand only its requested pages to the conversation. */
@@ -4534,6 +4588,17 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
                fresh read; do not delete unrelated user cache data. */
             free(cached_lines_json);
             cached_lines_json = NULL;
+        }
+        if (sample_target && progress) {
+            char *arena = NULL; jval *cached = json_parse(cached_lines_json, &arena);
+            jval *pages = cached ? json_get(cached, "pages") : NULL;
+            jval *total = cached ? json_get(cached, "page_count") : NULL;
+            for (int i = 0; pages && pages->t == J_ARR && i < pages->len; i++) {
+                TextBuffer page = {0}; text_json_value(&page, pages->kids[i]);
+                doc_read_page_complete(g, progress, page.data, total && total->t == J_NUM ? (int)total->num : 0);
+                free(page.data);
+            }
+            json_free(cached); free(arena);
         }
     }
     if (cached_lines_json) {
@@ -4567,7 +4632,9 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
         char *fail_response = NULL;
 
         while (!failed && batches_left-- > 0 &&
-               (total_doc_pages < 0 || next_start <= total_doc_pages)) {
+               (total_doc_pages < 0 || next_start <= total_doc_pages) &&
+               (!sample_target || (sample_characters < (size_t)sample_target &&
+                                   global_index < CHUTNI_SAMPLE_MAX_PAGES))) {
             if (atomic_load(&g->document_processing) && atomic_load(&g->document_cancel_requested)) {
                 failed = 1;
                 fail_response = strdup("{\"ok\":false,\"error\":\"document_cancelled\"}");
@@ -4577,6 +4644,7 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
             snprintf(start_text, sizeof(start_text), "%d", next_start);
             int batch_count = page_count_req > 0 ? page_start + page_count_req - next_start : 5;
             if (batch_count > 5) batch_count = 5;
+            if (sample_target) batch_count = 1; /* Never inspect later pages after reaching the target. */
             char inspect_message[160];
             snprintf(inspect_message, sizeof(inspect_message), "Inspecting PDF pages %d–%d for selectable text and scanned regions…",
                      next_start, next_start + batch_count - 1);
@@ -4697,8 +4765,13 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
                     failed = 1; fail_response = strdup("{\"ok\":false,\"error\":\"document_cancelled\"}"); break;
                 }
 
+                char page_event[128];
+                snprintf(page_event, sizeof(page_event), "{\"page\":%d,\"total_pages\":%d}", abs_page, total_doc_pages);
+                doc_read_progress(g, progress, "page_started", page_event);
+
                 char numbuf[32];
                 if (global_index > 0) text_add(&pages_body, ",");
+                size_t page_body_start = pages_body.len;
                 text_add(&pages_body, "{\"index\":");
                 snprintf(numbuf, sizeof(numbuf), "%d", abs_page);
                 text_add(&pages_body, numbuf);
@@ -4776,6 +4849,7 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
                             emit_text_layer_page(&pages_body, p_txt->str, "text_layer_ocr_unavailable");
                             retryable_result = 1;
                             text_add(&pages_body, "}");
+                            sample_characters += doc_read_page_complete(g, progress, pages_body.data + page_body_start, total_doc_pages);
                             global_index++;
                             continue;
                         }
@@ -4809,6 +4883,7 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
                             emit_text_layer_page(&pages_body, p_txt->str, "text_layer_ocr_unavailable");
                             retryable_result = 1;
                             text_add(&pages_body, "}");
+                            sample_characters += doc_read_page_complete(g, progress, pages_body.data + page_body_start, total_doc_pages);
                             global_index++;
                             continue;
                         }
@@ -4870,6 +4945,7 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
                     json_free(ocr_json); free(arena_ocr); free(ocr_raw);
                 }
                 text_add(&pages_body, "}");
+                sample_characters += doc_read_page_complete(g, progress, pages_body.data + page_body_start, total_doc_pages);
                 global_index++;
             }
             json_free(ext_json); free(arena_ext); free(ext_raw);
@@ -4889,7 +4965,17 @@ static char *doc_read_with_progress(Gateway *g, const char *absolute, jval *args
         text_add(&full_lines, numbuf);
         text_add(&full_lines, ",\"pages\":[");
         if (pages_body.data) text_add(&full_lines, pages_body.data);
-        text_add(&full_lines, retryable_result ? "],\"retryable\":true}" : "]}");
+        text_add(&full_lines, "]");
+        if (sample_target) {
+            char sample_meta[256];
+            snprintf(sample_meta, sizeof(sample_meta),
+                ",\"sampled\":%s,\"characters_read\":%zu,\"pages_read\":%d,\"character_target\":%d,\"stop_reason\":\"%s\"",
+                global_index < total_doc_pages ? "true" : "false", sample_characters, global_index, sample_target,
+                global_index >= total_doc_pages ? "end_of_file" : sample_characters >= (size_t)sample_target ? "character_target" : "page_guard");
+            text_add(&full_lines, sample_meta);
+        }
+        if (retryable_result) text_add(&full_lines, ",\"retryable\":true");
+        text_add(&full_lines, "}");
         free(pages_body.data);
     } else {
         char *argv_ocr[] = {g->samosa_ocr, "read", (char *)absolute, NULL};
@@ -11920,20 +12006,21 @@ static int native_summarize_text(Gateway *g, const char *text, size_t source_cap
     if (available > source_cap) available = source_cap;
     size_t offset = 0;
     int completed = 0;
+    int map_failed = 0;
     TextBuffer working = {0};
     while (offset < available && completed < max_chunks) {
         while (offset < available && isspace((unsigned char)text[offset])) offset++;
         if (offset >= available) break;
         size_t chunk = native_summary_chunk_length(text + offset, available - offset);
         char *part = native_summarize_once(g, text + offset, chunk);
-        if (!part) break;
+        if (!part) { map_failed = 1; break; }
         if (completed) text_add(&working, "\n");
         text_add(&working, part);
         free(part);
         completed++;
         offset += chunk;
     }
-    if (!completed || !working.data || !working.len) {
+    if (map_failed || !completed || !working.data || !working.len) {
         free(working.data);
         return 0;
     }
@@ -22944,7 +23031,7 @@ static int chutni_store_model_text(
         snprintf(bytes, sizeof(bytes), "%zu", summary_input_bytes);
         snprintf(tokens, sizeof(tokens), "%d", summary_token_budget);
         ok = ok &&
-             text_add(&request, ",\"summary_input\":\"leading_content_window\","
+             text_add(&request, ",\"summary_input\":\"opening_sample\","
                                 "\"token_budget\":") &&
              text_add(&request, tokens) &&
              text_add(&request, ",\"token_estimator\":\"utf8_bytes_div_4_v1\","
@@ -23067,8 +23154,8 @@ static size_t chutni_summary_append(TextBuffer *out, const char *text,
     return used;
 }
 
-static char *chutni_read_text_prefix(const char *path, size_t limit) {
-    if (!path || !limit) return NULL;
+static char *chutni_read_character_sample(const char *path, size_t target) {
+    if (!path || !target || target > SIZE_MAX / 4 - 1) return NULL;
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return NULL;
     struct stat st;
@@ -23076,21 +23163,46 @@ static char *chutni_read_text_prefix(const char *path, size_t limit) {
         close(fd);
         return NULL;
     }
-    char *text = malloc(limit + 1);
+    char *text = malloc(target * 4 + 1);
     if (!text) {
         close(fd);
         return NULL;
     }
-    size_t used = 0;
-    while (used < limit) {
-        ssize_t got = read(fd, text + used, limit - used);
+    size_t used = 0, characters = 0;
+    while (characters < target) {
+        /* Reading at most the remaining character count in bytes cannot
+           consume the next character beyond the target, even for UTF-8. */
+        size_t want = target - characters;
+        if (want > target * 4 - used) want = target * 4 - used;
+        if (!want) { free(text); close(fd); return NULL; }
+        ssize_t got = read(fd, text + used, want);
         if (got < 0 && errno == EINTR) continue;
         if (got < 0) {
             free(text); close(fd);
             return NULL;
         }
         if (!got) break;
+        for (ssize_t i = 0; i < got; i++)
+            if (((unsigned char)text[used + (size_t)i] & 0xc0) != 0x80) characters++;
         used += (size_t)got;
+    }
+    if (used) {
+        size_t start = used - 1;
+        while (start && ((unsigned char)text[start] & 0xc0) == 0x80) start--;
+        unsigned char first = (unsigned char)text[start];
+        size_t width = first < 0x80 ? 1 : (first & 0xe0) == 0xc0 ? 2 :
+                       (first & 0xf0) == 0xe0 ? 3 : (first & 0xf8) == 0xf0 ? 4 : 1;
+        while (used - start < width) {
+            ssize_t got = read(fd, text + used, width - (used - start));
+            if (got < 0 && errno == EINTR) continue;
+            if (got <= 0) { used = start; break; }
+            used += (size_t)got;
+        }
+    }
+    struct stat after;
+    if (fstat(fd, &after) || after.st_size != st.st_size ||
+        gw_stat_mtime(&after) != gw_stat_mtime(&st)) {
+        free(text); close(fd); return NULL;
     }
     close(fd);
     text[used] = 0;
@@ -23101,17 +23213,25 @@ typedef struct {
     unsigned long long derived, model, failed;
     unsigned long long files_total, files_processed;
     unsigned long long pdf_pages, ocr_outputs, captions, summaries;
+    unsigned long long sampled_files, complete_files, failed_files, metadata_files;
+    unsigned long long summary_failures;
 } ChutniEnrichmentCounts;
 
 typedef struct {
     long long started_ms;
     long long last_write_mono_ms;
+    long long enrichment_started_ms;
     unsigned long long scan_files_seen, scan_sources_indexed, scan_unchanged;
     unsigned long long scan_text_artifacts, scan_metadata_artifacts;
     unsigned long long scan_skipped, scan_errors;
     ChutniEnrichmentCounts enrichment;
     char phase[32];
     char current_file[PATH_MAX];
+    char activity[256];
+    char activity_stage[32];
+    unsigned long long pages_processed, ocr_completed, text_files_sampled, characters_read;
+    unsigned long long current_characters;
+    int current_page, current_page_total;
 } ChutniBuildProgress;
 
 static int chutni_progress_write(Gateway *g, const char *scope_id,
@@ -23128,7 +23248,9 @@ static int chutni_progress_write(Gateway *g, const char *scope_id,
         ? (updated_ms - progress->started_ms) / 1000.0 : 0.0;
     unsigned long long handled = !strcmp(progress->phase, "scan")
         ? progress->scan_files_seen : progress->enrichment.files_processed;
-    double rate = elapsed > 0.0 ? handled / elapsed : 0.0;
+    double phase_elapsed = strcmp(progress->phase, "scan") && progress->enrichment_started_ms > 0
+        ? (updated_ms - progress->enrichment_started_ms) / 1000.0 : elapsed;
+    double rate = phase_elapsed > 0.0 ? handled / phase_elapsed : 0.0;
     TextBuffer out = {0};
     char number[96];
 #define ADD_U64(key, value) do { \
@@ -23142,7 +23264,10 @@ static int chutni_progress_write(Gateway *g, const char *scope_id,
         !text_add(&out, ",\"phase\":") ||
         !text_json_string(&out, progress->phase) ||
         !text_add(&out, ",\"current_file\":") ||
-        !text_json_string(&out, progress->current_file))
+        !text_json_string(&out, progress->current_file) ||
+        !text_add(&out, ",\"activity\":") || !text_json_string(&out, progress->activity) ||
+        !text_add(&out, ",\"activity_stage\":") || !text_json_string(&out, progress->activity_stage) ||
+        !text_add(&out, ",\"content_reading_policy\":\"opening_sample_v1\""))
         goto failed;
     ADD_U64("progress_started_ms", progress->started_ms);
     ADD_U64("progress_updated_ms", updated_ms);
@@ -23160,6 +23285,20 @@ static int chutni_progress_write(Gateway *g, const char *scope_id,
     ADD_U64("image_captions", progress->enrichment.captions);
     ADD_U64("summaries_created", progress->enrichment.summaries);
     ADD_U64("enrichment_failures", progress->enrichment.failed);
+    ADD_U64("read_character_target", CHUTNI_READ_CHAR_TARGET);
+    ADD_U64("sample_page_guard", CHUTNI_SAMPLE_MAX_PAGES);
+    ADD_U64("pdf_pages_processed", progress->pages_processed);
+    ADD_U64("ocr_units_completed", progress->ocr_completed);
+    ADD_U64("text_files_sampled", progress->text_files_sampled);
+    ADD_U64("characters_read", progress->characters_read);
+    ADD_U64("current_file_characters", progress->current_characters);
+    ADD_U64("current_page", progress->current_page);
+    ADD_U64("current_page_total", progress->current_page_total);
+    ADD_U64("files_sampled", progress->enrichment.sampled_files);
+    ADD_U64("files_fully_read", progress->enrichment.complete_files);
+    ADD_U64("files_read_failed", progress->enrichment.failed_files);
+    ADD_U64("files_metadata_only", progress->enrichment.metadata_files);
+    ADD_U64("summary_failures", progress->enrichment.summary_failures);
     snprintf(number, sizeof(number), "%.3f", elapsed);
     if (!text_add(&out, ",\"elapsed_seconds\":") || !text_add(&out, number))
         goto failed;
@@ -23214,6 +23353,8 @@ static int chutni_progress_scan_line(ChutniBuildProgress *progress,
     jval *path = valid ? json_get(event, "current_path") : NULL;
     if (path && path->t == J_STR)
         chutni_progress_set_file(progress, root_path, path->str);
+    path_copy(progress->activity, sizeof(progress->activity), "Cataloging file details and checking file identity…");
+    path_copy(progress->activity_stage, sizeof(progress->activity_stage), "cataloging");
     json_free(event);
     free(arena);
     return valid;
@@ -23260,30 +23401,88 @@ static void chutni_progress_drain(Gateway *g, int fd, TextBuffer *pending,
     }
 }
 
+typedef struct {
+    Gateway *g;
+    const char *scope_id, *job_id;
+    ChutniBuildProgress *progress;
+    int is_pdf;
+} ChutniReaderProgress;
+
+static int chutni_reader_progress(void *opaque, const char *filename,
+                                  const char *stage, const char *message) {
+    (void)filename;
+    ChutniReaderProgress *context = opaque;
+    if (atomic_load(&context->g->chutni_control)) return 0;
+    ChutniBuildProgress *p = context->progress;
+    if (!p) return 1;
+    if (!strcmp(stage, "page_started") || !strcmp(stage, "page_complete")) {
+        char *arena = NULL; jval *event = json_parse(message, &arena);
+        jval *page = event ? json_get(event, "page") : NULL;
+        jval *total = event ? json_get(event, "total_pages") : NULL;
+        jval *chars = event ? json_get(event, "characters") : NULL;
+        jval *ocr = event ? json_get(event, "ocr") : NULL;
+        if (page && page->t == J_NUM) p->current_page = (int)page->num;
+        if (total && total->t == J_NUM) p->current_page_total = (int)total->num;
+        if (!strcmp(stage, "page_complete")) {
+            if (context->is_pdf) p->pages_processed++;
+            if (ocr && ocr->t == J_BOOL && ocr->boolean) p->ocr_completed++;
+            if (chars && chars->t == J_NUM) {
+                p->current_characters += (unsigned long long)chars->num;
+                p->characters_read += (unsigned long long)chars->num;
+            }
+            snprintf(p->activity, sizeof(p->activity), "Read page %d of %d; %llu characters collected",
+                     p->current_page, p->current_page_total, p->current_characters);
+        }
+        json_free(event); free(arena);
+    } else {
+        path_copy(p->activity, sizeof(p->activity), message);
+        path_copy(p->activity_stage, sizeof(p->activity_stage), stage);
+    }
+    chutni_progress_write(context->g, context->scope_id, context->job_id, p, 1);
+    return 1;
+}
+
 static void chutni_enrich_source(
     Gateway *g, const char *store_path, const char *path, const char *media,
     const char *app_version, int summary_token_budget,
-    ChutniEnrichmentCounts *counts) {
+    ChutniEnrichmentCounts *counts, ChutniReaderProgress *reader_progress) {
     TextBuffer summary_source = {0};
-    size_t summary_limit =
-        (size_t)summary_token_budget * CHUTNI_SUMMARY_BYTES_PER_TOKEN;
+    size_t summary_limit = SIZE_MAX;
     int summary_page_start = 0, summary_page_end = 0;
+    int readable = 0, sampled = 0;
+    DocumentReadProgress read_progress = {chutni_reader_progress, reader_progress, path};
     if (!strcmp(media, "application/pdf")) {
         char *args_arena = NULL;
-        jval *args = json_parse("{\"detail\":\"lines\"}", &args_arena);
-        char *document = doc_read_handler(g, path, args);
+        char request[96]; snprintf(request, sizeof(request), "{\"detail\":\"lines\",\"sample_characters\":%d}", CHUTNI_READ_CHAR_TARGET);
+        jval *args = json_parse(request, &args_arena);
+        char *document = doc_read_with_progress(g, path, args, &read_progress);
         json_free(args); free(args_arena);
         char *arena = NULL;
         jval *root = document ? json_parse(document, &arena) : NULL;
         jval *ok = root && root->t == J_OBJ ? json_get(root, "ok") : NULL;
         jval *pages = root && root->t == J_OBJ ? json_get(root, "pages") : NULL;
         if (ok && ok->t == J_BOOL && ok->boolean && pages && pages->t == J_ARR) {
+            readable = 1;
+            jval *sample = json_get(root, "sampled");
+            sampled = sample && sample->t == J_BOOL && sample->boolean;
+            jval *retryable = json_get(root, "retryable");
+            if (retryable && retryable->t == J_BOOL && retryable->boolean) {
+                counts->failed_files++; sampled = 1;
+            }
             jval *page_count = json_get(root, "page_count");
             if (page_count && page_count->t == J_NUM && page_count->num > 0) {
-                char metadata[96];
-                snprintf(metadata, sizeof(metadata), "{\"page_count\":%.0f}", page_count->num);
-                if (!chutni_store_derived_text(g, store_path, path, "document_metadata", metadata, 0,
+                TextBuffer metadata = {0};
+                text_add(&metadata, "{\"page_count\":"); text_json_value(&metadata, page_count);
+                static const char *keys[] = {"sampled", "pages_read", "characters_read", "character_target", "stop_reason", "needs_review", "retryable", NULL};
+                for (const char **key = keys; *key; key++) {
+                    jval *value = json_get(root, *key);
+                    if (value) { text_add(&metadata, ","); text_json_string(&metadata, *key); text_add(&metadata, ":"); text_json_value(&metadata, value); }
+                }
+                text_add(&metadata, "}");
+                chutni_reader_progress(reader_progress, path, "saving", "Saving sampled page text and reading coverage…");
+                if (!chutni_store_derived_text(g, store_path, path, "document_metadata", metadata.data, 0,
                     "inspect_pdf_metadata", "Samosa document reader", reader_fingerprint(g), app_version)) counts->failed++;
+                free(metadata.data);
             }
             for (int i = 0; i < pages->len; ++i) {
                 jval *source = json_get(pages->kids[i], "source");
@@ -23317,26 +23516,43 @@ static void chutni_enrich_source(
     } else if (!strncmp(media, "image/", 6)) {
         char *args_arena = NULL;
         jval *args = json_parse("{\"detail\":\"lines\"}", &args_arena);
-        char *document = doc_read_handler(g, path, args);
+        char *document = doc_read_with_progress(g, path, args, &read_progress);
         json_free(args); free(args_arena);
         char *arena = NULL;
         jval *root = document ? json_parse(document, &arena) : NULL;
         jval *ok = root && root->t == J_OBJ ? json_get(root, "ok") : NULL;
         jval *text = root && root->t == J_OBJ ? json_get(root, "text") : NULL;
+        jval *image_pages = root && root->t == J_OBJ ? json_get(root, "pages") : NULL;
+        char *image_text = image_pages && image_pages->t == J_ARR && image_pages->len
+            ? chutni_page_text(image_pages->kids[0]) : NULL;
         if (ok && ok->t == J_BOOL && ok->boolean &&
-            text && text->t == J_STR && text->str[0]) {
+            text && text->t == J_STR && image_text && image_text[0]) {
+            readable = 1;
+            size_t chars = document_character_count(image_text);
+            jval *review = json_get(root, "needs_review");
+            char coverage[192];
+            snprintf(coverage, sizeof(coverage), "{\"sampled\":false,\"characters_read\":%zu,\"reading_unit\":\"image\",\"needs_review\":%s}", chars,
+                     review && review->t == J_BOOL && review->boolean ? "true" : "false");
+            if (!chutni_store_derived_text(g, store_path, path, "document_metadata", coverage, 0,
+                    "inspect_image_reading_coverage", "Samosa OCR", reader_fingerprint(g), app_version)) counts->failed++;
+            if (reader_progress->progress) {
+                reader_progress->progress->current_characters = chars;
+                reader_progress->progress->characters_read += chars;
+                reader_progress->progress->ocr_completed++;
+            }
             int stored = chutni_store_derived_text(
-                g, store_path, path, "ocr_text", text->str, 0,
+                g, store_path, path, "ocr_text", image_text, 0,
                 "ocr_image", "Samosa OCR", reader_fingerprint(g), app_version);
             if (stored) {
                 counts->derived++;
                 counts->ocr_outputs++;
             } else counts->failed++;
             chutni_summary_append(
-                &summary_source, text->str, summary_limit, 0);
+                &summary_source, image_text, summary_limit, 0);
         }
+        free(image_text);
         json_free(root); free(arena); free(document);
-        if (summary_token_budget > 0 && backend_probe(g) && backend_supports_images(g, g->backend)) {
+        if (!readable && summary_token_budget > 0 && backend_probe(g) && backend_supports_images(g, g->backend)) {
             char *uri = definition_image_data_uri(path, media);
             char *caption = uri ? chutni_model_field(
                 g, "Describe this image factually in one concise paragraph for reusable local memory. "
@@ -23358,19 +23574,51 @@ static void chutni_enrich_source(
         }
     } else if (!strncmp(media, "text/", 5) ||
                !strcmp(media, "application/json")) {
-        char *text = chutni_read_text_prefix(path, summary_limit);
+        chutni_reader_progress(reader_progress, path, "reading_text", "Reading the opening text sample…");
+        char *text = chutni_read_character_sample(path, CHUTNI_READ_CHAR_TARGET);
         if (text) {
+            size_t bytes = 0, chars = 0;
+            while (text[bytes] && chars < CHUTNI_READ_CHAR_TARGET) {
+                bytes++; while (text[bytes] && ((unsigned char)text[bytes] & 0xc0) == 0x80) bytes++;
+                chars++;
+            }
+            struct stat st;
+            sampled = !stat(path, &st) && st.st_size > (off_t)bytes;
+            text[bytes] = 0;
+            readable = 1;
+            char coverage[256];
+            snprintf(coverage, sizeof(coverage), "{\"sampled\":%s,\"characters_read\":%zu,\"character_target\":%d,\"stop_reason\":\"%s\"}",
+                     sampled ? "true" : "false", chars, CHUTNI_READ_CHAR_TARGET, sampled ? "character_target" : "end_of_file");
+            if (!chutni_store_derived_text(g, store_path, path, "document_metadata", coverage, 0,
+                    "inspect_text_sample_coverage", "Samosa text sampler", "opening-sample-3000-v1", app_version)) counts->failed++;
+            if (reader_progress->progress) {
+                reader_progress->progress->current_characters = chars;
+                reader_progress->progress->characters_read += chars;
+                reader_progress->progress->text_files_sampled++;
+            }
+            if (*text && !chutni_store_derived_text(g, store_path, path, "extracted_text", text, 0,
+                    "read_opening_sample", "Samosa text sampler", "opening-sample-3000-v1", app_version)) counts->failed++;
             chutni_summary_append(
                 &summary_source, text, summary_limit, 0);
             free(text);
         }
     }
 
-    if (summary_source.data && summary_source.len) {
+    if (readable) {
+        if (sampled) counts->sampled_files++;
+        else counts->complete_files++;
+    } else if (!strcmp(media, "application/pdf") || !strncmp(media, "image/", 6) ||
+               !strncmp(media, "text/", 5) || !strcmp(media, "application/json")) {
+        counts->failed_files++;
+    } else counts->metadata_files++;
+
+    if (summary_token_budget > 0 && summary_source.data && summary_source.len && !atomic_load(&g->chutni_control)) {
+        chutni_reader_progress(reader_progress, path, "summarizing", "Summarizing the collected sample…");
         TextBuffer native_summary = {0};
+        int summary_chunks = (int)(summary_source.len / (NATIVE_SUMMARIZER_CHUNK_CHARS / 2)) + 1;
         int used_native = native_summarize_text(
             g, summary_source.data, summary_source.len,
-            NATIVE_SUMMARIZER_MAX_DOC_CHUNKS, 1800, &native_summary);
+            summary_chunks, 1800, &native_summary);
         char *summary = used_native ? native_summary.data : NULL;
         if (!summary && backend_probe(g))
             summary = chutni_model_field(
@@ -23381,18 +23629,18 @@ static void chutni_enrich_source(
             if (chutni_store_model_text(
                     g, store_path, path, "summary_short", summary,
                     "summarize_source", used_native ?
-                        "samosa-native-summary-leading-content-v1" :
-                        "samosa-summary-leading-content-v1",
+                        "samosa-native-summary-opening-sample-v2" :
+                        "samosa-summary-opening-sample-v2",
                     app_version,
                     summary_page_start, summary_page_end,
-                    summary_token_budget, summary_limit,
+                    (int)((summary_source.len + 3) / 4), summary_source.len,
                     used_native ? "Falconsai/text_summarization" : NULL,
                     used_native ?
                         "6e505f907968c4a9360773ff57885cdc6dca4bfd-q8_0" : NULL,
                     used_native ? "Samosa native summarizer" : NULL))
                 counts->model++, counts->summaries++;
             else counts->failed++;
-        }
+        } else { counts->summary_failures++; counts->failed++; }
         if (used_native) free(native_summary.data);
         else free(summary);
     }
@@ -23447,18 +23695,32 @@ static ChutniEnrichmentCounts chutni_enrich_store(
                 (strncmp(path->str, root_path, root_len) ||
                  (path->str[root_len] && path->str[root_len] != '/')))
                 usable = 0;
+            ChutniReaderProgress reader_progress = {g, scope_id, job_id, progress,
+                media && media->t == J_STR && !strcmp(media->str, "application/pdf")};
+            if (progress) {
+                progress->enrichment = counts;
+                progress->current_characters = 0;
+                progress->current_page = progress->current_page_total = 0;
+                if (path && path->t == J_STR)
+                    chutni_progress_set_file(progress, root_path, path->str);
+                path_copy(progress->activity, sizeof(progress->activity), "Starting the opening sample…");
+                path_copy(progress->activity_stage, sizeof(progress->activity_stage), "starting");
+                chutni_progress_write(g, scope_id, job_id, progress, 1);
+            }
             if (usable)
                 chutni_enrich_source(
                     g, store_path, path->str, media->str, app_version,
-                    summary_token_budget, &counts);
-            else
-                counts.failed++;
+                    summary_token_budget, &counts, &reader_progress);
+            else if (state && state->t == J_STR && !strcmp(state->str, "excluded"))
+                counts.metadata_files++;
+            else { counts.failed++; counts.failed_files++; }
             counts.files_processed++;
             if (progress) {
                 progress->enrichment = counts;
-                if (path && path->t == J_STR)
-                    chutni_progress_set_file(progress, root_path, path->str);
-                chutni_progress_write(g, scope_id, job_id, progress, 0);
+                progress->current_file[0] = 0;
+                path_copy(progress->activity, sizeof(progress->activity), "File finished; advancing to the next file…");
+                path_copy(progress->activity_stage, sizeof(progress->activity_stage), "file_complete");
+                chutni_progress_write(g, scope_id, job_id, progress, 1);
             }
         }
         offset += sources->len;
@@ -23803,7 +24065,11 @@ static void chutni_scope_overlay_progress(jval *scope, jval *progress) {
         "scan_metadata_artifacts", "files_skipped", "scan_errors",
         "enrichment_files_total", "enrichment_files_done", "pdf_pages_read",
         "ocr_outputs", "image_captions", "summaries_created",
-        "enrichment_failures", "elapsed_seconds", "files_per_second", NULL
+        "enrichment_failures", "elapsed_seconds", "files_per_second",
+        "read_character_target", "sample_page_guard", "pdf_pages_processed",
+        "ocr_units_completed", "text_files_sampled", "characters_read", "current_file_characters",
+        "current_page", "current_page_total", "files_sampled", "files_fully_read",
+        "files_read_failed", "files_metadata_only", "summary_failures", NULL
     };
     if (!scope || scope->t != J_OBJ || !progress || progress->t != J_OBJ)
         return;
@@ -23818,6 +24084,11 @@ static void chutni_scope_overlay_progress(jval *scope, jval *progress) {
         chutni_json_set_string(scope, "phase", phase->str);
     if (current && current->t == J_STR)
         chutni_json_set_string(scope, "current_file", current->str);
+    static const char *string_keys[] = {"activity", "activity_stage", "content_reading_policy", NULL};
+    for (const char **key = string_keys; *key; key++) {
+        jval *value = json_get(progress, *key);
+        if (value && value->t == J_STR) chutni_json_set_string(scope, *key, value->str);
+    }
 }
 
 static int chutni_scope_publish(Gateway *g, const char *scope_id,
@@ -24022,7 +24293,7 @@ static void *chutni_worker(void *opaque) {
         text_json_string(&request_json, display_name) &&
         text_add(&request_json, ",\"app_name\":\"Samosa\",\"app_version\":") &&
         text_json_string(&request_json, version) &&
-        text_add(&request_json, ",\"report_progress\":true}");
+        text_add(&request_json, ",\"report_progress\":true,\"metadata_only\":true}");
 
     int pipefd[2] = {-1, -1};
     int progressfd[2] = {-1, -1};
@@ -24107,6 +24378,7 @@ static void *chutni_worker(void *opaque) {
             ? json_get(service, "store_path") : NULL;
         if (store && store->t == J_STR && store->str[0]) {
             path_copy(progress.phase, sizeof(progress.phase), "extract");
+            progress.enrichment_started_ms = wall_millis();
             progress.current_file[0] = 0;
             chutni_progress_write(
                 g, args->scope_id, args->job_id, &progress, 1);
@@ -24162,6 +24434,8 @@ static void *chutni_worker(void *opaque) {
               !strcmp(final_state, "paused_user") ? "paused" :
               !strcmp(final_state, "canceled") ? "canceled" : "failed");
     progress.current_file[0] = 0;
+    progress.activity[0] = 0;
+    progress.activity_stage[0] = 0;
     chutni_progress_write(
         g, args->scope_id, args->job_id, &progress, 1);
     chutni_job_write(g, args->scope_id, args->job_id, final_state, phase,

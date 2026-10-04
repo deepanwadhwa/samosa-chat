@@ -1,0 +1,7 @@
+{
+  "ready": true,
+  "backend": "ornith",
+  "updated_ui_served": true,
+  "previous_build_paused": true,
+  "automatic_memory_deferred": true
+}

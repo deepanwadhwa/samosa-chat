@@ -1,0 +1,4 @@
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_memory_harness.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/test_memory_harness 
+build/test_memory_harness
+test_memory_harness: PASS

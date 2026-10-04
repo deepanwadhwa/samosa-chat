@@ -1,0 +1,13 @@
+{
+  "page_count": 20,
+  "pages_read": 3,
+  "characters_read": 3097,
+  "character_target": 3000,
+  "sampled": true,
+  "stop_reason": "character_target",
+  "page_sources": [
+    "text_layer",
+    "ocr",
+    "ocr"
+  ]
+}
