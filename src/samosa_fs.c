@@ -872,7 +872,7 @@ static void chutni_inventory_policy_fingerprint(const ChutniPolicy *policy,
     unsigned char digest[32];
     char identity[256];
     int n = snprintf(identity, sizeof identity,
-        "samosa-folder-policy-v2\n%llu:%llu\n%d:%d:%u:%llu:%llu:%llu:%llu:%llu\n",
+        "samosa-folder-policy-v3\n%llu:%llu\n%d:%d:%u:%llu:%llu:%llu:%llu:%llu\n",
         (unsigned long long)root_st->st_dev, (unsigned long long)root_st->st_ino,
         policy->include_hidden, policy->cross_filesystems, policy->max_depth,
         policy->max_files, policy->max_directories, policy->max_seconds,

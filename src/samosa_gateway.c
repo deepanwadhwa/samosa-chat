@@ -23640,10 +23640,30 @@ static void chutni_native_summary_activity(void *opaque, const char *stage) {
         "Sample ready; queued for a native summary batch…" : "Summarizing in a shared native batch…");
 }
 
+/* Catalogs created by older scanner versions may contain package internals.
+   Reject those paths using names alone, before stat, hashing or extraction. */
+static int chutni_package_path_excluded(const char *path) {
+    static const char *suffixes[] = {
+        ".app", ".bundle", ".framework", ".plugin", ".xcodeproj",
+        ".xcworkspace", ".photoslibrary", NULL
+    };
+    for (const char *part = path; part && *part;) {
+        const char *end = strchr(part, '/');
+        size_t length = end ? (size_t)(end - part) : strlen(part);
+        for (const char **suffix = suffixes; *suffix; suffix++) {
+            size_t size = strlen(*suffix);
+            if (length > size && !strncasecmp(part + length - size, *suffix, size)) return 1;
+        }
+        part = end ? end + 1 : NULL;
+    }
+    return 0;
+}
+
 static void chutni_enrich_source(
     Gateway *g, const char *store_path, const char *path, const char *media,
     const char *app_version, int summary_token_budget,
     ChutniEnrichmentCounts *counts, ChutniReaderProgress *reader_progress) {
+    if (chutni_package_path_excluded(path)) { counts->metadata_files++; return; }
     TextBuffer summary_source = {0};
     long long extraction_started = monotonic_millis();
     size_t summary_limit = SIZE_MAX;
@@ -23992,7 +24012,7 @@ static void *chutni_native_worker(void *opaque) {
         ChutniEnrichmentCounts before = worker->counts;
         chutni_ocr_milliseconds = 0;
         struct stat before_stat, after_stat;
-        int observed = usable && !stat(path->str, &before_stat);
+        int observed = usable && !chutni_package_path_excluded(path->str) && !stat(path->str, &before_stat);
         if (usable) chutni_enrich_source(p->g, p->store, path->str, media->str, p->version, p->budget, &worker->counts, &reader);
         else if (state && state->t == J_STR && !strcmp(state->str, "excluded")) worker->counts.metadata_files++;
         else { worker->counts.failed++; worker->counts.failed_files++; }
@@ -24224,7 +24244,7 @@ static int chutni_scope_id_for_root(Gateway *g, const char *canonical_root,
 
 #define CHUTNI_USER_EXCLUSION_MAX 16
 #define CHUTNI_USER_EXCLUSION_NAME_MAX 64
-#define CHUTNI_INVENTORY_POLICY_VERSION 1
+#define CHUTNI_INVENTORY_POLICY_VERSION 2
 
 static int chutni_append_user_exclusions(
     TextBuffer *out,
@@ -24322,7 +24342,9 @@ static int chutni_scope_metadata_create(Gateway *g, const char *scope_id,
                   "\"DerivedData\",\".Trash\",\".mypy_cache\","
                   "\".pytest_cache\",\".ruff_cache\",\"site-packages\","
                   "\".next\",\".nuxt\",\".yarn\",\".pnpm-store\","
-                  "\".gradle\",\"coverage\",\".idea\"],"
+                  "\".gradle\",\"coverage\",\".idea\","
+                  "\"*.app\",\"*.bundle\",\"*.framework\",\"*.plugin\","
+                  "\"*.xcodeproj\",\"*.xcworkspace\",\"*.photoslibrary\"],"
                   "\"marker_exclusions\":[\"directory containing pyvenv.cfg\"],"
                   "\"user_exclusions\":") &&
         chutni_append_user_exclusions(&json, exclusions, exclusion_count) &&
@@ -24669,7 +24691,7 @@ static void *chutni_worker(void *opaque) {
         text_add(&request_json, "{") &&
         text_add(&request_json, "\"path\":") &&
         text_json_string(&request_json, root_path) &&
-        text_add(&request_json, ",\"inventory_policy_version\":1,\"max_depth\":32,\"max_files\":10000,\"max_directories\":5000,\"max_seconds\":20,\"max_file_size_bytes\":67108864,\"max_eligible_bytes\":2147483648,\"exclude_globs\":") &&
+        text_add(&request_json, ",\"inventory_policy_version\":2,\"max_depth\":32,\"max_files\":10000,\"max_directories\":5000,\"max_seconds\":20,\"max_file_size_bytes\":67108864,\"max_eligible_bytes\":2147483648,\"exclude_globs\":") &&
         text_add(&request_json, user_exclusions_json.data ? user_exclusions_json.data : "[]") &&
         text_add(&request_json, args->rebuild_existing
             ? ",\"rebuild_existing\":true,\"confirmed\":true,\"register\":true,\"label\":"
@@ -24911,10 +24933,11 @@ static void chutni_repair_after_restart(Gateway *g) {
         char job_id[96] = {0}, state[32] = {0}; unsigned long long generation = 0;
         if (!chutni_job_load(g, entry->d_name, job_id, state, &generation)) continue;
         if (strcmp(state, "queued") && strcmp(state, "running") && strcmp(state, "canceling")) continue;
-        chutni_job_write(g, entry->d_name, job_id, "paused_user", "scan", generation,
-                         "Paused because the gateway restarted.");
-        chutni_job_event(g, entry->d_name, job_id, "paused_user", "scan",
-                         "Paused because the gateway restarted.");
+        int canceled = !strcmp(state, "canceling");
+        const char *recovered = canceled ? "canceled" : "paused_user";
+        const char *message = canceled ? "Canceled before the gateway restarted." : "Paused because the gateway restarted.";
+        chutni_job_write(g, entry->d_name, job_id, recovered, "scan", generation, message);
+        chutni_job_event(g, entry->d_name, job_id, recovered, "scan", message);
     }
     closedir(dir);
 }
@@ -25432,7 +25455,9 @@ static int chutni_preflight(Gateway *g, int fd, const SamosaHttpRequest *request
                      "\"DerivedData\",\".Trash\",\".mypy_cache\","
                      "\".pytest_cache\",\".ruff_cache\",\"site-packages\","
                      "\".next\",\".nuxt\",\".yarn\",\".pnpm-store\","
-                     "\".gradle\",\"coverage\",\".idea\"],"
+                     "\".gradle\",\"coverage\",\".idea\","
+                     "\"*.app\",\"*.bundle\",\"*.framework\",\"*.plugin\","
+                     "\"*.xcodeproj\",\"*.xcworkspace\",\"*.photoslibrary\"],"
                      "\"marker_exclusions\":[\"directory containing pyvenv.cfg\"],"
                      "\"user_exclusions\":") &&
          chutni_append_user_exclusions(&b, user_exclusions,

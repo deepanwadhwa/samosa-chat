@@ -103,6 +103,43 @@ static int check_sample(Gateway *g, const char *directory, const char *mode, int
     return ok;
 }
 
+static int check_package_read_guard(Gateway *g) {
+    const char *excluded[] = {
+        "/generated/Editor.app/Contents/Resources/file.json",
+        "/generated/UPPER.APP/file.pdf", "/generated/Resources.bundle/a.txt",
+        "/generated/Runtime.framework/a.txt", "/generated/Extension.plugin/a.txt",
+        "/generated/Project.xcodeproj/a.txt", "/generated/Workspace.xcworkspace/a.txt",
+        "/generated/Pictures.photoslibrary/a.txt", NULL
+    };
+    for (const char **path = excluded; *path; path++) {
+        if (!chutni_package_path_excluded(*path)) return 0;
+        ChutniEnrichmentCounts counts = {0};
+        /* These paths do not exist. A reader would fail; the guard instead
+           records exclusion without touching a reader or source identity. */
+        chutni_enrich_source(g, "/unused", *path, "application/pdf", "test", 500, &counts, NULL);
+        if (counts.metadata_files != 1 || counts.failed || counts.derived || counts.model || counts.summaries) return 0;
+    }
+    return !chutni_package_path_excluded("/generated/ordinary/package.json") &&
+        !chutni_package_path_excluded("/generated/project.app.notes/report.txt") &&
+        !chutni_package_path_excluded("/generated/application/report.txt");
+}
+
+static int check_cancel_recovery(Gateway *g, const char *directory) {
+    const char *scope = "33333333333333333333333333333333";
+    const char *job = "44444444444444444444444444444444";
+    char scopes[PATH_MAX], scope_dir[PATH_MAX], recovered_job[96], state[32];
+    unsigned long long generation = 0;
+    if (!path_join(g->chutni_root, sizeof(g->chutni_root), directory, "cancel-recovery") ||
+        !path_join(scopes, sizeof(scopes), g->chutni_root, "scopes") ||
+        !path_join(scope_dir, sizeof(scope_dir), scopes, scope) || !mkdirs(scope_dir) ||
+        !chutni_job_write(g, scope, job, "canceling", "extract", 1, "Generated cancel request")) return 0;
+    chutni_repair_after_restart(g);
+    if (!chutni_job_load(g, scope, recovered_job, state, &generation) || strcmp(state, "canceled")) return 0;
+    if (!chutni_job_write(g, scope, job, "running", "extract", 2, "Generated interrupted run")) return 0;
+    chutni_repair_after_restart(g);
+    return chutni_job_load(g, scope, recovered_job, state, &generation) && !strcmp(state, "paused_user");
+}
+
 static int check_text_samples(const char *directory) {
     char input[PATH_MAX]; snprintf(input, sizeof(input), "%s/character-samples.txt", directory);
     const char *units[] = {"a", "é", "😀"};
@@ -175,6 +212,8 @@ int main(int argc, char **argv) {
     path_copy(g->reader_fingerprint, sizeof(g->reader_fingerprint), "opening-sample-test-v1");
     atomic_store(&g->document_processing, 1);
     int ok = check_sample(g, directory, "short", 3, 3100);
+    ok = check_package_read_guard(g) && ok;
+    ok = check_cancel_recovery(g, directory) && ok;
     ok = check_text_samples(directory) && ok;
     ok = check_sample(g, directory, "dense", 1, 6000) && ok;
     ok = check_sample(g, directory, "unicode", 3, 3600) && ok;

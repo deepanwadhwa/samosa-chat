@@ -1,0 +1,12 @@
+/Applications/Xcode-26.5.0.app/Contents/Developer/usr/bin/make -C "vendor/chutni" BUILD="/Users/deepanwadhwa/Documents/samosa-chat/build/chutni" OPT="-O2 -Wno-error=implicit-function-declaration" "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp"
+make[1]: `/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp' is up to date.
+cp "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp" "build/chutni-mcp"
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/samosa-gateway 
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc tests/test_chutni_sampling.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/test-chutni-sampling 
+build/test-chutni-sampling
+test_chutni_sampling: PASS (generated fixtures: /tmp/samosa-opening-sample.cnF80w)
+cc -O2 -Wall -Wextra -Werror -std=c11 tests/fake_native_summarizer.c \
+	  -o build/test_fake_native_summarizer
+BUILD_DIR="build" python3 tests/test_chutni_throughput.py
+{"test": "native_pipeline", "serial_seconds": 5.303, "parallel_seconds": 1.216, "speedup": 4.36, "atomicity": "pass", "source_change": "pass"}

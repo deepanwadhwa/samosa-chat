@@ -139,6 +139,10 @@ printf 'generated catalog\n' >"$TMP/policy/Documents.chutni/catalog.sqlite"
 printf 'generated artifact\n' >"$TMP/policy/Documents.chutni/objects/evidence.txt"
 printf 'generated catalog\n' >"$TMP/policy/Other.CHUTNI/catalog.sqlite"
 printf 'ordinary source with a suffix\n' >"$TMP/policy/source.chutni"
+for bundle in Editor.app Upper.APP Resources.bundle Runtime.framework Extension.plugin Project.xcodeproj Workspace.xcworkspace Pictures.photoslibrary; do
+  mkdir -p "$TMP/policy/$bundle/Contents/Resources"
+  printf 'package internal must never be inventoried\n' >"$TMP/policy/$bundle/Contents/Resources/decoy.json"
+done
 decoy=0
 while [ "$decoy" -lt 10000 ]; do
   : >"$TMP/policy/.venv/decoy-$decoy.txt"
@@ -150,7 +154,7 @@ printf 'decoy\n' >"$TMP/policy/build/decoy.txt"
 printf 'home = /python\n' >"$TMP/policy/custom-python-env/pyvenv.cfg"
 printf 'decoy\n' >"$TMP/policy/custom-python-env/decoy.txt"
 "$FS" chutni-inventory --root "$TMP/policy" --include-hidden >"$TMP/policy.ndjson"
-for name in .venv node_modules build Documents.chutni Other.CHUTNI; do
+for name in .venv node_modules build Documents.chutni Other.CHUTNI Editor.app Upper.APP Resources.bundle Runtime.framework Extension.plugin Project.xcodeproj Workspace.xcworkspace Pictures.photoslibrary; do
   grep -q "\"rel_path\":\"$name\",\"reason\":\"generated_tree\"" "$TMP/policy.ndjson" \
     || { echo "FAIL: generated directory $name was not pruned"; cat "$TMP/policy.ndjson"; exit 1; }
   if grep -q "\"rel_path\":\"$name/" "$TMP/policy.ndjson"; then

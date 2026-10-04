@@ -31,6 +31,10 @@ mkdir -p "$TMP/source/Private"
 printf 'DEPENDENCY_TREE_SECRET_SENTINEL\n' >"$TMP/source/.venv/ignored.txt"
 printf 'DEPENDENCY_TREE_SECRET_SENTINEL\n' >"$TMP/source/node_modules/package/ignored.txt"
 printf 'USER_EXCLUSION_SECRET_SENTINEL\n' >"$TMP/source/Private/ignored.txt"
+for bundle in Editor.app Upper.APP Resources.bundle Runtime.framework Extension.plugin Project.xcodeproj Workspace.xcworkspace Pictures.photoslibrary; do
+  mkdir -p "$TMP/source/$bundle/Contents/Resources"
+  printf 'PACKAGE_INTERNAL_SECRET_SENTINEL\n' >"$TMP/source/$bundle/Contents/Resources/ignored.json"
+done
 cp "$ROOT/tests/fixtures/documents/multipage_7pages.pdf" "$TMP/source/guide.pdf"
 cp "$ROOT/tools/testdata/ocr/tiny.png" "$TMP/source/scan.png"
 mkdir -p "$TMP/home/qwen-model"
@@ -278,10 +282,12 @@ POLICY_DEFAULT=$(printf '%s' "$PF_DEFAULT" | tr '\n' ' ' | sed -n 's/.*"policy_f
 printf '%s' "$PF" | grep -q '"inventory":{"regular_files":'
 printf '%s' "$PF" | grep -Fq '"regular_files":5'
 printf '%s' "$PF" | grep -q '"directories_entered":'
-printf '%s' "$PF" | grep -q '"representative_path":"node_modules"'
+printf '%s' "$PF" | grep -q '"reason":"generated_tree"'
 printf '%s' "$PF" | grep -q '"representative_path":".venv"'
 printf '%s' "$PF" | grep -q '"reason":"user_exclusion"'
 printf '%s' "$PF" | grep -Fq '"user_exclusions":["private"]'
+printf '%s' "$PF" | grep -Fq '"*.app"'
+printf '%s' "$PF" | grep -Fq '"*.framework"'
 printf '%s' "$PF" | grep -q '"action":"create_store"'
 printf '%s' "$PF" | grep -q '"store_path":'
 printf '%s' "$PF" | grep -q '\.chutni'
@@ -338,7 +344,7 @@ printf '%s' "$STATUS" | grep -q "\"metadata_only_files\":$EXPECT_METADATA_ONLY"
 APP_POLICY=$(HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" \
   "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_folder_status \
   "{\"path\":\"$TMP/source\"}")
-printf '%s' "$APP_POLICY" | grep -q '"inventory_policy_version":1'
+printf '%s' "$APP_POLICY" | grep -q '"inventory_policy_version":2'
 
 POLICY_CHANGE_CODE=$(curl -sS -o "$TMP/existing-policy.json" -w '%{http_code}' \
   -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
@@ -362,7 +368,7 @@ mkdir -p "$TMP/future-policy-source"
 printf 'future index evidence\n' >"$TMP/future-policy-source/future.txt"
 HOME="$TMP/home" CHUTNI_HOME="$TMP/chutni-home" \
   "$ROOT/$BUILD_DIR/chutni-mcp" --call chutni_folder_activate \
-  "{\"path\":\"$TMP/future-policy-source\",\"confirmed\":true,\"register\":true,\"label\":\"Future fixture\",\"inventory_policy_version\":2}" \
+  "{\"path\":\"$TMP/future-policy-source\",\"confirmed\":true,\"register\":true,\"label\":\"Future fixture\",\"inventory_policy_version\":3}" \
   >"$TMP/future-policy-create.json"
 FUTURE_CODE=$(curl -sS -o "$TMP/future-policy.json" -w '%{http_code}' \
   -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \

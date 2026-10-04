@@ -1,0 +1,259 @@
+cc -std=c99 -Wall -Wextra -Wshadow -Wpointer-arith -Wwrite-strings -Werror -O2 -DCHUTNI_VERSION='"0.3.0"' -Iinclude -Isrc -Ithird_party/blake3 -Ithird_party/sqlite tests/conformance/conformance.c /Users/deepanwadhwa/Documents/samosa-chat/build/chutni/libchutni.a -lpthread -o /Users/deepanwadhwa/Documents/samosa-chat/build/chutni/conformance
+BLAKE3: 35 vectors x 3 modes = 105 checks, 0 failures
+
+Chutni conformance suite — SPEC.md §31 (spec 0.2, library 0.3.0)
+
+  pass  1 minimal valid store                          §8 layout present
+  pass  1 concurrent reader opens while writer is active many readers are allowed
+  pass  1 second writer is refused safely              single-writer coordination
+  pass  1 separate process is refused while writer is active multi-application writer safety
+  pass  1 minimal store reopens                        §30.1 reader
+  pass  2 unknown fields preserved                     §9.1 across rewrite
+  GAP   3 moved-root scenario                          root remapping is not implemented (§26)
+  pass  4 artifact starts current                      current
+  pass  4 changed source detected                      stale
+  pass  4 stale recorded, not just detected            stale
+  pass  4 stale artifact excluded from search          §15.4 active only
+  pass  5 distinct producers get distinct ids          §16.2
+  pass  5 superseded artifact retained                 §23
+  pass  5 superseding artifact active                  §23
+  pass  5 human artifact distinguishable               §23
+  pass  5 provenance names the model                   §16.2
+  pass  5 untraceable model artifact refused           §16.4
+  pass  6 identical payloads share one object          blake3:4595b879a45b4ad0d40522a303596d7441899fda43b3567491be4d83a4f4a821
+  pass  6 stored once, not twice                       objects table
+  pass  6 object round-trips                           
+  pass  7 deleted source reported missing              missing
+  pass  7 missing state persisted                      missing
+  pass  7 artifacts retained after deletion            §24.2 historical memory
+  pass  8 host A contributes PDF page text             host performs extraction; Chutni records it
+  pass  8 host B contributes a separate interpretation append, do not overwrite Host A
+  pass  8 every source keeps base file metadata        file_metadata exists independently of extraction
+  pass  8 App C sees Host A processing provenance      method, producer, selector, and source hash
+  pass  8 App C sees Host B model provenance           claim is preserved, not certified
+  pass  8 producer interpretations coexist             distinct producers remain active
+  pass  8 artifacts and derivations are timestamped    creation history is visible
+  pass  8 wrong source version is refused atomically   integrity validation, not semantic validation
+  pass  9 malformed hash rejected                      
+  pass  9 wrong algorithm rejected                     
+  pass  9 path traversal rejected                      §28.8
+  pass  9 absent object reported not found             
+  pass  9 corrupt object detected on read              content re-hashed
+  pass  10 awkward filenames indexed                   
+  pass  10 awkward filenames resolve back              
+  pass  11 injection text retrievable as data          §6.5
+  pass  11 result attributed to its file               consumer can see the origin
+  pass  12 incompatible representation can be stored   profile remains data, not a global singleton
+  pass  12 representation vector round-trips           serialized f32 object
+  pass  12 incompatible profile is refused             §22.6 exact compatibility gating
+  pass  12 representation list reports compatibility   §17.5 source artifact hash
+  pass  12 semantic search gates and ranks             cosine_bruteforce; incompatible model excluded
+  pass  12 semantic score type is explicit             §19.3
+  pass  13 selected P maps to adjacent P.chutni        §40.2-§40.3
+  pass  13 host B reuses host A artifact               no migration or private schema knowledge
+  pass  13 host A provenance survives handoff          §16
+  pass  13 host B records source change                §13.3, §40.5
+  pass  13 host A reads host B update                  cross-host round trip
+  pass  13 stale host A artifact stays withdrawn       §15.4 current artifacts only
+  pass  13 host B model provenance survives handoff    §16.2, §40.5
+  pass  14 depth zero enumerates only the root         §11.1 root is depth 0
+  pass  14 depth zero records child directories opaque name observed, inside not
+  pass  14 depth zero counts what it did not open      Alpha and Beta
+  pass  14 depth zero reports partial coverage with its limiting reason partial tree coverage; accepted bounded policy completed
+  pass  14 depth one enumerates immediate children only §11.1 d <= max_depth
+  pass  14 collapsed directory stays explicitly opaque recorded by name, never opened
+  pass  14 directory sources have correct parents      §12.5 parent_source_id is the hierarchy
+  pass  14 root contains its three immediate entries   Alpha, Beta, top.md
+  pass  14 coverage manifest records requested and achieved depth §15.7
+  pass  15 definition without local coverage is refused §15.6
+  pass  15 definition with coverage and stop reason is accepted §15.6
+  pass  15 a consumer can read the definition's local coverage §15.6 stop_reason travels with the claim
+  pass  15 a fresh definition is current               §13.3
+  pass  15 a stale derivation input stales the definition §13.3 second clause; the listing did not change
+  pass  15 unchanged listings are reused               §13.5 same observation, not a new one
+  pass  15 a changed listing changes the directory's observation §13.5 listing hash is the directory's version
+  pass  15 a changed listing stales dependent definitions §13.3
+  pass  16 an unbounded-enough scan reaches the leaves baseline for the shallow refresh
+  pass  16 a shallow refresh does not mark deeper sources missing §24.4 absence is meaningful only inside the covered region
+  pass  16 a shallow refresh does mark its own children missing §24.4 inside the covered region absence is evidence
+  pass  17 the writer advertised hierarchical capabilities §35.1 a consumer can tell this store records coverage
+  pass  17 the consumer reads coverage without having scanned §15.7
+  pass  17 inspected and uninspected directories are distinguishable §12.5
+  pass  17 search results carry hierarchy and coverage §19.3
+  pass  17 contains relations carry provenance         §18
+  pass  17 observed_in ties directories to a scan generation §18, §15.7
+  pass  18 a store that has not used hierarchy does not advertise it §35 write the oldest version that fits
+  pass  18 a missing max_depth means unbounded, not zero §11.1 legacy recursion is preserved
+  pass  19 generated roots, marker envs, and glob exclusions are pruned eligible neighbor remains indexed
+  pass  19 symlink escapes and cycles remain unfollowed stored follow_symlinks cannot relax the safety rule
+  pass  19 old package descendants are excluded through catalog hierarchy new scan processes only the ordinary neighboring document
+  pass  19 excluded legacy package content is not searchable excluded source entries cannot leak back into ordinary retrieval
+  pass  20 file budget is reported as a partial scan   bounded ingestion must not claim complete coverage
+
+85 passed, 0 failed, 1 gaps
+Gaps are unimplemented scenarios, not passes.
+
+Chutni JSON call surface — T01 (library 0.3.0)
+
+    chutni_call(put_memory, {"memory_kind":"decision","title":"Launch decision","scope":"samosa/conversation/demo","text":"Use the jalapeño launch plan after legal review.","producer":{"producer_kind":"model","name":"Codex","model_id":"gpt-test","model_revision":"2026-07-30","app_name":"samosa","app_version":"0.1"},"operation":"record_decision","inputs":[{"message_id":"message-42","required":true}]})
+      -> status=0 {"ok":true,"memory_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","artifact_id":"01a1071b-0f73-78fd-ae3f-0446536a339e","producer_id":"01a1071b-0f73-763e-95db-7adb4a351b03","derivation_id":"01a1071b-0f73-768c-8b03-2da9e7aa6771","memory_kind":"decision","semantic_validation":"not_performed"}
+  pass  put_memory stores standalone model work        standalone memory
+  pass  memory use is advertised in the store manifest capability gating
+    chutni_call(get_source, {"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830"})
+      -> status=0 {"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","display_path":"Launch decision","source_kind":"memory","media_type":"text/plain; charset=utf-8","content_hash":"blake3:62606aacfefaa981d691a8cdf4bc8993c2fc6cf4327071c34b228a5289dd1a89","state":"present","depth":null,"size_bytes":49}
+  pass  standalone memory is not represented as a file memory source kind
+    chutni_call(source_context, {"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830"})
+      -> status=0 {"ok":true,"source":{"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","display_path":"Launch decision","media_type":"text/plain; charset=utf-8","content_hash":"blake3:62606aacfefaa981d691a8cdf4bc8993c2fc6cf4327071c34b228a5289dd1a89","state":"present","size_bytes":49,"freshness":"current"},"artifact_count":1,"artifacts":[{"artifact_id":"01a1071b-0f73-78fd-ae3f-0446536a339e","artifact_kind":"memory","artifact_origin":"model_generated","media_type":"text/plain; charset=utf-8","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:62606aacfefaa981d691a8cdf4bc8993c2fc6cf4327071c34b228a5289dd1a89","producer_name":"Codex","producer_kind":"model","model_id":"gpt-test","model_revision":"2026-07-30","operation":"record_decision","derivation_id":"01a1071b-0f73-768c-8b03-2da9e7aa6771","metadata":{"memory_kind":"decision","standalone":true,"title":"Launch decision","scope":"samosa/conversation/demo"},"freshness":"current","semantic_validation":"not_performed","content":"Use the jalapeño launch plan after legal review.","content_truncated":false,"provenance":{"producer":{"producer_id":"01a1071b-0f73-763e-95db-7adb4a351b03","app_name":"samosa","app_version":"0.1","producer_kind":"model","name":"Codex","model_id":"gpt-test","model_revision":"2026-07-30"},"derivation":{"derivation_id":"01a1071b-0f73-768c-8b03-2da9e7aa6771","operation":"record_decision","created_at":"2026-10-04T13:29:36Z","parameters":{},"inputs":[{"message_id":"message-42","required":true}]}}}]}
+  pass  memory context preserves content and provenance content, model identity, inputs, freshness
+    chutni_call(search, {"query":"jalapeño launch","limit":5})
+      -> status=0 {"ok":true,"query":"jalapeño launch","count":1,"results":[{"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","artifact_id":"01a1071b-0f73-78fd-ae3f-0446536a339e","display_path":"Launch decision","artifact_kind":"memory","snippet":"Use the jalapeño launch plan after legal review.","producer_id":"01a1071b-0f73-763e-95db-7adb4a351b03","freshness":"current","score":2.3749999999999997e-06,"score_type":"bm25_fts5_negated","source_kind":"memory","depth":null}]}
+  pass  existing lexical search finds standalone memory shared search path
+    chutni_call(put_memory, {"memory_kind":"note","text":"must not persist","producer":{"producer_kind":"model","name":"anonymous"},"operation":"record_note"})
+      -> status=-5 {"error":{"code":"invalid argument","message":"model producers require model_id, app_name, and app_version (§16.2)"}}
+  pass  model memory requires host application identity producer trust
+    chutni_call(capabilities, {})
+      -> status=0 {"ok":true,"spec_version":"0.2","library_version":"0.3.0","artifact_origins":["direct","deterministic_transform","model_generated","human"],"core_artifact_kinds":["file_metadata","extracted_text","page_text","ocr_text","transcript","text_chunk","summary_short","summary_long","image_caption","document_title","keywords","entities","table_schema","sheet_summary","archive_listing","thumbnail","language_detection","content_warning","processing_error","directory_listing","source_definition","coverage_manifest","memory"],"capabilities":["sources","artifacts","provenance","hierarchical_sources","bounded_coverage","directory_definitions","standalone_memory"],"definition_stop_reasons":["max_depth_reached","producer_classified_coherent","budget_reached","excluded_by_policy","unsupported","unreadable","user_canceled"],"definition_modes":["adaptive","per_source"],"selector_types":["pages","sheet_range","image_region","time_range","byte_range"],"semantic_validation":"not_performed","writer_policy":"single_writer_many_readers"}
+  pass  capabilities: reports this spec version        §30
+  pass  capabilities: lists v0.2 artifact kinds        §15.5-15.7
+    chutni_call(discover, {})
+      -> status=0 {"ok":true,"count":0,"stores":[]}
+  pass  discover: returns without a store handle       §39
+    chutni_call(not_a_real_operation, {})
+      -> status=-5 {"error":{"code":"invalid argument","message":"unknown operation: not_a_real_operation"}}
+  pass  unknown operation returns the error envelope, not a crash §20
+    chutni_call(search, {"query":"x"})
+      -> status=-5 {"error":{"code":"invalid argument","message":"operation \"search\" requires an open store"}}
+  pass  a store-requiring operation with no store fails cleanly 
+    chutni_call(scan, {not json})
+      -> status=-5 {"error":{"code":"invalid argument","message":"arguments_json must be a valid JSON object"}}
+  pass  malformed JSON is rejected instead of becoming an empty write request 
+    chutni_call(store_info, [])
+      -> status=-5 {"error":{"code":"invalid argument","message":"arguments_json must be a JSON object"}}
+  pass  a JSON value that is not an object is rejected 
+    chutni_call(scan, {"app_name":"call-surface"})
+      -> status=0 {"ok":true,"store_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/store.chutni","scan":{"files_seen":2,"sources_indexed":2,"unchanged":0,"text_artifacts":2,"metadata_artifacts":2,"skipped":0,"errors":0,"directories_observed":2,"directories_enumerated":2,"depth_limited_directories":0,"listing_artifacts":2,"listings_reused":0,"files_hashed":2,"files_read":2,"excluded_sources":0,"unsupported_sources":0,"sources_marked_missing":0,"deepest_directory_enumerated":1,"complete_for_policy":true},"counts":{"roots":1,"sources":5,"sources_files":2,"sources_directories":2,"sources_opaque_directories":0,"relations":5,"artifacts":8,"artifacts_active":8,"artifacts_stale":0,"objects":3,"producers":2,"derivations":5,"content_artifacts":2,"metadata_artifacts":2,"content_readable_sources":2,"metadata_only_sources":0}}
+  pass  scan via chutni_call indexes the fixture       §20 scan(root_id, policy)
+    chutni_call(store_info, {})
+      -> status=0 {"ok":true,"store_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/store.chutni","store_id":"01a1071b-0f66-7ca9-9d07-b54369370e15","spec_version":"0.2","counts":{"roots":1,"sources":5,"sources_files":2,"sources_directories":2,"sources_opaque_directories":0,"relations":5,"artifacts":8,"artifacts_active":8,"artifacts_stale":0,"objects":3,"producers":2,"derivations":5,"content_artifacts":2,"metadata_artifacts":2,"content_readable_sources":2,"metadata_only_sources":0},"roots":[{"root_id":"01a1071b-0f75-7cf9-ba3e-6db201062ee9","path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree","label":"tree","policy":{"recursive":true,"follow_symlinks":false,"include_hidden":false,"retain_deleted_artifacts":true,"max_file_size_bytes":2147483648,"exclude_globs":[],"max_depth":null}}]}
+  pass  store_info reports the same counts scan produced 
+    chutni_call(search, {"query":"condensation force","limit":5})
+      -> status=0 {"ok":true,"query":"condensation force","count":1,"results":[{"source_id":"01a1071b-0f76-7f4a-be06-2ff8118829e3","artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/parb.md","artifact_kind":"extracted_text","snippet":"The condensation force was measured at 12 pN using PEG.\n","producer_id":"01a1071b-0f75-7d32-a92d-b5ba2bc8da18","freshness":"current","score":1.9933583794390448,"score_type":"bm25_fts5_negated","source_kind":"file","parent_source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","coverage_manifest_id":"01a1071b-0f7a-724f-abdc-7ae7298faa56","depth":1}]}
+  pass  search via chutni_call finds the fixture text  
+  pass  chutni_call search agrees with the typed API   same store, same query, same artifact_id
+    chutni_call(children, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree"})
+      -> status=0 {"ok":true,"source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","count":2,"children":[{"source_id":"01a1071b-0f77-76e0-bd14-557cd452f451","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Sub","source_kind":"directory","parent_source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","content_hash":"blake3:7e324cbfff0cf28cd19fc2771f181fcb7121935dc2f9782c7b5aaa37f99bbfad","state":"present","observation":"enumerated","depth":1,"size_bytes":0},{"source_id":"01a1071b-0f76-7f4a-be06-2ff8118829e3","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/parb.md","source_kind":"file","parent_source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","media_type":"text/markdown","content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","state":"present","depth":1,"size_bytes":56}]}
+  pass  children via chutni_call lists the immediate entries §20 list_children(source_id)
+  pass  chutni_call children agrees with the typed API on count 
+    chutni_call(coverage, {})
+      -> status=0 {"source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","source_kind":"directory","state":"present","observation":"enumerated","depth":0,"root_source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","coverage_manifest_id":"01a1071b-0f7a-724f-abdc-7ae7298faa56","coverage_manifest":{"scan_generation":"01a1071b-0f7a-749c-bcff-015426d224f0","root_source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","policy":{"max_depth":null,"recursive":true,"follow_symlinks":false,"include_hidden":false},"coverage":{"deepest_directory_enumerated":1,"directories_observed":2,"directories_enumerated":2,"directories_defined":0,"directories_collapsed":0,"files_observed":2,"eligible_bytes":97,"files_hashed":2,"files_read":2,"files_defined":0,"depth_limited_directories":0,"excluded_sources":0,"unsupported_sources":0,"sources_marked_missing":0,"errors":0,"partial":false},"complete_for_policy":true},"definition":null,"interpretation":"complete_for_policy means the requested bounded operation finished. It does not mean the subtree was read. Directories whose observation is \"opaque\" were named but never opened, and nothing in this store describes their contents."}
+  pass  coverage via chutni_call reports completeness honestly §15.7, §35.1 rule 5
+  pass  chutni_call coverage agrees with the typed API same coverage_manifest_id
+    chutni_call(observe_directory, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Sub"})
+      -> status=0 {"ok":true,"source_id":"01a1071b-0f77-76e0-bd14-557cd452f451","scan":{"files_seen":1,"sources_indexed":1,"unchanged":1,"text_artifacts":0,"metadata_artifacts":0,"skipped":0,"errors":0,"directories_observed":1,"directories_enumerated":1,"depth_limited_directories":0,"listing_artifacts":0,"listings_reused":1,"files_hashed":1,"files_read":0,"excluded_sources":0,"unsupported_sources":0,"sources_marked_missing":0,"deepest_directory_enumerated":1,"complete_for_policy":true},"counts":{"roots":1,"sources":5,"sources_files":2,"sources_directories":2,"sources_opaque_directories":0,"relations":6,"artifacts":8,"artifacts_active":8,"artifacts_stale":0,"objects":3,"producers":3,"derivations":9,"content_artifacts":2,"metadata_artifacts":2,"content_readable_sources":2,"metadata_only_sources":0}}
+  pass  observe_directory via chutni_call opens exactly that directory §20 observe_directory
+    chutni_call(get_source, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree"})
+      -> status=0 {"source_id":"01a1071b-0f75-73d3-9939-7162ae9575bb","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree","source_kind":"directory","content_hash":"blake3:4cef8e515237e1832d9c0874417266a2af91e37d73dca00914e0aa948ddf4816","state":"present","observation":"enumerated","depth":0,"size_bytes":0}
+  pass  get_source returns the resolved source         §20 get_source(source_id)
+    chutni_call(list_artifacts, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/parb.md"})
+      -> status=0 {"source_id":"01a1071b-0f76-7f4a-be06-2ff8118829e3","count":2,"artifacts":[{"artifact_id":"01a1071b-0f76-76b7-ba39-dc5b639ad042","artifact_kind":"file_metadata","artifact_origin":"direct","media_type":"application/json","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","producer_name":"chutni-reference-scanner","producer_kind":"parser","operation":"record_file_metadata","derivation_id":"01a1071b-0f75-7079-80ec-7dacbf7d22af"},{"artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935","artifact_kind":"extracted_text","artifact_origin":"deterministic_transform","media_type":"text/plain; charset=utf-8","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","producer_name":"chutni-reference-scanner","producer_kind":"parser","operation":"extract_text","derivation_id":"01a1071b-0f75-7647-8857-2f612d784fe8"}]}
+  pass  list_artifacts returns this source's active artifacts §20 list_artifacts
+    chutni_call(get_artifact, {"artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935"})
+      -> status=0 {"artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935","artifact_kind":"extracted_text","artifact_origin":"deterministic_transform","media_type":"text/plain; charset=utf-8","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","producer_name":"chutni-reference-scanner","producer_kind":"parser","operation":"extract_text","derivation_id":"01a1071b-0f75-7647-8857-2f612d784fe8","source_id":"01a1071b-0f76-7f4a-be06-2ff8118829e3"}
+  pass  get_artifact returns the exact artifact requested §20 get_artifact(artifact_id)
+    chutni_call(check_freshness, {"artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935"})
+      -> status=0 {"id":"01a1071b-0f77-7291-8d74-09d3fca30935","freshness":"current"}
+  pass  check_freshness reports current for an untouched artifact §13.3, §20 check_freshness
+    chutni_call(source_context, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/parb.md"})
+      -> status=0 {"ok":true,"source":{"source_id":"01a1071b-0f76-7f4a-be06-2ff8118829e3","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/parb.md","media_type":"text/markdown","content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","state":"present","size_bytes":56,"freshness":"current"},"artifact_count":2,"artifacts":[{"artifact_id":"01a1071b-0f76-76b7-ba39-dc5b639ad042","artifact_kind":"file_metadata","artifact_origin":"direct","media_type":"application/json","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","producer_name":"chutni-reference-scanner","producer_kind":"parser","operation":"record_file_metadata","derivation_id":"01a1071b-0f75-7079-80ec-7dacbf7d22af","freshness":"current","semantic_validation":"not_performed","content":"{\"size_bytes\":56,\"depth\":1}","content_truncated":false,"provenance":{"producer":{"producer_id":"01a1071b-0f75-7d32-a92d-b5ba2bc8da18","version":"0.3.0","app_name":"call-surface","app_version":"0.3.0","producer_kind":"parser","name":"chutni-reference-scanner"},"derivation":{"derivation_id":"01a1071b-0f75-7079-80ec-7dacbf7d22af","operation":"record_file_metadata","created_at":"2026-10-04T13:29:36Z","parameters":{"fields":["size_bytes","depth"]},"inputs":[]}}},{"artifact_id":"01a1071b-0f77-7291-8d74-09d3fca30935","artifact_kind":"extracted_text","artifact_origin":"deterministic_transform","media_type":"text/plain; charset=utf-8","status":"active","created_at":"2026-10-04T13:29:36Z","source_content_hash":"blake3:97b0c36a561fa85fea01388863e7ac250063a1e4500526e8dfe94a02d83e3c70","producer_name":"chutni-reference-scanner","producer_kind":"parser","operation":"extract_text","derivation_id":"01a1071b-0f75-7647-8857-2f612d784fe8","freshness":"current","semantic_validation":"not_performed","content":"The condensation force was measured at 12 pN using PEG.\n","content_truncated":false,"provenance":{"producer":{"producer_id":"01a1071b-0f75-7d32-a92d-b5ba2bc8da18","version":"0.3.0","app_name":"call-surface","app_version":"0.3.0","producer_kind":"parser","name":"chutni-reference-scanner"},"derivation":{"derivation_id":"01a1071b-0f75-7647-8857-2f612d784fe8","operation":"extract_text","created_at":"2026-10-04T13:29:36Z","parameters":{"strategy":"whole_file_utf8"},"inputs":[]}}}]}
+  pass  source_context groups every current interpretation §20
+    chutni_call(read_object, {"object_hash":"blake3:58ee307c2bbc38b92100c3ad19f76e000868884ae31309d8347b3cb13caa450b"})
+      -> status=0 {"object_hash":"blake3:58ee307c2bbc38b92100c3ad19f76e000868884ae31309d8347b3cb13caa450b","media_type":"application/json","size_bytes":599,"text":"{\"scan_generation\":\"01a1071b-0f7a-749c-bcff-015426d224f0\",\"root_source_id\":\"01a1071b-0f75-73d3-9939-7162ae9575bb\",\"policy\":{\"max_depth\":null,\"recursive\":true,\"follow_symlinks\":false,\"include_hidden\":false},\"coverage\":{\"deepest_directory_enumerated\":1,\"directories_observed\":2,\"directories_enumerated\":2,\"directories_defined\":0,\"directories_collapsed\":0,\"files_observed\":2,\"eligible_bytes\":97,\"files_hashed\":2,\"files_read\":2,\"files_defined\":0,\"depth_limited_directories\":0,\"excluded_sources\":0,\"unsupported_sources\":0,\"sources_marked_missing\":0,\"errors\":0,\"partial\":false},\"complete_for_policy\":true}"}
+  pass  read_object resolves an object_hash to its payload §20 read_object(object_hash), §14
+    chutni_call(put_artifacts, {"operation":"summarize","producer":{"producer_kind":"model","name":"call-surface-model","model_id":"example/call-surface","app_name":"call-surface","app_version":"1"},"artifacts":[{"source_id":"01a1071b-0f77-7290-bc13-11842863ab2c","source_content_hash":"blake3:b9f64dc9e65428f6bf5a56a42ecd89e92aeb0489add768cf0cf8288c1440a12a","text":"A note about marsupial pouches.","artifact_kind":"summary_short","artifact_origin":"model_generated"}]})
+      -> status=0 {"ok":true,"producer_id":"01a1071b-0f83-7747-bd3b-78387ab884f6","derivation_id":"01a1071b-0f83-70cc-91f4-fd2785f99c02","semantic_validation":"not_performed","artifacts":[{"artifact_id":"01a1071b-0f83-7ca7-b69c-330988a55919","artifact_kind":"summary_short"}]}
+  pass  put_artifacts via chutni_call writes a model-generated artifact §16, §20 put_artifacts
+  pass  chutni_call put_artifacts agrees with the typed API same artifact_id visible via chutni_list_artifacts
+    chutni_call(put_artifacts, {"operation":"summarize","producer":{"producer_kind":"model","name":"x"},"artifacts":[{"source_id":"nope","text":"x","artifact_kind":"summary_short","artifact_origin":"model_generated"}]})
+      -> status=-5 {"error":{"code":"invalid argument","message":"each artifact requires source_id, source_content_hash, text, artifact_kind, and artifact_origin"}}
+  pass  put_artifacts refuses an artifact missing source_content_hash §13.3
+    chutni_call(put_representation, {"artifact_id":"01a1071b-0f83-7ca7-b69c-330988a55919","profile":{"representation_kind":"text_embedding","model_id":"example/embed","model_revision":"1","dtype":"f32","normalization":"none"},"vector":[0.10,0.20,0.30,0.40]})
+      -> status=0 {"representation_id":"01a1071b-0f84-7152-a628-7a61dbec9864","artifact_id":"01a1071b-0f83-7ca7-b69c-330988a55919","dimensions":4}
+  pass  put_representation via chutni_call stores a vector §17, §20 (new: no MCP tool covers this)
+  pass  chutni_call put_representation agrees with the typed API same representation_id visible via chutni_representations_list
+    chutni_call(search_semantic, {"vector":[0.11,0.19,0.31,0.39],"profile":{"representation_kind":"text_embedding","model_id":"example/embed","model_revision":"1","dtype":"f32","normalization":"none"},"limit":5})
+      -> status=0 {"ok":true,"count":1,"results":[{"source_id":"01a1071b-0f77-7290-bc13-11842863ab2c","artifact_id":"01a1071b-0f83-7ca7-b69c-330988a55919","display_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Sub/inner.md","artifact_kind":"summary_short","snippet":"A note about marsupial pouches.","freshness":"current","score":0.99934751520422371,"score_type":"cosine_bruteforce"}]}
+  pass  search_semantic via chutni_call finds the stored vector §17.5, §19.1, §20 (new: no MCP tool covers this)
+    chutni_call(put_representation, {"artifact_id":"not-used","profile":{},"vector":["not-a-number"]})
+      -> status=-5 {"error":{"code":"invalid argument","message":"vector must contain numbers only"}}
+  pass  embedding vectors reject non-numeric JSON values §17 vector input
+    chutni_call(add_source, {"root_id":"01a1071b-0f75-7cf9-ba3e-6db201062ee9","path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Extra/e.txt"})
+      -> status=0 {"source_id":"01a1071b-0f85-747d-abce-43f1da91625d","changed":true}
+  pass  add_source via chutni_call records a new file source §20 add_or_update_source(locator)
+    chutni_call(mark_source_missing, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Extra/e.txt"})
+      -> status=0 {"source_id":"01a1071b-0f85-747d-abce-43f1da91625d","state":"missing"}
+  pass  mark_source_missing via chutni_call sets the missing state §20 mark_source_missing(source_id)
+    chutni_call(forget_source, {"source_path":"/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/call-surface-work/tree/Extra/e.txt"})
+      -> status=0 {"source_id":"01a1071b-0f85-747d-abce-43f1da91625d","forgotten":true}
+  pass  forget_source via chutni_call removes the source §20, §24.3 forget_source(source_id, mode)
+    chutni_call(forget_source, {"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830"})
+      -> status=0 {"source_id":"01a1071b-0f73-7e71-9a44-a444bdb12830","forgotten":true}
+  pass  standalone memory uses the ordinary forget path §20, §24.3
+    chutni_call(search, {"query":"jalapeño launch"})
+      -> status=0 {"ok":true,"query":"jalapeño launch","count":0,"results":[]}
+  pass  forgotten standalone memory is no longer searchable shared index cleanup
+    chutni_call(rebuild_indexes, {})
+      -> status=0 {"ok":true}
+  pass  rebuild_indexes via chutni_call succeeds       §20 rebuild_indexes()
+    chutni_call(scan, {})
+      -> status=-10 {"error":{"code":"store opened read-only","message":"store is read-only"}}
+  pass  a mutating operation on a read-only store is refused §20, matches typed CHUTNI_ERR_READONLY
+
+42 passed, 0 failed
+
+Chutni CLI checks
+
+  pass  discover reports nothing on a fresh machine
+  pass  init creates a store
+  pass  discover finds the new store
+  pass  discover --json is well-formed
+  pass  add-root authorizes a directory
+  pass  scan indexes it
+  pass  search finds indexed content
+  pass  search --json reports a score_type
+  pass  inspect shows provenance
+  pass  verify reports all current
+  pass  empty store refuses to scan without a root
+  pass  edited file is not called current before verify
+  pass  stale content withdrawn after verify
+  pass  rescan picks up new content
+  pass  ambiguous store selection refuses to guess
+  pass  unregister removes a store from discovery
+  pass  add-root records a depth bound
+  pass  roots report their depth bound
+  pass  a bounded scan says what it did not open
+  pass  a bounded scan refuses to imply completeness
+  pass  grandchildren past the bound are not indexed
+  pass  children lists a directory's immediate entries
+  pass  an unopened directory is reported opaque
+  pass  coverage reports the requested depth
+  pass  coverage separates policy completeness from reading it all
+  pass  observe opens exactly one directory
+  pass  an observed directory yields its contents
+  pass  observing one directory does not expand its siblings
+  pass  an unobserved sibling is still opaque
+  pass  a shallow refresh marks nothing missing outside its region
+  pass  search results carry the region's coverage
+  pass  info separates files from directories
+
+32 passed, 0 failed
+
+Chutni MCP checks: 130 passed, 0 failed
+Samosa compatibility contract: 7 operations passed
+cc -std=c99 -O2 -DCHUTNI_VERSION='"0.3.0"' -Iinclude -Isrc -Ithird_party/blake3 -Ithird_party/sqlite -fPIC -dynamiclib -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0 -DSQLITE_ENABLE_FTS5 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=1 -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_ENABLE_JSON1 -o /Users/deepanwadhwa/Documents/samosa-chat/build/chutni/libchutni.dylib \
+	    src/chutni.c src/scan.c src/cj.c third_party/blake3/blake3.c third_party/blake3/blake3_dispatch.c third_party/blake3/blake3_portable.c third_party/sqlite/sqlite3.c  -lpthread
+test_store_lifecycle (test_chutni.BindingTest.test_store_lifecycle) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.017s
+
+OK

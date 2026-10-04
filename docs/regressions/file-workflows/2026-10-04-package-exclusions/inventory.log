@@ -1,0 +1,6 @@
+cc -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o build/samosa-fs
+SAMOSA_FS="$PWD/build/samosa-fs" sh tests/test_chutni_inventory.sh
+cc -O2 -Wall -Wextra -Werror -std=c11 src/samosa_fs.c -o build/samosa-fs
+gen_folder_fixture.sh: built fixture tree at /var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T//chutni_inventory_test.8d5two/root
+gen_folder_fixture.sh: built fixture tree at /var/folders/d6/7z7gzbj16l59s8tn7h4mg8lm0000gn/T//chutni_inventory_test.8d5two/root
+test_chutni_inventory.sh: PASS
