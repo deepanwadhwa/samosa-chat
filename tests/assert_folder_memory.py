@@ -42,8 +42,13 @@ def ready(scope, build):
         status = json.loads(request('/v1/chutni/scopes/' + scope))
         job = json.loads((home / 'chutni' / 'scopes' / scope / 'job.json').read_text())
         if job.get('job_id') == build and job.get('state') in ('completed', 'completed_partial'):
-            assert status['state'] in ('ready', 'ready_partial'), status
-            return status
+            # The worker can finish between the HTTP read and the job-file
+            # read. Fetch the published scope after observing completion;
+            # never assert against an earlier "building" snapshot.
+            status = json.loads(request('/v1/chutni/scopes/' + scope))
+            if (status['state'] in ('ready', 'ready_partial') and
+                    status['evidence_generation'] >= job['evidence_generation_target']):
+                return status
         assert job.get('state') != 'failed', job
         time.sleep(.05)
     raise AssertionError('automatic memory build did not finish')
