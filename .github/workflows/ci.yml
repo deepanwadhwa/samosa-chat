@@ -110,7 +110,7 @@ jobs:
             sh -ec '
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                make gcc libomp-dev curl python3 file nodejs sqlite3 ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config
+                make gcc libomp-dev curl python3 file nodejs sqlite3 procps ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config
 
               useradd -m ci
               mkdir -p /work

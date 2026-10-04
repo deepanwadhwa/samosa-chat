@@ -602,7 +602,7 @@ ci-debian:
 	  sh -ec '\
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config; \
+	      make gcc libc6-dev curl python3 nodejs sqlite3 procps libomp-dev file ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config; \
 	    useradd -m ci; \
 	    mkdir -p /work; \
 	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
@@ -629,7 +629,7 @@ ci-ubuntu-full:
 	    sed -i "s|http://archive.ubuntu.com/ubuntu/|$$CI_UBUNTU_APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources; \
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 libomp-dev \
+	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 procps libomp-dev \
 	      file ca-certificates git bash libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config python3-pil python3-reportlab; \
 	    curl -fL --retry 3 -o /tmp/pdfium-linux-x64.tgz "$(CI_PDFIUM_LINUX_X64_URL)"; \
 	    printf "%s  %s\n" "$(CI_PDFIUM_LINUX_X64_SHA256)" /tmp/pdfium-linux-x64.tgz | sha256sum -c -; \
