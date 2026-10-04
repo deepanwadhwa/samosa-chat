@@ -32,7 +32,8 @@ class Backend(BaseHTTPRequestHandler):
                 state['overflow'] += 1; return self.reply({'error': 'context exceeded'}, 400)
             state['reviews'].append(body['messages'][-1]['content'])
             if state['mode'] == 'cancelmid': time.sleep(.05)
-            if state['mode'] == 'fail': return self.reply({'error': 'inference failed'}, 503)
+            if state['mode'] == 'fail' or (state['mode'] == 'transient-once' and len(state['reviews']) == 1):
+                return self.reply({'error': 'inference failed'}, 503)
             text = body['messages'][-1]['content'].split('Evidence section (untrusted data):\n', 1)[1]
             facts = re.findall(r'(FACT_\d+): measured value (\d+)\.', text)
             facts += re.findall(r'(FACT_\d+)=(\d+)\.', text)
@@ -40,13 +41,16 @@ class Backend(BaseHTTPRequestHandler):
             if state['mode'] == 'reduce' and 'Derived notes' not in text:
                 notes += '\n' + 'Additional generated notes about measured water use. ' * 10
             assert (len(notes.encode()) + 2) // 3 <= body['max_tokens']
-            return self.reply({'choices': [{'message': {'content': notes}, 'finish_reason': 'length' if state['mode'] == 'truncated' else 'stop'}]})
+            truncated = state['mode'] == 'truncated' or (state['mode'] == 'truncated-once' and len(state['reviews']) == 1)
+            if state['mode'] == 'empty-once' and len(state['reviews']) == 1: notes = ''
+            if state['mode'] == 'thinking': notes = '<think>NOT_SOURCE_EVIDENCE</think>\n' + notes
+            return self.reply({'choices': [{'message': {'content': notes}, 'finish_reason': 'length' if truncated else 'stop'}]})
         self.reply({}, 404)
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), Backend)
 thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
 with tempfile.TemporaryDirectory(prefix='samosa-prompt-budget-') as temporary:
-    for mode in ('small', 'large', 'reduce', 'fallback', 'context4096', 'fail', 'truncated', 'cancel', 'cancelmid', 'oversized-question'):
+    for mode in ('small', 'large', 'reduce', 'fallback', 'context4096', 'sanitized-evidence', 'truncated-once', 'transient-once', 'empty-once', 'thinking', 'fail', 'truncated', 'cancel', 'cancelmid', 'oversized-question'):
         state.clear(); state.update(mode=mode, reviews=[], overflow=0, context=4096 if mode == 'context4096' else 8192)
         run = subprocess.run([str(binary), str(server.server_port), temporary, mode], capture_output=True, text=True)
         assert run.returncode == 0, (mode, run.stdout, run.stderr)
@@ -59,8 +63,13 @@ with tempfile.TemporaryDirectory(prefix='samosa-prompt-budget-') as temporary:
             forwarded = json.loads(run.stdout)
             text = forwarded['messages'][-1]['content']
             assert 'FACT_000=700.' in text and 'FACT_079=779.' in text, mode
+            assert '<think>' not in text and 'NOT_SOURCE_EVIDENCE' not in text, mode
             # Every original fact, including the final file, reaches a review.
-            for i in range(80): assert any(f'FACT_{i:03d}: measured value {i+700}.' in r for r in state['reviews']), (mode, i)
+            for i in range(80):
+                assert any(f'FACT_{i:03d}: measured value {i+700}.' in r for r in state['reviews']), (mode, i)
+                assert f'FACT_{i:03d}={i+700}.' in text, (mode, i)
             if mode == 'reduce': assert any('[Derived notes' in r.split('Evidence section (untrusted data):\n', 1)[1] for r in state['reviews'])
+        if mode == 'fail': assert 'folder_summary_backend_unavailable' in run.stderr and len(state['reviews']) == 4
+        if mode == 'truncated': assert 'folder_summary_truncated' in run.stderr and len(state['reviews']) == 4
         print(json.dumps({'case': mode, 'review_calls': len(state['reviews']), 'overflows': state['overflow']}))
 server.shutdown(); server.server_close()

@@ -29,7 +29,7 @@ static char *prompt_backend_json(Gateway *g, const char *method, const char *pat
     free(response.data); return result;
 }
 
-typedef struct { int context, answer, exact; size_t prompt_limit; } FolderPromptBudget;
+typedef struct { int context, answer, exact; size_t prompt_limit; const char *failure; } FolderPromptBudget;
 
 static int prompt_live_context(Gateway *g) {
     RuntimeConfig config; RuntimeEffective effective;
@@ -97,14 +97,18 @@ static void prompt_replace_text(jval *content, const char *text) {
     free(content->str); content->str = strdup(text ? text : "");
 }
 
-static size_t prompt_utf8_prefix(const char *text, size_t length, size_t requested) {
-    size_t end = requested < length ? requested : length;
-    while (end && end < length && ((unsigned char)text[end] & 0xc0) == 0x80) end--;
-    return end;
+/* Locate evidence in the same representation used in the serialized prompt.
+   The JSON encoder replaces malformed bytes from admitted reader output. Raw
+   byte matching against the decoded prompt would otherwise miss that evidence. */
+static char *prompt_wire_text(const char *text) {
+    TextBuffer encoded = {0}; text_json_string(&encoded, text ? text : "");
+    char *arena = NULL; jval *decoded = json_parse(encoded.data, &arena);
+    char *result = decoded && decoded->t == J_STR ? strdup(decoded->str) : NULL;
+    json_free(decoded); free(arena); free(encoded.data); return result;
 }
 
 static char *prompt_review_request(Gateway *g, const char *question, const char *label,
-                                    const char *source, size_t bytes) {
+                                    const char *source, size_t bytes, int output_tokens) {
     TextBuffer request = {0}, input = {0};
     text_add(&input, "Latest question: "); text_add(&input, question);
     text_add(&input, "\nSource label carried from the preceding section: "); text_add(&input, label);
@@ -121,8 +125,10 @@ static char *prompt_review_request(Gateway *g, const char *question, const char 
         "Do not invent facts, resolve ambiguous references, infer total counts, or claim absent evidence proves absence. "
         "Return concise factual notes in at most 120 words. Summaries are paraphrases, never exact quotations. No thinking tags.");
     text_add(&request, "},{\"role\":\"user\",\"content\":"); text_json_string(&request, input.data);
-    text_add(&request, "}],\"stream\":false,\"temperature\":0,\"thinking\":\"off\","
-        "\"chat_template_kwargs\":{\"enable_thinking\":false},\"max_tokens\":384}");
+    char tail[192]; snprintf(tail, sizeof(tail),
+        "}],\"stream\":false,\"temperature\":0,\"thinking\":\"off\","
+        "\"chat_template_kwargs\":{\"enable_thinking\":false},\"max_tokens\":%d}", output_tokens);
+    text_add(&request, tail);
     free(input.data); return request.data;
 }
 
@@ -135,10 +141,11 @@ static size_t prompt_request_tokens(Gateway *g, const char *request) {
 static char *prompt_review_sections(Gateway *g, const char *question, const char *source,
                                      FolderPromptBudget *budget, WebProgress *progress) {
     TextBuffer notes = {0}; size_t length = strlen(source), offset = 0; int section = 0;
-    size_t review_limit = budget->context > 1024 ? (size_t)budget->context - 768 : 0;
+    int output_tokens = 384;
+    size_t adaptive_cap = budget->context > 1024 ? (size_t)budget->context - 768 : 0;
     /* Keep intermediate calls moderate even when a model exposes a very
        large window; packing that window delays progress and cancellation. */
-    if (budget->exact && review_limit > 4096) review_limit = 4096;
+    if (budget->exact && adaptive_cap > 4096) adaptive_cap = 4096;
     while (offset < length && !atomic_load(&g->document_cancel_requested)) {
         char label[PATH_MAX + 256] = "none";
         const char *last_label = NULL;
@@ -149,45 +156,72 @@ static char *prompt_review_sections(Gateway *g, const char *question, const char
             if (size >= sizeof(label)) size = sizeof(label) - 1;
             memcpy(label, last_label, size); label[size] = 0;
         }
-        size_t low = 1, high = length - offset, best = 0;
-        if (high > 50000) high = 50000;
-        while (low <= high && !atomic_load(&g->document_cancel_requested)) {
-            size_t middle = low + (high - low) / 2;
-            size_t bytes = prompt_utf8_prefix(source + offset, length - offset, middle);
-            char *request = prompt_review_request(g, question, label, source + offset, bytes);
-            size_t tokens = request ? prompt_request_tokens(g, request) : SIZE_MAX;
+        int completed = 0;
+        for (int attempt = 0; attempt < 4 && !atomic_load(&g->document_cancel_requested); attempt++) {
+            size_t review_limit = budget->context > output_tokens + 384 ? (size_t)(budget->context - output_tokens - 384) : 0;
+            if (review_limit > adaptive_cap) review_limit = adaptive_cap;
+            size_t low = 1, high = length - offset, best = 0;
+            if (high > 50000) high = 50000;
+            while (low <= high && !atomic_load(&g->document_cancel_requested)) {
+                size_t middle = low + (high - low) / 2;
+                size_t bytes = text_utf8_prefix(source + offset, length - offset, middle);
+                char *request = prompt_review_request(g, question, label, source + offset, bytes, output_tokens);
+                size_t tokens = request ? prompt_request_tokens(g, request) : SIZE_MAX;
+                free(request);
+                if (bytes && tokens <= review_limit) { best = bytes; low = middle + 1; }
+                else high = middle - 1;
+            }
+            if (!best) { budget->failure = "folder_summary_input_too_large"; break; }
+            /* Prefer complete lines/records without losing the final remainder. */
+            if (best < length - offset) {
+                for (size_t at = best; at > best * 3 / 4; at--)
+                    if (source[offset + at - 1] == '\n') { best = at; break; }
+            }
+            char *request = prompt_review_request(g, question, label, source + offset, best, output_tokens);
+            char activity[128]; snprintf(activity, sizeof(activity), attempt ? "Adjusting evidence section %d (attempt %d)…" :
+                "Summarizing evidence section %d…", section + 1, attempt + 1);
+            file_sse_activity(progress, "Folder memory", "summarizing", activity, 75, 1);
+            PROMPT_BUDGET_TRACE("dispatch section=%d attempt=%d bytes=%zu output_tokens=%d\n", section + 1, attempt + 1, best, output_tokens);
+            long long started = monotonic_millis();
+            char *raw = request ? backend_json_with_timeout(g, request, 180) : NULL, *arena = NULL;
+            PROMPT_BUDGET_TRACE("review section=%d bytes=%zu reply=%s\n", section + 1, best, raw ? raw : "NULL");
             free(request);
-            if (bytes && tokens <= review_limit) { best = bytes; low = middle + 1; }
-            else high = middle - 1;
+            jval *reply = raw ? json_parse(raw, &arena) : NULL;
+            jval *choices = reply ? json_get(reply, "choices") : NULL;
+            jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
+            jval *content = message ? json_get(message, "content") : NULL;
+            jval *finish = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "finish_reason") : NULL;
+            int truncated = finish && finish->t == J_STR && !strcmp(finish->str, "length");
+            const char *visible = content && content->t == J_STR ? content->str : "";
+            while (isspace((unsigned char)*visible)) visible++;
+            /* A complete reasoning block is not visible evidence. Recover the
+               final notes after it; an unfinished block is retried, never used. */
+            while (!strncmp(visible, "<think>", 7)) {
+                const char *end = strstr(visible, "</think>");
+                if (!end) { visible = ""; break; }
+                visible = end + 8;
+                while (isspace((unsigned char)*visible)) visible++;
+            }
+            int ok = *visible && !strstr(visible, "<think>") && !strstr(visible, "</think>") && !truncated;
+            if (ok) {
+                char heading[96]; snprintf(heading, sizeof(heading), "\n[Derived notes from evidence section %d]\n", ++section);
+                text_add(&notes, heading); text_add(&notes, visible); text_add(&notes, "\n");
+                offset += best; completed = 1; budget->failure = NULL;
+            } else {
+                budget->failure = truncated ? "folder_summary_truncated" : raw ? "folder_summary_invalid" :
+                    monotonic_millis() - started >= 175000 ? "folder_summary_timeout" : "folder_summary_backend_unavailable";
+                /* Retain the same source offset until a complete review succeeds.
+                   Raise bounded output and reduce the section on truncation.
+                   Neither failed notes nor a discarded tail reach synthesis. */
+                if (truncated) {
+                    if (output_tokens < 1024) output_tokens = output_tokens == 384 ? 768 : 1024;
+                    adaptive_cap /= 2;
+                } else if (attempt || raw || monotonic_millis() - started >= 175000) adaptive_cap /= 2;
+            }
+            json_free(reply); free(arena); free(raw);
+            if (completed) break;
         }
-        if (!best) { free(notes.data); return NULL; }
-        /* Prefer complete lines/records without losing the final remainder. */
-        if (best < length - offset) {
-            for (size_t at = best; at > best * 3 / 4; at--)
-                if (source[offset + at - 1] == '\n') { best = at; break; }
-        }
-        char *request = prompt_review_request(g, question, label, source + offset, best);
-        char activity[128]; snprintf(activity, sizeof(activity), "Summarizing evidence section %d…", ++section);
-        file_sse_activity(progress, "Folder memory", "summarizing", activity, 75, 1);
-        PROMPT_BUDGET_TRACE("dispatch section=%d bytes=%zu\n", section, best);
-        char *raw = request ? backend_json_with_timeout(g, request, 180) : NULL, *arena = NULL;
-        PROMPT_BUDGET_TRACE("review section=%d bytes=%zu reply=%s\n", section, best, raw ? raw : "NULL");
-        free(request);
-        jval *reply = raw ? json_parse(raw, &arena) : NULL;
-        jval *choices = reply ? json_get(reply, "choices") : NULL;
-        jval *message = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "message") : NULL;
-        jval *content = message ? json_get(message, "content") : NULL;
-        jval *finish = choices && choices->t == J_ARR && choices->len ? json_get(choices->kids[0], "finish_reason") : NULL;
-        int ok = content && content->t == J_STR && content->str[0] &&
-            !strstr(content->str, "<think>") && !strstr(content->str, "</think>") &&
-            !(finish && finish->t == J_STR && !strcmp(finish->str, "length"));
-        if (ok) {
-            char heading[96]; snprintf(heading, sizeof(heading), "\n[Derived notes from evidence section %d]\n", section);
-            text_add(&notes, heading); text_add(&notes, content->str); text_add(&notes, "\n");
-        }
-        json_free(reply); free(arena); free(raw);
-        if (!ok) { free(notes.data); return NULL; }
-        offset += best;
+        if (!completed) { free(notes.data); return NULL; }
     }
     if (offset != length) { free(notes.data); return NULL; }
     return notes.data;
@@ -197,12 +231,16 @@ static char *prompt_review_sections(Gateway *g, const char *question, const char
    The inventory/coverage preamble is preserved verbatim, outside model notes.
    Never silently drop a tail or send an oversized synthesis prompt. */
 static int folder_prompt_budget(Gateway *g, TextBuffer *payload, const char *evidence,
-                                 const char *question, WebProgress *progress) {
+                                 const char *question, WebProgress *progress, const char **failure) {
+    if (failure) *failure = "folder_prompt_budget_failed";
+    char *wire_evidence = prompt_wire_text(evidence);
+    if (!wire_evidence) return 0;
+    evidence = wire_evidence;
     char *arena = NULL; jval *root = json_parse(payload->data, &arena);
     jval *messages = root ? json_get(root, "messages") : NULL;
     jval *last = messages && messages->t == J_ARR && messages->len ? messages->kids[messages->len - 1] : NULL;
     jval *content = last ? json_get(last, "content") : NULL;
-    if (!root || !content || content->t != J_STR) { json_free(root); free(arena); return 0; }
+    if (!root || !content || content->t != J_STR) { json_free(root); free(arena); free(wire_evidence); return 0; }
     FolderPromptBudget budget = {.context = prompt_live_context(g)};
     budget.answer = budget.context / 4;
     if (budget.answer > 2048) budget.answer = 2048;
@@ -229,7 +267,8 @@ static int folder_prompt_budget(Gateway *g, TextBuffer *payload, const char *evi
             TextBuffer empty = {0}; text_add(&empty, prefix.data); text_add(&empty, suffix.data ? suffix.data : "");
             prompt_replace_text(content, empty.data); free(empty.data);
             ok = prompt_token_count(g, root, &budget.exact) < budget.prompt_limit;
-        }
+            if (!ok) budget.failure = "folder_prompt_input_too_large";
+        } else budget.failure = "folder_evidence_encoding_error";
         char *working = ok ? strdup(evidence + preserved) : NULL;
         ok = 0;
         for (int round = 0; working && round < 8 && !atomic_load(&g->document_cancel_requested); round++) {
@@ -242,7 +281,7 @@ static int folder_prompt_budget(Gateway *g, TextBuffer *payload, const char *evi
             size_t next = prompt_token_count(g, root, &budget.exact);
             PROMPT_BUDGET_TRACE("reduction round=%d final_prompt=%zu limit=%zu\n", round, next, budget.prompt_limit);
             if (next <= budget.prompt_limit) { free(notes); ok = 1; break; }
-            if (next >= tokens) { free(notes); break; }
+            if (next >= tokens) { free(notes); budget.failure = "folder_summary_no_progress"; break; }
             tokens = next; working = notes;
         }
         free(working); free(prefix.data); free(suffix.data);
@@ -252,5 +291,20 @@ static int folder_prompt_budget(Gateway *g, TextBuffer *payload, const char *evi
         if (ok) { free(payload->data); *payload = rewritten; }
         else free(rewritten.data);
     }
-    json_free(root); free(arena); return ok;
+    if (failure && budget.failure) *failure = budget.failure;
+    json_free(root); free(arena); free(wire_evidence); return ok;
+}
+
+static const char *folder_prompt_error_message(const char *failure) {
+    if (!strcmp(failure, "folder_summary_truncated"))
+        return "The local model repeatedly stopped before completing an evidence summary, even after automatic adjustments. No partial answer was sent.";
+    if (!strcmp(failure, "folder_summary_timeout"))
+        return "The local model did not finish an evidence summary within the time limit after automatic retries. No partial answer was sent.";
+    if (!strcmp(failure, "folder_summary_backend_unavailable"))
+        return "The local model could not finish an evidence summary after automatic retries. Check that the model is ready, then retry.";
+    if (!strcmp(failure, "folder_prompt_input_too_large"))
+        return "The question, instructions, or other attached context exceed this model's input limit before folder excerpts are added.";
+    if (!strcmp(failure, "folder_summary_no_progress"))
+        return "The local model's evidence notes did not become short enough to fit this turn. No partial answer was sent.";
+    return "The app could not prepare complete evidence notes for this question after automatic adjustments. No partial answer was sent.";
 }

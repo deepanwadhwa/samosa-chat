@@ -28,6 +28,19 @@ static void *cancel_memory(void *opaque) {
 }
 
 int main(int argc, char **argv) {
+    /* Reader excerpts and filename/identity probes use byte ceilings, but
+       their boundary must remain a complete UTF-8 character. */
+    const char *widths = "Aé漢😀";
+    assert(text_utf8_prefix(widths, strlen(widths), 2) == 1);
+    assert(text_utf8_prefix(widths, strlen(widths), 4) == 3);
+    assert(text_utf8_prefix(widths, strlen(widths), 7) == 6);
+    char *utf_arena = NULL;
+    jval *utf_context = json_parse("{\"artifacts\":[{\"artifact_kind\":\"extracted_text\",\"freshness\":\"current\",\"status\":\"active\",\"content\":\"Aé漢😀\"}]}", &utf_arena);
+    MemorySource utf_source = {.context = utf_context}; TextBuffer excerpt = {0};
+    memory_append_content(&excerpt, &utf_source, 4);
+    assert(strstr(excerpt.data, "Aé\n") && utf8_scalar_count((const unsigned char *)excerpt.data, excerpt.len) >= 0);
+    assert(strstr(excerpt.data, "truncated"));
+    free(excerpt.data); json_free(utf_context); free(utf_arena);
     if (argc > 2 && !strcmp(argv[1], "--mode") && !strcmp(argv[2], "memory")) {
         sleep(10); return 0;
     }

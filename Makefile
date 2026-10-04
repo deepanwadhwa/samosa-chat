@@ -548,6 +548,7 @@ test: pagecache-residency-test test-evidence-contract test-html-extractor test-d
 	python3 tests/test_samosa_decision.py
 	$(MAKE) test-memory-harness
 	$(MAKE) test-prompt-budget
+	$(MAKE) test-folder-prompt-e2e
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 # The compiled gateway, Chutni, and the Kimi preflight are part of the default
@@ -903,3 +904,7 @@ test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.py src/s
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_prompt_budget.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_prompt_budget $(DL_LDFLAGS)
 	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_prompt_budget.py
+
+.PHONY: test-folder-prompt-e2e
+test-folder-prompt-e2e: samosa-gateway samosa-fs samosa-extract tests/test_folder_prompt_e2e.py
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_folder_prompt_e2e.py

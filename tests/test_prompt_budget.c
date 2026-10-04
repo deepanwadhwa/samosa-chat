@@ -47,6 +47,7 @@ int main(int argc, char **argv) {
             "Generated material about orchard irrigation, rainfall measurements and water use. é😀测试\n");
         char fact[96]; snprintf(fact, sizeof(fact), "FACT_%03d: measured value %d.\n", i, i + 700);
         text_add(&evidence, fact);
+        if (!strcmp(argv[3], "sanitized-evidence")) text_add(&evidence, "Legacy incomplete character: \xc3\n");
     }
     text_add(&evidence, "--- end folder/file action evidence ---\n");
     text_add(&payload, "{\"model\":\"ornith\",\"chat_template_kwargs\":{\"enable_thinking\":false},\"thinking\":\"off\",\"messages\":[{\"role\":\"system\",\"content\":\"Answer using labelled evidence and preserve uncertainty. Inventory and coverage facts are authoritative. Derived notes are paraphrases, never exact quotations. Give only the final answer.\"},"
@@ -57,7 +58,9 @@ int main(int argc, char **argv) {
     pthread_t cancellation;
     if (!strcmp(argv[3], "cancelmid")) assert(!pthread_create(&cancellation, NULL, cancel_review, g));
     WebProgress progress = {0};
-    int ok = folder_prompt_budget(g, &payload, evidence.data, question.data, &progress);
+    const char *failure = NULL;
+    int ok = folder_prompt_budget(g, &payload, evidence.data, question.data, &progress, &failure);
+    if (!ok) fprintf(stderr, "failure=%s\n", failure);
     if (!strcmp(argv[3], "cancelmid")) pthread_join(cancellation, NULL);
     if (!strcmp(argv[3], "fail") || !strcmp(argv[3], "truncated") || !strcmp(argv[3], "cancel") ||
         !strcmp(argv[3], "cancelmid") || !strcmp(argv[3], "oversized-question")) assert(!ok);

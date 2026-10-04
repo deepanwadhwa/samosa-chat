@@ -1,0 +1,875 @@
+{
+  "seconds": 0.66,
+  "files": 80,
+  "errors": [],
+  "answer": "Generated orchard irrigation, coastal navigation, and pottery records.",
+  "model_metrics": [
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 4002,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 3956,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 3967,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 3962,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 3956,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": true,
+      "final": false,
+      "prompt_tokens": 2704,
+      "max_tokens": 384,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": true,
+      "prompt_tokens": 1811,
+      "max_tokens": 2048,
+      "valid_utf8": true
+    }
+  ],
+  "events": [
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "planning",
+              "message": "Checking the folder question\u2026",
+              "progress": 0,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Generated multilingual records",
+              "stage": "inventory",
+              "message": "Checking indexed files\u2026",
+              "progress": 20,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Generated multilingual records",
+              "stage": "reading",
+              "message": "Reading the indexed evidence\u2026",
+              "progress": 70,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 1\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 2\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 3\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 4\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 5\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "summarizing",
+              "message": "Summarizing evidence section 6\u2026",
+              "progress": 75,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "preparing",
+              "message": "Preparing the folder answer\u2026",
+              "progress": 95,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Generated orchard irrigation, coastal navigation, and pottery records."
+          }
+        }
+      ]
+    }
+  ]
+}

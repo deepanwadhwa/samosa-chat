@@ -150,7 +150,7 @@ static void memory_source_context(Gateway *g, const char *store, MemorySource *s
         if (source->preview.len < preview_limit) {
             if (source->preview.len) text_add(&source->preview, "\n");
             size_t remaining = preview_limit - source->preview.len;
-            text_add_n(&source->preview, content->str, strlen(content->str) < remaining ? strlen(content->str) : remaining);
+            text_add_n(&source->preview, content->str, text_utf8_prefix(content->str, content_length, remaining));
         }
     }
     if (!source->readable) source->preview_complete = 0;
@@ -286,9 +286,9 @@ static void memory_trace_membership(Gateway *g, const char *subject, int count,
 static int memory_semantic_probe(const char *root, const MemorySource *source, TextBuffer *probe) {
     const char *path = memory_relative_path(root, source);
     size_t path_length = strlen(path), preview_length = source->preview_literal ? source->preview.len : 0;
-    text_add(probe, "[Inventory filename]\n"); text_add_n(probe, path, path_length < 128 ? path_length : 128);
+    text_add(probe, "[Inventory filename]\n"); text_add_n(probe, path, text_utf8_prefix(path, path_length, 128));
     text_add(probe, "\n[Literal indexed preview]\n");
-    if (preview_length) text_add_n(probe, source->preview.data, preview_length < 1000 ? preview_length : 1000);
+    if (preview_length) text_add_n(probe, source->preview.data, text_utf8_prefix(source->preview.data, preview_length, 1000));
     return source->preview_complete && source->preview_literal && path_length <= 128 && preview_length <= 1000;
 }
 
@@ -438,7 +438,7 @@ static void memory_append_content(TextBuffer *evidence, MemorySource *source, si
             char label[64]; snprintf(label, sizeof(label), "[PDF page %.0f]\n", page->num); text_add(evidence, label);
         }
         size_t remaining = budget > evidence->len - start ? budget - (evidence->len - start) : 0;
-        size_t length = strlen(text->str), retained = length < remaining ? length : remaining;
+        size_t length = strlen(text->str), retained = text_utf8_prefix(text->str, length, remaining);
         text_add_n(evidence, text->str, retained); text_add(evidence, "\n"); represented++;
         jval *truncated = json_get(artifact, "content_truncated");
         if (retained < length || (truncated && truncated->t == J_BOOL && truncated->boolean))
@@ -641,7 +641,7 @@ static int chutni_chat_evidence(Gateway *g, jval *directory_context, const char 
         if (inventory && sources[i].preview.data && !membership_ok &&
             !(selected[i] && (content || overview))) {
             text_add(evidence, "[Indexed content preview for membership; not complete file contents]\n");
-            size_t length = sources[i].preview.len < 400 ? sources[i].preview.len : 400;
+            size_t length = text_utf8_prefix(sources[i].preview.data, sources[i].preview.len, 400);
             text_add_n(evidence, sources[i].preview.data, length); text_add(evidence, "\n");
         }
         if (selected[i] && (content || overview)) {

@@ -921,6 +921,14 @@ typedef struct {
     size_t cap;
 } TextBuffer;
 
+/* Byte ceilings must stop before a partial UTF-8 character. Callers retain
+   their original coverage/truncation flags; this only makes the prefix valid. */
+static size_t text_utf8_prefix(const char *text, size_t length, size_t requested) {
+    size_t end = requested < length ? requested : length;
+    while (end && end < length && ((unsigned char)text[end] & 0xc0) == 0x80) end--;
+    return end;
+}
+
 static int text_reserve(TextBuffer *buffer, size_t extra) {
     if (extra > SIZE_MAX - buffer->len - 1) return 0;
     size_t needed = buffer->len + extra + 1;
@@ -17737,17 +17745,18 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     text_add(&payload, "}");
     if (have_chutni) {
         atomic_store(&g->document_processing, 1);
+        const char *budget_failure = NULL;
         int budgeted = folder_prompt_budget(g, &payload, chutni_evidence.data,
-                                             original_text, &web_progress);
+                                             original_text, &web_progress, &budget_failure);
         atomic_store(&g->document_processing, 0);
         if (!budgeted || atomic_load(&g->document_cancel_requested)) {
             free(payload.data); free(doc_evidence.data); free(pinned_doc_evidence.data);
             free(image_blocks.data); free(chutni_evidence.data); free(web_evidence.data);
             int canceled = atomic_load(&g->document_cancel_requested);
             return chat_context_error(fd, &web_progress, canceled ? 409 : 422,
-                canceled ? "document_cancelled" : "folder_context_budget_failed",
+                canceled ? "document_cancelled" : budget_failure,
                 canceled ? "Folder reading was stopped." :
-                "The folder evidence could not be summarized within this model's context. No incomplete answer was sent. Retry with a shorter question or fewer attached sources.");
+                folder_prompt_error_message(budget_failure));
         }
         file_sse_activity(&web_progress, "Folder memory", "preparing", "Preparing the folder answer…", 95, 1);
     }
