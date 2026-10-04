@@ -286,10 +286,27 @@ DOGFOOD_RSS_MONITOR=$!
   --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$DOGFOOD\"}],\"user_exclusions\":[\"Private\"]}" \
   >"$TMP/dogfood-preflight.json"
 DOGFOOD_PF=$(/bin/cat "$TMP/dogfood-preflight.json")
-printf '%s' "$DOGFOOD_PF" | /usr/bin/grep -q '"representative_path":"Software/node_modules"'
-printf '%s' "$DOGFOOD_PF" | /usr/bin/grep -q '"representative_path":"Software/.venv"'
-printf '%s' "$DOGFOOD_PF" | /usr/bin/grep -q '"representative_path":"Software/custom-python-env"'
-printf '%s' "$DOGFOOD_PF" | /usr/bin/grep -q '"reason":"user_exclusion"'
+# A skip reason carries one representative, chosen by filesystem enumeration
+# order. Check every excluded group and its count, without assuming which
+# member of a group macOS or Linux returns first.
+"$PYTHON" - "$TMP/dogfood-preflight.json" <<'PY'
+import json, sys
+inventory = json.load(open(sys.argv[1]))['inventory']
+assert inventory['complete'] and not inventory['partial'], inventory
+assert inventory['regular_files'] == 9 and inventory['skipped'] == 7, inventory
+reasons = {row['reason']: row for row in inventory['skip_reasons']}
+expected = {
+    'hidden_excluded': (2, {'Software/.venv', 'Software/.git'}),
+    'generated_tree': (2, {'Software/node_modules', 'Software/build'}),
+    'python_environment_marker': (1, {'Software/custom-python-env'}),
+    'user_exclusion': (1, {'Private'}),
+    'symlink': (1, {'escape-link'}),
+}
+assert set(reasons) == set(expected), reasons
+for reason, (count, paths) in expected.items():
+    assert reasons[reason]['count'] == count, reasons[reason]
+    assert reasons[reason]['representative_path'] in paths, reasons[reason]
+PY
 DOGFOOD_PREFLIGHT=$(printf '%s' "$DOGFOOD_PF" | /usr/bin/sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
 DOGFOOD_POLICY=$(printf '%s' "$DOGFOOD_PF" | /usr/bin/sed -n 's/.*"policy_fingerprint":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
 [ -n "$DOGFOOD_PREFLIGHT" ] && [ -n "$DOGFOOD_POLICY" ]
