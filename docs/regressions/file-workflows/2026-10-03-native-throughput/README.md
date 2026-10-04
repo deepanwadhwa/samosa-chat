@@ -96,3 +96,20 @@ python3 tools/benchmark_chutni_throughput.py \
 The benchmark driver is test-only Python orchestration. The shipped pipeline,
 OCR, storage, and summarizer use C/C++; no new application Python dependency
 or Python worker pool was added.
+
+## Installed verification — 2026-10-04
+
+Release `dev-6b2ce108731f` is installed and running. Health reports ready with
+OCR, Chutni, and the native summarizer available. Installed gateway, service,
+UI, and summarizer hashes match the tested build. Served HTML matches the
+release after the expected UI-token injection. The installed native runtime
+passes the real scalar and two-round batch isolation smoke test.
+
+The delivered benchmark driver was also exercised on a fresh 32-file native
+case: 13.003 seconds, 2.461 files/s, 32 summaries, zero failures. Installation
+ran concurrently with that additional reproducibility check; use the earlier
+dedicated cold measurements for comparison.
+
+Pending memory jobs were deferred during restart. The known user scope remains
+`canceled_initial`; this work did not refresh or resume it. Reload the app and
+use Refresh to start a new build with the installed pipeline.

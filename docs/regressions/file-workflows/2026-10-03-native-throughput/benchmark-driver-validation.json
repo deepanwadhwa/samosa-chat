@@ -1,0 +1,19 @@
+{
+  "files": 32,
+  "summaries": 32,
+  "sampled_files": 32,
+  "full_files": 0,
+  "failures": 0,
+  "seconds": 13.003,
+  "extraction_ms": 3003,
+  "ocr_ms": 0,
+  "summary_ms": 71170,
+  "storage_ms": 722,
+  "verification_ms": 7,
+  "commit_ms": 166,
+  "case": "unique-native32",
+  "workers": 6,
+  "files_per_second": 2.461,
+  "peak_process_tree_rss_mib": 288.4,
+  "cold": true
+}
