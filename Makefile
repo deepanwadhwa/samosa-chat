@@ -114,7 +114,12 @@ chutni-service:
 	@test -f "$(CHUTNI_DIR)/Makefile" || { echo "missing Chutni submodule; run: git submodule update --init" >&2; exit 2; }
 	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="$(CHUTNI_OPT)" "$(CHUTNI_BUILD)/chutni-mcp"
 	@mkdir -p $(BUILD_DIR)
-	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
+# Replace the inode instead of overwriting an executable that macOS may have
+# cached a code signature for during a previous test or build.
+	@set -e; staged=$$(mktemp "$(CHUTNI_MCP).XXXXXX"); \
+	  trap 'rm -f "$$staged"' EXIT HUP INT TERM; \
+	  cp -p "$(CHUTNI_BUILD)/chutni-mcp" "$$staged"; \
+	  mv -f "$$staged" "$(CHUTNI_MCP)"
 
 # Kimi Linear metadata preflight. This does not download or quantize the model;
 # the pure-C KDA/MLA runtime must land before a weight converter is enabled.
