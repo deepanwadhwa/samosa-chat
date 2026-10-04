@@ -7709,6 +7709,8 @@
           if (!activeFiles.length && s.active_files_json) {
             try { activeFiles = JSON.parse(s.active_files_json); } catch (_) { activeFiles = []; }
           }
+          const liveActivity = CHUTNI_BUSY.has(s.state);
+          if (!liveActivity) activeFiles = [];
           if (activeFiles.length && s.extraction_workers > 1) {
             const workers = document.createElement("p"); workers.className = "chutni-activity";
             workers.textContent = `${s.active_workers || activeFiles.length} active files · ${s.extraction_workers} native workers · ${s.summary_queue || 0} waiting for summary`;
@@ -7730,18 +7732,18 @@
             }
             table.appendChild(body); scroll.appendChild(table); monitor.appendChild(scroll);
           }
-          if (s.current_file && !(activeFiles.length && s.extraction_workers > 1)) {
+          if (liveActivity && s.current_file && !(activeFiles.length && s.extraction_workers > 1)) {
             const current = document.createElement("p"); current.className = "chutni-current";
             current.textContent = `${s.content_reading_policy === "opening_sample_v1" ? "Current file" : "Last completed file"}: ${s.current_file}`;
             current.title = s.current_file;
             monitor.appendChild(current);
           }
-          if (s.activity && !(activeFiles.length && s.extraction_workers > 1)) {
+          if (liveActivity && s.activity && !(activeFiles.length && s.extraction_workers > 1)) {
             const activity = document.createElement("p"); activity.className = "chutni-activity";
             activity.textContent = s.activity;
             monitor.appendChild(activity);
           }
-          if (s.current_file && s.content_reading_policy === "opening_sample_v1" && !(activeFiles.length && s.extraction_workers > 1)) {
+          if (liveActivity && s.current_file && s.content_reading_policy === "opening_sample_v1" && !(activeFiles.length && s.extraction_workers > 1)) {
             const sample = document.createElement("p"); sample.className = "chutni-activity";
             const page = s.current_page > 0 ? `Page ${s.current_page} of ${s.current_page_total} · ` : "";
             sample.textContent = `${page}${(s.current_file_characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()} target characters`;

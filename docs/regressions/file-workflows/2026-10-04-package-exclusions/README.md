@@ -30,6 +30,8 @@ inspection or testing. Only application control state was checked.
   Existing indexes are recognized as using the earlier policy by preflight.
 - Restart recovery preserves a pending cancellation as canceled; interrupted
   running jobs retain the existing paused recovery behavior.
+- Canceled, paused, and completed cards hide stale worker rows and current-file
+  activity left in saved progress. Historical counters remain visible.
 
 ## Generated regression coverage
 

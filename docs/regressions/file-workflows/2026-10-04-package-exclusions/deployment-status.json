@@ -1,0 +1,20 @@
+{
+  "release": "dev-a616d2a80eb0",
+  "ready": true,
+  "user_scope_control_state": "canceled_initial",
+  "pending_memory_deferred": true,
+  "hashes": {
+    "gateway": {
+      "sha256": "f325a32935ef00034d9874d6eed6a3708d70f1bad293f433937db971fcfe1fb2",
+      "matches_tested_build": true
+    },
+    "chutni_service": {
+      "sha256": "eb06528c1e653fd96372f48d76c5605ce9e2677419faa030168b7e14c28038c3",
+      "matches_tested_build": true
+    },
+    "inventory": {
+      "sha256": "02ad16e3cccf9d45fd0161713dbcd1bb4c18aa4570ffa30d391f846057f9fb88",
+      "matches_tested_build": true
+    }
+  }
+}

@@ -140,6 +140,12 @@ const parallelCard = cardFixture({ id: "parallel", state: "building", content_re
 }).text();
 for (const label of ["4 native workers", "2 active files", "1 waiting for summary", "File", "Activity", "Characters", "native.pdf", "scan.pdf", "2 / 20"])
   assert.ok(parallelCard.includes(label), `parallel card missing ${label}`);
+const canceledCard = cardFixture({ id: "canceled", state: "canceled_initial", content_reading_policy: "opening_sample_v1",
+  extraction_workers: 6, active_workers: 6, progress_started_ms: 1, pdf_pages_processed: 2,
+  current_file: "stale-active.pdf", activity: "Stale batch is running",
+  active_files_json: JSON.stringify([{ file: "stale-table.pdf", activity: "Stale worker is running", characters: 3000 }]),
+}).text();
+assert.doesNotMatch(canceledCard, /stale-active|stale-table|Stale batch|Stale worker|active files|native workers/);
 
 // Folder memory must not expand a saved file task's evidence scope. Execute
 // the shipped action handler with a completed and an interrupted chat switch.
