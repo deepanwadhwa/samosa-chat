@@ -24,7 +24,9 @@ static int sample_sidecar(int argc, char **argv) {
         for (int i = 0; i < length; i++) putchar('o');
         puts("\",\"conf\":0.99,\"bbox\":[0,0,1,1]}]}"); return 0;
     }
-    if (strcmp(argv[1], "--json-pages")) return 64;
+    if (strcmp(argv[1], "--json-pages")) return -1;
+    const char *delay = getenv("SAMOSA_SAMPLE_TEST_DELAY_MS");
+    if (delay) sleep_millis(atoi(delay));
     int start = atoi(argv[3]), count = atoi(argv[4]);
     printf("{\"ok\":true,\"page_count\":20,\"pages\":[");
     for (int page = start; page < start + count && page <= 20; page++) {
@@ -141,9 +143,10 @@ int main(int argc, char **argv) {
         path_copy(progress.phase, sizeof(progress.phase), "complete");
         progress.current_file[0] = 0;
         chutni_progress_write(g, scope, "generated-test", &progress, 1);
-        printf("{\"files\":%llu,\"summaries\":%llu,\"sampled_files\":%llu,\"full_files\":%llu,\"failures\":%llu,\"seconds\":%.3f}\n",
+        printf("{\"files\":%llu,\"summaries\":%llu,\"sampled_files\":%llu,\"full_files\":%llu,\"failures\":%llu,\"seconds\":%.3f,\"extraction_ms\":%llu,\"ocr_ms\":%llu,\"summary_ms\":%llu,\"storage_ms\":%llu,\"verification_ms\":%llu,\"commit_ms\":%llu}\n",
             counts.files_processed, counts.summaries, counts.sampled_files, counts.complete_files, counts.failed,
-            (wall_millis() - progress.started_ms) / 1000.0);
+            (wall_millis() - progress.started_ms) / 1000.0,
+            counts.extraction_ms, counts.ocr_ms, counts.summary_ms, counts.storage_ms, counts.verification_ms, counts.commit_ms);
         summarizer_stop(g); free(g);
         return counts.failed ? 1 : 0;
     }

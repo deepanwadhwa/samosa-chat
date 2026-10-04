@@ -397,6 +397,9 @@ test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samo
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_chutni_sampling.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test-chutni-sampling $(DL_LDFLAGS)
 	$(BUILD_DIR)/test-chutni-sampling
 
+test-chutni-throughput: samosa-gateway test-chutni-sampling test_fake_native_summarizer
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_chutni_throughput.py
+
 test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \

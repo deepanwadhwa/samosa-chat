@@ -2,6 +2,16 @@
 #include "../src/samosa_gateway.c"
 #undef main
 
+typedef struct { Gateway *gateway; int index, ok; } ConcurrentSummary;
+static void *concurrent_summary(void *opaque) {
+    ConcurrentSummary *job = opaque;
+    char source[192]; snprintf(source, sizeof(source), "Generated record %d describes its own distinct library and opening date.", job->index);
+    TextBuffer answer = {0};
+    job->ok = native_summarize_text(job->gateway, source, strlen(source), 1, 1800, &answer) &&
+        answer.data && !strcmp(answer.data, source);
+    free(answer.data); return NULL;
+}
+
 int main(int argc, char **argv) {
     if (argc != 3) return 2;
     Gateway gateway;
@@ -52,6 +62,15 @@ int main(int argc, char **argv) {
         free(reduced.data); summarizer_stop(&gateway); unlink(log_path); return 7;
     }
     free(reduced.data);
+    ConcurrentSummary concurrent[8]; pthread_t threads[8];
+    for (int i = 0; i < 8; i++) {
+        concurrent[i] = (ConcurrentSummary){&gateway, i, 0};
+        if (pthread_create(&threads[i], NULL, concurrent_summary, &concurrent[i])) return 9;
+    }
+    for (int i = 0; i < 8; i++) {
+        pthread_join(threads[i], NULL);
+        if (!concurrent[i].ok) return 10;
+    }
     summarizer_stop(&gateway);
     pthread_mutex_destroy(&gateway.summarizer_mu);
 
@@ -68,7 +87,7 @@ int main(int argc, char **argv) {
     unsetenv("SAMOSA_FAKE_SUMMARIZER_LOG");
     /* Eight direct requests, three map chunks, and one local reduce pass all
        use the same resident sidecar process. */
-    if (lines != 12 || !one_process) return 8;
+    if (lines != 20 || !one_process) return 8;
     puts("test_native_summarizer_supervisor: PASS");
     return 0;
 }

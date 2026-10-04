@@ -1,0 +1,20 @@
+{
+  "files": 24,
+  "summaries": 20,
+  "sampled_files": 20,
+  "full_files": 4,
+  "failures": 0,
+  "seconds": 15.585,
+  "extraction_ms": 35579,
+  "ocr_ms": 33418,
+  "summary_ms": 44789,
+  "storage_ms": 1417,
+  "verification_ms": 15,
+  "commit_ms": 193,
+  "case": "large-mixed24",
+  "workers": 6,
+  "files_per_second": 1.54,
+  "peak_process_tree_rss_mib": 622.6,
+  "cold": true,
+  "catalog_artifacts_before": 3054
+}

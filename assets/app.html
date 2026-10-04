@@ -7705,18 +7705,43 @@
             cell.appendChild(dt); cell.appendChild(dd); grid.appendChild(cell);
           }
           monitor.appendChild(grid);
-          if (s.current_file) {
+          let activeFiles = Array.isArray(s.active_files) ? s.active_files : [];
+          if (!activeFiles.length && s.active_files_json) {
+            try { activeFiles = JSON.parse(s.active_files_json); } catch (_) { activeFiles = []; }
+          }
+          if (activeFiles.length && s.extraction_workers > 1) {
+            const workers = document.createElement("p"); workers.className = "chutni-activity";
+            workers.textContent = `${s.active_workers || activeFiles.length} active files · ${s.extraction_workers} native workers · ${s.summary_queue || 0} waiting for summary`;
+            monitor.appendChild(workers);
+            const scroll = document.createElement("div"); scroll.className = "job-table-scroll";
+            const table = document.createElement("table"); table.className = "job-file-table job-progress-table";
+            const head = document.createElement("thead"); const titles = document.createElement("tr");
+            for (const label of ["File", "Activity", "Page", "Characters"]) {
+              const th = document.createElement("th"); th.textContent = label; titles.appendChild(th);
+            }
+            head.appendChild(titles); table.appendChild(head);
+            const body = document.createElement("tbody");
+            for (const file of activeFiles) {
+              const row = document.createElement("tr");
+              for (const value of [file.file, file.activity, file.page > 0 ? `${file.page} / ${file.pages}` : "—", `${(file.characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()}`]) {
+                const td = document.createElement("td"); td.textContent = value; row.appendChild(td);
+              }
+              body.appendChild(row);
+            }
+            table.appendChild(body); scroll.appendChild(table); monitor.appendChild(scroll);
+          }
+          if (s.current_file && !(activeFiles.length && s.extraction_workers > 1)) {
             const current = document.createElement("p"); current.className = "chutni-current";
             current.textContent = `${s.content_reading_policy === "opening_sample_v1" ? "Current file" : "Last completed file"}: ${s.current_file}`;
             current.title = s.current_file;
             monitor.appendChild(current);
           }
-          if (s.activity) {
+          if (s.activity && !(activeFiles.length && s.extraction_workers > 1)) {
             const activity = document.createElement("p"); activity.className = "chutni-activity";
             activity.textContent = s.activity;
             monitor.appendChild(activity);
           }
-          if (s.current_file && s.content_reading_policy === "opening_sample_v1") {
+          if (s.current_file && s.content_reading_policy === "opening_sample_v1" && !(activeFiles.length && s.extraction_workers > 1)) {
             const sample = document.createElement("p"); sample.className = "chutni-activity";
             const page = s.current_page > 0 ? `Page ${s.current_page} of ${s.current_page_total} · ` : "";
             sample.textContent = `${page}${(s.current_file_characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()} target characters`;

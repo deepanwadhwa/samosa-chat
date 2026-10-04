@@ -130,6 +130,16 @@ for (const visible of ["Files finished", "13 of 100", "0.04 files/s", "Current f
 assert.doesNotMatch(liveCard, /Reader pass|0\.0 files\/s|Save budget|Now:/);
 assert.match(cardFixture({ id: "legacy", state: "building", current_file: "previous.pdf", progress_started_ms: 1, scan_text_artifacts: 900 }).text(), /Last completed file: previous.pdf/);
 assert.match(cardFixture({ id: "paused", state: "paused_user" }).text(), /reuses cached samples/);
+const parallelCard = cardFixture({ id: "parallel", state: "building", content_reading_policy: "opening_sample_v1",
+  extraction_workers: 4, active_workers: 2, summary_queue: 1, progress_started_ms: 1,
+  pdf_pages_processed: 2,
+  active_files_json: JSON.stringify([
+    { file: "native.pdf", activity: "Summarizing the collected sample", page: 2, pages: 20, characters: 3400 },
+    { file: "scan.pdf", activity: "Recognizing page text", page: 1, pages: 9, characters: 0 },
+  ]),
+}).text();
+for (const label of ["4 native workers", "2 active files", "1 waiting for summary", "File", "Activity", "Characters", "native.pdf", "scan.pdf", "2 / 20"])
+  assert.ok(parallelCard.includes(label), `parallel card missing ${label}`);
 
 // Folder memory must not expand a saved file task's evidence scope. Execute
 // the shipped action handler with a completed and an interrupted chat switch.

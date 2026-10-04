@@ -33,25 +33,38 @@ int main(void) {
         uint32_t encoded = 0;
         if (!exact_read(&encoded, sizeof(encoded))) return 0;
         uint32_t length = ntohl(encoded);
-        if (!length || length > 65536) return 2;
-        char *prompt = malloc((size_t)length + 1);
-        if (!prompt || !exact_read(prompt, length)) return 3;
-        prompt[length] = 0;
-        const char *fixed =
-            "South Carolina DPH confirms 30 cyclosporiasis cases in 2026 and provides produce-washing and symptom guidance.";
-        const char *summary = strstr(prompt, "South Carolina") ? fixed : prompt;
-        if (!strncmp(summary, "summarize: ", 11)) summary += 11;
-        size_t output_length = strlen(summary);
-        if (output_length > 260) output_length = 260;
-        const char *log_path = getenv("SAMOSA_FAKE_SUMMARIZER_LOG");
-        if (log_path) {
-            FILE *log = fopen(log_path, "a");
-            if (log) { fprintf(log, "%ld\n", (long)getpid()); fclose(log); }
+        int count = (length & 0x80000000U) ? (int)(length & 0x3fffffffU) : 1;
+        int batch = (length & 0x80000000U) != 0;
+        if (count < 1 || count > 64) return 2;
+        char *prompts[64] = {0};
+        /* Drain the complete request before writing replies, just like the
+           native engine. Large batches must not deadlock two full pipes. */
+        for (int i = 0; i < count; i++) {
+            if (batch) {
+                if (!exact_read(&encoded, sizeof(encoded))) return 2;
+                length = ntohl(encoded);
+            }
+            if (!length || length > 65536) return 2;
+            prompts[i] = malloc((size_t)length + 1);
+            if (!prompts[i] || !exact_read(prompts[i], length)) return 3;
+            prompts[i][length] = 0;
         }
-        uint32_t output_encoded = htonl((uint32_t)output_length);
-        int ok = exact_write(&output_encoded, sizeof(output_encoded)) &&
-                 exact_write(summary, output_length);
-        free(prompt);
-        if (!ok) return 4;
+        for (int i = 0; i < count; i++) {
+            const char *fixed =
+                "South Carolina DPH confirms 30 cyclosporiasis cases in 2026 and provides produce-washing and symptom guidance.";
+            const char *summary = strstr(prompts[i], "South Carolina") ? fixed : prompts[i];
+            if (!strncmp(summary, "summarize: ", 11)) summary += 11;
+            size_t output_length = strlen(summary);
+            if (output_length > 260) output_length = 260;
+            const char *log_path = getenv("SAMOSA_FAKE_SUMMARIZER_LOG");
+            if (log_path) {
+                FILE *log = fopen(log_path, "a");
+                if (log) { fprintf(log, "%ld\n", (long)getpid()); fclose(log); }
+            }
+            uint32_t output_encoded = htonl((uint32_t)output_length);
+            int ok = exact_write(&output_encoded, sizeof(output_encoded)) && exact_write(summary, output_length);
+            free(prompts[i]);
+            if (!ok) return 4;
+        }
     }
 }

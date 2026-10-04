@@ -65,6 +65,33 @@ int main(int argc, char **argv) {
     char *summary = length && length < 8192 ? malloc((size_t)length + 1) : NULL;
     ok = summary && read_all(out[0], summary, length);
     if (summary) summary[length] = 0;
+    /* Real batched encoder/decoder inference, twice on one resident process.
+       Distinct subjects/numbers prove cross-attention and KV isolation. */
+    const char *sources[] = {
+        "summarize: South Carolina officials reported 30 cases of cyclosporiasis in 2026. None were linked to the national outbreak.",
+        "summarize: Cedar Harbor council approved planting 42 oak trees in Riverside Park. Volunteers will plant the trees in November.",
+        "summarize: The Maple library has 17 new computers. The computers arrived on Tuesday and visitors can use them during opening hours.",
+        "summarize: The Pine school hired 8 teachers for its new language program. The program begins in September and classes will meet twice weekly."
+    };
+    const char *subjects[] = {"South Carolina", "Cedar Harbor", "Maple", "Pine"};
+    const char *numbers[] = {"30", "42", "17", "8"};
+    for (int round = 0; ok && round < 2; round++) {
+        encoded = htonl(0xc0000004U);
+        ok = write_all(in[1], &encoded, sizeof(encoded));
+        for (int i = 0; ok && i < 4; i++) {
+            encoded = htonl((uint32_t)strlen(sources[i]));
+            ok = write_all(in[1], &encoded, sizeof(encoded)) && write_all(in[1], sources[i], strlen(sources[i]));
+        }
+        for (int i = 0; ok && i < 4; i++) {
+            ok = read_all(out[0], &encoded, sizeof(encoded));
+            uint32_t bytes = ok ? ntohl(encoded) : 0;
+            char *answer = bytes && bytes < 8192 ? calloc((size_t)bytes + 1, 1) : NULL;
+            ok = answer && read_all(out[0], answer, bytes) && strstr(answer, subjects[i]) && strstr(answer, numbers[i]);
+            for (int j = 0; ok && j < 4; j++) if (j != i && strstr(answer, subjects[j])) ok = 0;
+            if (!ok) fprintf(stderr, "batch isolation failed for %d: %s\n", i, answer ? answer : "<empty>");
+            free(answer);
+        }
+    }
     close(in[1]); close(out[0]);
     int status = 0;
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
