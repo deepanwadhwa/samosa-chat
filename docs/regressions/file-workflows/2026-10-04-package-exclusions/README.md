@@ -51,3 +51,8 @@ Inventory, Chutni core/MCP/binding, gateway, pause/resume, crash recovery,
 sampling, and native concurrency/atomic-storage tests pass. The wider FW-6
 acceptance work and scheduling gate remain open. This change does not inspect,
 repair, refresh, or resume the user's folder.
+
+Installed release `dev-08d1031a8ca7` is running and reports ready. Its gateway,
+inventory, Chutni service, and UI hashes match the tested files; served HTML
+matches after the expected token injection. The known user scope is confirmed
+`canceled_initial`, and pending automatic memory jobs are deferred.
