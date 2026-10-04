@@ -6356,7 +6356,8 @@ static int jobs_find_duplicates(Gateway *g, int fd, const char *folder) {
             v = json_get(obj, "limiting_reason"); if (v && v->t == J_STR) path_copy(reason, sizeof(reason), v->str);
         }
         json_free(obj); free(record_arena);
-        if (!end) break; line = end + 1;
+        if (!end) break;
+        line = end + 1;
     }
     free(raw); raw = NULL;
     if (!saw_done) goto cleanup;
@@ -6414,12 +6415,16 @@ static int jobs_find_duplicates(Gateway *g, int fd, const char *folder) {
                 if (matches < 2) continue;
                 int earlier = 0; for (size_t x = i; x < k; x++) if (!strcmp(files[k].hash, files[x].hash)) earlier = 1;
                 if (earlier) continue;
-                if (!first_group) ok = text_add(&event, ","); first_group = 0; duplicate_groups++;
+                if (!first_group) ok = text_add(&event, ",");
+                first_group = 0;
+                duplicate_groups++;
                 snprintf(num, sizeof(num), "%llu", files[k].size);
                 ok = ok && text_add(&event, "{\"size\":") && text_add(&event, num) && text_add(&event, ",\"sha256\":") && text_json_string(&event, files[k].hash) && text_add(&event, ",\"files\":[");
                 int first_path = 1;
                 for (size_t x = i; ok && x < end; x++) if (!strcmp(files[k].hash, files[x].hash)) {
-                    if (!first_path) ok = text_add(&event, ","); first_path = 0; ok = ok && text_json_string(&event, files[x].path);
+                    if (!first_path) ok = text_add(&event, ",");
+                    first_path = 0;
+                    ok = ok && text_json_string(&event, files[x].path);
                 }
                 ok = ok && text_add(&event, "]}");
             }
@@ -6504,7 +6509,8 @@ static int jobs_sort_by_type(Gateway *g, int fd, const char *folder) {
             saw_done = 1; jval *v = json_get(obj, "partial"); partial = v && v->t == J_BOOL && v->boolean;
         }
         json_free(obj); free(record_arena);
-        if (!end) break; line = end + 1;
+        if (!end) break;
+        line = end + 1;
     }
     free(raw); raw = NULL;
     if (!saw_done) goto sort_cleanup;
@@ -6620,7 +6626,8 @@ static int jobs_classify_inbox(Gateway *g, int fd, const char *folder) {
             v = json_get(obj, "limiting_reason"); if (v && v->t == J_STR) path_copy(reason, sizeof(reason), v->str);
         }
         json_free(obj); free(record_arena);
-        if (!end) break; line = end + 1;
+        if (!end) break;
+        line = end + 1;
     }
     free(raw); raw = NULL; if (!saw_done) goto inbox_cleanup;
     snprintf(job_id, sizeof(job_id), "job-%ld-%ld-%lld", (long)time(NULL), (long)getpid(), (long long)monotonic_millis());
@@ -6766,7 +6773,8 @@ static int jobs_watch_delta(Gateway *g, const char *job_id, const char *folder,
                 current[i].dev != previous[old_index].dev || current[i].ino != previous[old_index].ino;
             if (!is_new) continue;
             const char *signal = NULL, *category = jobs_inbox_category(current[i].path, &signal);
-            if (!first) ok = text_add(summary, ","); first = 0;
+            if (!first) ok = text_add(summary, ",");
+            first = 0;
             ok = ok && text_add(summary, "{\"path\":") && text_json_string(summary, current[i].path) && text_add(summary, ",\"category\":") && text_json_string(summary, category) && text_add(summary, ",\"signal\":") && text_json_string(summary, signal) && text_add(summary, "}");
         }
         ok = ok && text_add(summary, "]");
@@ -6786,7 +6794,8 @@ static int jobs_watch_delta(Gateway *g, const char *job_id, const char *folder,
         }
         for (size_t k = 0; ok && k < group_count; k++) {
             char number[32]; snprintf(number, sizeof(number), "%llu", groups[k].count);
-            if (!first) ok = text_add(summary, ","); first = 0;
+            if (!first) ok = text_add(summary, ",");
+            first = 0;
             ok = ok && text_json_string(summary, groups[k].key) && text_add(summary, ":") && text_add(summary, number);
         }
         ok = ok && text_add(summary, "}");
