@@ -16,8 +16,13 @@ PORT=18977
 BACKEND_PORT=18978
 PID=""
 PID2=""
+DOGFOOD_RSS_MONITOR=""
 
 cleanup() {
+  if [ -n "$DOGFOOD_RSS_MONITOR" ]; then
+    /usr/bin/touch "$TMP/dogfood-rss-stop"
+    wait "$DOGFOOD_RSS_MONITOR" 2>/dev/null || true
+  fi
   [ -z "$PID" ] || kill "$PID" 2>/dev/null || true
   [ -z "$PID" ] || wait "$PID" 2>/dev/null || true
   [ -z "$PID2" ] || kill "$PID2" 2>/dev/null || true
@@ -424,6 +429,7 @@ printf '%s' "$DOGFOOD_WATCH_AGAIN" | /usr/bin/grep -q '"job_id":"dogfood-watch-d
   "$HOME_DIR/jobs/dogfood-watch-delta/events.jsonl"
 /usr/bin/touch "$TMP/dogfood-rss-stop"
 wait "$DOGFOOD_RSS_MONITOR"
+DOGFOOD_RSS_MONITOR=""
 DOGFOOD_PEAK_RSS_KB=$(/bin/cat "$TMP/dogfood-peak-rss-kb")
 set -- $DOGFOOD_PEAK_RSS_KB
 DOGFOOD_PEAK_RSS_KB=$1
@@ -653,16 +659,28 @@ kill_main_for_crash() {
   --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$REPORT_CRASH_ROOT\"}" \
   >"$TMP/report-crash.sse" 2>/dev/null &
 REPORT_CRASH_CURL=$!
+REPORT_CRASH_JOB=""
 i=0
-while [ "$i" -lt 200 ] && [ ! -f "$TMP/report-crash-inventory.pid" ]; do
+while [ "$i" -lt 200 ]; do
   kill -0 "$PID" 2>/dev/null || { /bin/cat "$TMP/gateway.log" >&2; exit 1; }
+  REPORT_CRASH_JOB=$(/usr/bin/sed -n \
+    's/.*"type":"inventory_started","job_id":"\([^"]*\)".*/\1/p' \
+    "$TMP/report-crash.sse" | /usr/bin/head -1)
+  if [ -f "$TMP/report-crash-inventory.pid" ] && [ -n "$REPORT_CRASH_JOB" ]; then
+    break
+  fi
   /bin/sleep 0.02
   i=$((i + 1))
 done
 [ -f "$TMP/report-crash-inventory.pid" ]
-REPORT_CRASH_JOB_DIR=$(/bin/ls -dt "$HOME_DIR"/jobs/job-* | /usr/bin/head -1)
-REPORT_CRASH_JOB=$(/usr/bin/basename "$REPORT_CRASH_JOB_DIR")
+[ -n "$REPORT_CRASH_JOB" ]
+# Background memory publication can update an older job directory at any time.
+# Exercise that competing update and identify this report by its own SSE ID,
+# never by directory mtime.
+/usr/bin/touch "$HOME_DIR/jobs/$REPORT_JOB"
+REPORT_CRASH_JOB_DIR="$HOME_DIR/jobs/$REPORT_CRASH_JOB"
 /usr/bin/grep -q '"type":"inventory_started"' "$REPORT_CRASH_JOB_DIR/events.jsonl"
+/usr/bin/grep -Fq "\"folder\":\"$REPORT_CRASH_ROOT\"" "$REPORT_CRASH_JOB_DIR/events.jsonl"
 /bin/sleep 0.8
 REPORT_CRASH_INVENTORY_PID=$(/bin/cat "$TMP/report-crash-inventory.pid")
 kill_main_for_crash
