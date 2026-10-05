@@ -1,0 +1,10 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 16638.53it/s]
+{"target": "completed", "answer": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.03915837034583092, "unrelated": 0.9608415961265564}, "confidence": 0.7615800015148064}}
+{"target": "blank", "answer": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.08498506993055344, "unrelated": 0.915014922618866}, "confidence": 0.5804946798511734}}
+{"target": "a completed application form", "answer": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.01752636581659317, "unrelated": 0.982473611831665}, "confidence": 0.8726830622375518}}
+{"target": "a blank application form", "answer": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.16809381544589996, "unrelated": 0.8319061994552612}, "confidence": 0.3466744132919337}}
+{"target": "a completed or blank application form", "answer": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.156668558716774, "unrelated": 0.8433314561843872}, "confidence": 0.3737202341166489}}

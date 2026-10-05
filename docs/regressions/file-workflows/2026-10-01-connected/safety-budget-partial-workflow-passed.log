@@ -1,0 +1,9 @@
+{"stage": "model_clone", "model": "ornith", "source_job": "job-1790888832-27164-373742674", "job_id": "fork-1790896679-17785-381589675", "conversation": "workflow-live-557d4038ddc8", "seconds": 0.01}
+{"stage": "answer", "model": "ornith", "question": "What verification code appears on page 37 of Person X records.pdf? Cite the file and page.", "answer": "The verification code on page 37 of Person X records.pdf is **QZ-731**.\n\nSource: Person X records.pdf, page 37.", "seconds": 16.93, "evidence_chars": 2454}
+{"stage": "answer", "model": "ornith", "question": "What is Person X's appointment date? Cite the source. Use only the selected files.", "answer": "Person X's appointment date is 17 May 2031.\n\nSource: Person X appointment.txt, text at bytes 0-61: \"Person X appointment date is 17 May 2031. Reference: WX-482.\"", "seconds": 63.5, "evidence_chars": 6286}
+{"stage": "answer", "model": "ornith", "question": "What scan reference appears on page 1 of Person X scan.pdf? Cite the source.", "answer": "The scan reference on page 1 of Person X scan.pdf is **SC-913**.\n\nSource: Person X scan.pdf, page 1, OCR text: \"Scan reference: SC-913\".", "seconds": 18.7, "evidence_chars": 2331}
+test_file_workflow_live.py questions: PASS
+{"stage": "copy_reopen_undo", "files": 12, "job_id": "action-1790896778-17785-381688810"}
+{"stage": "moved_followup", "answer": "Person X's appointment date is 17 May 2031, as stated in the selected source file `reviewed-move-557d4038ddc8/Person X appointment.txt` (text: \"Person X appointment date is 17 May 2031. Reference: WX-482.\").", "seconds": 77.92}
+{"stage": "move_reopen_undo", "files": 12, "job_id": "action-1790896778-17785-381689208"}
+test_file_workflow_live.py: PASS

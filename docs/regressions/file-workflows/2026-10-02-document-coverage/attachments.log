@@ -1,0 +1,8 @@
+/Applications/Xcode-26.5.0.app/Contents/Developer/usr/bin/make -C "vendor/chutni" BUILD="/Users/deepanwadhwa/Documents/samosa-chat/build/chutni" OPT="-O2 -Wno-error=implicit-function-declaration" "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp"
+make[1]: `/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp' is up to date.
+cp "/Users/deepanwadhwa/Documents/samosa-chat/build/chutni/chutni-mcp" "build/chutni-mcp"
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/samosa-gateway 
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/fake_openai_backend.c -o build/test_fake_openai_backend
+test_attachments.sh: PASS

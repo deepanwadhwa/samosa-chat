@@ -2,6 +2,7 @@
   "preflight_id": "random-id",
   "expires_at": "ISO-8601",
   "kind": "folder",
+  "policy_fingerprint": "sha256:policy-digest",
   "roots": [
     {
       "root_id": "random-id",
@@ -13,12 +14,28 @@
     }
   ],
   "effective_policy": {
-    "policy_fingerprint": "sha256",
     "cross_filesystems": false,
     "include_hidden": false,
-    "maximum_file_bytes": 268435456,
+    "follow_symlinks": false,
+    "maximum_depth": 32,
+    "maximum_files": 10000,
+    "maximum_directories": 5000,
+    "maximum_seconds": 20,
+    "maximum_file_bytes": 67108864,
     "mandatory_exclusions": [],
     "user_exclusions": []
+  },
+  "inventory": {
+    "regular_files": 100,
+    "regular_file_bytes": 1234,
+    "skipped": 0,
+    "directories_seen": 4,
+    "directories_entered": 4,
+    "complete": true,
+    "partial": false,
+    "limiting_reason": "none",
+    "policy_fingerprint": "sha256:policy-digest",
+    "skip_reasons": []
   },
   "estimate": {
     "sampled": true,

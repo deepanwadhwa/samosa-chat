@@ -22,12 +22,14 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$TMP/home" "$TMP/release/bin" "$TMP/release/model"
 cp "$ROOT/$BUILD_DIR/samosa-gateway" "$TMP/release/bin/samosa-gateway"
+cp "$ROOT/$BUILD_DIR/samosa-fs" "$TMP/release/bin/samosa-fs"
 cp "$ROOT/$BUILD_DIR/test_fake_openai_backend" "$TMP/release/bin/qwen36b"
 cp "$ROOT/$BUILD_DIR/chutni-mcp" "$TMP/release/bin/chutni-mcp"
 cp "$ROOT/assets/app.html" "$TMP/release/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$TMP/release/samosa-chat.png"
 printf 'fixture\n' >"$TMP/release/model/experts.bin"
 printf '{}\n' >"$TMP/release/tokenizer_qwen36.json"
+cp -R "$ROOT/tests/fixtures/chutni_browser_e2e" "$TMP/chutni-preflight"
 
 cat >"$TMP/launch-shell.sh" <<EOF
 #!/bin/sh
@@ -74,19 +76,29 @@ if [ "$(uname -s)" = "Darwin" ]; then
   }
 fi
 
-HEALTH=$(curl -fsS --max-time 5 "http://127.0.0.1:$PORT/healthz")
+HEALTH=$(curl -fsS --max-time 5 "http://127.0.0.1:$PORT/healthz") || {
+  echo "FAIL: detached service health request failed" >&2
+  cat "$TMP/home/server.log" >&2 2>/dev/null || true
+  exit 1
+}
 printf '%s' "$HEALTH" | grep -q '"gateway":true'
 printf '%s' "$HEALTH" | grep -q '"chutni":{"available":true'
 printf '%s' "$HEALTH" | grep -q '"managed_by":"samosa"'
 printf '%s' "$HEALTH" | grep -q '"can_create_memory":true'
 
 # Prove this surviving Samosa process can invoke its bundled Chutni runtime.
-# Preflight reads only a repository fixture and does not create a memory.
+# Preflight reads only a temporary fixture and does not create a memory. The
+# launchd test process has no macOS privacy grant for the repository's
+# ~/Documents path, so keep this fixture outside protected user folders.
 TOKEN=$(tr -d '\n' <"$TMP/home/run/ui-token")
-PREFLIGHT=$(curl -fsS --max-time 5 \
+PREFLIGHT=$(curl -fsS --max-time 30 \
   -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' -X POST \
   "http://127.0.0.1:$PORT/v1/chutni/preflight" \
-  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$ROOT/tests/fixtures/chutni_browser_e2e\"}]}")
+  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$TMP/chutni-preflight\"}]}") || {
+  echo "FAIL: detached service Chutni preflight request failed" >&2
+  cat "$TMP/home/server.log" >&2 2>/dev/null || true
+  exit 1
+}
 printf '%s' "$PREFLIGHT" | grep -q '"preflight_id":'
 printf '%s' "$PREFLIGHT" | grep -q '"action":"create_store"'
 

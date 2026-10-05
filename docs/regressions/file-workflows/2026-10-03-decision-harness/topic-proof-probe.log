@@ -1,0 +1,11 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 14748.90it/s]
+{"text": "Mira Leena gardening diary. This is a different person.", "method": "statement", "result": {"type": "choice", "choice": "plausible", "probabilities": {"plausible": 0.7071014642715454, "unrelated": 0.29289859533309937}, "confidence": 0.12756387990125007}}
+{"text": "Mira Leena gardening diary. This is a different person.", "method": "topic", "result": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.28468161821365356, "unrelated": 0.7153183817863464}, "confidence": 0.13824831565422913}}
+{"text": "Shopping: apples, oats, coffee.", "method": "statement", "result": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.06394842267036438, "unrelated": 0.9360515475273132}, "confidence": 0.6570767078322952}}
+{"text": "Shopping: apples, oats, coffee.", "method": "topic", "result": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.22486291825771332, "unrelated": 0.7751370072364807}, "confidence": 0.23105175964345448}}
+{"text": "Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.", "method": "statement", "result": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.2351084053516388, "unrelated": 0.7648916244506836}, "confidence": 0.21318937612670086}}
+{"text": "Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.", "method": "topic", "result": {"type": "choice", "choice": "unrelated", "probabilities": {"plausible": 0.13275329768657684, "unrelated": 0.8672467470169067}, "confidence": 0.43505900284758126}}

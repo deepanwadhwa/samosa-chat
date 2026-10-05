@@ -1,0 +1,12 @@
+cc -O1 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -pthread -Isrc tests/test_prompt_budget.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c -o build/test_prompt_budget 
+BUILD_DIR="build" python3 tests/test_prompt_budget.py
+{"case": "small", "review_calls": 0, "overflows": 0}
+{"case": "large", "review_calls": 32, "overflows": 0}
+{"case": "reduce", "review_calls": 73, "overflows": 0}
+{"case": "fallback", "review_calls": 70, "overflows": 0}
+{"case": "context4096", "review_calls": 40, "overflows": 0}
+{"case": "fail", "review_calls": 1, "overflows": 0}
+{"case": "truncated", "review_calls": 1, "overflows": 0}
+{"case": "cancel", "review_calls": 0, "overflows": 0}
+{"case": "cancelmid", "review_calls": 1, "overflows": 0}
+{"case": "oversized-question", "review_calls": 0, "overflows": 0}

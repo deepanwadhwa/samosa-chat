@@ -1,0 +1,13 @@
+{
+  "files": 24,
+  "summaries": 20,
+  "sampled_files": 20,
+  "full_files": 4,
+  "failures": 0,
+  "seconds": 61.118,
+  "case": "unique-baseline-mixed24",
+  "workers": 1,
+  "files_per_second": 0.393,
+  "peak_process_tree_rss_mib": 214.9,
+  "cold": true
+}

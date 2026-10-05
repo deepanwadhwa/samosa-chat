@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "decision": "no_go_for_native_qualification_or_catalogue_exposure",
+  "screening_thresholds": {
+    "overall_accuracy_min": 0.9,
+    "inbox_accuracy_min": 0.9,
+    "macro_f1_min": 0.85,
+    "ece_10_bins_max": 0.1,
+    "abstention_recall_min": 0.9,
+    "decisive_position_misses_allowed": 0,
+    "p95_latency_ms_max_at_intended_budget": 2000
+  },
+  "candidate_runs": [
+    {
+      "candidate": "laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+      "reports": ["laya-typed-512-report.json", "laya-typed-1024-report.json"],
+      "failed_gates": ["overall_accuracy", "inbox_accuracy", "macro_f1", "ece", "abstention_recall", "decisive_position_misses"],
+      "qualified": false
+    },
+    {
+      "candidate": "ModernBERT-large-zeroshot-v2.0",
+      "revision": "a51e07b524299e309dd2b88d48b0cfa2bd9ec598",
+      "reports": ["modernbert-512-report.json", "modernbert-1024-report.json", "modernbert-2048-report.json", "modernbert-4096-report.json", "modernbert-8192-report.json"],
+      "failed_gates": ["overall_accuracy", "inbox_accuracy", "macro_f1", "ece", "abstention_recall", "decisive_position_misses", "p95_latency_at_2k_4k_8k"],
+      "qualified": false
+    }
+  ],
+  "product_action": "Keep deterministic Jobs decisions and human review; do not register either model in the model catalogue.",
+  "limitations": [
+    "The 36-case English set is hand-authored and small; it screens candidates but cannot establish production reliability.",
+    "Native-runtime parity, independent held-out validation, multilingual evaluation, and catalogue install/remove tests were not run because neither candidate passed the screen."
+  ]
+}

@@ -1,0 +1,88 @@
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=793 generated=67 stop=model thinking=model-controlled prefill=93.322s (8.50 tok/s) decode=15.250s (4.33 tok/s) total=108.572s expert_hit=9438/105296 (9.0%) expert_disk=39.610s expert_mm=29.083s peak_rss=3.43 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=95202 bytes_read=188.46 GB bytes_avoided=18.56 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=793 generated=67 stop=model thinking=model-controlled prefill=111.737s (7.10 tok/s) decode=15.696s (4.20 tok/s) total=127.434s expert_hit=9438/105296 (9.0%) expert_disk=37.831s expert_mm=37.057s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=95202 bytes_read=188.46 GB bytes_avoided=18.56 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=752 generated=25 stop=model thinking=model-controlled prefill=99.290s (7.57 tok/s) decode=5.878s (4.08 tok/s) total=105.168s expert_hit=13519/195493 (6.9%) expert_disk=73.569s expert_mm=65.566s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=181318 bytes_read=357.78 GB bytes_avoided=26.58 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1502 generated=109 stop=model thinking=model-controlled prefill=178.241s (8.43 tok/s) decode=22.774s (4.74 tok/s) total=201.016s expert_hit=29163/391982 (7.4%) expert_disk=147.383s expert_mm=117.420s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=362163 bytes_read=713.33 GB bytes_avoided=57.34 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=452 generated=2 stop=model thinking=model-controlled prefill=43.424s (10.41 tok/s) decode=0.245s (4.08 tok/s) total=43.669s expert_hit=29894/436896 (6.8%) expert_disk=161.437s expert_mm=131.274s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=406346 bytes_read=800.20 GB bytes_avoided=58.77 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=478 generated=7 stop=model thinking=model-controlled prefill=56.480s (8.46 tok/s) decode=1.930s (3.11 tok/s) total=58.410s expert_hit=31089/485175 (6.4%) expert_disk=177.817s expert_mm=149.648s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=453430 bytes_read=892.77 GB bytes_avoided=61.12 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1094 generated=21 stop=model thinking=model-controlled prefill=152.825s (7.16 tok/s) decode=4.662s (4.29 tok/s) total=157.487s expert_hit=34608/608458 (5.7%) expert_disk=227.395s expert_mm=193.870s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=573194 bytes_read=1128.24 GB bytes_avoided=68.04 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=795 generated=2 stop=model thinking=model-controlled prefill=93.578s (8.50 tok/s) decode=0.246s (4.06 tok/s) total=93.825s expert_hit=35555/692308 (5.1%) expert_disk=261.564s expert_mm=218.764s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=656097 bytes_read=1291.23 GB bytes_avoided=69.90 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=398 generated=48 stop=model thinking=model-controlled prefill=41.552s (9.58 tok/s) decode=10.279s (4.57 tok/s) total=51.831s expert_hit=42208/745419 (5.7%) expert_disk=277.426s expert_mm=234.981s peak_rss=3.55 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=702555 bytes_read=1382.57 GB bytes_avoided=82.98 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=727 generated=23 stop=model thinking=model-controlled prefill=88.251s (8.24 tok/s) decode=4.820s (4.56 tok/s) total=93.071s expert_hit=3836/86414 (4.4%) expert_disk=35.926s expert_mm=23.368s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=81922 bytes_read=162.35 GB bytes_avoided=7.54 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1277 generated=70 stop=model thinking=model-controlled prefill=156.037s (8.18 tok/s) decode=14.969s (4.61 tok/s) total=171.006s expert_hit=13856/246042 (5.6%) expert_disk=100.278s expert_mm=66.608s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=231530 bytes_read=456.50 GB bytes_avoided=27.24 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=726 generated=10 stop=model thinking=model-controlled prefill=83.798s (8.66 tok/s) decode=1.859s (4.84 tok/s) total=85.657s expert_hit=15843/328110 (4.8%) expert_disk=133.095s expert_mm=89.159s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=311611 bytes_read=613.94 GB bytes_avoided=31.15 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1128 generated=9 stop=model thinking=model-controlled prefill=127.142s (8.87 tok/s) decode=1.745s (4.58 tok/s) total=128.887s expert_hit=18078/451888 (4.0%) expert_disk=182.310s expert_mm=122.557s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=433154 bytes_read=852.91 GB bytes_avoided=35.54 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=896 generated=6 stop=model thinking=model-controlled prefill=96.508s (9.28 tok/s) decode=1.088s (4.60 tok/s) total=97.596s expert_hit=19683/548272 (3.6%) expert_disk=217.485s expert_mm=149.511s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=527933 bytes_read=1039.25 GB bytes_avoided=38.70 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=736 generated=125 stop=model thinking=model-controlled prefill=83.370s (8.83 tok/s) decode=27.340s (4.54 tok/s) total=110.711s expert_hit=16178/116812 (13.8%) expert_disk=39.243s expert_mm=29.534s peak_rss=3.45 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=99978 bytes_read=197.85 GB bytes_avoided=31.81 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1177 generated=70 stop=model thinking=model-controlled prefill=135.399s (8.69 tok/s) decode=15.619s (4.42 tok/s) total=151.018s expert_hit=26076/263331 (9.9%) expert_disk=91.809s expert_mm=69.598s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=236599 bytes_read=466.46 GB bytes_avoided=51.27 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=732 generated=22 stop=model thinking=model-controlled prefill=83.717s (8.74 tok/s) decode=4.502s (4.66 tok/s) total=88.220s expert_hit=30136/347373 (8.7%) expert_disk=123.175s expert_mm=93.100s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=316581 bytes_read=623.71 GB bytes_avoided=59.25 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=873 generated=128 stop=model thinking=model-controlled prefill=98.957s (8.82 tok/s) decode=28.661s (4.43 tok/s) total=127.618s expert_hit=46843/477966 (9.8%) expert_disk=166.679s expert_mm=127.972s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=430467 bytes_read=847.62 GB bytes_avoided=92.10 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1187 generated=427 stop=model thinking=model-controlled prefill=144.522s (8.21 tok/s) decode=102.028s (4.18 tok/s) total=246.550s expert_hit=95610/743649 (12.9%) expert_disk=253.191s expert_mm=191.604s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=647383 bytes_read=1274.10 GB bytes_avoided=187.98 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1998 generated=325 stop=cancelled thinking=model-controlled prefill=255.282s (7.83 tok/s) decode=75.994s (4.26 tok/s) total=331.276s expert_hit=133835/1070952 (12.5%) expert_disk=374.520s expert_mm=271.959s peak_rss=3.51 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=936461 bytes_read=1842.45 GB bytes_avoided=263.13 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=1187 generated=427 stop=model thinking=model-controlled prefill=137.299s (8.65 tok/s) decode=94.377s (4.51 tok/s) total=231.676s expert_hit=48716/265683 (18.3%) expert_disk=84.465s expert_mm=60.538s peak_rss=3.37 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=216311 bytes_read=426.57 GB bytes_avoided=95.78 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=2340 generated=677 stop=model thinking=model-controlled prefill=292.806s (7.99 tok/s) decode=163.071s (4.15 tok/s) total=455.877s expert_hit=133361/742390 (18.0%) expert_disk=249.119s expert_mm=172.212s peak_rss=3.40 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=608373 bytes_read=1197.40 GB bytes_avoided=262.20 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=1187 generated=427 stop=model thinking=model-controlled prefill=137.140s (8.66 tok/s) decode=94.497s (4.51 tok/s) total=231.637s expert_hit=48716/265683 (18.3%) expert_disk=86.330s expert_mm=59.576s peak_rss=3.33 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=216311 bytes_read=426.57 GB bytes_avoided=95.78 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=2000 generated=377 stop=model thinking=model-controlled prefill=243.352s (8.22 tok/s) decode=86.359s (4.35 tok/s) total=329.711s expert_hit=94089/605464 (15.5%) expert_disk=211.714s expert_mm=140.095s peak_rss=3.37 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=510719 bytes_read=1005.40 GB bytes_avoided=184.99 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[ecache] budget=2.07 GB (default-16-slot) max_entries=656 layers=41 policy=LRU (expert max 3.16 MB, tutti gli expert 20.94 GB)
+[stats] prompt=178 generated=7 stop=model thinking=model-controlled prefill=17.439s (10.21 tok/s) decode=1.176s (5.10 tok/s) total=18.615s expert_hit=819/19119 (4.3%) expert_disk=6.456s expert_mm=5.746s peak_rss=3.28 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=17644 bytes_read=35.98 GB bytes_avoided=1.61 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=1211 generated=427 stop=model thinking=model-controlled prefill=141.422s (8.56 tok/s) decode=94.345s (4.52 tok/s) total=235.767s expert_hit=49055/287525 (17.1%) expert_disk=95.568s expert_mm=66.119s peak_rss=3.36 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=237814 bytes_read=468.85 GB bytes_avoided=96.45 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB
+[stats] prompt=2031 generated=378 stop=model thinking=model-controlled prefill=246.482s (8.24 tok/s) decode=86.890s (4.34 tok/s) total=333.372s expert_hit=94894/630891 (15.0%) expert_disk=221.386s expert_mm=148.142s peak_rss=3.40 GB
+[ecache] budget=2.07 GB payload=1.29 GB peak=1.29 GB entries=656 evictions=535341 bytes_read=1053.81 GB bytes_avoided=186.57 GB failed_admissions=0 pressure_warn=0 pressure_critical=0
+[memory] freed_pool=1.9 MB allocator_relief=0.0 MB

@@ -82,13 +82,13 @@ def run():
                    SAMOSA_READ_CACHE_DIR=str(work / "cache"))
         token = ""
 
-        def request(path, data=None, extra=None):
+        def request(path, data=None, extra=None, method=None):
             headers = {"X-Samosa-Token": token, **(extra or {})}
             if isinstance(data, dict):
                 headers["Content-Type"] = "application/json"
                 data = json.dumps(data).encode()
             with urllib.request.urlopen(urllib.request.Request(
-                    f"http://127.0.0.1:{port}{path}", data=data, headers=headers), timeout=30) as reply:
+                    f"http://127.0.0.1:{port}{path}", data=data, headers=headers, method=method), timeout=30) as reply:
                 return json.load(reply)
 
         def log(path):
@@ -185,6 +185,20 @@ def run():
                     planners = [r for r in log(model_log)[model_before:]
                                 if "Plan the next document evidence action" in json.dumps(r)]
                     assert len(planners) == 1, "unsupported metadata finish triggered another planner"
+                before_explicit = len(log(reader_log))
+                models_explicit = len(log(model_log))
+                last = chat("harness invalid probe: what code is on page 37?", [pdf])
+                assert [(r[2], r[3]) for r in log(reader_log)[before_explicit:]] == [("37", "1")]
+                assert "[PDF page 37]" in json.dumps(last) and "[PDF page 1]" not in json.dumps(last)
+                one_page = upload("other-small.pdf", build(1))
+                before = len(log(reader_log))
+                last = chat("harness invalid probe: what is on page 37 of Pride and Prejudice - Jane Austen.pdf?", [pdf, one_page])
+                assert len(log(reader_log)) == before, "named page question read a different PDF"
+                assert "page question names another PDF" in json.dumps(last)
+
+                assert not any("Plan the next document evidence action" in json.dumps(r)
+                               for r in log(model_log)[models_explicit:]), "explicit page was sent to the planner"
+                before = len(log(reader_log))
                 last = chat("harness repeat probe", [pdf])
                 assert len(log(reader_log)) == before + 1, "duplicate operation executed"
                 assert "Stopped repeated planning" in json.dumps(last)
@@ -219,6 +233,37 @@ def run():
                 reads = log(reader_log)
                 assert all(r[0] == "--json-pages" and 1 <= int(r[3]) <= 5 for r in reads), reads
 
+                # Saved file tasks share the same byte-addressed extraction
+                # cache across turns and independent model forks. Count actual
+                # extractor calls instead of inferring reuse from the response.
+                source_root = work / "workflow-cache-source"; source_root.mkdir()
+                source_pdf = source_root / "selected.pdf"; source_pdf.write_bytes(build(41))
+                st = source_pdf.stat()
+                job = home / "jobs/workflow-cache"; job.mkdir(parents=True)
+                (job / "job.json").write_text(json.dumps({"folder": str(source_root), "goal": "Find selected PDF"}))
+                (job / "decision.json").write_text(json.dumps({"ok": True, "schema_version": 5,
+                    "folder": str(source_root), "items": [{"path": "selected.pdf", "dev": st.st_dev,
+                    "ino": st.st_ino, "size": st.st_size, "mtime_ns": str(st.st_mtime_ns)}]}))
+                request("/v1/jobs/selection", {"job_id": "workflow-cache", "selected_paths": ["selected.pdf"]})
+                request("/v1/conversations/workflow-cache-original/work", {"job_id": "workflow-cache"}, method="PUT")
+                before = len(log(reader_log))
+                last = chat("harness invalid probe: what is on page 37?", conversation="workflow-cache-original")
+                assert len(log(reader_log)) == before + 1, log(reader_log)[before:]
+                assert "[PDF page 37]" in json.dumps(last)
+                reads = log(reader_log)
+                chat("harness invalid probe: repeat page 37", conversation="workflow-cache-original")
+                assert log(reader_log) == reads, "unchanged workflow re-extracted the same page"
+                request("/v1/conversations/workflow-cache-fork/work", {"job_id": "workflow-cache", "clone": True}, method="PUT")
+                last = chat("harness invalid probe: repeat page 37", conversation="workflow-cache-fork")
+                assert log(reader_log) == reads, "workflow fork discarded valid extraction cache"
+                assert "selected.pdf" in json.dumps(last) and "[PDF page 37]" in json.dumps(last)
+
+                short_id = upload("short-source.txt", b"Exact small source: SHORT_FILE_SENTINEL.")
+                models_before = len(log(model_log))
+                last = chat("harness invalid probe: what does the small file say?", [short_id])
+                assert "SHORT_FILE_SENTINEL" in json.dumps(last)
+                assert not any("Plan the next document evidence action" in json.dumps(r)
+                               for r in log(model_log)[models_before:]), "bounded small text required a planner"
                 text_id = upload("notes - Jane Austen.txt", b"Opening text\n" + b"z" * 9000 + b"UNREAD_SENTINEL")
                 last = chat("harness text probe: inspect the opening", [text_id])
                 assert "Opening text" in json.dumps(last) and "UNREAD_SENTINEL" not in json.dumps(last)

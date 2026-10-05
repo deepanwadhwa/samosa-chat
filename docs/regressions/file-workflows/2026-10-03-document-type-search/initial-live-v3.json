@@ -1,0 +1,2681 @@
+{
+  "fixture_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+  "fixture_sha256": {
+    "scan-042.pdf": "30d662c817420057c1402ed145b709ae08a751af261820db7a0c7dc361a90e0c",
+    "scan-087.pdf": "e8a235e547f1b653a70137d17defdd647fd6d7fdca1433db11ebaa562e8f6468",
+    "research.pdf": "3a1a5ab77150619db7416b8223868462cab37d44e7dece2ec17893166d83d017",
+    "I539.pdf": "721d84e7cab4b352c24926c103e7ef89efffc9e23ae24142219af0a0f518d5e9",
+    "investing.pdf": "105012dbbfc21ff11ed3d91f3ba94148d99383b744eb18d912a9678a09700d8b",
+    "guide-019.pdf": "f4314c110beaf25c225a7363d7037ef5a209627b3e7432113a067d5e7a52e3a7",
+    "notice-022.pdf": "9c3ea34b676323360bc336688fab38608fb4aa5e7640530dd98d0c1afc6d1c87",
+    "scan-118.pdf": "01a35f643119b00abd87aee4a4d46f9a8dea9ec62f018bd0891fcd7dfe5bcb12",
+    "scan-205.pdf": "d5ccae1dfe4344a7301e7fcce7101835a512a0d9f3dbe24721a40ec9f8954d73",
+    "raster-301.pdf": "6e76c02c408a30ae94d9c4c8218cb58a9dde162264f48761f53ee9c04f8bcc22",
+    "I539-unreadable.bin": "0e233fb2adc5d04839e0739a6de5ec2da59bc410594df23cacca2da9c9ca857d",
+    "meeting.txt": "81417778d5a0dbe6276d7773df9dfac4e55cd2e4e5388a1a6d18a716ec77145f"
+  },
+  "base_url": "http://127.0.0.1:18642",
+  "health": {
+    "gateway": true,
+    "compiled": true,
+    "app_owned": false,
+    "listen_address": "127.0.0.1",
+    "lan_access": false,
+    "lan_auth": "none",
+    "backend": "ornith",
+    "label": "Ornith 9B",
+    "model": "ornith-1.0-9b",
+    "model_version": "Ornith-1.0-9B-Q4_K_M.gguf",
+    "supports_images": false,
+    "supports_image_attachments": true,
+    "supports_video_attachments": true,
+    "supports_documents": true,
+    "vision": {
+      "auxiliary_runtime_available": true,
+      "visionpsy_runtime_available": true,
+      "molmo2_runtime_available": true,
+      "molmo2_model_ready": true,
+      "video_available": true,
+      "specialist_active": false,
+      "specialist_model": "Local vision model"
+    },
+    "ocr": {
+      "runtime_available": true,
+      "pack_ready": true,
+      "ready": true
+    },
+    "chutni": {
+      "available": true,
+      "managed_by": "samosa",
+      "can_create_memory": true,
+      "protocol": "0.1"
+    },
+    "native_summarizer": {
+      "available": true,
+      "loaded": false,
+      "model": "Falconsai/text_summarization",
+      "runtime": "native"
+    },
+    "ready": true,
+    "loading": false,
+    "generating": false,
+    "pid": 47019,
+    "installed": true,
+    "backend_state": "ready"
+  },
+  "cases": [
+    {
+      "case": "form",
+      "goal": "find all documents that look like I539 in this folder.",
+      "job_id": "type-search-form-1791070510877294000",
+      "expected": [
+        "raster-301.pdf",
+        "scan-042.pdf",
+        "scan-087.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.7615525722503662,
+          "duplicates": 0.18479404225945473,
+          "report": 0.0037332373613025993,
+          "sort": 0.013939880300313234,
+          "classify": 0.033039241563528776,
+          "watch": 0.0029410072893369943
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-form-1791070510877294000",
+        "result": {
+          "ok": true,
+          "schema_version": 6,
+          "goal": "find all documents that look like I539 in this folder.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+          "items": [
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275492,
+              "size": 1078,
+              "mtime_ns": "1791069646700869573",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.9911419153213501,
+                  "instructions": 0.004819575697183609,
+                  "notice": 0.002385862870141864,
+                  "other": 0.0016526388935744762
+                }
+              },
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.8601343631744385,
+                "unrelated": 0.13986565172672272
+              },
+              "needs_check": false,
+              "decision": "match",
+              "score": 0.8601343631744385,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275491,
+              "size": 1079,
+              "mtime_ns": "1791069646700680656",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.9918710589408875,
+                  "instructions": 0.004382933024317026,
+                  "notice": 0.002260551555082202,
+                  "other": 0.0014854040928184986
+                }
+              },
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.8394709229469299,
+                "unrelated": 0.16052906215190887
+              },
+              "needs_check": false,
+              "decision": "match",
+              "score": 0.8394709229469299,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275500,
+              "size": 28465,
+              "mtime_ns": "1791069646702044907",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.9918500781059265,
+                  "instructions": 0.004473650828003883,
+                  "notice": 0.002199530368670821,
+                  "other": 0.001476694829761982
+                }
+              },
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.7992857098579407,
+                "unrelated": 0.20071429014205933
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.7992857098579407,
+              "reason": "ambiguous_preview"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275501,
+              "size": 80,
+              "mtime_ns": "1791069646702176740",
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.21816924214363098,
+                "unrelated": 0.7818307876586914
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.21816924214363098,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275496,
+              "size": 797,
+              "mtime_ns": "1791069646701458657",
+              "document_role": {
+                "choice": "instructions",
+                "probabilities": {
+                  "form": 0.04627039283514023,
+                  "instructions": 0.9458464980125427,
+                  "notice": 0.0011583565501496196,
+                  "other": 0.006724726874381304
+                }
+              },
+              "model_state": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.27038389444351196,
+                "unrelated": 0.729616105556488
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.19,
+              "reason": "model_choice"
+            },
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275497,
+              "size": 820,
+              "mtime_ns": "1791069646701599032",
+              "document_role": {
+                "choice": "notice",
+                "probabilities": {
+                  "form": 0.009904497303068638,
+                  "instructions": 0.001498278696089983,
+                  "notice": 0.9868828654289246,
+                  "other": 0.0017144333105534315
+                }
+              },
+              "model_state": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.6651931405067444,
+                "unrelated": 0.334806889295578
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.19,
+              "reason": "model_choice"
+            },
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275495,
+              "size": 764,
+              "mtime_ns": "1791069646701310573",
+              "document_role": null,
+              "model_state": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.023475846275687218,
+                "unrelated": 0.9765241146087646
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.023475846275687218,
+              "reason": "model_choice"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275502,
+              "size": 67,
+              "mtime_ns": "1791069646702305824",
+              "document_role": null,
+              "model_state": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.012407694943249226,
+                "unrelated": 0.987592339515686
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.012407694943249226,
+              "reason": "model_choice"
+            },
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275493,
+              "size": 881,
+              "mtime_ns": "1791069646701020115",
+              "document_role": null,
+              "model_state": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.011463796719908714,
+                "unrelated": 0.9885361790657043
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.011463796719908714,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275494,
+              "size": 821,
+              "mtime_ns": "1791069646701175032",
+              "document_role": null,
+              "model_state": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002833849750459194,
+                "unrelated": 0.9971661567687988
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002833849750459194,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275499,
+              "size": 924,
+              "mtime_ns": "1791069646701863907",
+              "document_role": null,
+              "model_state": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0017173837404698133,
+                "unrelated": 0.9982826113700867
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0017173837404698133,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275498,
+              "size": 973,
+              "mtime_ns": "1791069646701729574",
+              "document_role": null,
+              "model_state": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+                "unrelated": "This document is not USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0016743993619456887,
+                "unrelated": 0.9983256459236145
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0016743993619456887,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 2,
+          "total_files": 12,
+          "checked_files": 12,
+          "next_offset": 12,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 2,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 12,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 12
+            },
+            {
+              "action": "score_matches",
+              "files": 12
+            },
+            {
+              "action": "show_shortlist",
+              "files": 12
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "I539",
+            "kind": "document_type",
+            "target": "USCIS Form I-539, Application to Extend/Change Nonimmigrant Status, used to request extensions or changes of nonimmigrant status.",
+            "document_role": {
+              "choice": "form",
+              "probabilities": {
+                "form": 0.9719257950782776,
+                "instructions": 0.017017386853694916,
+                "notice": 0.00827035866677761,
+                "other": 0.0027865024749189615
+              }
+            }
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "ad814cbcadd378c92976295a6146dc1a",
+            "build_job_id": "0b0a82bf6513bbd345f9423b8105a5cc",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "ad814cbcadd378c92976295a6146dc1a",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v2",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70275490",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "1a2d7fdd44f66cda26807cf274e8764f78998489ee8f9bc4586c537d013b48f5",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 1,
+            "enhancement_revision": 0,
+            "regular_files_seen": 12,
+            "files_indexed": 12,
+            "files_skipped": 0,
+            "chunks_indexed": 11,
+            "content_readable_files": 11,
+            "metadata_only_files": 1,
+            "content_artifacts": 11,
+            "scan_files_seen": 12,
+            "scan_sources_indexed": 12,
+            "scan_unchanged": 0,
+            "scan_text_artifacts": 1,
+            "scan_metadata_artifacts": 12,
+            "scan_errors": 0,
+            "enrichment_files_total": 12,
+            "enrichment_files_done": 12,
+            "pdf_pages_read": 9,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791069815987,
+            "progress_updated_ms": 1791069818380,
+            "elapsed_seconds": 2.393,
+            "files_per_second": 5.015,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-03T23:23:38Z",
+            "last_successful_check_at": "2026-10-03T23:23:38Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [
+        "scan-042.pdf",
+        "scan-087.pdf"
+      ],
+      "passed": false,
+      "error": "{'matches': ['scan-042.pdf', 'scan-087.pdf'], 'expected': ['raster-301.pdf', 'scan-042.pdf', 'scan-087.pdf'], 'reviews': ['raster-301.pdf', 'I539-unreadable.bin']}",
+      "elapsed_seconds": 124.807
+    },
+    {
+      "case": "instructions",
+      "goal": "Find I-539 instruction guides only.",
+      "job_id": "type-search-instructions-1791070635685450000",
+      "expected": [
+        "guide-019.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.5424241572618484,
+          "duplicates": 0.1238258145749569,
+          "report": 0.07470978796482086,
+          "sort": 0.08222418278455734,
+          "classify": 0.09945300593972206,
+          "watch": 0.07736303098499775
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-instructions-1791070635685450000",
+        "result": {
+          "ok": true,
+          "schema_version": 6,
+          "goal": "Find I-539 instruction guides only.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+          "items": [
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275496,
+              "size": 797,
+              "mtime_ns": "1791069646701458657",
+              "document_role": {
+                "choice": "instructions",
+                "probabilities": {
+                  "form": 0.04627039283514023,
+                  "instructions": 0.9458464980125427,
+                  "notice": 0.0011583565501496196,
+                  "other": 0.006724726874381304
+                }
+              },
+              "model_state": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.7446563243865967,
+                "unrelated": 0.2553436756134033
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.7446563243865967,
+              "reason": "ambiguous_preview"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275501,
+              "size": 80,
+              "mtime_ns": "1791069646702176740",
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0793662741780281,
+                "unrelated": 0.9206337332725525
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.0793662741780281,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275492,
+              "size": 1078,
+              "mtime_ns": "1791069646700869573",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.03521113842725754,
+                "unrelated": 0.9647888541221619
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.03521113842725754,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275500,
+              "size": 28465,
+              "mtime_ns": "1791069646702044907",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.028925716876983643,
+                "unrelated": 0.9710742831230164
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.028925716876983643,
+              "reason": "model_choice"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275502,
+              "size": 67,
+              "mtime_ns": "1791069646702305824",
+              "document_role": null,
+              "model_state": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.02867986261844635,
+                "unrelated": 0.9713201522827148
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.02867986261844635,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275491,
+              "size": 1079,
+              "mtime_ns": "1791069646700680656",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.026031535118818283,
+                "unrelated": 0.973968505859375
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.026031535118818283,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275498,
+              "size": 973,
+              "mtime_ns": "1791069646701729574",
+              "document_role": null,
+              "model_state": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.023559946566820145,
+                "unrelated": 0.9764400720596313
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.023559946566820145,
+              "reason": "model_choice"
+            },
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275497,
+              "size": 820,
+              "mtime_ns": "1791069646701599032",
+              "document_role": null,
+              "model_state": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.005968730431050062,
+                "unrelated": 0.9940313100814819
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.005968730431050062,
+              "reason": "model_choice"
+            },
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275495,
+              "size": 764,
+              "mtime_ns": "1791069646701310573",
+              "document_role": null,
+              "model_state": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.004876886960119009,
+                "unrelated": 0.9951230883598328
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.004876886960119009,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275499,
+              "size": 924,
+              "mtime_ns": "1791069646701863907",
+              "document_role": null,
+              "model_state": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0032954420894384384,
+                "unrelated": 0.9967045783996582
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0032954420894384384,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275494,
+              "size": 821,
+              "mtime_ns": "1791069646701175032",
+              "document_role": null,
+              "model_state": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0021405890583992004,
+                "unrelated": 0.9978593587875366
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0021405890583992004,
+              "reason": "model_choice"
+            },
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275493,
+              "size": 881,
+              "mtime_ns": "1791069646701020115",
+              "document_role": null,
+              "model_state": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+                "unrelated": "This document is not Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0015247863484546542,
+                "unrelated": 0.998475193977356
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0015247863484546542,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 0,
+          "total_files": 12,
+          "checked_files": 12,
+          "next_offset": 12,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 2,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 12,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 12
+            },
+            {
+              "action": "score_matches",
+              "files": 12
+            },
+            {
+              "action": "show_shortlist",
+              "files": 12
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "I-539 instruction guides",
+            "kind": "document_type",
+            "target": "Instruction guides for Form I-539, Application to Extend/Change Nonimmigrant Status, providing step-by-step directions for completing the form.",
+            "document_role": {
+              "choice": "instructions",
+              "probabilities": {
+                "form": 0.24426624178886414,
+                "instructions": 0.7538639903068542,
+                "notice": 0.0005343302618712187,
+                "other": 0.001335458247922361
+              }
+            }
+          },
+          "evidence_verification": {
+            "verdicts": [
+              {
+                "number": 0,
+                "status": "uncertain",
+                "quote": ""
+              }
+            ]
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "ad814cbcadd378c92976295a6146dc1a",
+            "build_job_id": "538b159c4b4badd6783dccc29d9c9f77",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "ad814cbcadd378c92976295a6146dc1a",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v2",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70275490",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "1a2d7fdd44f66cda26807cf274e8764f78998489ee8f9bc4586c537d013b48f5",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 2,
+            "enhancement_revision": 0,
+            "regular_files_seen": 12,
+            "files_indexed": 12,
+            "files_skipped": 0,
+            "chunks_indexed": 11,
+            "content_readable_files": 11,
+            "metadata_only_files": 1,
+            "content_artifacts": 11,
+            "scan_files_seen": 12,
+            "scan_sources_indexed": 12,
+            "scan_unchanged": 12,
+            "scan_text_artifacts": 0,
+            "scan_metadata_artifacts": 0,
+            "scan_errors": 0,
+            "enrichment_files_total": 12,
+            "enrichment_files_done": 12,
+            "pdf_pages_read": 9,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791070635683,
+            "progress_updated_ms": 1791070635991,
+            "elapsed_seconds": 0.308,
+            "files_per_second": 38.961,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-03T23:37:15Z",
+            "last_successful_check_at": "2026-10-03T23:37:15Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [],
+      "passed": false,
+      "error": "{'matches': [], 'expected': ['guide-019.pdf'], 'reviews': ['guide-019.pdf', 'I539-unreadable.bin']}",
+      "elapsed_seconds": 96.806
+    },
+    {
+      "case": "different_form",
+      "goal": "Find W-9 forms in this folder.",
+      "job_id": "type-search-different_form-1791070732492838000",
+      "expected": [
+        "scan-205.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.7238941192626953,
+          "duplicates": 0.08058736473321915,
+          "report": 0.01968765025958419,
+          "sort": 0.056167710572481155,
+          "classify": 0.110549446195364,
+          "watch": 0.009113711537793279
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-different_form-1791070732492838000",
+        "result": {
+          "ok": true,
+          "schema_version": 6,
+          "goal": "Find W-9 forms in this folder.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+          "items": [
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275499,
+              "size": 924,
+              "mtime_ns": "1791069646701863907",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.8733426928520203,
+                  "instructions": 0.03871074318885803,
+                  "notice": 0.07232119143009186,
+                  "other": 0.01562528684735298
+                }
+              },
+              "model_state": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.39396777749061584,
+                "unrelated": 0.6060322523117065
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.39396777749061584,
+              "reason": "ambiguous_preview"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275501,
+              "size": 80,
+              "mtime_ns": "1791069646702176740",
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.32380759716033936,
+                "unrelated": 0.6761924028396606
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.32380759716033936,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275496,
+              "size": 797,
+              "mtime_ns": "1791069646701458657",
+              "document_role": {
+                "choice": "instructions",
+                "probabilities": {
+                  "form": 0.04627039283514023,
+                  "instructions": 0.9458464980125427,
+                  "notice": 0.0011583565501496196,
+                  "other": 0.006724726874381304
+                }
+              },
+              "model_state": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.2666436433792114,
+                "unrelated": 0.7333564162254333
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.19,
+              "reason": "model_choice"
+            },
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275497,
+              "size": 820,
+              "mtime_ns": "1791069646701599032",
+              "document_role": null,
+              "model_state": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.1458437591791153,
+                "unrelated": 0.8541561961174011
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.1458437591791153,
+              "reason": "model_choice"
+            },
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275495,
+              "size": 764,
+              "mtime_ns": "1791069646701310573",
+              "document_role": null,
+              "model_state": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.06400690227746964,
+                "unrelated": 0.9359931349754333
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.06400690227746964,
+              "reason": "model_choice"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275502,
+              "size": 67,
+              "mtime_ns": "1791069646702305824",
+              "document_role": null,
+              "model_state": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.011642223224043846,
+                "unrelated": 0.9883577823638916
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.011642223224043846,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275494,
+              "size": 821,
+              "mtime_ns": "1791069646701175032",
+              "document_role": null,
+              "model_state": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.004681822843849659,
+                "unrelated": 0.9953181743621826
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.004681822843849659,
+              "reason": "model_choice"
+            },
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275493,
+              "size": 881,
+              "mtime_ns": "1791069646701020115",
+              "document_role": null,
+              "model_state": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0029810327105224133,
+                "unrelated": 0.9970189929008484
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0029810327105224133,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275492,
+              "size": 1078,
+              "mtime_ns": "1791069646700869573",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.001220795325934887,
+                "unrelated": 0.9987792372703552
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.001220795325934887,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275491,
+              "size": 1079,
+              "mtime_ns": "1791069646700680656",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0011357826879248023,
+                "unrelated": 0.9988641738891602
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0011357826879248023,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275500,
+              "size": 28465,
+              "mtime_ns": "1791069646702044907",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0009946650825440884,
+                "unrelated": 0.9990053176879883
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0009946650825440884,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275498,
+              "size": 973,
+              "mtime_ns": "1791069646701729574",
+              "document_role": null,
+              "model_state": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+                "unrelated": "This document is not Tax documents used to collect taxpayer identification information for payment verification and reporting purposes."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0009271923918277025,
+                "unrelated": 0.999072790145874
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0009271923918277025,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 0,
+          "total_files": 12,
+          "checked_files": 12,
+          "next_offset": 12,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 2,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 12,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 12
+            },
+            {
+              "action": "score_matches",
+              "files": 12
+            },
+            {
+              "action": "show_shortlist",
+              "files": 12
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "W-9 forms",
+            "kind": "document_type",
+            "target": "Tax documents used to collect taxpayer identification information for payment verification and reporting purposes.",
+            "document_role": {
+              "choice": "form",
+              "probabilities": {
+                "form": 0.6563381552696228,
+                "instructions": 0.1456732451915741,
+                "notice": 0.129311665892601,
+                "other": 0.0686769038438797
+              }
+            }
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "ad814cbcadd378c92976295a6146dc1a",
+            "build_job_id": "fcda255a9785711a09159e4aec153a2c",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "ad814cbcadd378c92976295a6146dc1a",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v2",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70275490",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "1a2d7fdd44f66cda26807cf274e8764f78998489ee8f9bc4586c537d013b48f5",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 3,
+            "enhancement_revision": 0,
+            "regular_files_seen": 12,
+            "files_indexed": 12,
+            "files_skipped": 0,
+            "chunks_indexed": 11,
+            "content_readable_files": 11,
+            "metadata_only_files": 1,
+            "content_artifacts": 11,
+            "scan_files_seen": 12,
+            "scan_sources_indexed": 12,
+            "scan_unchanged": 12,
+            "scan_text_artifacts": 0,
+            "scan_metadata_artifacts": 0,
+            "scan_errors": 0,
+            "enrichment_files_total": 12,
+            "enrichment_files_done": 12,
+            "pdf_pages_read": 9,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791070732490,
+            "progress_updated_ms": 1791070732771,
+            "elapsed_seconds": 0.281,
+            "files_per_second": 42.705,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-03T23:38:52Z",
+            "last_successful_check_at": "2026-10-03T23:38:52Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [],
+      "passed": false,
+      "error": "{'matches': [], 'expected': ['scan-205.pdf'], 'reviews': ['scan-205.pdf', 'I539-unreadable.bin']}",
+      "elapsed_seconds": 77.603
+    },
+    {
+      "case": "employment_form",
+      "goal": "Find completed or blank I-765 applications in this folder.",
+      "job_id": "type-search-employment_form-1791070810096831000",
+      "expected": [
+        "scan-118.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.800743967294693,
+          "duplicates": 0.052751424722373486,
+          "report": 0.017228259705007076,
+          "sort": 0.04595210496336222,
+          "classify": 0.07503734435886145,
+          "watch": 0.008286930853500962
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-employment_form-1791070810096831000",
+        "result": {
+          "ok": true,
+          "schema_version": 6,
+          "goal": "Find completed or blank I-765 applications in this folder.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+          "items": [
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275495,
+              "size": 764,
+              "mtime_ns": "1791069646701310573",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.7343248724937439,
+                  "instructions": 0.07692631334066391,
+                  "notice": 0.03501367196440697,
+                  "other": 0.15373507142066956
+                }
+              },
+              "model_state": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.2137051820755005,
+                "unrelated": 0.7862948179244995
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.2137051820755005,
+              "reason": "ambiguous_preview"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275502,
+              "size": 67,
+              "mtime_ns": "1791069646702305824",
+              "document_role": null,
+              "model_state": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.13501809537410736,
+                "unrelated": 0.8649819493293762
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.13501809537410736,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275501,
+              "size": 80,
+              "mtime_ns": "1791069646702176740",
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.10828320682048798,
+                "unrelated": 0.8917167782783508
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.10828320682048798,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275496,
+              "size": 797,
+              "mtime_ns": "1791069646701458657",
+              "document_role": null,
+              "model_state": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.03061777912080288,
+                "unrelated": 0.9693821668624878
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.03061777912080288,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275498,
+              "size": 973,
+              "mtime_ns": "1791069646701729574",
+              "document_role": null,
+              "model_state": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.02190636657178402,
+                "unrelated": 0.9780936241149902
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.02190636657178402,
+              "reason": "model_choice"
+            },
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275493,
+              "size": 881,
+              "mtime_ns": "1791069646701020115",
+              "document_role": null,
+              "model_state": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.01615283451974392,
+                "unrelated": 0.9838472008705139
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.01615283451974392,
+              "reason": "model_choice"
+            },
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275497,
+              "size": 820,
+              "mtime_ns": "1791069646701599032",
+              "document_role": null,
+              "model_state": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.012353960424661636,
+                "unrelated": 0.9876459836959839
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.012353960424661636,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275492,
+              "size": 1078,
+              "mtime_ns": "1791069646700869573",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002858794992789626,
+                "unrelated": 0.9971411824226379
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002858794992789626,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275500,
+              "size": 28465,
+              "mtime_ns": "1791069646702044907",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002822832902893424,
+                "unrelated": 0.9971771240234375
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002822832902893424,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275491,
+              "size": 1079,
+              "mtime_ns": "1791069646700680656",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0025459476746618748,
+                "unrelated": 0.997454047203064
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0025459476746618748,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275499,
+              "size": 924,
+              "mtime_ns": "1791069646701863907",
+              "document_role": null,
+              "model_state": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002392065478488803,
+                "unrelated": 0.997607946395874
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002392065478488803,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275494,
+              "size": 821,
+              "mtime_ns": "1791069646701175032",
+              "document_role": null,
+              "model_state": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+                "unrelated": "This document is not Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0021827162709087133,
+                "unrelated": 0.9978172183036804
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0021827162709087133,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 0,
+          "total_files": 12,
+          "checked_files": 12,
+          "next_offset": 12,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 2,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 12,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 12
+            },
+            {
+              "action": "score_matches",
+              "files": 12
+            },
+            {
+              "action": "show_shortlist",
+              "files": 12
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "I-765 applications",
+            "kind": "document_type",
+            "target": "Completed or blank I-765 applications, which are Employment Authorization Document (EAD) applications submitted to USCIS.",
+            "document_role": {
+              "choice": "form",
+              "probabilities": {
+                "form": 0.9095691442489624,
+                "instructions": 0.012422557920217514,
+                "notice": 0.07429831475019455,
+                "other": 0.003709948156028986
+              }
+            }
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "ad814cbcadd378c92976295a6146dc1a",
+            "build_job_id": "4bda9d125d6c412847f1b7f051bfd1af",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "ad814cbcadd378c92976295a6146dc1a",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v2",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70275490",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "1a2d7fdd44f66cda26807cf274e8764f78998489ee8f9bc4586c537d013b48f5",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 4,
+            "enhancement_revision": 0,
+            "regular_files_seen": 12,
+            "files_indexed": 12,
+            "files_skipped": 0,
+            "chunks_indexed": 11,
+            "content_readable_files": 11,
+            "metadata_only_files": 1,
+            "content_artifacts": 11,
+            "scan_files_seen": 12,
+            "scan_sources_indexed": 12,
+            "scan_unchanged": 12,
+            "scan_text_artifacts": 0,
+            "scan_metadata_artifacts": 0,
+            "scan_errors": 0,
+            "enrichment_files_total": 12,
+            "enrichment_files_done": 12,
+            "pdf_pages_read": 9,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791070810095,
+            "progress_updated_ms": 1791070810362,
+            "elapsed_seconds": 0.267,
+            "files_per_second": 44.944,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-03T23:40:10Z",
+            "last_successful_check_at": "2026-10-03T23:40:10Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [],
+      "passed": false,
+      "error": "{'matches': [], 'expected': ['scan-118.pdf'], 'reviews': ['investing.pdf', 'I539-unreadable.bin']}",
+      "elapsed_seconds": 75.638
+    },
+    {
+      "case": "topic",
+      "goal": "Find research papers about semiconductor thermal conductivity.",
+      "job_id": "type-search-topic-1791070885736207000",
+      "expected": [
+        "research.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.8437769711017609,
+          "duplicates": 0.05415058042854071,
+          "report": 0.012528131483122706,
+          "sort": 0.030040607787668705,
+          "classify": 0.05141190625727177,
+          "watch": 0.008091784548014402
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-topic-1791070885736207000",
+        "result": {
+          "ok": true,
+          "schema_version": 6,
+          "goal": "Find research papers about semiconductor thermal conductivity.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+          "items": [
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275493,
+              "size": 881,
+              "mtime_ns": "1791069646701020115",
+              "document_role": null,
+              "model_state": "File name: research.pdf\nPreview: Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.9946515560150146,
+                "unrelated": 0.005348449107259512
+              },
+              "needs_check": false,
+              "decision": "match",
+              "score": 0.9946515560150146,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275501,
+              "size": 80,
+              "mtime_ns": "1791069646702176740",
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.1265960931777954,
+                "unrelated": 0.8734039068222046
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.1265960931777954,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275497,
+              "size": 820,
+              "mtime_ns": "1791069646701599032",
+              "document_role": null,
+              "model_state": "File name: notice-022.pdf\nPreview: Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.00619900319725275,
+                "unrelated": 0.9938009977340698
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.00619900319725275,
+              "reason": "model_choice"
+            },
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275496,
+              "size": 797,
+              "mtime_ns": "1791069646701458657",
+              "document_role": null,
+              "model_state": "File name: guide-019.pdf\nPreview: Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.005084975156933069,
+                "unrelated": 0.9949150681495667
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.005084975156933069,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275500,
+              "size": 28465,
+              "mtime_ns": "1791069646702044907",
+              "document_role": null,
+              "model_state": "File name: raster-301.pdf\nPreview: Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0036464370787143707,
+                "unrelated": 0.9963535666465759
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0036464370787143707,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275494,
+              "size": 821,
+              "mtime_ns": "1791069646701175032",
+              "document_role": null,
+              "model_state": "File name: I539.pdf\nPreview: Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0034129556734114885,
+                "unrelated": 0.9965870380401611
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0034129556734114885,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275499,
+              "size": 924,
+              "mtime_ns": "1791069646701863907",
+              "document_role": null,
+              "model_state": "File name: scan-205.pdf\nPreview: Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0032826366368681192,
+                "unrelated": 0.9967173933982849
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0032826366368681192,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275492,
+              "size": 1078,
+              "mtime_ns": "1791069646700869573",
+              "document_role": null,
+              "model_state": "File name: scan-087.pdf\nPreview: Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0028310916386544704,
+                "unrelated": 0.9971688985824585
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0028310916386544704,
+              "reason": "model_choice"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275502,
+              "size": 67,
+              "mtime_ns": "1791069646702305824",
+              "document_role": null,
+              "model_state": "File name: meeting.txt\nPreview: The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002585936803370714,
+                "unrelated": 0.9974140524864197
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002585936803370714,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275491,
+              "size": 1079,
+              "mtime_ns": "1791069646700680656",
+              "document_role": null,
+              "model_state": "File name: scan-042.pdf\nPreview: Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0023209003265947104,
+                "unrelated": 0.9976791143417358
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0023209003265947104,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275498,
+              "size": 973,
+              "mtime_ns": "1791069646701729574",
+              "document_role": null,
+              "model_state": "File name: scan-118.pdf\nPreview: Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.002040775027126074,
+                "unrelated": 0.9979591965675354
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.002040775027126074,
+              "reason": "model_choice"
+            },
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70275495,
+              "size": 764,
+              "mtime_ns": "1791069646701310573",
+              "document_role": null,
+              "model_state": "File name: investing.pdf\nPreview: 10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is Research papers about the thermal conductivity of semiconductor materials.",
+                "unrelated": "This document is not Research papers about the thermal conductivity of semiconductor materials."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0013617033837363124,
+                "unrelated": 0.9986382722854614
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0013617033837363124,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 1,
+          "total_files": 12,
+          "checked_files": 12,
+          "next_offset": 12,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 1,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 12,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 12
+            },
+            {
+              "action": "score_matches",
+              "files": 12
+            },
+            {
+              "action": "show_shortlist",
+              "files": 12
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "semiconductor thermal conductivity",
+            "kind": "topic",
+            "target": "Research papers about the thermal conductivity of semiconductor materials."
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "ad814cbcadd378c92976295a6146dc1a",
+            "build_job_id": "5b871a6e025dad1d6cad549e83ba07b8",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "ad814cbcadd378c92976295a6146dc1a",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v2",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70275490",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "1a2d7fdd44f66cda26807cf274e8764f78998489ee8f9bc4586c537d013b48f5",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 5,
+            "enhancement_revision": 0,
+            "regular_files_seen": 12,
+            "files_indexed": 12,
+            "files_skipped": 0,
+            "chunks_indexed": 11,
+            "content_readable_files": 11,
+            "metadata_only_files": 1,
+            "content_artifacts": 11,
+            "scan_files_seen": 12,
+            "scan_sources_indexed": 12,
+            "scan_unchanged": 12,
+            "scan_text_artifacts": 0,
+            "scan_metadata_artifacts": 0,
+            "scan_errors": 0,
+            "enrichment_files_total": 12,
+            "enrichment_files_done": 12,
+            "pdf_pages_read": 9,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791070885734,
+            "progress_updated_ms": 1791070885996,
+            "elapsed_seconds": 0.262,
+            "files_per_second": 45.802,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-03T23:41:26Z",
+            "last_successful_check_at": "2026-10-03T23:41:26Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v2.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [
+        "research.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 67.611
+    }
+  ]
+}

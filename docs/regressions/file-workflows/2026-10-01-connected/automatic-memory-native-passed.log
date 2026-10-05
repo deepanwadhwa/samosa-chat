@@ -1,0 +1,5 @@
+automatic folder memory before: PASS
+compiled gateway durable selection (before restart): PASS
+automatic folder memory after: PASS
+compiled gateway durable selection (after restart): PASS
+compiled gateway without python: PASS

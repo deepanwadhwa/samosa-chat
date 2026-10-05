@@ -30,6 +30,7 @@ SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snap
 
 grep -q 'engine/samosa_fs.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv"
+grep -q 'engine/samosa_prompt_budget.h' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_ocr.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/samosa_docx.c' "$REMOTE/release-manifest.tsv"
 grep -q 'engine/miniz/miniz_zip.c' "$REMOTE/release-manifest.tsv"
@@ -54,6 +55,7 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
+[ -f "$HOME_DIR/current/engine/samosa_prompt_budget.h" ]
 [ -x "$HOME_DIR/current/bin/samosa-ocr" ]
 [ -x "$HOME_DIR/current/bin/samosa-extract" ]
 [ -x "$HOME_DIR/current/bin/chutni-mcp" ]

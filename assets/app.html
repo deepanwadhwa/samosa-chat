@@ -5,31 +5,31 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="samosa-ui-token" content="__SAMOSA_UI_TOKEN__">
-  <title>Samosa Chat</title>
+  <title>Samosa</title>
   <style>
-    /* Samosa's visual system: an editorial instrument, warm and unmistakably local. */
+    /* Shared neutral surfaces and one UI typeface. */
     :root {
       color-scheme: light;
-      --paper:    #f3efe6;
-      --surface:  #fffdf8;
-      --inset:    #e9e3d8;
-      --line:     rgba(42, 34, 27, .14);
-      --line-strong: rgba(42, 34, 27, .32);
-      --ink:      #211d19;
-      --ink-2:    #675f56;
-      --ink-3:    #6b6259;
-      --accent:       #b94012;
+      --paper:    #fafafa;
+      --surface:  #ffffff;
+      --inset:    #eeeeee;
+      --line:     rgba(0, 0, 0, .10);
+      --line-strong: rgba(0, 0, 0, .24);
+      --ink:      #242424;
+      --ink-2:    #595959;
+      --ink-3:    #686868;
+      --accent:       #1d4ed8;
       --accent-ink:   #ffffff;
-      --accent-soft:  rgba(185, 64, 18, .11);
+      --accent-soft:  rgba(29, 78, 216, .11);
       --ok:      #24775f;
       --warn:    #8a5808;
       --danger:  #bd3a36;
-      --highlight: #f4c95d;
-      --sidebar: #1c1916;
-      --sidebar-raised: #29241f;
-      --sidebar-ink: #fff7e9;
-      --sidebar-muted: #aaa096;
-      --shadow-overlay: 0 28px 90px rgba(30, 24, 19, .24);
+      --highlight: #dbeafe;
+      --sidebar: #f3f3f3;
+      --sidebar-raised: #e7e7e7;
+      --sidebar-ink: #242424;
+      --sidebar-muted: #626262;
+      --shadow-overlay: 0 20px 60px rgba(0, 0, 0, .16);
 
       /* radius scale: three values, no exceptions */
       --r-sm: 8px;
@@ -37,32 +37,31 @@
       --r-lg: 22px;
 
       /* type */
-      --font-ui:   "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-      --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --font-ui:   -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
       --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
     }
 
     html[data-theme="dark"] {
       color-scheme: dark;
-      --paper: #141210; --surface: #1d1a17; --inset: #29241f;
-      --line: rgba(255, 244, 229, .13); --line-strong: rgba(255, 244, 229, .28);
-      --ink: #f8f1e7; --ink-2: #b6aa9d; --ink-3: #968c81;
-      --accent: #ff9b63; --accent-ink: #21120b; --accent-soft: rgba(255, 155, 99, .16);
+      --paper: #111111; --surface: #1b1b1b; --inset: #252525;
+      --line: rgba(255, 255, 255, .10); --line-strong: rgba(255, 255, 255, .24);
+      --ink: #ededed; --ink-2: #b5b5b5; --ink-3: #a0a0a0;
+      --accent: #93b4ff; --accent-ink: #111827; --accent-soft: rgba(147, 180, 255, .16);
       --ok: #60c7a5; --warn: #e0a849; --danger: #ff766f;
-      --highlight: #e5b849; --sidebar: #0b0a09; --sidebar-raised: #1a1714;
-      --sidebar-ink: #fff6e8; --sidebar-muted: #9d9389;
+      --highlight: #26364f; --sidebar: #171717; --sidebar-raised: #2b2b2b;
+      --sidebar-ink: #ededed; --sidebar-muted: #b0b0b0;
       --shadow-overlay: 0 28px 90px rgba(0, 0, 0, .54);
     }
     @media (prefers-color-scheme: dark) {
       html[data-theme="system"] {
         color-scheme: dark;
-        --paper: #141210; --surface: #1d1a17; --inset: #29241f;
-        --line: rgba(255, 244, 229, .13); --line-strong: rgba(255, 244, 229, .28);
-        --ink: #f8f1e7; --ink-2: #b6aa9d; --ink-3: #968c81;
-        --accent: #ff9b63; --accent-ink: #21120b; --accent-soft: rgba(255, 155, 99, .16);
+        --paper: #111111; --surface: #1b1b1b; --inset: #252525;
+        --line: rgba(255, 255, 255, .10); --line-strong: rgba(255, 255, 255, .24);
+        --ink: #ededed; --ink-2: #b5b5b5; --ink-3: #a0a0a0;
+        --accent: #93b4ff; --accent-ink: #111827; --accent-soft: rgba(147, 180, 255, .16);
         --ok: #60c7a5; --warn: #e0a849; --danger: #ff766f;
-        --highlight: #e5b849; --sidebar: #0b0a09; --sidebar-raised: #1a1714;
-        --sidebar-ink: #fff6e8; --sidebar-muted: #9d9389;
+        --highlight: #26364f; --sidebar: #171717; --sidebar-raised: #2b2b2b;
+        --sidebar-ink: #ededed; --sidebar-muted: #b0b0b0;
         --shadow-overlay: 0 28px 90px rgba(0, 0, 0, .54);
       }
     }
@@ -88,7 +87,7 @@
     button { color: inherit; }
     a { color: var(--accent); }
     button:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
-      outline: none; box-shadow: 0 0 0 3px var(--accent-soft); border-radius: var(--r-sm);
+      outline: 2px solid var(--ink-2); outline-offset: 2px; border-radius: var(--r-sm);
     }
     strong, b, .tabular { font-variant-numeric: tabular-nums; }
 
@@ -178,17 +177,10 @@
     .jump-latest { position: absolute; right: 24px; bottom: 143px; z-index: 5; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--surface); color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 13px; }
     .jump-latest svg { width: 13px; height: 13px; }
     .jump-latest[hidden] { display: none; }
-    .welcome { max-width: 700px; margin: 9vh auto 0; text-align: center; }
-    .welcome img { width: 118px; height: 118px; object-fit: contain; }
-    .welcome h1 { margin: 17px 0 7px; font-size: clamp(28px, 4vw, 34px); line-height: 1.2; letter-spacing: -.02em; font-weight: 700; }
-    .welcome p { margin: 0 auto; max-width: 520px; color: var(--ink-2); font-size: 16px; }
-    .choose-model-button { border: 0; border-radius: var(--r-md); background: var(--accent); color: #fff; padding: 14px 20px; cursor: pointer; font: 700 15px var(--font-ui); }
+    .choose-model-button { border: 0; border-radius: var(--r-md); background: var(--ink); color: var(--paper); padding: 12px 20px; cursor: pointer; font: 500 15px var(--font-ui); }
     .choose-model-button:hover { filter: brightness(.96); }
     .model-status-action { appearance: none; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; text-align: left; }
     .model-status-action:not(:disabled) { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-    .prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 31px auto 0; max-width: 640px; text-align: left; }
-    .prompt-chip { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 13px 15px; cursor: pointer; line-height: 1.35; transition: border-color .15s ease; }
-    .prompt-chip:hover { border-color: var(--line-strong); }
 
     .message { display: flex; gap: 12px; margin: 0 auto 24px; max-width: 820px; animation: arrive .18s ease-out; }
     @keyframes arrive { from { opacity: 0; transform: translateY(2px); } }
@@ -294,13 +286,13 @@
       background: var(--surface); transition: border-color .15s ease, box-shadow .15s ease;
     }
     .composer:focus-within { border-color: var(--line-strong); box-shadow: 0 0 0 2px var(--accent-soft); }
-    textarea { grid-column: 2; width: 100%; min-width: 0; box-sizing: border-box; min-height: 54px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 14px 4px; color: var(--ink); background: transparent; font-size: 16px; line-height: 1.45; margin: 0; }
-    textarea::placeholder { color: var(--ink-2); }
+    textarea { grid-column: 2; width: 100%; min-width: 0; box-sizing: border-box; min-height: 54px; max-height: 180px; resize: none; border: 0; padding: 14px 4px; color: var(--ink); background: transparent; font-size: 16px; line-height: 1.45; margin: 0; }
+    input::placeholder, textarea::placeholder { color: var(--ink-2); opacity: 1; }
     .attach-btn { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; transition: color .15s ease, background .15s ease; display: grid; place-items: center; }
     .attach-btn svg { width: 25px; height: 25px; stroke-width: 1.45; }
     .attach-btn:hover { background: var(--accent-soft); color: var(--accent); }
     .composer-thinking { grid-column: 3; width: auto; min-width: 76px; height: 42px; appearance: none; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); cursor: pointer; font: 500 14px var(--font-ui); padding: 0 24px 0 8px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 12px) 18px, calc(100% - 7px) 18px; background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }
-    .composer-thinking:hover, .composer-thinking:focus { background-color: var(--accent-soft); color: var(--ink); outline: 0; }
+    .composer-thinking:hover, .composer-thinking:focus { background-color: var(--accent-soft); color: var(--ink); }
     .voice-mic { grid-column: 4; width: 42px; height: 42px; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; display: grid; place-items: center; transition: color .15s ease, background .15s ease; }
     .voice-mic svg { width: 23px; height: 23px; }
     .voice-mic:hover { background: var(--accent-soft); color: var(--accent); }
@@ -583,7 +575,7 @@
     .field:last-child { margin-bottom: 0; }
     .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }
     .field small { display: block; color: var(--ink-2); margin-top: 7px; font-size: 12px; line-height: 1.45; }
-    .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 10px 11px; outline: none; }
+    .field select, .field input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); padding: 10px 11px; }
     .local-card { margin: 0 0 16px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink-2); font-size: 13px; }
     .local-card strong { color: var(--ink); }
     /* T3.2: the .web-* rules that stood here styled the Settings
@@ -653,9 +645,6 @@
       .topbar { padding: 11px 14px; }
       .messages { padding: 24px 14px 18px; }
       .composer-wrap { padding-left: 10px; padding-right: 10px; }
-      .prompts { grid-template-columns: 1fr; }
-      .welcome { margin-top: 4vh; }
-      .welcome img { width: 92px; height: 92px; }
       .bubble { max-width: 91%; }
       .avatar { display: none; }
     }
@@ -698,6 +687,7 @@
     .chutni-monitor-grid div { min-width: 0; }
     .chutni-monitor-grid dt { margin: 0 0 2px; color: var(--ink-3); font-size: 10px; }
     .chutni-monitor-grid dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .chutni-activity { margin: 6px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .chutni-current { margin: 8px 0 0; overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .chutni-summary-setting { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
     .chutni-summary-setting-row { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
@@ -740,7 +730,8 @@
     .job-form { display: grid; gap: 11px; margin-bottom: 18px; }
     .job-form label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
     .job-field { display: grid; gap: 6px; }
-    .job-form input:not([type="checkbox"]), .job-form textarea { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
+    .job-field[hidden] { display: none; }
+    .job-form input:not([type="checkbox"]), .job-form textarea { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 10px 12px; font: inherit; resize: vertical; }
     .job-form #jobGoal { min-height: 86px; max-height: 180px; padding: 13px; font-size: 16px; line-height: 1.45; }
     .job-form input:not([type="checkbox"]):focus, .job-form textarea:focus { border-color: var(--line-strong); }
     .job-memory-access { margin-top: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); color: var(--ink-2); font-size: 12px; line-height: 1.45; }
@@ -756,6 +747,8 @@
     .job-mode { color: var(--ink-2); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
     .job-mode input[type="checkbox"] { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
     .job-progress { margin-top: 22px; }
+    .job-progress > summary { cursor: pointer; color: var(--ink-2); font-size: 12px; font-weight: 600; padding: 8px 0; border-bottom: 2px solid var(--ink); }
+    .job-progress:not([open]) .job-activity { display: none; }
     .job-progress[hidden], .job-result[hidden] { display: none; }
     .job-section-label { margin-bottom: 7px; color: var(--ink-2); font-size: 12px; font-weight: 600; }
     .job-activity { display: grid; border-top: 1px solid var(--line); }
@@ -774,6 +767,41 @@
     .job-result-text { font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
     .job-result-text > :first-child { margin-top: 0; }
     .job-result-text > :last-child { margin-bottom: 0; }
+    .job-decision-results { margin-top: 12px; }
+    .job-decision-results > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+    .job-decision-tools { display: flex; gap: 7px; flex-wrap: wrap; margin: 8px 0; }
+    .job-decision-tools input, .job-decision-tools select { min-height: 36px; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 6px 9px; font: inherit; }
+    .job-decision-tools input { flex: 1 1 200px; min-width: 0; }
+    .job-decision-tools button { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 6px 9px; cursor: pointer; font: inherit; }
+    .job-progress-stage, .job-progress-count { margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
+    .job-progress-count { color: var(--ink-2); }
+    .job-table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+    .job-file-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; white-space: normal; }
+    .job-file-table th { position: sticky; top: 0; background: var(--inset); text-align: left; font-weight: 600; z-index: 1; }
+    .job-file-table th, .job-file-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    .job-file-table th:first-child { width: 64px; }
+    .job-file-table th:nth-last-child(2) { width: 125px; }
+    .job-file-table th:last-child { width: 108px; }
+    .job-progress-table th:first-child { width: auto; }
+    .job-file-table td input[type="checkbox"] { margin: 2px 0; }
+    .job-decision-row-content strong { display: block; font-size: 13px; }
+    .job-decision-row-content details { margin-top: 4px; font-size: 12px; }
+    .job-decision-row-content summary { cursor: pointer; color: var(--ink-2); }
+    .job-decision-preview { margin: 8px 0; font-size: 13px; line-height: 1.45; }
+    @media (max-width: 600px) {
+      .job-file-table th, .job-file-table td { padding: 7px 5px; font-size: 12px; }
+      .job-file-table th:first-child { width: 48px; }
+      .job-file-table th:nth-last-child(2) { width: 82px; }
+      .job-file-table th:last-child { width: 70px; }
+      .job-progress-table th:first-child { width: auto; }
+    }
+    .job-followup { margin-top: 15px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .job-followup[hidden] { display: none; }
+    .job-followup label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+    .job-followup-row { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; }
+    .job-followup-row button { max-width: 100%; overflow-wrap: anywhere; }
+    .job-followup-row label { display: flex; flex: 1 1 200px; min-width: 0; align-items: center; gap: 8px; }
+    .job-followup-row input, .job-followup-row select { flex: 1 1 200px; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: 10px 12px; font: inherit; }
     .job-review { margin: 16px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
     .job-review[hidden] { display: none; }
     .job-review-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
@@ -784,7 +812,7 @@
     .job-review-row:first-child { border-top: 0; }
     .job-review-cell { min-width: 0; }
     .job-review-label { color: var(--ink-2); font-size: 11px; font-weight: 600; letter-spacing: .02em; margin-bottom: 3px; }
-    .job-review-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+    .job-review-value { white-space: normal; overflow-wrap: anywhere; font-family: var(--font-mono); }
     .job-review-arrow { color: var(--ink-2); align-self: end; text-align: center; }
     .job-review-fields { display: grid; gap: 6px; }
     .job-review-field { display: grid; grid-template-columns: minmax(92px, .36fr) minmax(0, 1fr); gap: 7px; align-items: center; }
@@ -910,10 +938,10 @@
     }
 
     /* ------------------------------------------------------------------
-       2026 visual rebuild — one language across setup, chat, tools, and
-       settings. Warm editorial typography meets an honest local instrument.
+       Shared presentation for setup, chat, file work, and settings.
+       Flat surfaces, quiet controls, and room for the work.
        ------------------------------------------------------------------ */
-    ::selection { background: var(--highlight); color: #21170d; }
+    ::selection { background: var(--highlight); color: var(--ink); }
     html { background: var(--sidebar); }
     body {
       background: var(--paper);
@@ -926,7 +954,7 @@
       position: fixed; inset: 0; z-index: 100;
       display: grid; place-items: center;
       background: var(--sidebar); color: var(--sidebar-ink);
-      font: italic 600 clamp(34px, 6vw, 64px)/1 var(--font-display);
+      font: 600 clamp(34px, 6vw, 64px)/1 var(--font-ui);
       letter-spacing: -.045em;
       animation: boot-breathe 1.2s ease-in-out infinite alternate;
     }
@@ -945,56 +973,55 @@
     .shell { grid-template-columns: 264px minmax(0, 1fr); background: var(--paper); }
     .sidebar {
       padding: 20px 14px 14px;
-      border-right: 0;
+      border-right: 1px solid var(--line);
       background: var(--sidebar);
       color: var(--sidebar-ink);
     }
-    .brand { min-height: 58px; gap: 11px; padding: 0 8px 18px; }
+    .brand { min-height: 52px; gap: 9px; padding: 0 8px 16px; }
     .brand img {
-      width: 38px; height: 38px; padding: 4px;
-      border-radius: 12px; background: var(--highlight);
-      box-shadow: inset 0 0 0 1px rgba(33, 23, 13, .12);
+      width: 30px; height: 30px; object-fit: contain;
     }
     .brand-name {
       color: var(--sidebar-ink);
-      font: italic 600 21px/1 var(--font-display);
-      letter-spacing: -.035em;
+      font: 600 17px/1.2 var(--font-ui);
+      letter-spacing: -.02em;
     }
     .brand-sub {
       margin-top: 6px; color: var(--sidebar-muted);
       font: 600 11px/1 var(--font-mono);
       letter-spacing: .11em; text-transform: uppercase;
     }
-    .nav { gap: 4px; padding: 14px 0 18px; margin: 0 0 16px; border-color: rgba(255,255,255,.09); }
+    .nav { gap: 3px; padding: 4px 0 12px; margin: 0 0 12px; border: 0; }
     .nav-item {
       min-height: 42px; padding: 10px 11px;
-      border-radius: 11px; color: var(--sidebar-muted);
-      font-size: 13px; font-weight: 600;
+      border-radius: var(--r-sm); color: var(--sidebar-muted);
+      font-size: 14px; font-weight: 500;
     }
     .nav-item svg { width: 18px; height: 18px; }
     .nav-item:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
     .nav-item.active {
-      background: var(--sidebar-ink); color: var(--sidebar);
-      box-shadow: inset 3px 0 0 var(--accent);
+      background: var(--sidebar-raised); color: var(--sidebar-ink);
+      font-weight: 600;
     }
     .new-chat {
       justify-content: flex-start; min-height: 44px; margin: 0 0 18px; padding: 11px 13px;
-      border-radius: 12px; background: var(--accent); color: var(--accent-ink);
+      border: 1px solid var(--line); border-radius: var(--r-sm);
+      background: transparent; color: var(--sidebar-ink); font-weight: 500;
       box-shadow: none;
     }
-    .new-chat:hover { background: color-mix(in srgb, var(--accent) 88%, #6f210c); }
+    .new-chat:hover { background: var(--sidebar-raised); }
     .section-label {
       padding: 5px 9px 8px; color: var(--sidebar-muted);
-      font: 600 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
+      font: 500 12px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none;
     }
     .chat-list { margin: 0 -2px; }
     .chat-item { margin: 1px 0; padding: 9px 8px 9px 11px; border: 0; border-radius: 10px; color: var(--sidebar-muted); }
     .chat-item:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
     .chat-item.active { border: 0; background: var(--sidebar-raised); color: var(--sidebar-ink); }
-    .chat-title { overflow: hidden; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+    .chat-title { overflow: hidden; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
     .chat-delete { color: var(--sidebar-muted); }
     .chat-item:focus-within .chat-delete, .chat-delete:focus-visible { opacity: 1; }
-    .side-footer { gap: 10px; padding: 14px 8px 1px; border-color: rgba(255,255,255,.09); color: var(--sidebar-muted); font-size: 10.5px; }
+    .side-footer { gap: 8px; padding: 14px 8px 1px; border-color: var(--line); color: var(--sidebar-muted); font-size: 11px; }
     .sidebar-status span:last-child { color: var(--sidebar-ink); }
     .privacy::before { width: 6px; height: 6px; box-shadow: 0 0 0 3px rgba(96,199,165,.12); }
 
@@ -1008,18 +1035,18 @@
     .sidebar-control, .sidebar-rail-button {
       display: grid; place-items: center; flex: none;
       width: 34px; height: 34px; padding: 0;
-      border: 1px solid rgba(255,255,255,.11); border-radius: 10px;
+      border: 0; border-radius: var(--r-sm);
       background: transparent; color: var(--sidebar-muted); cursor: pointer;
       transition: background .15s ease, color .15s ease, border-color .15s ease;
     }
     .sidebar-control { margin: 2px 1px 0 0; }
     .sidebar-control:hover, .sidebar-rail-button:hover {
-      border-color: rgba(255,255,255,.2); background: var(--sidebar-raised); color: var(--sidebar-ink);
+      background: var(--sidebar-raised); color: var(--sidebar-ink);
     }
     .sidebar-control svg, .sidebar-rail-button svg { width: 18px; height: 18px; }
     .sidebar-rail { display: none; width: 100%; flex-direction: column; align-items: center; gap: 10px; }
-    .sidebar-rail-button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
-    .sidebar-rail-button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #6f210c); color: var(--accent-ink); }
+    .sidebar-rail-button.primary { background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .sidebar-rail-button.primary:hover { background: var(--inset); }
     .shell.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
     .shell.sidebar-collapsed .sidebar { width: 64px; padding: 14px 10px; }
     .shell.sidebar-collapsed .sidebar-top,
@@ -1041,9 +1068,9 @@
     .chat-selection-bar[hidden] { display: none; }
     .chat-selection-count { color: var(--sidebar-ink); font: 600 10.5px/1 var(--font-mono); white-space: nowrap; }
     .chat-selection-action { padding: 6px 7px; }
-    .chat-selection-action.danger { display: inline-flex; align-items: center; gap: 5px; color: #ff928b; }
+    .chat-selection-action.danger { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); }
     .chat-selection-action.danger svg { width: 14px; height: 14px; }
-    .chat-selection-action.danger:hover { background: rgba(255,118,111,.12); color: #ffaaa5; }
+    .chat-selection-action.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
     .chat-selection-action:disabled { opacity: .38; cursor: default; background: transparent; }
     #cancelChatSelection { grid-area: 1 / 2; }
     #selectAllChats { grid-area: 2 / 1; justify-self: start; }
@@ -1070,139 +1097,118 @@
 
     .main { background: var(--paper); }
     .topbar {
-      min-height: 72px; padding: 13px 24px;
-      border-bottom-color: var(--line);
-      background: color-mix(in srgb, var(--paper) 91%, transparent);
-      backdrop-filter: blur(16px) saturate(1.2);
+      min-height: 64px; padding: 12px 24px;
+      border-bottom: 0; background: var(--paper); backdrop-filter: none;
     }
-    .conversation-name { font-size: 14px; font-weight: 700; letter-spacing: -.018em; }
-    .model-line { margin-top: 3px; font: 500 11px/1.4 var(--font-mono); letter-spacing: .005em; }
+    .conversation-name { font-size: 14px; font-weight: 500; letter-spacing: -.01em; }
+    .model-line { margin-top: 3px; font: 400 12px/1.4 var(--font-ui); letter-spacing: 0; }
     .status-dot { width: 6px; height: 6px; margin-right: 6px; }
     .top-actions { gap: 6px; }
     .icon-button, .menu-button {
-      border: 0; border-radius: 11px; background: var(--inset); padding: 9px;
+      border: 0; border-radius: var(--r-sm); background: transparent; padding: 9px;
       color: var(--ink-2);
     }
-    .icon-button:hover, .menu-button:hover { background: var(--ink); color: var(--paper); }
+    .icon-button:hover, .menu-button:hover { background: var(--inset); color: var(--ink); }
     .shell[data-view="chutni"] .model-line, .shell[data-view="jobs"] .model-line { display: none; }
     .shell[data-view="chutni"] .conversation-name, .shell[data-view="jobs"] .conversation-name {
-      font: 600 20px/1 var(--font-display); letter-spacing: -.025em;
+      font: 500 14px/1.4 var(--font-ui); letter-spacing: -.01em;
     }
 
-    .messages { padding: 38px max(24px, calc((100% - 880px) / 2)) 30px; }
+    .messages { padding: 32px max(24px, calc((100% - 800px) / 2)) 24px; }
+    .main:has(.welcome) { overflow-y: auto; }
+    .main:has(.welcome) .messages {
+      flex: 0 0 auto; height: auto; overflow: visible; margin-top: auto;
+      padding-top: 32px; padding-bottom: 0;
+    }
+    .main:has(.welcome) .composer-wrap { margin-bottom: auto; padding-top: 24px; padding-bottom: 48px; }
+    .main:has(.welcome) .conversation-name { display: none; }
     .welcome {
-      position: relative; max-width: 860px; margin: clamp(46px, 8vh, 96px) auto 0;
-      padding: 0 4px 34px; text-align: left;
+      max-width: 760px; margin: 0 auto; padding: 0; text-align: center;
       animation: welcome-in .45s cubic-bezier(.22,.8,.25,1) both;
     }
     @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } }
-    .welcome-kicker {
-      display: flex; align-items: center; justify-content: space-between; gap: 16px;
-      padding-top: 13px; border-top: 2px solid var(--ink);
-      color: var(--ink-2); font: 600 11px/1 var(--font-mono);
-      letter-spacing: .1em; text-transform: uppercase;
-    }
-    .welcome-kicker span:last-child { color: var(--ok); }
-    .welcome-copy { position: relative; min-height: 154px; padding: 35px 128px 30px 0; }
+    .welcome-copy { padding: 0; }
     .welcome img {
-      position: absolute; top: 31px; right: 7px;
-      width: 104px; height: 104px; padding: 9px;
-      border: 1px solid var(--line); border-radius: 24px;
-      background: var(--surface); transform: rotate(2.5deg);
-      box-shadow: 8px 8px 0 var(--highlight);
+      display: block; width: 54px; height: 54px; margin: 0 auto 20px;
+      object-fit: contain;
     }
     .welcome h1 {
-      max-width: 670px; margin: 0 0 14px;
-      font: 600 clamp(43px, 5.7vw, 66px)/.98 var(--font-display);
-      letter-spacing: -.055em;
+      margin: 0 0 12px; overflow-wrap: anywhere;
+      font: 500 clamp(28px, 3.3vw, 40px)/1.2 var(--font-ui);
+      letter-spacing: -.035em;
     }
-    .welcome p { max-width: 610px; margin: 0; color: var(--ink-2); font-size: 16px; line-height: 1.55; }
-    .prompt-label {
-      margin: 10px 0 12px; color: var(--ink-2);
-      font: 600 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
-    }
-    .prompts { counter-reset: prompt; gap: 10px; margin: 0; max-width: none; }
+    .welcome p { max-width: 560px; margin: 0 auto; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+    .prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 24px 0 0; }
     .prompt-chip {
-      counter-increment: prompt; position: relative; min-height: 88px;
-      padding: 16px 52px 15px 52px; overflow: hidden;
-      border: 1px solid var(--line); border-radius: var(--r-md);
-      background: var(--surface); color: var(--ink); text-align: left;
-      font-size: 14px; font-weight: 600; line-height: 1.35;
-      transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      min-height: 40px; padding: 9px 14px; border: 1px solid var(--line);
+      border-radius: var(--r-lg); background: transparent; color: var(--ink-2);
+      font-size: 13px; font-weight: 400; line-height: 1.4; cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
     }
-    .prompt-chip::before {
-      content: "0" counter(prompt); position: absolute; left: 16px; top: 17px;
-      color: var(--accent); font: 700 11px/1 var(--font-mono); letter-spacing: .04em;
-    }
-    .prompt-chip::after {
-      content: "↗"; position: absolute; right: 17px; top: 14px;
-      color: var(--ink-3); font-size: 18px; font-weight: 400;
-    }
+    .prompt-chip svg { width: 16px; height: 16px; flex: none; }
     .prompt-chip:hover {
-      border-color: var(--ink); background: var(--ink); color: var(--paper);
-      transform: translateX(3px);
+      border-color: var(--line-strong); background: var(--inset); color: var(--ink);
     }
-    .prompt-chip:hover::after, .prompt-chip:hover::before { color: var(--highlight); }
 
     .message { gap: 14px; max-width: 880px; margin-bottom: 28px; }
     .avatar {
       width: 32px; height: 32px; margin-top: 1px;
-      border-radius: 10px; background: var(--accent); color: var(--accent-ink);
-      font: 700 12px/1 var(--font-display);
+      border-radius: var(--r-sm); background: var(--inset); color: var(--ink-2);
+      font: 700 12px/1 var(--font-ui);
     }
     .bubble { max-width: min(748px, 87%); border-radius: 18px; padding: 14px 17px; }
     .assistant .bubble { padding: 3px 0 4px; border: 0; background: transparent; }
     .user .bubble {
-      border: 1px solid color-mix(in srgb, var(--ink) 84%, transparent);
-      border-bottom-right-radius: 5px; background: var(--ink); color: var(--paper);
-      box-shadow: 5px 5px 0 var(--highlight);
+      border: 0; border-bottom-right-radius: var(--r-sm);
+      background: var(--inset); color: var(--ink); box-shadow: none;
     }
     .response { font-size: 15.5px; line-height: 1.72; }
-    .response h1, .response h2, .response h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.03em; }
+    .response h1, .response h2, .response h3 { font-family: var(--font-ui); font-weight: 600; letter-spacing: -.03em; }
     .response h1 { font-size: 1.65em; } .response h2 { font-size: 1.38em; }
     .response pre { padding: 18px; border-color: var(--line); border-radius: 14px; background: var(--sidebar); color: var(--sidebar-ink); }
     .response code { background: var(--inset); }
     .response pre code { background: transparent; }
     .thinking { border: 0; border-radius: 12px; background: var(--inset); }
-    .thinking summary { padding: 9px 12px; font: 600 10.5px/1.4 var(--font-mono); letter-spacing: .03em; text-transform: uppercase; }
+    .thinking summary { padding: 9px 12px; font: 500 12px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .thinking-body { padding: 0 12px 12px; font-family: var(--font-mono); }
-    .message-speak { margin-top: 12px; color: var(--ink-3); font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+    .message-speak { margin-top: 12px; color: var(--ink-3); font: 400 12px/1.4 var(--font-ui); text-transform: none; letter-spacing: 0; }
     .jump-latest { right: 26px; bottom: 137px; border: 0; border-radius: 12px; background: var(--ink); color: var(--paper); box-shadow: var(--shadow-overlay); }
 
-    .composer-wrap { padding: 11px max(20px, calc((100% - 900px) / 2)) 13px; background: var(--paper); }
+    .composer-wrap { padding: 12px max(24px, calc((100% - 800px) / 2)) 20px; background: var(--paper); }
     .composer {
-      grid-template-columns: 42px minmax(0, 1fr) auto 40px 54px; gap: 6px;
-      min-height: 68px; padding: 6px 7px 6px 9px;
-      border: 1px solid var(--line-strong); border-radius: 22px;
-      background: var(--surface);
-      box-shadow: 0 10px 30px rgba(34, 28, 22, .08);
+      grid-template-columns: 36px auto minmax(0, 1fr) 36px 40px; gap: 8px;
+      min-height: 128px; padding: 14px;
+      border: 1px solid var(--line); border-radius: var(--r-lg);
+      background: var(--surface); box-shadow: none;
     }
-    .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), 0 12px 34px rgba(34,28,22,.1); }
-    .composer.file-drop { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), 0 12px 34px rgba(34,28,22,.1); background: color-mix(in srgb, var(--paper) 88%, var(--accent-soft)); }
+    .composer:focus-within { border-color: var(--line-strong); box-shadow: none; }
+    #prompt:focus-visible { outline: none; }
+    .composer.file-drop { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--inset); }
     #prompt {
-      grid-column: 2; min-height: 48px; max-height: 180px; padding: 12px 5px;
-      border: 0; background: transparent; font-size: 15px; line-height: 1.5;
+      grid-column: 1 / -1; min-height: 56px; max-height: 180px; padding: 3px 3px 8px;
+      border: 0; background: transparent; font-size: 16px; line-height: 1.5;
     }
-    .attach-btn { width: 40px; height: 40px; border-radius: 12px; background: var(--inset); }
+    .attach-btn { width: 36px; height: 36px; border-radius: var(--r-sm); background: transparent; color: var(--ink-2); }
     .attach-btn svg { width: 21px; height: 21px; }
-    .composer-thinking { height: 38px; min-width: 70px; border-radius: 10px; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: .03em; }
-    .voice-mic { width: 40px; height: 40px; border-radius: 12px; }
+    .composer-thinking { grid-column: 2; height: 36px; min-width: 66px; border-radius: var(--r-sm); font: 400 13px var(--font-ui); text-transform: none; letter-spacing: 0; background-position: calc(100% - 12px) 15px, calc(100% - 7px) 15px; }
+    .voice-mic { width: 36px; height: 36px; border-radius: var(--r-sm); color: var(--ink-2); }
     .send, .stop, .voice-trigger {
-      width: 54px; height: 54px; border-radius: 17px;
-      background: var(--accent); color: var(--accent-ink);
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--ink); color: var(--paper);
     }
-    .send:hover, .voice-trigger:hover { background: color-mix(in srgb, var(--accent) 86%, #711f09); transform: none; }
-    .voice-trigger svg { width: 27px; height: 27px; }
+    .send:hover, .voice-trigger:hover { background: color-mix(in srgb, var(--ink) 86%, var(--paper)); transform: none; }
+    .voice-trigger svg { width: 22px; height: 22px; }
     .stop { background: var(--danger); color: #fff; }
     .chat-memory-context, .web-consent {
       margin-bottom: 9px; padding: 12px 14px; border-radius: 14px;
       border-color: var(--line); background: var(--surface);
-      box-shadow: inset 3px 0 0 var(--accent);
+      box-shadow: none;
     }
     .chat-documents {
       display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 9px;
       padding: 9px 12px; border: 1px solid var(--line); border-radius: 14px;
-      background: var(--surface); box-shadow: inset 3px 0 0 var(--highlight);
+      background: var(--surface); box-shadow: none;
     }
     .chat-documents[hidden] { display: none; }
     .chat-documents .attach-chip { max-width: 100%; }
@@ -1213,13 +1219,11 @@
     .attach-chip { border-radius: 10px; background: var(--inset); }
 
     .telemetry {
-      min-height: 34px; justify-content: flex-start; gap: 8px 22px;
-      padding: 8px max(20px, calc((100% - 900px) / 2));
-      border: 0; background: var(--sidebar); color: var(--sidebar-muted);
-      font: 500 11px/1.4 var(--font-mono); letter-spacing: .015em;
+      min-height: 30px; justify-content: center; gap: 8px 18px;
+      padding: 6px 20px; border: 0; background: var(--paper); color: var(--ink-3);
+      font: 400 11px/1.4 var(--font-ui); letter-spacing: 0;
     }
-    .telemetry::before { content: "LOCAL"; color: var(--ok); font-weight: 700; letter-spacing: .1em; }
-    .telemetry strong { color: var(--sidebar-ink); font-weight: 600; }
+    .telemetry strong { color: var(--ink-2); font-weight: 500; }
 
     .voice-stage {
       inset: 72px 0 0; padding: 24px 28px 32px;
@@ -1231,34 +1235,34 @@
     .voice-stage-bar, .voice-stage-copy { position: relative; z-index: 1; }
     .voice-stage-name { font: 600 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
     .voice-stage-copy { padding: 18px 24px; border: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-radius: 18px; background: color-mix(in srgb, var(--paper) 82%, transparent); backdrop-filter: blur(14px); box-shadow: 0 18px 54px color-mix(in srgb, var(--ink) 8%, transparent); }
-    .voice-stage-copy strong { font: 600 38px/1.05 var(--font-display); letter-spacing: -.04em; }
+    .voice-stage-copy strong { font: 600 38px/1.05 var(--font-ui); letter-spacing: -.04em; }
 
     /* Chutni and Jobs use the same page grammar as Chat. */
     .chutni-view, .jobs-view { padding: 48px max(24px, calc((100% - 900px) / 2)) 58px; background: var(--paper); }
     .chutni-pane, .chutni-panel { max-width: 900px; }
-    .chutni-head, .jobs-head { align-items: flex-end; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+    .chutni-head, .jobs-head { align-items: flex-end; margin-bottom: 28px; padding-bottom: 0; border-bottom: 0; }
     .chutni-head h1, .jobs-head h1 {
-      font: 600 clamp(36px, 5vw, 48px)/.95 var(--font-display);
-      letter-spacing: -.045em;
+      font: 500 clamp(26px, 3vw, 34px)/1.2 var(--font-ui);
+      letter-spacing: -.03em;
     }
-    .chutni-head p, .jobs-head p { margin-bottom: 2px; font: 600 10px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+    .chutni-head p, .jobs-head p { margin: 8px 0 0; font: 400 14px/1.5 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .chutni-empty {
-      max-width: 540px; padding: 40px; border: 1px solid var(--line);
-      border-radius: var(--r-lg); background: var(--surface); text-align: left;
-      box-shadow: 10px 10px 0 var(--highlight);
+      max-width: 540px; padding: 32px; border: 0;
+      border-radius: var(--r-lg); background: transparent; text-align: center;
+      box-shadow: none;
     }
     .chutni-empty svg { width: 39px; height: 39px; margin-bottom: 24px; color: var(--accent); }
-    .chutni-empty h2 { font: 600 30px/1.05 var(--font-display); letter-spacing: -.035em; }
+    .chutni-empty h2 { font: 500 28px/1.2 var(--font-ui); letter-spacing: -.03em; }
     .chutni-empty p { font-size: 14px; line-height: 1.65; }
     .chutni-primary, .job-run, .setup-primary, .chooser-select, .web-consent-yes {
       min-height: 42px; border: 0; border-radius: 11px;
-      background: var(--accent); color: var(--accent-ink);
-      font-weight: 700; box-shadow: none;
+      background: var(--ink); color: var(--paper);
+      font-weight: 500; box-shadow: none;
     }
-    .chutni-primary:hover, .job-run:hover, .setup-primary:hover, .chooser-select:hover, .web-consent-yes:hover { background: color-mix(in srgb, var(--accent) 86%, #711f09); }
+    .chutni-primary:hover, .job-run:hover, .setup-primary:hover, .chooser-select:hover, .web-consent-yes:hover { background: color-mix(in srgb, var(--ink) 86%, var(--paper)); }
     .chutni-secondary, .setup-secondary, .chooser-close, .chooser-up {
       min-height: 40px; border-color: var(--line); border-radius: 11px;
-      background: var(--surface); color: var(--ink); font-weight: 600;
+      background: transparent; color: var(--ink); font-weight: 500;
     }
     .chutni-card, .job-form, .job-review {
       border: 1px solid var(--line); border-radius: 18px; background: var(--surface);
@@ -1274,63 +1278,63 @@
     .chutni-monitor-grid dt { font: 600 11px/1.3 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
     .chutni-monitor-grid dd { font-size: 14px; }
     .chutni-panel { padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
-    .chutni-panel h2 { font: 600 28px/1.1 var(--font-display); letter-spacing: -.03em; }
+    .chutni-panel h2 { font: 600 28px/1.1 var(--font-ui); letter-spacing: -.03em; }
     .chutni-panel input[type="text"], .chutni-panel input[type="number"] { min-height: 44px; border-radius: 11px; background: var(--paper); }
 
     .jobs-view { max-width: none; }
     .job-form { gap: 16px; margin-bottom: 18px; padding: 22px; }
-    .job-form label, .job-section-label { font: 600 11px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .job-form label, .job-section-label { font: 500 13px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .job-form input:not([type="checkbox"]), .job-form textarea {
       grid-column: auto; min-height: 44px; border-radius: 11px; background: var(--paper);
     }
     .job-form #jobGoal { min-height: 108px; padding: 15px; background: var(--surface); }
-    .job-memory-access { padding: 12px 14px; border: 0; border-radius: 11px; background: var(--inset); box-shadow: inset 3px 0 0 var(--highlight); }
+    .job-memory-access { padding: 0; border: 0; background: transparent; box-shadow: none; }
+    .job-memory-access p { margin: 8px 0 0; }
     .job-advanced { margin: 0 0 24px; border-color: var(--line); }
-    .job-advanced > summary { padding: 13px 2px; font: 600 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+    .job-advanced > summary { padding: 13px 2px; font: 500 13px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .job-tools { border: 0; border-radius: 0; background: transparent; padding: 8px 0 18px; }
-    .job-activity { border-top: 2px solid var(--ink); }
+    .job-activity { border-top: 1px solid var(--line); }
     .job-line { padding: 12px 3px; }
     .job-line .dot { color: var(--accent); }
     .job-line.step-done .dot { color: var(--ok); }
-    .job-result { border: 0; border-radius: 14px; background: var(--surface); box-shadow: inset 4px 0 0 var(--accent); }
+    .job-result { border: 0; border-radius: var(--r-md); background: var(--surface); box-shadow: none; }
     .job-review { overflow: hidden; }
     .job-bar { bottom: 12px; padding: 14px 16px; border-radius: 16px; background: var(--sidebar); color: var(--sidebar-ink); box-shadow: var(--shadow-overlay); }
     .job-bar .txt { color: var(--sidebar-ink); }
 
-    /* Settings is now a material layer of the same app, with the same dark
-       rail and paper work surface instead of a second, unrelated page. */
+    /* Settings shares the app's quiet surfaces and navigation. */
     .settings {
       inset: 0; padding: 24px; overflow: hidden;
-      background: rgba(18, 14, 11, .64); backdrop-filter: blur(14px) saturate(.8);
+      background: rgba(0, 0, 0, .46); backdrop-filter: none;
     }
     .settings.open { display: grid; place-items: center; }
     .preferences-frame {
       display: grid; grid-template-rows: auto minmax(0, 1fr);
       width: min(1080px, 100%); height: min(860px, calc(100dvh - 48px)); min-height: 0;
       margin: 0; padding: 0; overflow: hidden;
-      border: 1px solid rgba(255,255,255,.1); border-radius: 24px;
+      border: 1px solid var(--line); border-radius: var(--r-lg);
       background: var(--surface); box-shadow: var(--shadow-overlay);
       animation: settings-in .24s cubic-bezier(.2,.75,.25,1) both;
     }
     @keyframes settings-in { from { opacity: 0; transform: translateY(12px) scale(.985); } }
     .settings-head {
-      margin: 0; padding: 22px 26px; border-color: rgba(255,255,255,.09);
+      margin: 0; padding: 20px 26px; border-color: var(--line);
       background: var(--sidebar); color: var(--sidebar-ink);
     }
-    .settings-eyebrow { margin-bottom: 6px; color: var(--highlight); font: 700 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
-    .settings h2 { color: var(--sidebar-ink); font: italic 600 34px/1 var(--font-display); letter-spacing: -.04em; }
-    .settings-head .close-settings { border-color: rgba(255,255,255,.15); background: var(--sidebar-raised); color: var(--sidebar-ink); }
-    .settings-head .close-settings:hover { border-color: var(--highlight); background: var(--highlight); color: #21170d; }
+    .settings-eyebrow { margin-bottom: 6px; color: var(--sidebar-muted); font: 400 12px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
+    .settings h2 { color: var(--sidebar-ink); font: 500 28px/1.2 var(--font-ui); letter-spacing: -.03em; }
+    .settings-head .close-settings { border-color: var(--line); background: transparent; color: var(--sidebar-ink); }
+    .settings-head .close-settings:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
     .preferences-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 0; min-height: 0; overflow: hidden; align-items: stretch; }
     .preferences-nav {
       position: static; align-content: start; gap: 5px; padding: 26px 14px;
-      border-top: 1px solid rgba(255,255,255,.06); background: var(--sidebar);
+      border-top: 1px solid var(--line); background: var(--sidebar);
     }
     .preferences-nav button { min-height: 42px; padding: 10px 12px; border-radius: 11px; color: var(--sidebar-muted); font-size: 13px; font-weight: 600; }
     .preferences-nav button:hover { background: var(--sidebar-raised); color: var(--sidebar-ink); }
     .preferences-nav button.active { background: var(--accent); color: var(--accent-ink); }
     .preferences-content { min-height: 0; overflow-y: auto; padding: 38px 42px 48px; background: var(--paper); }
-    .preferences-pane > h3 { margin: 0 0 6px; font: 600 38px/1 var(--font-display); letter-spacing: -.045em; }
+    .preferences-pane > h3 { margin: 0 0 6px; font: 500 28px/1.2 var(--font-ui); letter-spacing: -.03em; }
     .preferences-lead { margin-bottom: 26px; max-width: 580px; font-size: 14px; }
     .preferences-pane[data-settings-pane-content="general"]:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .preferences-pane[data-settings-pane-content="general"] > h3,
@@ -1346,9 +1350,9 @@
       border-radius: 16px; background: var(--surface); box-shadow: none;
     }
     .preferences-pane[data-settings-pane-content="general"] .preferences-card { margin: 0; }
-    .preferences-card > h4 { margin-bottom: 18px; font: 600 20px/1.1 var(--font-display); letter-spacing: -.025em; }
+    .preferences-card > h4 { margin-bottom: 18px; font: 600 20px/1.1 var(--font-ui); letter-spacing: -.025em; }
     .field { margin-bottom: 20px; }
-    .field label { margin-bottom: 7px; font: 600 11px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+    .field label { margin-bottom: 7px; font: 500 13px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .field label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 9px; font: 600 13px/1.4 var(--font-ui); letter-spacing: 0; text-transform: none; }
     .field select, .field input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; padding: 10px 12px; border-radius: 11px; background: var(--paper); }
     .field input[type="checkbox"] { width: 17px; height: 17px; }
@@ -1376,8 +1380,8 @@
     .runtime-apply-copy { display: grid; gap: 4px; min-width: 0; }
     .runtime-apply-copy strong { font: 600 15px/1.25 var(--font-ui); }
     .runtime-status { color: var(--sidebar-muted); font-size: 12px; line-height: 1.45; }
-    .runtime-status.error { color: #ffb5a8; }
-    .runtime-status.success { color: #b9e5cc; }
+    .runtime-status.error { color: var(--danger); }
+    .runtime-status.success { color: var(--ok); }
     .runtime-apply {
       flex: none; min-height: 42px; padding: 10px 16px; border: 1px solid var(--accent);
       border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-weight: 700;
@@ -1388,7 +1392,7 @@
     .kill-button { min-height: 40px; border-radius: 10px; }
     .model-card { padding: 18px; border-radius: 15px; background: var(--surface); }
     .model-card.active { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
-    .model-card-brand { border-radius: 13px; background: var(--highlight); color: #35230d; }
+    .model-card-brand { border-radius: 13px; background: var(--highlight); color: var(--ink); }
     .model-card-provider, .model-badge, .model-progress-text { font-family: var(--font-mono); }
     .voice-model-card { padding: 16px; border-radius: 14px; }
     .model-card-actions button.primary, .voice-model-card-actions button.primary {
@@ -1400,9 +1404,9 @@
     .scrim.show { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(15,12,10,.58); backdrop-filter: blur(4px); }
     .chooser-scrim.show { background: rgba(15,12,10,.64); backdrop-filter: blur(8px); }
     .chooser-dialog { width: min(560px, calc(100vw - 32px)); border-radius: 20px; background: var(--surface); }
-    .chooser-head { padding: 18px 20px; border-color: rgba(255,255,255,.09); background: var(--sidebar); color: var(--sidebar-ink); }
-    .chooser-head h2 { font: 600 22px/1.05 var(--font-display); letter-spacing: -.025em; }
-    .chooser-head .chooser-close { border-color: rgba(255,255,255,.15); background: var(--sidebar-raised); color: var(--sidebar-ink); }
+    .chooser-head { padding: 18px 20px; border-color: var(--line); background: var(--sidebar); color: var(--sidebar-ink); }
+    .chooser-head h2 { font: 600 22px/1.05 var(--font-ui); letter-spacing: -.025em; }
+    .chooser-head .chooser-close { border-color: var(--line); background: transparent; color: var(--sidebar-ink); }
     .chooser-root-chip { border-radius: 9px; background: var(--paper); }
     .chooser-root-chip.current { border-color: var(--accent); background: var(--accent-soft); }
     .chooser-path { padding: 10px 12px; border-radius: 10px; background: var(--inset); }
@@ -1412,21 +1416,20 @@
     .migration-banner { border-radius: 15px; background: var(--sidebar); color: var(--sidebar-ink); }
     #migrationReset { border-color: color-mix(in srgb, var(--danger) 55%, transparent); color: var(--danger); }
 
-    /* Crisp split-screen onboarding; model selection expands without changing
-       the visual world the user enters after setup. */
+    /* Onboarding uses the same surface as the rest of the app. */
     .setup {
       place-items: start center; align-items: safe center; padding: 36px;
-      background: linear-gradient(90deg, var(--sidebar) 0 28%, var(--paper) 28%);
+      background: var(--paper);
     }
     .setup-card {
       width: min(920px, 100%); padding: 44px 48px 42px;
       border: 1px solid var(--line); border-radius: 26px;
-      background: var(--surface); box-shadow: var(--shadow-overlay);
+      background: var(--surface); box-shadow: none;
       text-align: center;
     }
-    .setup-mark { width: 66px; height: 66px; margin-bottom: 26px; padding: 7px; border-radius: 18px; background: var(--highlight); transform: rotate(-2deg); }
+    .setup-mark { width: 54px; height: 54px; margin-bottom: 24px; object-fit: contain; }
     #setupViewName, #setupViewWelcome { max-width: 560px; margin: 0 auto; }
-    .setup-view h1 { margin-bottom: 24px; font: 600 clamp(38px, 5vw, 52px)/1 var(--font-display); letter-spacing: -.045em; }
+    .setup-view h1 { margin-bottom: 24px; font: 500 clamp(28px, 4vw, 38px)/1.2 var(--font-ui); letter-spacing: -.03em; }
     .setup-view input:not([type="checkbox"]) { min-height: 50px; border-radius: 12px; font-size: 16px; }
     .setup-primary, .setup-secondary { min-height: 48px; border-radius: 12px; }
     .setup-caption { font-family: var(--font-mono); font-size: 11px; letter-spacing: .02em; }
@@ -1442,7 +1445,6 @@
       .preferences-frame { height: calc(100dvh - 28px); }
       .preferences-layout { grid-template-columns: 190px minmax(0, 1fr); }
       .preferences-content { padding: 32px 28px 42px; }
-      .welcome h1 { font-size: clamp(40px, 7vw, 58px); }
     }
     @media (max-width: 760px) {
       .shell { grid-template-columns: 1fr; }
@@ -1455,9 +1457,6 @@
       .topbar { min-height: 64px; padding: 10px 13px; }
       .voice-stage { inset: 64px 0 0; }
       .messages { padding: 26px 16px 20px; }
-      .welcome { margin-top: 24px; }
-      .welcome-copy { padding-right: 100px; }
-      .welcome img { width: 82px; height: 82px; }
       .chutni-view, .jobs-view { padding: 32px 17px 42px; }
       .settings { padding: 0; background: var(--paper); }
       .preferences-frame { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
@@ -1467,17 +1466,14 @@
       .preferences-content { overflow: visible; padding: 28px 18px 38px; }
     }
     @media (max-width: 640px) {
-      .welcome-kicker span:last-child { display: none; }
-      .welcome-copy { min-height: 0; padding: 26px 0 22px; }
-      .welcome img { position: static; width: 66px; height: 66px; margin: 0 0 24px; box-shadow: 5px 5px 0 var(--highlight); }
-      .welcome h1 { font-size: clamp(38px, 12vw, 50px); }
+      .welcome h1 { font-size: 28px; }
       .welcome p { font-size: 14px; }
-      .prompts { grid-template-columns: 1fr; }
-      .prompt-chip { min-height: 72px; }
-      .composer-wrap { padding: 8px 8px 10px; }
-      .composer { grid-template-columns: 36px minmax(0, 1fr) auto 36px 48px; min-height: 62px; border-radius: 19px; }
+      .prompts { gap: 6px; }
+      .prompt-chip { padding: 8px 12px; font-size: 12px; }
+      .composer-wrap { padding: 8px 12px 12px; }
+      .composer { grid-template-columns: 36px auto minmax(0, 1fr) 36px 40px; min-height: 120px; padding: 12px; border-radius: var(--r-lg); }
       .attach-btn, .voice-mic { width: 36px; height: 36px; }
-      .send, .stop, .voice-trigger { width: 48px; height: 48px; border-radius: 15px; }
+      .send, .stop, .voice-trigger { width: 40px; height: 40px; border-radius: 50%; }
       .telemetry { justify-content: center; padding: 8px 10px; gap: 7px 13px; }
       .telemetry span:nth-of-type(n+4) { display: none; }
       .preferences-pane[data-settings-pane-content="general"]:not([hidden]) { grid-template-columns: 1fr; }
@@ -1493,11 +1489,18 @@
       .settings h2 { font-size: 29px; }
       .setup { padding: 14px; background: var(--paper); }
       .setup-card { padding: 30px 20px; border-radius: 20px; }
-      .setup-view h1 { font-size: 38px; }
+      .setup-view h1 { font-size: 28px; }
       .model-card-head { display: grid; }
       .folder-picker-field { grid-template-columns: 1fr; }
       .folder-picker-field button { width: 100%; }
       .chutni-head, .jobs-head { align-items: flex-start; }
+    }
+    @media (max-width: 320px) {
+      .composer { grid-template-columns: 32px auto minmax(0, 1fr) 32px; gap: 6px; padding: 10px; }
+      .composer-thinking { min-width: 58px; }
+      .voice-mic { display: none; }
+      .send, .stop, .voice-trigger { grid-column: 4; width: 32px; height: 32px; }
+      .attach-btn { width: 32px; height: 32px; }
     }
   </style>
 </head>
@@ -1554,15 +1557,15 @@
       <div class="sidebar-top">
         <div class="brand">
           <img src="/assets/samosa-chat.png" alt="">
-          <div><div class="brand-name">Samosa Chat</div></div>
+          <div><div class="brand-name">Samosa</div></div>
         </div>
         <button class="sidebar-control" id="collapseSidebar" type="button" aria-label="Collapse sidebar" title="Collapse sidebar"><svg aria-hidden="true"><use href="#icon-collapse"></use></svg></button>
       </div>
       <div class="sidebar-body">
         <nav class="nav" role="tablist" aria-label="Sections">
           <button class="nav-item active" id="navChat" role="tab" aria-selected="true"><svg aria-hidden="true"><use href="#icon-chat"></use></svg>Chat</button>
-          <button class="nav-item" id="navChutni" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-chutni"></use></svg>Chutni</button>
-          <button class="nav-item" id="navJobs" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-jobs"></use></svg>Jobs</button>
+          <button class="nav-item" id="navJobs" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-jobs"></use></svg>Files</button>
+          <button class="nav-item" id="navChutni" role="tab" aria-selected="false"><svg aria-hidden="true"><use href="#icon-chutni"></use></svg>Folder memory</button>
         </nav>
         <button class="new-chat" id="newChat"><svg aria-hidden="true" width="15" height="15"><use href="#icon-plus"></use></svg>New conversation</button>
         <div class="conversation-heading">
@@ -1667,8 +1670,8 @@
             <input type="file" id="documentInput" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain,text/markdown,text/csv,text/xml,application/json,application/yaml,application/toml,application/xml,text/*,.pdf,.docx,.html,.htm,.txt,.md,.csv,.json,.yaml,.yml,.toml,.xml,.py,.sh,.bash,.js,.mjs,.cjs,.ts,.tsx,.css,.c,.h,.cc,.cpp,.hpp,.log" style="display: none;">
             <div class="attach-error" id="attachError" role="alert"></div>
             <div class="attach-chips" id="attachChips"></div>
+            <textarea id="prompt" rows="1" placeholder="How can I help?" aria-label="Message"></textarea>
             <button class="attach-btn" id="attachBtn" type="button" aria-label="Add context" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#icon-plus"></use></svg></button>
-            <textarea id="prompt" rows="1" placeholder="Message your local model…" aria-label="Message"></textarea>
             <select class="composer-thinking" id="composerThinking" aria-label="Thinking profile"><option value="off">Fast</option><option value="general">High</option><option value="code">Deep</option></select>
             <button class="voice-mic" id="voiceMic" type="button" aria-label="Start voice conversation" title="Start a hands-free voice conversation" disabled><svg aria-hidden="true"><use href="#icon-mic"></use></svg></button>
             <button class="voice-trigger" id="voiceToggle" type="button" aria-label="Start voice conversation" title="Start a hands-free voice conversation" disabled><svg aria-hidden="true"><use href="#icon-voice-wave"></use></svg></button>
@@ -1687,15 +1690,15 @@
         <div class="chutni-empty" id="chutniEmpty">
           <svg aria-hidden="true"><use href="#icon-chutni"></use></svg>
           <h2>No folder memory yet</h2>
-          <p>Chutni is durable local memory for folders you authorize. Nothing is scanned until you add one, and your files are only ever read — never moved or changed.</p>
+          <p>Save what Samosa has read so you can ask about a folder again. Your original files stay where they are.</p>
           <button type="button" class="chutni-primary" id="chutniAddEmpty">Add a folder</button>
         </div>
 
         <div class="chutni-pane" id="chutniPane" hidden>
           <div class="chutni-head">
             <div>
-              <h1>Chutni</h1>
-              <p id="chutniSubhead">Durable local memory for folders you authorize.</p>
+              <h1>Folder memory</h1>
+              <p id="chutniSubhead">Saved reading for your folders.</p>
             </div>
             <button type="button" class="chutni-primary" id="chutniAdd">Add a folder</button>
           </div>
@@ -1715,10 +1718,11 @@
           </div>
           <p class="chutni-note">Samosa reads these files to build a local index. It never moves, edits, or uploads them.</p>
           <div class="chutni-budget-field">
-            <label for="chutniSummaryBudget">Summary input budget (approx. tokens per file)</label>
-            <input type="number" id="chutniSummaryBudget" min="128" max="16384" step="128" value="3000" inputmode="numeric">
+            <label for="chutniExcludeNames">Additional folders to exclude</label>
+            <input type="text" id="chutniExcludeNames" placeholder="e.g. archive, vendor-copy" autocomplete="off">
           </div>
-          <p class="chutni-note">This caps the leading content used to make each short summary, regardless of file type. Full searchable extraction is separate.</p>
+          <p class="chutni-note">Comma-separated folder names. Matching is case-insensitive. Built-in safety and generated-folder exclusions cannot be removed.</p>
+          <p class="chutni-note">Memory uses an opening sample of about 3,000 characters per file. PDF pages and images are read as complete units; OCR stops once the target is reached.</p>
           <div class="chutni-preflight" id="chutniPreflight" hidden></div>
           <div class="chutni-panel-actions">
             <button type="button" class="chutni-secondary" id="chutniAddCancel">Cancel</button>
@@ -1741,8 +1745,7 @@
 
       <section class="jobs-view" id="jobsView" hidden>
         <div class="jobs-head">
-          <h1>Jobs</h1>
-          <p>Run work in the background</p>
+          <div><h1>Work with your files</h1><p>Find, ask, and organize.</p></div>
         </div>
         <form class="job-form" id="jobForm">
           <div class="job-field">
@@ -1751,16 +1754,28 @@
               <input id="jobFolder" placeholder="Choose a folder…" spellcheck="false" autocapitalize="off">
               <button type="button" class="chutni-secondary" id="jobBrowse">Browse…</button>
             </div>
-            <div class="job-memory-access" id="jobMemoryAccess"><strong>Jobs reads the folder directly.</strong> It does not use Chutni memory; it checks the current files on disk for this run.</div>
+            <details class="job-memory-access"><summary>Source details</summary><p>Current files are checked before use. Saved text can be reused when it still matches the file. No folder memory setup is required to start.</p></details>
+          </div>
+          <div class="job-field" hidden>
+            <label for="jobRecipe">Recipe</label>
+            <select id="jobRecipe"><option value="find">Find files about…</option><option value="folder_report">Folder report</option><option value="find_duplicates">Find duplicates</option><option value="sort_by_type">Sort by file type</option><option value="classify_inbox">Classify an inbox</option><option value="watch_folder">Watch a folder</option></select>
+          </div>
+          <div class="job-field" id="jobWatchRecipeField" hidden>
+            <label for="jobWatchRecipe">Recipe to run on added or changed files</label>
+            <select id="jobWatchRecipe"><option value="classify_inbox">Classify inbox filenames</option><option value="folder_report">Folder report</option></select>
           </div>
           <div class="job-field">
-            <label for="jobGoal">Task</label>
-            <textarea id="jobGoal" rows="3" placeholder="Find my cat's medical records"></textarea>
+            <label id="jobGoalLabel" for="jobGoal">What would you like to do?</label>
+            <textarea id="jobGoal" rows="3" placeholder="Find my cat Titli's medical records"></textarea>
           </div>
           <div class="row">
-            <button class="job-run" id="jobRun" type="submit">Run job</button>
+            <button class="job-run" id="jobRun" type="submit">Start</button>
           </div>
         </form>
+        <details class="job-advanced" id="jobHistory">
+          <summary>Recent work</summary>
+          <div id="jobHistoryList" class="job-activity"></div>
+        </details>
         <details class="job-advanced">
           <summary>Advanced</summary>
           <section class="job-form job-tools">
@@ -1778,14 +1793,31 @@
             </div>
           </section>
         </details>
-        <section class="job-progress" id="jobProgress" hidden>
-          <div class="job-section-label">Progress</div>
+        <details class="job-progress" id="jobProgress" hidden open>
+          <summary>Progress</summary>
           <div class="job-activity" id="jobActivity"></div>
-        </section>
+        </details>
         <section class="job-result" id="jobResult" hidden>
           <div class="job-section-label" id="jobResultLabel">Result</div>
           <div class="job-result-text" id="jobResultText"></div>
         </section>
+        <div class="job-followup" id="jobFollowup" hidden>
+          <small id="jobSelectionStatus" role="status" aria-live="polite"></small>
+          <div class="job-followup-row">
+            <button class="job-run" id="jobAskSelected" type="button">Ask about selected files</button>
+          </div>
+          <div class="job-followup-row">
+            <label>Folder <input id="jobDestination" placeholder="Folder name within this source"></label>
+            <label>Action <select id="jobOperation"><option value="copy">Copy</option><option value="move">Move</option></select></label>
+            <button class="chutni-secondary" id="jobOrganizeSelected" type="button">Preview Copy/Move</button>
+          </div>
+          <label for="jobFollowupInput">Refine this search</label>
+          <div class="job-followup-row">
+            <input id="jobFollowupInput" placeholder="Add a condition or ask to read more">
+            <button class="job-run" id="jobFollowupRun" type="button">Continue</button>
+            <button class="chutni-secondary" id="jobCheckSelected" type="button" hidden>Read a longer preview</button>
+          </div>
+        </div>
         <section class="job-review" id="jobReview" hidden>
           <div class="job-review-head"><strong id="jobReviewTitle">Review</strong><span id="jobReviewMeta"></span></div>
           <div class="job-review-list" id="jobReviewList"></div>
@@ -1841,11 +1873,11 @@
             <div class="preferences-card">
               <h4 id="settingsOcrLabel">OCR</h4>
               <p class="voice-mode-intro">Tesseract reads text from scans and images. PDFs also retain their digital text.</p>
-              <div class="ocr-card" style="padding:12px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--bg-2,#f9fafb);margin-top:8px;">
+              <div class="ocr-card" style="padding:12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--inset);margin-top:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                   <div>
                     <strong style="font-size:14px;color:var(--ink,#111827);">Tesseract OCR</strong>
-                    <div style="font-size:12px;color:var(--ink-2,#6b7280);margin-top:2px;">Built-in C implementation · Detector &amp; Recognizer</div>
+                    <div style="font-size:12px;color:var(--ink-2);margin-top:2px;">Reads scanned text locally.</div>
                   </div>
                   <span class="model-badge" id="settingsOcrBadge">Checking…</span>
                 </div>
@@ -2366,7 +2398,12 @@
         els.mismatchScrim.hidden = false; els.mismatchDialog.hidden = false;
         els.mismatchScrim.classList.add("show"); els.mismatchDialog.classList.add("open");
         mismatchOpener = opener || document.activeElement;
-        els.mismatchFork.focus();
+        const incompatibleFileModel = !!chat.workflow_job_id && backend.id === "molmo2-4b-mlx-q4-v1";
+        els.mismatchFork.disabled = incompatibleFileModel;
+        if (chat.workflow_job_id) els.mismatchDetail.textContent += incompatibleFileModel
+          ? " Select a compatible text model to continue this file task."
+          : " Continue with the active model in a fork that keeps your messages and an independent saved file selection.";
+        (incompatibleFileModel ? els.mismatchDialog : els.mismatchFork).focus();
       }
       function closeMismatchDialog() {
         els.mismatchScrim.classList.remove("show"); els.mismatchDialog.classList.remove("open");
@@ -2374,11 +2411,27 @@
         mismatchTarget = null;
         if (mismatchOpener && mismatchOpener.focus) mismatchOpener.focus();
       }
-      function confirmForkMismatch() {
-        if (!mismatchTarget) return;
-        const fork = forkChatFrom(mismatchTarget);
-        currentId = fork.id; saveState(); render(); closePanels();
-        closeMismatchDialog();
+      async function confirmForkMismatch() {
+        if (!mismatchTarget || els.mismatchFork.disabled) return;
+        const original = mismatchTarget, previousId = currentId, fork = forkChatFrom(original);
+        els.mismatchFork.disabled = true;
+        try {
+          if (original.workflow_job_id) {
+            const response = await authFetch(`/v1/conversations/${encodeURIComponent(fork.id)}/work`, {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ job_id: original.workflow_job_id, clone: true })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.job_id) throw new Error(data.error?.message || "Could not preserve the selected files");
+            fork.workflow_job_id = data.job_id;
+          }
+          if (mismatchTarget !== original) { saveState(); renderList(); return; }
+          currentId = fork.id; saveState(); render(); closePanels(); closeMismatchDialog();
+        } catch (error) {
+          currentId = previousId;
+          state.chats = state.chats.filter(chat => chat !== fork);
+          els.mismatchDetail.textContent = `${error.message || error}. The original conversation and selection are preserved.`;
+        } finally { els.mismatchFork.disabled = false; }
       }
       function showMigrationBanner() { els.migrationBanner.hidden = false; }
       function hideMigrationBanner() { els.migrationBanner.hidden = true; }
@@ -2847,6 +2900,10 @@
         return true;
       }
       function renderAssistantResponse(node, msg) {
+        // Older backends/saved replies can put reasoning tags in content.
+        // Keep them out of rendering, speech and future conversation turns.
+        if (String(msg.content || "").includes("<think>"))
+          msg.content = visibleModelContent(msg.content);
         const waiting = !!msg.streaming && !String(msg.content || "").trim() && !msg.error && !msg.visionRequired;
         if (waiting) {
           if (msg.fileActivity) { node.innerHTML = ""; return; }
@@ -2862,7 +2919,7 @@
             ? "This extended image or video task needs the native Molmo2 specialist. Samosa only accepts the pinned, locally verified Q4 package; it will not download the 19 GB FP32 checkpoint."
             : "This attachment requires visual understanding (diagrams, layout, or photos). Download the local auxiliary vision model (~1.01 GB) to continue.";
           node.innerHTML = `
-            <div class="vision-required-card" style="padding:14px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--bg-2,#f9fafb);margin-top:4px;">
+            <div class="vision-required-card" style="padding:14px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--inset);margin-top:4px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 6C9 6 3 12 3 16s6 10 13 10 13-6 13-10-6-10-13-10zm0 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
                 <strong style="font-size:14px;color:var(--ink,#111827);">${requiredTitle}</strong>
@@ -2975,14 +3032,16 @@
           button.onclick = async () => {
             const attachments = Array.isArray(msg.detailAttachments)
               ? msg.detailAttachments.filter(item => item?.id) : [];
-            if (!attachments.length || generating) return;
+            if ((!attachments.length && !activeChat()?.workflow_job_id) || generating) return;
             button.disabled = true;
             const original = String(msg.detailPrompt || "Describe the attached file.").trim();
             msg.canDeepen = false;
             saveState();
             updateAssistantNode(msg);
             await sendPrompt(
-              `Inspect the attached file in detail with the best local visual model available. Answer the original request using both exact text and visual evidence. Original request: ${original}`,
+              activeChat()?.workflow_job_id
+                ? `Read the selected documents carefully. Use OCR for scanned text. Answer the original request and state any reading gaps. Original request: ${original}`
+                : `Read the attached document carefully. Use OCR for scanned text. Answer the original request and state any reading gaps. Original request: ${original}`,
               null,
               null,
               { analysisDepth: "detailed", attachments, preserveComposer: true,
@@ -2997,8 +3056,8 @@
       // profile has one. escapeHTML() is mandatory here -- a name is
       // arbitrary user input and is never interpolated as markup (sec4.1).
       function welcomeHTML() {
-        const heading = profileName ? `Welcome, ${escapeHTML(profileName)}` : "Your model. Your machine.";
-        return `<div class="welcome"><div class="welcome-kicker"><span>Local intelligence</span><span>Private by default</span></div><div class="welcome-copy"><img src="/assets/samosa-chat.png" alt="Samosa Chat mascot"><h1>${heading}</h1><p>Think something through, make a plan, or get unstuck. Your conversations are stored on this computer.</p></div><div class="prompt-label">Four ways to begin</div><div class="prompts"><button class="prompt-chip" data-prompt="Explain something surprising about the night sky.">Explain something surprising about the night sky</button><button class="prompt-chip" data-prompt="Help me plan a focused workday with three priorities.">Plan a focused workday with three priorities</button><button class="prompt-chip" data-prompt="Write a clean Python function to merge overlapping intervals.">Write a useful Python function</button><button class="prompt-chip" data-prompt="Think through a tricky logic puzzle with me.">Work through a logic puzzle</button></div></div>`;
+        const heading = profileName ? `Hi, ${escapeHTML(profileName)}.` : "What can I help with?";
+        return `<div class="welcome"><div class="welcome-copy"><img src="/assets/samosa-chat.png" alt=""><h1>${heading}</h1><p>Ask a question, work with your files, or make a plan.</p></div><div class="prompts"><button class="prompt-chip" type="button" data-open-files><svg aria-hidden="true"><use href="#icon-folder"></use></svg>Find &amp; organize files</button><button class="prompt-chip" type="button" data-prompt="Help me plan a focused workday with three priorities.">Make a plan</button><button class="prompt-chip" type="button" data-prompt="Help me write something. Ask what I am writing and who it is for.">Write something</button></div></div>`;
       }
       function chooseModelHTML() {
         return `<div class="welcome"><button class="choose-model-button" type="button" data-choose-model>Choose a model</button></div>`;
@@ -3074,6 +3133,7 @@
           // that no model is available (or startup failed).
           els.messages.innerHTML = backend.ready || backend.loading || backend.installed ? welcomeHTML() : chooseModelHTML();
           els.messages.querySelectorAll("[data-prompt]").forEach(b => b.onclick = () => { els.prompt.value = b.dataset.prompt; resizePrompt(); els.prompt.focus(); });
+          els.messages.querySelector("[data-open-files]")?.addEventListener("click", () => showView("jobs"));
           els.messages.querySelector("[data-choose-model]")?.addEventListener("click", openModelSettings);
           return;
         }
@@ -4007,7 +4067,7 @@
           const hasStaticFile = attachments.some(a => a.kind === "image" || a.kind === "document") &&
             !attachments.some(a => a.kind === "video" || a.kind === "audio");
           const analysisDepth = requestOptions.analysisDepth ||
-            (hasStaticFile && backend.id !== "molmo2-4b-mlx-q4-v1" ? "fast" : null);
+            ((hasStaticFile || chat.workflow_job_id) && backend.id !== "molmo2-4b-mlx-q4-v1" ? "fast" : null);
           assistant={id:makeId(),role:"assistant",content:"",reasoning:"",streaming:true,
             activity:"",sources:[],fileActivity:null,analysisDepth,
             canDeepen:analysisDepth === "fast",
@@ -4267,7 +4327,7 @@
         const dispersionEase = targetDispersion > voiceDispersion ? .13 : .028;
         voiceDispersion += (targetDispersion - voiceDispersion) * dispersionEase;
         const styles = getComputedStyle(document.documentElement);
-        const accent = styles.getPropertyValue("--accent").trim() || "#b94012";
+        const accent = styles.getPropertyValue("--accent").trim() || "#1d4ed8";
         const highlight = styles.getPropertyValue("--highlight").trim() || "#f4c95d";
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
@@ -5167,6 +5227,29 @@
         } else message.sources.push(source);
         return true;
       }
+      const modelContentStreams = new WeakMap();
+      function filterModelContent(state, chunk, final = false) {
+        state.pending = (state.pending || "") + String(chunk || "");
+        let output = "";
+        while (state.pending) {
+          const lower = state.pending.toLowerCase();
+          const tag = state.thinking ? "</think>" : "<think>";
+          if (lower.startsWith(tag)) {
+            state.thinking = !state.thinking;
+            state.pending = state.pending.slice(tag.length);
+            continue;
+          }
+          // Hold partial markers across arbitrary SSE/token boundaries.
+          if (tag.startsWith(lower) && !final) break;
+          if (tag.startsWith(lower) && final) { state.pending = ""; break; }
+          if (!state.thinking) output += state.pending[0];
+          state.pending = state.pending.slice(1);
+        }
+        return output;
+      }
+      function visibleModelContent(text) {
+        return filterModelContent({ pending: "", thinking: false }, text, true);
+      }
       function consumeEvent(raw, assistant) {
         if (raw === "[DONE]") return true;
         let event; try { event=JSON.parse(raw); } catch (_) { return false; }
@@ -5215,7 +5298,13 @@
         }
         if (delta.web_source) mergeWebSource(assistant, delta.web_source);
         if (delta.content) {
-          assistant.content+=delta.content;
+          let contentState = modelContentStreams.get(assistant);
+          if (!contentState) {
+            contentState = { pending: "", thinking: false };
+            modelContentStreams.set(assistant, contentState);
+          }
+          const visible = filterModelContent(contentState, delta.content);
+          assistant.content+=visible;
           // File activity is transient pre-answer state, never part of the
           // reply. Drop it on the first real token so no filename/status strip
           // can remain above a completed answer.
@@ -5224,9 +5313,16 @@
             assistant._voiceTracedFirstContent = true;
             voiceTraceEvent("llm_first_content_delta", sendPrompt.voiceTurnId);
           }
-          if (sendPrompt.voiceRun) appendVoiceStream(sendPrompt.voiceRun, delta.content);
+          if (sendPrompt.voiceRun && visible) appendVoiceStream(sendPrompt.voiceRun, visible);
         }
         if (choice?.finish_reason) {
+          const contentState = modelContentStreams.get(assistant);
+          if (contentState) {
+            const tail = filterModelContent(contentState, "", true);
+            assistant.content += tail;
+            if (sendPrompt.voiceRun && tail) appendVoiceStream(sendPrompt.voiceRun, tail);
+            modelContentStreams.delete(assistant);
+          }
           assistant.fileActivity = null;
           const meta=event.samosa||{};
           const finishReason=String(choice.finish_reason);
@@ -6580,10 +6676,13 @@
       }
       // --- Jobs (Models -> Tools -> Jobs) --------------------------------
       const jobEls = {
-        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"),
-        browse: $("jobBrowse"), memoryAccess: $("jobMemoryAccess"),
+        view: $("jobsView"), form: $("jobForm"), folder: $("jobFolder"), goal: $("jobGoal"), recipe: $("jobRecipe"),
+        history: $("jobHistoryList"),
+        watchRecipe: $("jobWatchRecipe"), watchRecipeField: $("jobWatchRecipeField"),
+        browse: $("jobBrowse"),
         run: $("jobRun"), auto: $("jobAuto"), activity: $("jobActivity"), bar: $("jobBar"),
         progress: $("jobProgress"), result: $("jobResult"), resultLabel: $("jobResultLabel"), resultText: $("jobResultText"),
+        followup: $("jobFollowup"), followupInput: $("jobFollowupInput"), followupRun: $("jobFollowupRun"), organizeSelected: $("jobOrganizeSelected"), destination: $("jobDestination"), operation: $("jobOperation"), askSelected: $("jobAskSelected"), checkSelected: $("jobCheckSelected"), selectionStatus: $("jobSelectionStatus"),
         definition: $("jobDefinition"), previewExpanded: $("jobPreviewExpanded"),
         previewDef: $("jobPreviewDef"), runDef: $("jobRunDef"),
         barText: $("jobBarText"), barActions: $("jobBarActions"),
@@ -6591,6 +6690,8 @@
         composer: document.querySelector(".composer-wrap"), telemetry: document.querySelector(".telemetry"),
       };
       let jobRunning = false, lastJobId = null;
+      const decisionSelectedPaths = new Set();
+      let decisionSelectionSave = Promise.resolve(true);
       // T3.1 (docs/TASKS_UI_CHUTNI.md sec4.4): Chat/Chutni/Jobs live as sidebar
       // nav, not a topbar pill -- Chutni has no scope views yet (that's T3.3),
       // so its pane is an honest placeholder, not a fake feature.
@@ -7113,7 +7214,7 @@
       function showView(name) {
         const jobs = name === "jobs", chutni = name === "chutni", chat = !jobs && !chutni;
         $("shell").dataset.view = jobs ? "jobs" : (chutni ? "chutni" : "chat");
-        els.name.textContent = jobs ? "Jobs" : (chutni ? "Chutni" : (activeChat()?.title || "New conversation"));
+        els.name.textContent = jobs ? "Files" : (chutni ? "Folder memory" : (activeChat()?.title || "New conversation"));
         jobEls.view.hidden = !jobs;
         navEls.chutniView.hidden = !chutni;
         for (const el of [els.messages, els.jump, jobEls.composer])
@@ -7122,11 +7223,48 @@
           item.classList.toggle("active", on); item.setAttribute("aria-selected", String(on));
         }
         if (jobs) {
-          renderJobMemoryAccess();
+          refreshJobHistory();
           if (!jobEls.folder.value) jobEls.folder.focus();
         }
         if (chat) updateActiveMemoryContext();
         if (chutni) refreshChutni(); else stopChutniPolling();
+      }
+      async function refreshJobHistory() {
+        if (!jobEls.history) return;
+        jobEls.history.replaceChildren();
+        try {
+          const response = await authFetch("/v1/jobs/history");
+          if (!response.ok) throw new Error("history unavailable");
+          const data = await response.json();
+          for (const job of data.jobs || []) {
+            const row = document.createElement("div"); row.className = "job-history-row";
+            const title = document.createElement("strong"); title.textContent = job.goal || "Job";
+            const detail = document.createElement("span"); detail.textContent = `${job.folder || ""}${job.created ? ` · ${job.created}` : ""}`;
+            const view = document.createElement("button"); view.type = "button"; view.textContent = "View saved run";
+            view.addEventListener("click", async () => {
+              if (jobRunning) return;
+              try {
+                const replay = await authFetch(`/v1/jobs/history/events?job_id=${encodeURIComponent(job.job_id)}`);
+                const saved = await replay.json();
+                if (!replay.ok) throw new Error(saved.error?.message || "Could not load saved run");
+                if (!await decisionSelectionSave) throw new Error("Save the current selection with Continue before opening another run.");
+                clearJobOutput(); lastJobId = job.job_id;
+                const ctx = { folder: job.folder || "", jobId: job.job_id };
+                const events = saved.events || [];
+                const isDecision = events.some(event => /^(decision_|action_decision|folder_|file_)/.test(String(event.type || "")));
+                for (const event of events) (isDecision ? renderDecisionProgress : renderJobEvent)(event, ctx);
+                if (isDecision) {
+                  decisionProgressSeen.set(job.job_id, events.length);
+                  const resultResponse = await authFetch(`/v1/jobs/decision/result?job_id=${encodeURIComponent(job.job_id)}`);
+                  if (resultResponse.ok) renderDecisionShortlist(await resultResponse.json());
+                  else showJobResult("This run has progress, but no saved shortlist yet.");
+                } else if (!events.length) showJobResult("No saved progress or result events for this job.");
+              } catch (error) { showJobResult(error.message || String(error)); }
+            });
+            row.append(title, detail, view); jobEls.history.appendChild(row);
+          }
+          if (!(data.jobs || []).length) jobEls.history.textContent = "No saved jobs yet.";
+        } catch (_) { jobEls.history.textContent = "Saved job history is unavailable."; }
       }
 
       // =====================================================================
@@ -7142,7 +7280,7 @@
         list: $("chutniList"), error: $("chutniError"), subhead: $("chutniSubhead"),
         add: $("chutniAdd"), addEmpty: $("chutniAddEmpty"),
         addPanel: $("chutniAddPanel"), path: $("chutniPath"), browse: $("chutniBrowse"), preflight: $("chutniPreflight"),
-        summaryBudget: $("chutniSummaryBudget"),
+        excludeNames: $("chutniExcludeNames"),
         addNext: $("chutniAddNext"), addCancel: $("chutniAddCancel"),
         forgetPanel: $("chutniForgetPanel"), forgetWhat: $("chutniForgetWhat"),
         forgetConfirm: $("chutniForgetConfirm"), forgetCancel: $("chutniForgetCancel")
@@ -7150,6 +7288,7 @@
       let chutniScopes = [];        // full summaries, server truth
       let chutniPollTimer = null;
       let chutniPreflightId = null; // set once a preflight has been accepted
+      let chutniPolicyFingerprint = null;
       let chutniForgetId = null;
 
       function activeChutniScope() {
@@ -7159,6 +7298,15 @@
 
       function updateActiveMemoryContext() {
         const chat = activeChat();
+        if (chat?.workflow_job_id) {
+          els.chatMemoryTitle.textContent = "Selected files";
+          els.chatMemoryDetail.textContent = "Answers use the saved selection. Sources are checked again before each question.";
+          els.chatMemoryChange.textContent = "Review files";
+          els.chatMemoryContext.hidden = false;
+          els.prompt.placeholder = "Ask about the selected documents…";
+          return;
+        }
+        els.chatMemoryChange.textContent = "Change";
         const scopeId = chat?.directory_context?.scope_id;
         if (!scopeId) {
           els.chatMemoryContext.hidden = true;
@@ -7243,21 +7391,6 @@
         }
       }
 
-      function renderJobMemoryAccess() {
-        if (!jobEls.memoryAccess) return;
-        const folder = (jobEls.folder.value || "").trim();
-        const scope = folder && Array.isArray(chutniScopes)
-          ? chutniScopes.find(item => item.canonical_root === folder && item.state === "ready")
-          : null;
-        jobEls.memoryAccess.innerHTML = "";
-        const strong = document.createElement("strong");
-        strong.textContent = scope ? "Chutni memory exists, but this Job does not query it. " : "Jobs does not use Chutni memory. ";
-        jobEls.memoryAccess.appendChild(strong);
-        jobEls.memoryAccess.appendChild(document.createTextNode(
-          "It reads the current files in the selected folder directly for this run."
-        ));
-      }
-
       const KB = 1024;
       function bytesLabel(n) {
         if (typeof n !== "number" || !isFinite(n) || n < 0) return null;
@@ -7284,7 +7417,7 @@
           if (typeof s.enrichment_files_done === "number" &&
               typeof s.enrichment_files_total === "number" &&
               s.enrichment_files_total > 0)
-            facts.push(["Reader pass", `${s.enrichment_files_done} of ${s.enrichment_files_total}`]);
+            facts.push(["Files finished", `${s.enrichment_files_done} of ${s.enrichment_files_total}`]);
           return facts;
         }
         if (typeof s.files_indexed === "number") {
@@ -7309,6 +7442,11 @@
         return minutes < 60 ? `${minutes}m ${rest}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
       }
 
+      function chutniRateLabel(rate) {
+        if (!(rate > 0)) return "";
+        return rate < 0.01 ? "<0.01 files/s" : `${rate.toFixed(rate < 0.1 ? 2 : 1)} files/s`;
+      }
+
       function chutniMonitorFacts(s) {
         if (!(s.progress_started_ms > 0) && !(s.evidence_generation > 0)) return [];
         const facts = [];
@@ -7316,7 +7454,8 @@
           if (show && typeof value === "number" && isFinite(value))
             facts.push([label, `${value}`]);
         };
-        add("Plain-text files read", s.scan_text_artifacts);
+        const sampled = s.content_reading_policy === "opening_sample_v1";
+        add(sampled ? "Text samples read" : "Plain-text artifacts stored", sampled ? s.text_files_sampled : s.scan_text_artifacts);
         add("Unchanged files reused", s.scan_unchanged, s.scan_unchanged > 0);
         // Chutni 0.2 writes a {size_bytes, depth} record for every file, not
         // only for the ones it could not read, so this counter stopped meaning
@@ -7325,8 +7464,13 @@
         // The honest metadata-only number is the post-build "Metadata only"
         // fact above, which comes from counts.metadata_only_sources.
         add("File records written", s.scan_metadata_artifacts);
-        add("PDF pages read", s.pdf_pages_read);
-        add("OCR outputs", s.ocr_outputs);
+        add(sampled ? "PDF pages processed" : "Native PDF pages stored", sampled ? s.pdf_pages_processed : s.pdf_pages_read);
+        add(sampled ? "OCR units completed" : "OCR artifacts stored", sampled ? s.ocr_units_completed : s.ocr_outputs);
+        add("Characters collected", s.characters_read);
+        add("Files read in full", s.files_fully_read);
+        add("Files sampled", s.files_sampled);
+        add("Files with reading failures", s.files_read_failed);
+        add("Summaries unavailable", s.summary_failures, s.summary_failures > 0);
         add("Image captions", s.image_captions);
         add("Summaries", s.summaries_created);
         const errors = (s.scan_errors || 0) + (s.enrichment_failures || 0);
@@ -7365,7 +7509,7 @@
             } catch (_) { return { ...entry, state: entry.state || "unknown", unreadable: true }; }
           }));
           chutniScopes = full;
-          readyChutniMemoryCount = full.filter(scope => scope.state === "ready").length;
+          readyChutniMemoryCount = full.filter(scope => ["ready", "ready_partial"].includes(scope.state)).length;
           chutniEls.error.hidden = true;
         } catch (err) {
           // A library that cannot be read is its own state: say so and offer
@@ -7378,7 +7522,6 @@
         }
         renderChutni();
         updateActiveMemoryContext();
-        renderJobMemoryAccess();
         applyCapabilities();
         scheduleChutniPoll();
       }
@@ -7403,7 +7546,7 @@
                      why: "Samosa no longer has permission to read this folder. Grant access in System Settings › Privacy & Security, then re-check.",
                      actions: ["recheck", "forget"] };
           case "paused_user":
-            return { chip: "paused", tone: "busy", why: "You paused this build. It resumes exactly where it stopped.",
+            return { chip: "paused", tone: "busy", why: "Build paused. Resume checks the catalog again and reuses cached samples where available.",
                      actions: ["resume", "cancel"] };
           case "paused_chat":
             return { chip: "paused for chat", tone: "busy",
@@ -7438,6 +7581,18 @@
             return { chip: improving ? "ready · improving summaries" : "ready", tone: "ok",
                      why: warn.length ? null : null, actions: ["build", "forget"] };
           }
+          case "ready_partial": {
+            const failures = Number(s.scan_errors || 0) + Number(s.enrichment_failures || 0);
+            const limited = s.limiting_reason && !["none", "unspecified", "unknown"].includes(s.limiting_reason);
+            const why = failures > 0
+              ? `${failures} file${failures === 1 ? "" : "s"} could not be read completely. Readable files are available for questions. Check file access and supported formats, then refresh.`
+              : limited
+              ? `The safety limit “${s.limiting_reason}” stopped this build early. Readable files are available for questions. Refresh after adjusting the scope or limits.`
+              : "Some files have incomplete reading coverage. Readable files are available for questions. Check file access and supported formats, then refresh.";
+            return { chip: "partial index", tone: "warn",
+                     why,
+                     actions: ["ask", "build", "forget"] };
+          }
           default:
             return { chip: s.state || "unknown", tone: null, why: null, actions: ["build", "forget"] };
         }
@@ -7459,7 +7614,7 @@
         };
         if (CHUTNI_BUSY.has(s.state)) {
           add("Scanning files", s.scan_files_seen, null, phase === "scan" || !phase);
-          add("Reading file content", s.enrichment_files_done, s.enrichment_files_total, phase === "extract");
+          add(s.content_reading_policy === "opening_sample_v1" ? "Sampling and summarizing files" : "Processing files", s.enrichment_files_done, s.enrichment_files_total, phase === "extract");
           add("Indexing searchable content", s.chunks_indexed, s.chunks_total,
               phase === "tokenize");
           add("Publishing", null, null, phase === "publish");
@@ -7538,7 +7693,7 @@
           const elapsed = durationLabel(s.elapsed_seconds);
           if (elapsed) timingParts.push(elapsed);
           if (typeof s.files_per_second === "number" && s.files_per_second > 0)
-            timingParts.push(`${s.files_per_second.toFixed(1)} files/s`);
+            timingParts.push(chutniRateLabel(s.files_per_second));
           timing.textContent = timingParts.join(" · ");
           monitorHead.appendChild(monitorTitle); monitorHead.appendChild(timing);
           monitor.appendChild(monitorHead);
@@ -7550,47 +7705,64 @@
             cell.appendChild(dt); cell.appendChild(dd); grid.appendChild(cell);
           }
           monitor.appendChild(grid);
-          if (s.current_file) {
+          let activeFiles = Array.isArray(s.active_files) ? s.active_files : [];
+          if (!activeFiles.length && s.active_files_json) {
+            try { activeFiles = JSON.parse(s.active_files_json); } catch (_) { activeFiles = []; }
+          }
+          const liveActivity = CHUTNI_BUSY.has(s.state);
+          if (!liveActivity) activeFiles = [];
+          if (activeFiles.length && s.extraction_workers > 1) {
+            const workers = document.createElement("p"); workers.className = "chutni-activity";
+            workers.textContent = `${s.active_workers || activeFiles.length} active files · ${s.extraction_workers} native workers · ${s.summary_queue || 0} waiting for summary`;
+            monitor.appendChild(workers);
+            const scroll = document.createElement("div"); scroll.className = "job-table-scroll";
+            const table = document.createElement("table"); table.className = "job-file-table job-progress-table";
+            const head = document.createElement("thead"); const titles = document.createElement("tr");
+            for (const label of ["File", "Activity", "Page", "Characters"]) {
+              const th = document.createElement("th"); th.textContent = label; titles.appendChild(th);
+            }
+            head.appendChild(titles); table.appendChild(head);
+            const body = document.createElement("tbody");
+            for (const file of activeFiles) {
+              const row = document.createElement("tr");
+              for (const value of [file.file, file.activity, file.page > 0 ? `${file.page} / ${file.pages}` : "—", `${(file.characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()}`]) {
+                const td = document.createElement("td"); td.textContent = value; row.appendChild(td);
+              }
+              body.appendChild(row);
+            }
+            table.appendChild(body); scroll.appendChild(table); monitor.appendChild(scroll);
+          }
+          if (liveActivity && s.current_file && !(activeFiles.length && s.extraction_workers > 1)) {
             const current = document.createElement("p"); current.className = "chutni-current";
-            current.textContent = `Now: ${s.current_file}`;
+            current.textContent = `${s.content_reading_policy === "opening_sample_v1" ? "Current file" : "Last completed file"}: ${s.current_file}`;
             current.title = s.current_file;
             monitor.appendChild(current);
+          }
+          if (liveActivity && s.activity && !(activeFiles.length && s.extraction_workers > 1)) {
+            const activity = document.createElement("p"); activity.className = "chutni-activity";
+            activity.textContent = s.activity;
+            monitor.appendChild(activity);
+          }
+          if (liveActivity && s.current_file && s.content_reading_policy === "opening_sample_v1" && !(activeFiles.length && s.extraction_workers > 1)) {
+            const sample = document.createElement("p"); sample.className = "chutni-activity";
+            const page = s.current_page > 0 ? `Page ${s.current_page} of ${s.current_page_total} · ` : "";
+            sample.textContent = `${page}${(s.current_file_characters || 0).toLocaleString()} / ${(s.read_character_target || 3000).toLocaleString()} target characters`;
+            monitor.appendChild(sample);
           }
           li.appendChild(monitor);
         }
 
-        const summarySetting = document.createElement("section");
-        summarySetting.className = "chutni-summary-setting";
-        const summaryRow = document.createElement("div");
-        summaryRow.className = "chutni-summary-setting-row";
-        const summaryLabel = document.createElement("label");
-        summaryLabel.textContent = "Summary input budget (approx. tokens per file)";
-        const summaryInput = document.createElement("input");
-        summaryInput.type = "number";
-        summaryInput.min = "128";
-        summaryInput.max = "16384";
-        summaryInput.step = "128";
-        summaryInput.inputMode = "numeric";
-        summaryInput.value = String(s.summary_token_budget || 3000);
-        summaryLabel.appendChild(summaryInput);
-        const summarySave = document.createElement("button");
-        summarySave.type = "button";
-        summarySave.className = "chutni-secondary";
-        summarySave.textContent = "Save budget";
-        const saveBudget = () =>
-          chutniSetSummaryBudget(s, Number(summaryInput.value), summaryInput, summarySave);
-        summarySave.onclick = saveBudget;
-        summaryInput.onkeydown = event => {
-          if (event.key === "Enter") { event.preventDefault(); saveBudget(); }
-        };
-        summaryRow.appendChild(summaryLabel);
-        summaryRow.appendChild(summarySave);
-        const summaryHelp = document.createElement("p");
-        summaryHelp.textContent =
-          "Used on the next Refresh. It limits summary input only; searchable content extraction remains separate.";
-        summarySetting.appendChild(summaryRow);
-        summarySetting.appendChild(summaryHelp);
-        li.appendChild(summarySetting);
+        const readingPolicy = document.createElement("section");
+        readingPolicy.className = "chutni-summary-setting";
+        const policyTitle = document.createElement("strong");
+        const sampled = s.content_reading_policy === "opening_sample_v1";
+        policyTitle.textContent = sampled ? `Reading target: ${(s.read_character_target || 3000).toLocaleString()} characters per file` : "Reading policy";
+        const policyHelp = document.createElement("p");
+        policyHelp.textContent = sampled
+          ? `Opening samples are indexed and summarized. Complete pages may exceed the target. Sparse PDFs stop after ${s.sample_page_guard || 12} pages. Content beyond these samples is not verified by this build.`
+          : "This memory was started with the previous reading policy. New builds sample about 3,000 characters per file, keeping complete PDF pages and images.";
+        readingPolicy.append(policyTitle, policyHelp);
+        li.appendChild(readingPolicy);
 
         // Exclusions are shown because a user who cannot see why a file is
         // missing has no way to tell an exclusion from a bug.
@@ -7637,17 +7809,21 @@
         const chat = activeChat();
         const selectedHere = !!(chat && chat.directory_context &&
                                 chat.directory_context.scope_id === s.id);
-        if (s.state === "ready") {
+        if (s.state === "ready" || s.state === "ready_partial") {
           const ready = document.createElement("p");
           ready.className = "chutni-why";
-          ready.textContent = selectedHere
+          ready.textContent = s.state === "ready_partial"
+            ? selectedHere
+              ? "This memory is active in the current conversation. Questions may miss unreadable or unprocessed files."
+              : "Memory is available with incomplete coverage. Questions may miss unreadable or unprocessed files."
+            : selectedHere
             ? "This memory is active in the current conversation. Ask questions in Chat."
             : "Memory is ready. Ask questions about these files in Chat.";
           li.appendChild(ready);
         }
-        const actions = p.actions.slice();
-        if (s.state === "ready") {
-          actions.unshift("ask");
+        const actions = [...new Set(p.actions)];
+        if (s.state === "ready" || s.state === "ready_partial") {
+          if (!actions.includes("ask")) actions.unshift("ask");
           if (selectedHere) actions.splice(1, 0, "unuse");
         }
         const LABELS = { ask: selectedHere ? "Ask another question" : "Ask about this folder",
@@ -7669,43 +7845,12 @@
         return li;
       }
 
-      async function chutniSetSummaryBudget(scope, tokenBudget, input, button) {
-        if (!Number.isInteger(tokenBudget) || tokenBudget < 128 || tokenBudget > 16384) {
-          input.setCustomValidity("Enter a whole number from 128 to 16384.");
-          input.reportValidity();
-          return;
-        }
-        input.setCustomValidity("");
-        input.disabled = true;
-        button.disabled = true;
-        button.textContent = "Saving…";
-        try {
-          const response = await authFetch(
-            `/v1/chutni/scopes/${encodeURIComponent(scope.id)}/summary-budget`,
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token_budget: tokenBudget }) });
-          const body = await response.json().catch(() => null);
-          if (!response.ok)
-            throw new Error((body && body.error && body.error.message) ||
-                            "The summary budget could not be saved.");
-          scope.summary_token_budget = tokenBudget;
-          chutniEls.error.hidden = true;
-          button.textContent = "Saved";
-          setTimeout(() => {
-            if (button.isConnected) button.textContent = "Save budget";
-          }, 1200);
-        } catch (err) {
-          chutniEls.error.hidden = false;
-          chutniEls.error.textContent = err.message || "The summary budget could not be saved.";
-          button.textContent = "Save budget";
-        } finally {
-          input.disabled = false;
-          button.disabled = false;
-        }
-      }
-
       async function chutniAction(scope, action) {
         if (action === "ask" || action === "unuse") {
+          if (action === "ask" && activeChat()?.workflow_job_id) {
+            await newChat();
+            if (activeChat()?.workflow_job_id) return;
+          }
           const chat = ensureChat();
           chat.directory_context = action === "ask" ? { scope_id: scope.id } : null;
           chat.updated = Date.now();
@@ -7753,7 +7898,8 @@
       }
       function closeChutniPanels() {
         chutniEls.addPanel.hidden = true; chutniEls.forgetPanel.hidden = true;
-        chutniPreflightId = null; chutniForgetId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null; chutniForgetId = null;
+        chutniPreflightRequiresRebuild = false;
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
         chutniEls.addNext.textContent = "Check folder";
         renderChutni();
@@ -7761,10 +7907,10 @@
 
       function openChutniAdd() {
         chutniEls.path.value = "";
-        chutniEls.summaryBudget.value = "3000";
-        chutniEls.summaryBudget.setCustomValidity("");
+        chutniEls.excludeNames.value = "";
         chutniEls.preflight.hidden = true; chutniEls.preflight.innerHTML = "";
-        chutniPreflightId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null;
+        chutniPreflightRequiresRebuild = false;
         chutniEls.addNext.textContent = "Check folder";
         chutniEls.pane.hidden = true; chutniEls.empty.hidden = true;
         chutniEls.addPanel.hidden = false;
@@ -7776,26 +7922,29 @@
       async function chutniAddNext() {
         const path = (chutniEls.path.value || "").trim();
         if (!path) { chutniEls.path.focus(); return; }
-        const summaryTokenBudget = Number(chutniEls.summaryBudget.value);
-        if (!Number.isInteger(summaryTokenBudget) ||
-            summaryTokenBudget < 128 || summaryTokenBudget > 16384) {
-          chutniEls.summaryBudget.setCustomValidity(
-            "Enter a whole number from 128 to 16384.");
-          chutniEls.summaryBudget.reportValidity();
+        const userExclusions = [...new Set(chutniEls.excludeNames.value.split(",")
+          .map(name => name.trim().toLowerCase()).filter(Boolean))];
+        if (userExclusions.length > 16 || userExclusions.some(name =>
+            name.length > 64 || !/^[a-z0-9][a-z0-9._ -]*$/.test(name))) {
+          chutniEls.excludeNames.setCustomValidity(
+            "Use up to 16 folder names, each 1–64 letters, numbers, spaces, dots, underscores, or hyphens.");
+          chutniEls.excludeNames.reportValidity();
           return;
         }
-        chutniEls.summaryBudget.setCustomValidity("");
+        chutniEls.excludeNames.setCustomValidity("");
         if (!chutniPreflightId) {
           try {
             const r = await authFetch("/v1/chutni/preflight", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ kind: "folder", roots: [{ path }] })
+              body: JSON.stringify({ kind: "folder", roots: [{ path }], user_exclusions: userExclusions })
             });
             const body = await r.json().catch(() => null);
             if (!r.ok) throw new Error((body && body.error && body.error.message) || "That folder could not be checked.");
             renderPreflight(body);
             chutniPreflightId = body.preflight_id || "accepted";
-            chutniEls.addNext.textContent = "Build memory";
+            chutniPolicyFingerprint = body.policy_fingerprint || null;
+            chutniEls.addNext.textContent = body.rebuild_required
+              ? "Rebuild existing memory" : "Build memory";
           } catch (err) {
             chutniEls.preflight.hidden = false;
             chutniEls.preflight.textContent = err.message;
@@ -7812,8 +7961,9 @@
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               preflight_id: chutniPreflightId,
+              policy_fingerprint: chutniPolicyFingerprint,
               display_name: baseName(path),
-              summary_token_budget: summaryTokenBudget,
+              confirm_rebuild: !!(chutniPreflightId && chutniPreflightRequiresRebuild),
               client_request_id: `scope-${Date.now()}`
             })
           });
@@ -7827,9 +7977,21 @@
         }
       }
 
+      chutniEls.excludeNames.addEventListener("input", () => {
+        if (chutniPreflightId) {
+          chutniPreflightId = null; chutniPolicyFingerprint = null;
+          chutniPreflightRequiresRebuild = false;
+          chutniEls.addNext.textContent = "Check folder";
+          chutniEls.preflight.hidden = true;
+        }
+      });
+
+      let chutniPreflightRequiresRebuild = false;
       function renderPreflight(pf) {
+        chutniPreflightRequiresRebuild = !!pf.rebuild_required;
         const est = pf.estimate || {}, pol = pf.effective_policy || {};
         const chutni = pf.chutni || {};
+        const inventory = pf.inventory || {};
         const dl = document.createElement("dl");
         const row = (k, v) => {
           if (v === null || v === undefined) return;
@@ -7840,7 +8002,11 @@
         // "About" is honest for a sampled estimate; an exact-looking number
         // from a sample would be fake precision.
         const approx = est.sampled ? "About " : "";
-        if (typeof est.files === "number") row("Files", `${approx}${est.files}`);
+        if (typeof inventory.regular_files === "number") row("Files found", inventory.regular_files);
+        else if (typeof est.files === "number") row("Files", `${approx}${est.files}`);
+        if (typeof inventory.regular_file_bytes === "number") row("File size found", bytesLabel(inventory.regular_file_bytes));
+        if (typeof inventory.skipped === "number") row("Skipped", inventory.skipped);
+        if (inventory.partial) row("Inventory", `Partial: stopped at ${inventory.limiting_reason || "a safety limit"}`);
         row("Source size", bytesLabel(est.source_bytes));
         const need = bytesLabel(est.peak_additional_disk_bytes), free = bytesLabel(est.available_disk_bytes);
         if (need) row("Extra disk needed", free ? `${need} (${free} free)` : need);
@@ -7853,6 +8019,12 @@
         if (excl.length) row("Excluded", excl.join(", "));
         chutniEls.preflight.innerHTML = "";
         chutniEls.preflight.appendChild(dl);
+        if (pf.rebuild_required) {
+          const warning = document.createElement("p");
+          warning.className = "chutni-why bad";
+          warning.textContent = "This memory was built with an older or different inventory policy. Rebuilding removes its current indexed passages, applies the policy shown above, and scans the folder again.";
+          chutniEls.preflight.appendChild(warning);
+        }
         const roots = pf.roots || [];
         const bad = roots.filter(r => r.readable === false || r.connected === false);
         for (const b of bad) {
@@ -7867,7 +8039,12 @@
           p.textContent = typeof w === "string" ? w : (w.message || JSON.stringify(w));
           chutniEls.preflight.appendChild(p);
         }
-        if (bad.length) { chutniEls.addNext.textContent = "Check folder"; chutniPreflightId = null; }
+        if (inventory.partial) {
+          const p = document.createElement("p"); p.className = "chutni-why";
+          p.textContent = "This preview reached a safety limit. Review the partial counts before building memory.";
+          chutniEls.preflight.appendChild(p);
+        }
+        if (bad.length) { chutniEls.addNext.textContent = "Check folder"; chutniPreflightId = null; chutniPolicyFingerprint = null; chutniPreflightRequiresRebuild = false; }
         chutniEls.preflight.hidden = false;
       }
 
@@ -7876,6 +8053,7 @@
       const shortType = mt => ({ "image/jpeg": "images", "image/png": "images", "application/pdf": "PDFs", "text/plain": "text files", "application/octet-stream": "other" }[mt] || mt);
       function addSub(line, text) { const s = document.createElement("div"); s.className = "sub"; s.textContent = text; line.querySelector(".body").appendChild(s); return s; }
       function jobLine(dot, title, cls) {
+        if (jobEls.progress.hidden) jobEls.progress.open = true;
         jobEls.progress.hidden = false;
         const line = document.createElement("div");
         line.className = "job-line" + (cls ? " " + cls : "");
@@ -7886,6 +8064,9 @@
         return line;
       }
       function clearJobOutput() {
+        decisionLiveRows.clear();
+        decisionSelectedPaths.clear();
+        jobEls.checkSelected.hidden = true;
         clearReview();
         jobEls.activity.innerHTML = "";
         jobEls.progress.hidden = true;
@@ -7893,6 +8074,7 @@
         jobEls.result.classList.remove("error");
         jobEls.resultText.textContent = "";
         jobEls.bar.hidden = true;
+        jobEls.followup.hidden = true;
       }
       function showJobResult(text, error = false) {
         jobEls.resultLabel.textContent = error ? "Could not finish" : "Result";
@@ -7969,10 +8151,9 @@
       function renderMoveReview(evt, ctx) {
         clearReview();
         if (!evt.moves || !evt.moves.length) return;
-        jobEls.reviewTitle.textContent = "Review moves";
+        jobEls.reviewTitle.textContent = evt.operation === "copy" ? "Review copies" : "Review moves";
         jobEls.reviewMeta.textContent = `${evt.moves.length} proposed`;
-        evt.moves.slice(0, 25).forEach(m => addReviewRow("From", relTo(m.src, ctx.folder), "To", relTo(m.dst, ctx.folder)));
-        if (evt.moves.length > 25) addReviewRow("More", `${evt.moves.length - 25} additional moves`, "See", "job log");
+        evt.moves.forEach(m => addReviewRow("From", relTo(m.src, ctx.folder), "To", relTo(m.dst, ctx.folder)));
         jobEls.review.hidden = false;
       }
       function renderExtractionReview(evt, ctx) {
@@ -8058,6 +8239,13 @@
 
       function renderJobEvent(evt, ctx) {
         switch (evt.type) {
+          case "inventory_started":
+            ctx.jobId = evt.job_id;
+            jobLine("▦", "Inspecting the folder within the report safety limits"); break;
+          case "interrupted":
+            showJobResult(evt.message || "This run was interrupted and is not resumable. Run it again.", true); break;
+          case "failed":
+            showJobResult(evt.message || "The job could not be completed.", true); break;
           case "decode_intent":
             ctx.jobId = evt.job_id;
             jobLine("●", "Understanding your request", "step-done"); break;
@@ -8068,6 +8256,43 @@
             for (const [kind, count] of Object.entries(evt.by_type || {})) grouped[shortType(kind)] = (grouped[shortType(kind)] || 0) + count;
             const parts = Object.entries(grouped).map(([kind, count]) => `${count} ${kind}`).join(", ");
             const l = jobLine("▦", `${evt.total} files found`, "step-done"); if (parts) addSub(l, parts); break;
+          }
+          case "report": {
+            const ageLabels = ["under 30 days", "30–365 days", "over a year", "unknown/future"];
+            const sizeLabels = ["up to 1 MB", "1–10 MB", "over 10 MB"];
+            const types = Object.entries(evt.by_type || {}).map(([ext, n]) => `${n} ${ext}`).join(", ") || "No files found";
+            let md = `### Folder report\n\n- **${evt.total} files** · ${bytesLabel(evt.bytes)}\n- **File types:** ${types}\n`;
+            md += `- **Age:** ${(evt.age || []).map((n, i) => `${n} ${ageLabels[i]}`).join(", ")}\n`;
+            md += `- **Size:** ${(evt.size_bands || []).map((n, i) => `${n} ${sizeLabels[i]}`).join(", ")}\n`;
+            md += `- **Duplicate candidates:** ${evt.duplicate_candidates || 0} files in ${evt.duplicate_size_groups || 0} same-size groups (size only; contents not compared)\n`;
+            const skips = Object.entries(evt.skip_reasons || {});
+            if (skips.length) md += `- **Skipped:** ${skips.map(([reason, n]) => `${n} ${reason}`).join(", ")}\n`;
+            if (evt.partial) md += `\n**Partial report:** stopped at ${evt.limiting_reason || "a safety limit"}.\n`;
+            showJobResult(md); break;
+          }
+          case "duplicates": {
+            let md = `### Duplicate files\n\n${evt.duplicate_groups || 0} verified duplicate group${evt.duplicate_groups === 1 ? "" : "s"}. `
+              + `${evt.candidate_files || 0} same-size candidates checked; ${evt.hashed_files || 0} files hashed.`;
+            if (evt.groups && evt.groups.length) {
+              md += "\n\n";
+              evt.groups.forEach(group => {
+                md += `- **${bytesLabel(group.size)}** · SHA-256 \`${group.sha256}\`\n`;
+                group.files.forEach(path => { md += `  - \`${path}\`\n`; });
+              });
+            }
+            if (evt.skipped) md += `\n${evt.skipped} entries skipped by inventory policy.\n`;
+            if (evt.deferred_files) md += `\n${evt.deferred_files} candidates deferred by a hashing safety limit.\n`;
+            if (evt.partial) md += `\n**Partial duplicate search:** stopped at ${evt.limiting_reason || "a safety limit"}.\n`;
+            showJobResult(md); break;
+          }
+          case "inbox_classification": {
+            const names = ["billing", "medical", "work", "personal", "review"];
+            let md = "### Inbox classification (filename clues only)\n\n";
+            (evt.items || []).forEach(item => { md += `- **${item.category}** · \`${item.path}\` — ${item.signal}\n`; });
+            md += "\n" + names.map((name, i) => `${evt.counts?.[i] || 0} ${name}`).join(" · ");
+            if (evt.skipped) md += `\n\n${evt.skipped} entries skipped by inventory policy.`;
+            if (evt.partial) md += `\n\n**Partial classification:** stopped at ${evt.limiting_reason || "a safety limit"}.`;
+            showJobResult(md); break;
           }
           case "indexing":
             ctx.indexLine = jobLine("·", `Checking ${evt.total} filenames`); break;
@@ -8093,7 +8318,11 @@
           }
           case "await_apply":
             ctx.jobId = evt.job_id; lastJobId = evt.job_id;
-            showBar(`${evt.moves} file${evt.moves === 1 ? "" : "s"} ready to move.`, [["Apply moves", "apply", () => applyJob(evt.job_id, ctx)]]);
+            ctx.awaitingApply = true;
+            if (evt.plan_id) ctx.planId = evt.plan_id;
+            if (evt.selection_job_id) ctx.selectionJobId = evt.selection_job_id;
+            if (evt.operation) ctx.operation = evt.operation;
+            showBar(`${evt.moves} file${evt.moves === 1 ? "" : "s"} ready to ${ctx.operation || "move"}.`, [[ctx.operation === "copy" ? "Approve copy" : "Apply moves", "apply", () => applyJob(evt.job_id, ctx)]]);
             break;
           case "await_user": {
             ctx.jobId = evt.job_id; lastJobId = evt.job_id;
@@ -8120,9 +8349,18 @@
             showBar(detail, [["Continue", "apply", () => continueJob(evt.job_id, ctx)]]);
             break;
           }
+          case "action_started":
+            ctx.jobId = evt.job_id;
+            showBar("The current file finishes safely before stopping.", [["Stop after current file", "undo", async () => {
+              const response = await authFetch("/v1/jobs/action/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: evt.job_id, run_id: evt.run_id }) });
+              const result = await response.json();
+              if (!response.ok) { showJobResult(result.error?.message || "Could not stop this action", true); return; }
+              showBar("Stopping after the current file…", []);
+            }]]);
+            break;
           case "action": {
             if (!ctx.progress) ctx.progress = jobLine("⟳", "");
-            const verb = evt.op === "revert" ? "Restoring" : "Moving";
+            const verb = evt.op === "revert" ? "Undoing" : evt.op === "copy" ? "Copying" : "Moving";
             ctx.progress.querySelector(".title").textContent = `${verb} ${evt.i}/${evt.n}: ${baseName(evt.src)}` + (evt.ok ? "" : ` — skipped (${evt.reason})`);
             break;
           }
@@ -8149,7 +8387,12 @@
           case "applied":
             if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
             ctx.moved = evt.applied > 0;
-            jobLine("●", `Moved ${evt.applied} file${evt.applied === 1 ? "" : "s"}` + (evt.skipped ? `, skipped ${evt.skipped}` : ""), "step-done");
+            ctx.skipped = (Number(evt.skipped) || 0) + (Number(evt.pending) || 0);
+            jobLine("●", `${ctx.operation === "copy" ? "Copied" : "Moved"} ${evt.applied} file${evt.applied === 1 ? "" : "s"}` + (evt.skipped ? `, skipped ${evt.skipped}` : ""), "step-done");
+            break;
+          case "undone":
+            ctx.undone = !evt.skipped && !evt.pending;
+            jobLine("●", `Undid ${evt.undone} files${evt.skipped ? ` · ${evt.skipped} conflicts preserved` : ""}`, "step-done");
             break;
           case "reverted":
             if (ctx.progress) { ctx.progress.querySelector(".dot").textContent = "●"; ctx.progress.classList.add("step-done"); ctx.progress = null; }
@@ -8228,6 +8471,13 @@
             break;
           }
           case "done": {
+            if (evt.stopped) {
+              showJobResult(evt.summary || "Stopped. Completed files are preserved.");
+              const actions = [[evt.undo ? "Resume undo" : "Resume plan", "apply", () => evt.undo ? undoJob(ctx.jobId, ctx) : applyJob(ctx.jobId, ctx)]];
+              if (!evt.undo && ctx.moved) actions.push(["Undo completed files", "undo", () => undoJob(ctx.jobId, ctx)]);
+              showBar(`${evt.pending} operations remain. Completed files are preserved.`, actions);
+              break;
+            }
             const summary = (evt.summary || "").trim();
             if (!summary || summary === "Find job completed without a summary.") {
               if (jobEls.result.hidden) showJobResult("This job did not produce an answer. Run it again.", true);
@@ -8236,8 +8486,13 @@
             }
             if (jobEls.result.hidden) showJobResult(summary);
             loadReviewQueue(ctx.jobId || lastJobId, ctx);
-            if (ctx.moved && !ctx.undone) showBar("Done — files were moved.", [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]]);
-            else jobEls.bar.hidden = true;
+            if (ctx.moved && !ctx.undone) {
+              const actions = [["Undo", "undo", () => undoJob(ctx.jobId || lastJobId, ctx)]];
+              if (ctx.skipped && ctx.planId) actions.unshift(["Resume plan", "apply", () => applyJob(ctx.jobId, ctx)]);
+              showBar(ctx.skipped ? `${ctx.skipped} operations need attention. Completed files are preserved.` :
+                ctx.operation === "copy" ? "Done — files were copied." : "Done — files were moved.", actions);
+            }
+            else if (!ctx.awaitingApply) jobEls.bar.hidden = true;
             break;
           }
           case "error": showJobResult(evt.message, true); break;
@@ -8260,6 +8515,82 @@
             try { renderJobEvent(JSON.parse(data), ctx); } catch (_) {}
           }
         }
+      }
+
+      const decisionLiveRows = new Map(), decisionProgressSeen = new Map();
+      function decisionProgressTable() {
+        let table = jobEls.activity.querySelector(".job-progress-table");
+        if (table) return table;
+        jobEls.progress.hidden = false; jobEls.progress.open = true;
+        const stage = document.createElement("p"); stage.className = "job-progress-stage"; stage.setAttribute("role", "status");
+        const count = document.createElement("p"); count.className = "job-progress-count";
+        const wrap = document.createElement("div"); wrap.className = "job-table-scroll";
+        table = document.createElement("table"); table.className = "job-file-table job-progress-table";
+        table.setAttribute("aria-label", "File search progress");
+        const head = document.createElement("thead"), header = document.createElement("tr");
+        for (const label of ["File", "Status", "Preview read"]) {
+          const cell = document.createElement("th"); cell.scope = "col"; cell.textContent = label; header.appendChild(cell);
+        }
+        head.appendChild(header); table.append(head, document.createElement("tbody")); wrap.appendChild(table);
+        jobEls.activity.append(stage, count, wrap); return table;
+      }
+      function renderDecisionProgress(evt) {
+        const type = String(evt?.type || "");
+        const table = decisionProgressTable();
+        const stage = jobEls.activity.querySelector(".job-progress-stage");
+        if (type === "search_intent") { stage.textContent = `Looking for: ${evt.target}`; return; }
+        if (type === "decision_stage" || type === "decision_error") {
+          stage.textContent = evt.message || "Working";
+          stage.classList.toggle("step-error", type === "decision_error"); return;
+        }
+        if (type === "action_decision") {
+          stage.textContent = { refine: "Filtering checked files", deepen: "Reading longer previews", continue: "Checking remaining files", show_all: "Showing checked files" }[evt.action] || evt.action; return;
+        }
+        if (type.startsWith("folder_")) {
+          stage.textContent = type === "folder_checking" ? `Checking subfolder: ${evt.path}` : `Subfolder ${evt.path}: ${evt.search ? "included" : "excluded"}`; return;
+        }
+        if (!type.startsWith("file_") || typeof evt.path !== "string") return;
+        let row = decisionLiveRows.get(evt.path);
+        if (!row) {
+          row = document.createElement("tr"); row.dataset.decision = type === "file_pending" ? "pending" : "checking";
+          for (const value of [evt.path, type === "file_pending" ? "Pending" : "Checking", "—"]) {
+            const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
+          }
+          table.children[1].appendChild(row); decisionLiveRows.set(evt.path, row);
+        }
+        if (type === "file_reading" || type === "file_checking") {
+          row.dataset.decision = "checking"; row.children[1].textContent = evt.message || "Checking";
+        } else if (type === "file_decision") {
+          row.dataset.decision = evt.decision;
+          row.children[1].textContent = evt.decision === "match" ? "Likely match" : evt.decision === "needs_check" ? "Needs review" : "No match in preview";
+          row.children[2].textContent = `${Number(evt.excerpt_chars_actual) || 0} characters`;
+        }
+        const rows = [...decisionLiveRows.values()];
+        const matches = rows.filter(row => row.dataset.decision === "match").length;
+        const reviews = rows.filter(row => row.dataset.decision === "needs_check").length;
+        const checking = rows.filter(row => row.dataset.decision === "checking").length;
+        const pending = rows.filter(row => row.dataset.decision === "pending").length;
+        jobEls.activity.querySelector(".job-progress-count").textContent = `${rows.length - checking - pending} checked of ${rows.length} listed · ${matches} likely matches · ${reviews} need review · ${pending} pending · ${checking} checking`;
+      }
+      async function trackDecisionProgress(jobId, requestPromise) {
+        let seen = decisionProgressSeen.get(jobId) || 0, polling = false;
+        async function poll() {
+          if (polling) return;
+          polling = true;
+          try {
+            const response = await authFetch(`/v1/jobs/history/events?job_id=${encodeURIComponent(jobId)}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const events = Array.isArray(data.events) ? data.events : [];
+            for (const event of events.slice(seen)) renderDecisionProgress(event);
+            seen = events.length;
+            decisionProgressSeen.set(jobId, seen);
+          } catch (_) { /* The final job response still reports any failure. */ }
+          finally { polling = false; }
+        }
+        const timer = setInterval(poll, 500);
+        try { return await requestPromise; }
+        finally { clearInterval(timer); await poll(); }
       }
 
       function parseJobDefinition() {
@@ -8298,28 +8629,377 @@
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, { folder }); }
         finally { jobRunning = false; }
       }
+      function saveDecisionSelection() {
+        const jobId = lastJobId, paths = [...decisionSelectedPaths];
+        jobEls.selectionStatus.textContent = "Saving selection…";
+        // Serialize changes so an older checkbox request cannot overwrite a
+        // later choice. Capture the job ID before the user opens another run.
+        decisionSelectionSave = decisionSelectionSave.then(async () => {
+          try {
+            const response = await authFetch("/v1/jobs/selection", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ job_id: jobId, selected_paths: paths })
+            });
+            if (!response.ok) throw new Error("Could not save selection");
+            if (lastJobId === jobId) jobEls.selectionStatus.textContent = `${paths.length} selected · saved`;
+            return true;
+          } catch (_) {
+            if (lastJobId === jobId) jobEls.selectionStatus.textContent = "Selection not saved. Continue to retry.";
+            return false;
+          }
+        });
+        return decisionSelectionSave;
+      }
+      function renderDecisionShortlist(data) {
+        const result = data.result;
+        lastJobId = data.job_id;
+        decisionSelectedPaths.clear();
+        for (const path of data.selected_paths || []) decisionSelectedPaths.add(path);
+        jobEls.selectionStatus.textContent = `${decisionSelectedPaths.size} selected · saved`;
+        if (result.goal) jobEls.goal.value = result.goal;
+        if (result.folder) jobEls.folder.value = result.folder;
+        if (result.schema_version !== 7) {
+          lastJobId = null;
+          jobEls.resultLabel.textContent = "Old result";
+          jobEls.result.classList.remove("error");
+          jobEls.resultText.textContent = "This saved search uses an older format. Run the request again to select and use its files.";
+          jobEls.result.hidden = false;
+          jobEls.followup.hidden = true;
+          jobEls.progress.open = false;
+          return;
+        }
+        const checked = Number(result.checked_files) || 0;
+        const skippedFolders = Number(result.skipped_folders) || 0;
+        if (result.folder_decisions?.length) jobLine("✓", `Considered ${result.folder_decisions.length} folders; skipped ${skippedFolders}`, "step-done");
+        jobLine("✓", `Checked ${checked} file${checked === 1 ? "" : "s"} against the interpreted search`, "step-done");
+        jobEls.progress.open = false;
+        jobEls.resultLabel.textContent = "Search results";
+        jobEls.result.classList.remove("error");
+        jobEls.resultText.replaceChildren();
+        const intro = document.createElement("p");
+        intro.textContent = result.folders_pending
+          ? `${checked} direct files checked. Subfolders are still pending. Classification uses bounded previews; a missing match does not rule out content beyond those previews.`
+          : `${checked} of ${result.total_files} candidate files checked. Classification uses bounded previews; a missing match does not rule out content beyond those previews.`;
+        jobEls.resultText.appendChild(intro);
+        if (result.search_intent?.target) {
+          const target = document.createElement("p"); target.textContent = `Looking for: ${result.search_intent.target}`; intro.appendChild(target);
+        }
+        if (data.folder_memory) {
+          const memory = data.folder_memory;
+          const scope = memory.scope;
+          const note = document.createElement("p");
+          note.textContent = scope?.state === "ready" && !scope.enrichment_failures && !scope.metadata_only_files
+            ? `Folder memory saved: ${scope.content_readable_files || 0} readable files. Selected-file questions keep your selected scope.`
+            : scope?.state === "ready_partial" || scope?.state === "ready"
+              ? `Folder memory saved with incomplete coverage: ${scope.content_readable_files || 0} readable files; some files remain uninspected or unreadable.`
+              : memory.handoff.message;
+          jobEls.resultText.appendChild(note);
+        }
+        if (result.asked && result.focus_paths?.length) {
+          const asked = document.createElement("p");
+          asked.textContent = `Question for ${result.focus_paths.length} selected file${result.focus_paths.length === 1 ? "" : "s"}: ${result.asked}`;
+          jobEls.resultText.appendChild(asked);
+        }
+        const items = Array.isArray(result.items) ? result.items : [];
+        const currentPaths = new Set(items.map(item => item.path));
+        for (const path of decisionSelectedPaths) if (!currentPaths.has(path)) decisionSelectedPaths.delete(path);
+        const likelyCount = items.filter(item => item.decision === "match").length;
+        const reviewCount = items.filter(item => item.needs_check).length;
+        const panel = document.createElement("details"); panel.className = "job-decision-results"; panel.open = true;
+        const heading = document.createElement("summary");
+        heading.textContent = `Files · ${likelyCount} likely matches · ${reviewCount} need review · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
+        panel.appendChild(heading);
+        const tools = document.createElement("div"); tools.className = "job-decision-tools";
+        const search = document.createElement("input"); search.type = "search"; search.placeholder = "Search filenames or excerpts"; search.setAttribute("aria-label", "Search checked files");
+        const filter = document.createElement("select"); filter.setAttribute("aria-label", "Filter files");
+        for (const [value, label] of [["all", "All checked files"], ["likely", "Likely matches"], ["needs_check", "Needs more evidence"], ["rejected", "No match in preview"], ["selected", "Selected files"]]) {
+          const option = document.createElement("option"); option.value = value; option.textContent = label; filter.appendChild(option);
+        }
+        if (result.selected_action === "show_all") filter.value = "all";
+        else if (decisionSelectedPaths.size) filter.value = "selected";
+        else filter.value = "all";
+        const sort = document.createElement("select"); sort.setAttribute("aria-label", "Sort files");
+        for (const [value, label] of [["score_desc", "Best matches first"], ["name_asc", "Name: A to Z"]]) {
+          const option = document.createElement("option"); option.value = value; option.textContent = label; sort.appendChild(option);
+        }
+        const selectVisible = document.createElement("button"); selectVisible.type = "button"; selectVisible.textContent = "Select visible";
+        const clearSelected = document.createElement("button"); clearSelected.type = "button"; clearSelected.textContent = "Clear selection";
+        tools.append(search, filter, sort, selectVisible, clearSelected); panel.appendChild(tools);
+        const count = document.createElement("small"); panel.appendChild(count);
+        const wrap = document.createElement("div"); wrap.className = "job-table-scroll";
+        const table = document.createElement("table"); table.className = "job-file-table"; table.setAttribute("aria-label", "Checked files");
+        const head = document.createElement("thead"), header = document.createElement("tr");
+        for (const label of ["Select", "File and evidence", "Status", "Preview read"]) {
+          const cell = document.createElement("th"); cell.scope = "col"; cell.textContent = label; header.appendChild(cell);
+        }
+        const list = document.createElement("tbody"); list.className = "job-decision-list";
+        head.appendChild(header); table.append(head, list); wrap.appendChild(table); panel.appendChild(wrap);
+        const updateSelection = () => {
+          heading.textContent = `Files · ${likelyCount} likely matches · ${reviewCount} need review · ${items.length} checked · ${decisionSelectedPaths.size} selected`;
+          jobEls.checkSelected.hidden = decisionSelectedPaths.size === 0;
+          jobEls.checkSelected.textContent = `Read longer previews of ${decisionSelectedPaths.size} selected`;
+        };
+        let visible = [];
+        const renderRows = () => {
+          const term = search.value.trim().toLocaleLowerCase();
+          visible = items.filter(item => {
+            const category = item.needs_check ? "needs_check" : item.decision === "match" ? "likely" : "rejected";
+            const matches = !term || `${item.path} ${item.excerpt || ""}`.toLocaleLowerCase().includes(term);
+            return matches && (filter.value === "all" || filter.value === category || (filter.value === "selected" && decisionSelectedPaths.has(item.path)));
+          });
+          visible.sort((a, b) => sort.value === "name_asc" ? a.path.localeCompare(b.path)
+            : Number(b.score) - Number(a.score) || a.path.localeCompare(b.path));
+          count.textContent = `Showing ${visible.length} of ${items.length} checked files. Select up to 50 for a follow-up.`;
+          list.replaceChildren();
+          if (!visible.length) {
+            const emptyRow = document.createElement("tr"), empty = document.createElement("td"); empty.colSpan = 4;
+            empty.textContent = filter.value === "likely" ? "No likely matches in the previews checked so far. Choose ‘All checked files’ to inspect every decision." : "No files match these filters.";
+            emptyRow.appendChild(empty); list.appendChild(emptyRow);
+          }
+          for (const item of visible) {
+            const row = document.createElement("tr"); row.className = "job-decision-row";
+            const box = document.createElement("input"); box.type = "checkbox"; box.checked = decisionSelectedPaths.has(item.path); box.setAttribute("aria-label", `Select ${item.path}`);
+            box.onchange = () => {
+              if (box.checked && decisionSelectedPaths.size >= 50) { box.checked = false; count.textContent = "Select up to 50 files for a follow-up."; return; }
+              if (box.checked) decisionSelectedPaths.add(item.path); else decisionSelectedPaths.delete(item.path);
+              updateSelection(); saveDecisionSelection();
+              if (filter.value === "selected") {
+                const index = visible.indexOf(item);
+                const hadFocus = document.activeElement === box;
+                renderRows();
+                if (hadFocus) {
+                  const next = list.children[Math.min(index, visible.length - 1)];
+                  (visible.length ? next.children[0].children[0] : filter).focus();
+                }
+              }
+            };
+            const selectCell = document.createElement("td"); selectCell.appendChild(box);
+            const content = document.createElement("td"); content.className = "job-decision-row-content";
+            const name = document.createElement("strong"); name.textContent = item.path; content.appendChild(name);
+            const status = document.createElement("td");
+            status.textContent = item.source === "changed_source" ? "File changed; rerun" : item.source === "unreadable" ? "Unavailable"
+              : item.needs_check ? "Needs review" : item.decision === "match" ? "Likely match" : "No match in preview";
+            const read = document.createElement("td"); read.textContent = `${item.excerpt?.length || 0} characters`;
+            const detail = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "View evidence";
+            const preview = document.createElement("p"); preview.className = "job-decision-preview";
+            preview.textContent = item.excerpt || "No readable preview. This file cannot be confirmed as a match.";
+            const rationale = document.createElement("p"); rationale.textContent = item.reason === "different_document_identifier" ? "The form identifier differs from the requested one."
+              : item.reason === "identifier_and_role" ? "The document identifier and document type match the request; any extra conditions were checked separately."
+              : item.reason === "literal_evidence_judgement" ? "An additional check supported the requested document type using this preview."
+              : item.reason === "ambiguous_preview" ? "The preview did not support a clear decision. Read more evidence or inspect the file."
+              : "Classification uses the evidence shown here. This preview does not cover the complete document.";
+            detail.append(summary, preview, rationale); content.appendChild(detail);
+            row.append(selectCell, content, status, read); list.appendChild(row);
+          }
+          updateSelection();
+        };
+        search.oninput = () => { if (search.value.trim()) filter.value = "all"; renderRows(); };
+        filter.onchange = renderRows; sort.onchange = renderRows;
+        selectVisible.onclick = () => { for (const item of visible) { if (decisionSelectedPaths.size >= 50) break; decisionSelectedPaths.add(item.path); } renderRows(); saveDecisionSelection(); };
+        clearSelected.onclick = () => { decisionSelectedPaths.clear(); renderRows(); saveDecisionSelection(); };
+        renderRows(); jobEls.resultText.appendChild(panel);
+        if (result.needs_check_count) {
+          const note = document.createElement("p");
+          note.textContent = `${result.needs_check_count} file${result.needs_check_count === 1 ? "" : "s"} need more evidence or a clearer decision. They remain visible for review.`;
+          jobEls.resultText.appendChild(note);
+        }
+        if (result.remaining_files || result.folders_pending || result.partial) {
+          const note = document.createElement("p");
+          note.textContent = result.remaining_files
+            ? `${result.remaining_files} files remain unchecked. Ask Jobs to check the remaining files.`
+            : result.folders_pending ? "Subfolders remain unchecked. Ask Jobs to continue into them." : `The inventory was partial (${result.limiting_reason || "limit reached"}).`;
+          jobEls.resultText.appendChild(note);
+        }
+        if (data.actions?.length) {
+          const actions = document.createElement("details"), title = document.createElement("summary");
+          title.textContent = "Saved file actions"; actions.appendChild(title);
+          for (const action of data.actions) {
+            const button = document.createElement("button"); button.type = "button";
+            button.textContent = `Review ${action.operation} of ${action.count} files`;
+            button.onclick = () => reviewSavedOrganization(action.job_id); actions.appendChild(button);
+          }
+          jobEls.resultText.appendChild(actions);
+        }
+        jobEls.result.hidden = false;
+        jobEls.followup.hidden = false;
+      }
+      async function reviewSavedOrganization(jobId) {
+        if (jobRunning) return;
+        try {
+          const response = await authFetch(`/v1/jobs/selection/plan?job_id=${encodeURIComponent(jobId)}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error?.message || "The saved plan is unavailable");
+          const ctx = { folder: jobEls.folder.value, jobId, selectionJobId: data.selection_job_id, planId: data.plan_id, operation: data.operation };
+          renderMoveReview(data, ctx);
+          showBar(`${data.operation === "copy" ? "Copy" : "Move"} ${data.moves.length} files — saved plan`,
+            [["Approve or resume", "apply", () => applyJob(jobId, ctx)], ["Undo", "undo", () => undoJob(jobId, ctx)]]);
+        } catch (error) { jobEls.selectionStatus.textContent = error.message || String(error); }
+      }
+      async function previewSelectedOrganization() {
+        if (jobRunning || !lastJobId) return;
+        const parent = lastJobId, destination = jobEls.destination.value.trim();
+        if (!decisionSelectedPaths.size || !destination) {
+          jobEls.selectionStatus.textContent = "Select files and enter a folder name before previewing."; return;
+        }
+        jobRunning = true;
+        try {
+          if (!await saveDecisionSelection()) throw new Error("Save the selection before previewing.");
+          const response = await authFetch("/v1/jobs/selection/plan", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_id: parent, destination, operation: jobEls.operation.value || "copy" })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error?.message || "Could not preview this operation");
+          const ctx = { folder: jobEls.folder.value, jobId: data.job_id, selectionJobId: parent, planId: data.plan_id, operation: data.operation };
+          renderMoveReview(data, ctx);
+          const verb = data.operation === "move" ? "Move" : "Copy";
+          showBar(`${verb} ${data.moves.length} selected files into ${destination}. Original subfolders are preserved.`,
+            [[`Approve ${verb.toLowerCase()}`, "apply", () => applyJob(data.job_id, ctx)]]);
+        } catch (error) { jobEls.selectionStatus.textContent = error.message || String(error); }
+        finally { jobRunning = false; lastJobId = parent; }
+      }
+      async function openFileConversation() {
+        if (jobRunning || generating || !lastJobId) return;
+        if (!decisionSelectedPaths.size) { jobEls.selectionStatus.textContent = "Select files before asking."; return; }
+        jobRunning = true;
+        try {
+          if (!await saveDecisionSelection()) throw new Error("Selection could not be saved. Retry to continue.");
+          const savedResponse = await authFetch(`/v1/jobs/decision/result?job_id=${encodeURIComponent(lastJobId)}`);
+          const saved = await savedResponse.json();
+          if (!savedResponse.ok) throw new Error(saved.error?.message || "The saved task is unavailable");
+          let chat = state.chats.find(item => item.workflow_job_id === lastJobId || (saved.conversation_id && item.id === saved.conversation_id));
+          if (!chat) {
+            const now = new Date().toISOString();
+            chat = { id: saved.conversation_id || makeId(), title: titleFor(jobEls.goal.value), created: Date.now(), updated: Date.now(), messages: [],
+              schema_version: 2, model_id: null, model_version: null, model_binding_source: "unknown",
+              created_at: now, updated_at: now, directory_context: null, documents: [], workflow_job_id: lastJobId };
+            const response = await authFetch(`/v1/conversations/${encodeURIComponent(chat.id)}/work`, {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: lastJobId })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error?.message || "Could not open the file conversation");
+            state.chats.unshift(chat);
+          }
+          chat.workflow_job_id = lastJobId;
+          currentId = chat.id; saveState(); render(); showView("chat");
+          if (jobEls.followupInput.value.trim()) els.prompt.value = jobEls.followupInput.value.trim();
+          els.prompt.focus();
+        } catch (error) { jobEls.selectionStatus.textContent = error.message || String(error); }
+        finally { jobRunning = false; }
+      }
+      async function reopenConversationFiles() {
+        const jobId = activeChat()?.workflow_job_id;
+        if (!jobId || jobRunning || generating) return;
+        jobRunning = true;
+        try {
+          if (!await decisionSelectionSave) throw new Error("Save the current selection before reopening this task.");
+          const response = await authFetch(`/v1/jobs/decision/result?job_id=${encodeURIComponent(jobId)}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error?.message || "The saved file task is unavailable");
+          clearJobOutput(); renderDecisionShortlist(data); showView("jobs");
+        } catch (error) { els.closure.textContent = error.message || String(error); }
+        finally { jobRunning = false; }
+      }
+      async function runDecisionFollowup(actionOverride = null) {
+        if (jobRunning || !lastJobId) return;
+        const selectedPaths = [...decisionSelectedPaths];
+        const followup = jobEls.followupInput.value.trim() || (selectedPaths.length ? "Check the selected files more thoroughly" : "Check the remaining files");
+        jobRunning = true; jobEls.followupRun.disabled = true; jobEls.followupRun.textContent = "Working";
+        decisionLiveRows.clear(); jobEls.activity.replaceChildren(); jobEls.progress.hidden = true;
+        jobEls.result.hidden = true; jobEls.followup.hidden = true;
+        try {
+          if (!await saveDecisionSelection()) throw new Error("Selection could not be saved. Your choices are still here; try Continue again.");
+          const request = authFetch("/v1/jobs/decision/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: lastJobId, followup, ...(actionOverride ? { action: actionOverride } : {}) }) });
+          const response = await trackDecisionProgress(lastJobId, request);
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error?.message || "Could not continue the job");
+          renderDecisionShortlist(data); jobEls.followupInput.value = "";
+        } catch (error) {
+          jobEls.selectionStatus.textContent = error.message || String(error);
+          jobEls.result.hidden = false; jobEls.followup.hidden = false;
+        }
+        finally { jobRunning = false; jobEls.followupRun.disabled = false; jobEls.followupRun.textContent = "Continue"; }
+      }
       async function runJob() {
         if (jobRunning) return;
         const folder = jobEls.folder.value.trim(), goal = jobEls.goal.value.trim();
-        if (!folder || !goal) { jobEls.folder.focus(); return; }
+        if (!folder || !goal) { (folder ? jobEls.goal : jobEls.folder).focus(); return; }
         jobRunning = true; jobEls.run.disabled = true; jobEls.run.textContent = "Running"; clearJobOutput();
         const ctx = { folder };
-        try { await streamJob("/v1/jobs/run", { goal, folder, mode: jobEls.auto.checked ? "execute" : "confirm" }, ctx); }
+        try {
+          const routingLine = jobLine("·", "Choosing an action for your request", "");
+          const routeResponse = await authFetch("/v1/jobs/decision/route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal }) });
+          const route = await routeResponse.json();
+          if (!routeResponse.ok || !route.ok) throw new Error(route.error?.message || "Could not choose an action. Try rephrasing your request.");
+          const recipe = { find: "find", duplicates: "find_duplicates", report: "folder_report", sort: "sort_by_type", classify: "classify_inbox", watch: "watch_folder" }[route.action];
+          if (!recipe) throw new Error("This action is not supported. Try rephrasing your request.");
+          const actionName = { find: "Find matching files", duplicates: "Find duplicate files", report: "Summarize the folder", sort: "Group files by type", classify: "Label files by type", watch: "Watch for folder changes" }[route.action] || route.action;
+          routingLine.querySelector(".dot").textContent = "✓";
+          routingLine.querySelector(".title").textContent = actionName;
+          routingLine.classList.add("step-done");
+          if (recipe === "find") {
+            const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const request = authFetch("/v1/jobs/decision/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal, folder, job_id: jobId }) });
+            const response = await trackDecisionProgress(jobId, request);
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error?.message || "Could not build the shortlist");
+            renderDecisionShortlist(data);
+            return;
+          }
+          if (recipe === "watch_folder") {
+            const storageKey = `samosa.watch.${folder}`;
+            const existingWatch = localStorage.getItem(storageKey);
+            if (existingWatch) {
+              showBar("Folder watch is active.", [["Stop watching", "undo", async () => {
+                const stopped = await authFetch("/v1/jobs/schedule/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: existingWatch }) });
+                const result = await stopped.json(); if (!stopped.ok || !result.ok) throw new Error(result.error?.message || "Could not stop folder watch");
+                localStorage.removeItem(storageKey); jobEls.bar.hidden = true; showJobResult("Folder watch stopped.");
+              }]]);
+              showJobResult("This folder already has an active watch. Stop it here before starting another.");
+              return;
+            }
+            const jobId = `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const job = { job_id: jobId, input: { folder }, watch_recipe: jobEls.watchRecipe.value, resources: { run_on_battery: true } };
+            const response = await authFetch("/v1/jobs/schedule/arm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, window_start: "00:00", window_end: "00:00", missed_policy: "run_next_start", keep_awake: false }) });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error?.message || "Could not start folder watch");
+            localStorage.setItem(storageKey, jobId);
+            jobLine("●", `Watching every five minutes · ${jobEls.watchRecipe.value === "classify_inbox" ? "classify inbox filenames" : "folder report"}`, "step-done");
+            showJobResult("The current folder state is saved as the baseline. Only added or changed files will run through the selected read-only recipe.");
+            showBar("Folder watch is active.", [["Stop watching", "undo", async () => {
+              const stopped = await authFetch("/v1/jobs/schedule/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId }) });
+              const result = await stopped.json(); if (!stopped.ok || !result.ok) throw new Error(result.error?.message || "Could not stop folder watch");
+              localStorage.removeItem(storageKey); jobEls.bar.hidden = true; showJobResult("Folder watch stopped.");
+            }]]);
+          } else {
+            await streamJob("/v1/jobs/run", { recipe, folder }, ctx);
+          }
+        }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
-        finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Run job"; }
+        finally { jobRunning = false; jobEls.run.disabled = false; jobEls.run.textContent = "Start"; refreshJobHistory(); }
+      }
+      async function refreshSelectedTaskAfterAction(ctx) {
+        if (!ctx.selectionJobId) return;
+        lastJobId = ctx.selectionJobId;
+        try {
+          const response = await authFetch(`/v1/jobs/decision/result?job_id=${encodeURIComponent(ctx.selectionJobId)}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error?.message || "Could not refresh file references");
+          renderDecisionShortlist(data);
+        } catch (error) { jobEls.selectionStatus.textContent = `File action finished. ${error.message || error}. Reopen or resume this saved action to recover.`; }
       }
       async function applyJob(jobId, ctx) {
         if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
-        try { await streamJob("/v1/jobs/apply", { job_id: jobId }, ctx); }
+        try { await streamJob("/v1/jobs/apply", { job_id: jobId, ...(ctx.planId ? { plan_id: ctx.planId } : {}) }, ctx); }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, ctx); }
-        finally { jobRunning = false; }
+        finally { jobRunning = false; await refreshSelectedTaskAfterAction(ctx); }
       }
       async function undoJob(jobId, ctx) {
         if (jobRunning) return; jobRunning = true; jobEls.bar.hidden = true;
-        const uctx = { folder: ctx.folder, jobId };
+        const uctx = { folder: ctx.folder, jobId, operation: ctx.operation, selectionJobId: ctx.selectionJobId };
         try { await streamJob("/v1/jobs/undo", { job_id: jobId }, uctx); }
         catch (e) { renderJobEvent({ type: "error", message: String(e) }, uctx); }
-        finally { jobRunning = false; }
+        finally { jobRunning = false; await refreshSelectedTaskAfterAction(ctx); }
       }
       async function answerJob(jobId, answer, ctx) {
         if (jobRunning || !answer.trim()) return; jobRunning = true; jobEls.bar.hidden = true;
@@ -8387,7 +9067,7 @@
         if (!chooser.entries.length) {
           const empty = document.createElement("div");
           empty.className = "chooser-empty"; empty.textContent = "No subfolders here.";
-          chooserEls.list.appendChild(empty);
+          chooserEls.emptyRow.appendChild(empty); list.appendChild(emptyRow);
           chooserEls.list.removeAttribute("aria-activedescendant");
           return;
         }
@@ -8598,7 +9278,7 @@
       els.migrationExport.onclick=exportMigrationRecovery; els.migrationReset.onclick=resetMigrationRecovery;
       if (migrationRecoveryRaw) showMigrationBanner();
       navEls.chat.onclick=()=>showView("chat"); navEls.chutni.onclick=()=>showView("chutni"); navEls.jobs.onclick=()=>showView("jobs");
-      els.chatMemoryChange.onclick=()=>showView("chutni");
+      els.chatMemoryChange.onclick=()=>activeChat()?.workflow_job_id ? reopenConversationFiles() : showView("chutni");
       // T3.3 wiring.
       chutniEls.add.onclick = openChutniAdd;
       chutniEls.addEmpty.onclick = openChutniAdd;
@@ -8610,21 +9290,21 @@
         initialPath: chutniEls.path.value.trim() || undefined,
         onSelect: path => {
           chutniEls.path.value = path;
-          chutniPreflightId = null;
+          chutniPreflightId = null; chutniPolicyFingerprint = null;
+          chutniPreflightRequiresRebuild = false;
           chutniEls.addNext.textContent = "Check folder";
           chutniEls.preflight.hidden = true;
           chutniEls.addNext.focus();
         }
       });
       chutniEls.path.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); chutniAddNext(); } };
-      chutniEls.summaryBudget.oninput = () =>
-        chutniEls.summaryBudget.setCustomValidity("");
       // A new path invalidates an accepted preflight: the estimate on screen
       // describes the old folder, and building from it would scan something
       // the user never confirmed.
       chutniEls.path.oninput = () => {
         if (!chutniPreflightId) return;
-        chutniPreflightId = null;
+        chutniPreflightId = null; chutniPolicyFingerprint = null;
+        chutniPreflightRequiresRebuild = false;
         chutniEls.addNext.textContent = "Check folder";
         chutniEls.preflight.hidden = true;
       };
@@ -8634,11 +9314,9 @@
         initialPath: jobEls.folder.value.trim() || undefined,
         onSelect: path => {
           jobEls.folder.value = path;
-          renderJobMemoryAccess();
           jobEls.goal.focus();
         }
       });
-      jobEls.folder.oninput = renderJobMemoryAccess;
       chutniEls.forgetCancel.onclick = closeChutniPanels;
       chutniEls.forgetConfirm.onclick = async () => {
         const id = chutniForgetId;
@@ -8666,6 +9344,11 @@
         await refreshChutni();
       };
       jobEls.form.onsubmit=e=>{e.preventDefault();runJob();};
+      jobEls.organizeSelected.onclick = () => previewSelectedOrganization();
+      jobEls.askSelected.onclick = () => openFileConversation();
+      jobEls.followupRun.onclick = () => runDecisionFollowup();
+      jobEls.checkSelected.onclick = () => runDecisionFollowup("deepen");
+      jobEls.followupInput.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); runDecisionFollowup(); } };
       jobEls.goal.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();runJob();}};
       jobEls.previewDef.onclick=previewDefinitionJob;
       jobEls.runDef.onclick=runDefinitionJob;

@@ -1,0 +1,75 @@
+[
+  {
+    "stage": "asking",
+    "question": "what is this folder about? summarize it for me in about 2 sentences."
+  },
+  {
+    "question": "what is this folder about? summarize it for me in about 2 sentences.",
+    "answer": "This folder contains synthetic test data for a chatbot extractor, organized into subdirectories (01, 02, misc) with numbered notes and reports for \"Person X,\" plus appointment records for \"Person X,\" \"Person Y,\" and \"Person Xavier,\" along with a scanned certificate PDF and a large fixture PDF used to test OCR fallback thresholds.",
+    "error": "",
+    "seconds": 67.373
+  },
+  {
+    "stage": "asking",
+    "question": "does Person X have any files in this folder?"
+  },
+  {
+    "question": "does Person X have any files in this folder?",
+    "answer": "Yes, Person X has files in this folder. There are 12 supported matches:\n\nText files (10):\n\n01/note-3.txt — Person X document 4 (X-104)\n01/note-6.txt — Person X document 7 (X-107)\n01/report.txt — Person X document 1 (X-101)\n02/note-4.txt — Person X document 5 (X-105)\n02/note-7.txt — Person X document 8 (X-108)\n02/report.txt — Person X document 2 (X-102)\nPerson X appointment.txt — Person X appointment (WX-482)\nmisc/note-2.txt — Person X document 3 (X-103)\nmisc/note-5.txt — Person X document 6 (X-106)\nmisc/note-8.txt — Person X document 9 (X-109)\n\nPDF files (2):\n\nPerson X records.pdf — 40 pages\nPerson X scan.pdf — 1 page (SC-913)\n\nThere is also one uncertain association: Person Xavier record-7.txt, which references \"Person Xavier\" rather than \"Person X.\"",
+    "error": "",
+    "seconds": 153.534
+  },
+  {
+    "stage": "asking",
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?"
+  },
+  {
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+    "answer": "The \"Person X\" file is Person X records.pdf, a PDF with 40 pages.\n\nThere are 12 files related to Person X in total:\n\nPDF files (2):\n\nPerson X records.pdf (40 pages)\nPerson X scan.pdf (1 page)\n\nText files (10):\n\n01/note-3.txt (Person X document 4, ref X-104)\n01/note-6.txt (Person X document 7, ref X-107)\n01/report.txt (Person X document 1, ref X-101)\n02/note-4.txt (Person X document 5, ref X-105)\n02/note-7.txt (Person X document 8, ref X-108)\n02/report.txt (Person X document 2, ref X-102)\nPerson X appointment.txt (appointment date 17 May 2031, ref WX-482)\nmisc/note-2.txt (Person X document 3, ref X-103)\nmisc/note-5.txt (Person X document 6, ref X-106)\nmisc/note-8.txt (Person X document 9, ref X-109)\n\nNote: Person Xavier record-7.txt is listed as an uncertain match (not a confirmed Person X file).",
+    "error": "",
+    "seconds": 182.816
+  },
+  {
+    "stage": "asking",
+    "question": "How many pages does Person X records.pdf have?"
+  },
+  {
+    "question": "How many pages does Person X records.pdf have?",
+    "answer": "Person X records.pdf has 40 pages.",
+    "error": "",
+    "seconds": 82.516
+  },
+  {
+    "stage": "asking",
+    "question": "List every file about Person X, including nested folders, and give the exact count."
+  },
+  {
+    "question": "List every file about Person X, including nested folders, and give the exact count.",
+    "answer": "12 files about Person X (10 text files, 2 PDF files).\n\nFiles:\n\n01/note-3.txt\n01/note-6.txt\n01/report.txt\n02/note-4.txt\n02/note-7.txt\n02/report.txt\nPerson X appointment.txt\nPerson X records.pdf\nPerson X scan.pdf\nmisc/note-2.txt\nmisc/note-5.txt\nmisc/note-8.txt\n\nUncertain association (not included in count):\n\nPerson Xavier record-7.txt — contains \"Person Xavier\" (not \"Person X\"), marked as uncertain.",
+    "error": "",
+    "seconds": 135.414
+  },
+  {
+    "stage": "asking",
+    "question": "How many files are indexed in this folder?"
+  },
+  {
+    "question": "How many files are indexed in this folder?",
+    "answer": "There are 20 files indexed in this folder.\n\n2 PDF files: Person X records.pdf (40 pages), Person X scan.pdf (1 page)\n18 text files (.txt):\n\n- 01/note-3.txt, 01/note-6.txt, 01/report.txt\n\n- 02/note-4.txt, 02/note-7.txt, 02/report.txt\n\n- Person X appointment.txt\n\n- Person Xavier record-7.txt\n\n- Person Y record-0.txt through Person Y record-6.txt (7 files)\n\n- misc/note-2.txt, misc/note-5.txt, misc/note-8.txt",
+    "error": "",
+    "seconds": 87.835
+  },
+  {
+    "stage": "asking",
+    "question": "What is the code on page 37 in Person X records.pdf? Cite the page."
+  },
+  {
+    "question": "What is the code on page 37 in Person X records.pdf? Cite the page.",
+    "answer": "The code on page 37 of Person X records.pdf is QZ-731.\n\nCited from: [PDF page 37] of Person X records.pdf.",
+    "error": "",
+    "seconds": 71.771
+  },
+  {
+    "stage": "passed"
+  }
+]

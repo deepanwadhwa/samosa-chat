@@ -58,6 +58,64 @@ static int check_capture_terminator(Gateway *gateway) {
     return ok;
 }
 
+static int check_reader_deadline(Gateway *gateway, const char *self, int closed_stdout) {
+    int status = 0;
+    char *argv[] = {(char *)self, closed_stdout ? "hang-closed" : "hang-open", NULL};
+    atomic_store(&gateway->document_cancel_requested, 0);
+    setenv("SAMOSA_DOCUMENT_CHILD_TIMEOUT_SECONDS", "1", 1);
+    long long started = monotonic_millis();
+    char *output = run_capture_document(gateway, self, argv, 64, &status);
+    long long elapsed = monotonic_millis() - started;
+    unsetenv("SAMOSA_DOCUMENT_CHILD_TIMEOUT_SECONDS");
+    int ok = !output && status == SIGXCPU && elapsed >= 900 && elapsed < 2500 &&
+             !gateway->document_child_pid && !atomic_load(&gateway->document_cancel_requested);
+    free(output);
+    return ok;
+}
+
+static int check_document_read_scope(Gateway *gateway) {
+    ConversationDocuments bound = {0};
+    bound.len = 1;
+    path_copy(bound.items[0].source_kind, sizeof(bound.items[0].source_kind), "document");
+    path_copy(bound.items[0].filename, sizeof(bound.items[0].filename), "synthetic.pdf");
+    for (int depth = ATTACHMENT_ANALYSIS_AUTO; depth <= ATTACHMENT_ANALYSIS_DETAILED; depth++) {
+        VisionRoutePlan plan = {0};
+        vision_route_plan(gateway, "Read this document carefully. OCR it. Understand the text.",
+                          NULL, &bound, depth, &plan);
+        int ok = plan.read_all_text && plan.read_text && !plan.inspect_visual && !plan.extended_visual;
+        vision_route_plan_free(&plan);
+        if (!ok) return 0;
+    }
+    VisionRoutePlan focused = {0};
+    vision_route_plan(gateway, "Read page 37 carefully", NULL, &bound, ATTACHMENT_ANALYSIS_DETAILED, &focused);
+    int ok = !focused.read_all_text && !focused.inspect_visual;
+    vision_route_plan_free(&focused);
+    return ok;
+}
+
+static int check_missing_pdf_page(Gateway *gateway, const char *self) {
+    char input[PATH_MAX], cache[PATH_MAX], key[65];
+    snprintf(input, sizeof(input), "/tmp/samosa-missing-page-%d.pdf", (int)getpid());
+    snprintf(cache, sizeof(cache), "/tmp/samosa-missing-page-cache-%d", (int)getpid());
+    if (!write_contract_fixture(input) || read_cache_key_file(input, key)) return 0;
+    setenv("SAMOSA_READ_CACHE_DIR", cache, 1);
+    setenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE", "missing-page", 1);
+    path_copy(gateway->samosa_extract, sizeof(gateway->samosa_extract), self);
+    path_copy(gateway->reader_fingerprint, sizeof(gateway->reader_fingerprint), "contract-missing-page-v1");
+    atomic_store(&gateway->document_processing, 1);
+    atomic_store(&gateway->document_cancel_requested, 0);
+    char *result = doc_read_handler(gateway, input, NULL);
+    char *cached = read_cache_get(cache, key, "reader-v3", reader_fingerprint(gateway));
+    int ok = result && strstr(result, "\"error\":\"pdf_incomplete\"") && !cached;
+    free(result); free(cached);
+    atomic_store(&gateway->document_processing, 0);
+    unsetenv("SAMOSA_READ_CACHE_DIR");
+    unsetenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE");
+    cleanup_contract_cache(cache, key);
+    unlink(input);
+    return ok;
+}
+
 static int check_invalid_ocr_rejected(void) {
     static const char *const invalid[] = {
         "{\"ok\":true,\"lines\":[]} trailing}",
@@ -125,6 +183,37 @@ static int check_empty_ocr_requires_review(Gateway *gateway, const char *self) {
     unsetenv("SAMOSA_READ_CACHE_DIR");
     cleanup_contract_cache(cache_root, key);
     (void)unlink(input);
+    return ok;
+}
+
+/* A complete Chutni/reader extraction can answer a bounded page question
+ * without starting the extractor. Partial/stale/full-version mismatches cannot. */
+static int check_shared_full_cache(Gateway *gateway) {
+    char input[PATH_MAX], cache[PATH_MAX], key[65], saved_fingerprint[sizeof(gateway->reader_fingerprint)];
+    snprintf(input, sizeof(input), "/tmp/samosa-shared-cache-%d.pdf", (int)getpid());
+    snprintf(cache, sizeof(cache), "/tmp/samosa-shared-cache-%d", (int)getpid());
+    if (!write_contract_fixture(input) || read_cache_key_file(input, key)) return 0;
+    path_copy(saved_fingerprint, sizeof(saved_fingerprint), gateway->reader_fingerprint);
+    path_copy(gateway->reader_fingerprint, sizeof(gateway->reader_fingerprint), "shared-reader-test-v1");
+    path_copy(gateway->samosa_extract, sizeof(gateway->samosa_extract), "/usr/bin/false");
+    setenv("SAMOSA_READ_CACHE_DIR", cache, 1);
+    const char *full = "{\"ok\":true,\"page_count\":2,\"pages\":["
+        "{\"index\":1,\"source\":\"text_layer\",\"lines\":[{\"text\":\"UNSELECTED PAGE ONE\",\"reader\":\"text_layer\"}]},"
+        "{\"index\":2,\"source\":\"text_layer\",\"lines\":[{\"text\":\"SELECTED PAGE TWO\",\"reader\":\"text_layer\"}]}]}";
+    char *arena = NULL; jval *args = json_parse("{\"pages\":[2,1],\"detail\":\"lines\"}", &arena);
+    int ok = read_cache_put(cache, key, "reader-v3", gateway->reader_fingerprint, full) == 0;
+    char *result = ok ? doc_read_handler(gateway, input, args) : NULL;
+    ok = ok && result && strstr(result, "SELECTED PAGE TWO") && !strstr(result, "UNSELECTED PAGE ONE");
+    free(result);
+    /* A partial entry under the full contract is not reusable. The disabled
+       extractor makes an accidental cache miss/partial reuse observable. */
+    const char *partial = "{\"ok\":true,\"page_count\":2,\"pages\":[{\"index\":2,\"lines\":[{\"text\":\"POISONED PARTIAL\"}]}]}";
+    ok = ok && read_cache_put(cache, key, "reader-v3", gateway->reader_fingerprint, partial) == 0;
+    result = doc_read_handler(gateway, input, args);
+    ok = ok && result && strstr(result, "\"ok\":false") && !strstr(result, "POISONED PARTIAL");
+    free(result); json_free(args); free(arena);
+    path_copy(gateway->reader_fingerprint, sizeof(gateway->reader_fingerprint), saved_fingerprint);
+    unsetenv("SAMOSA_READ_CACHE_DIR"); cleanup_contract_cache(cache, key); unlink(input);
     return ok;
 }
 
@@ -264,9 +353,25 @@ static int check_render_cancel_cleanup(Gateway *gateway, const char *self) {
 }
 
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "--version")) {
+        puts("samosa-extract 0 (contract;pdfium)");
+        return 0;
+    }
+    if (argc > 1 && (!strcmp(argv[1], "hang-closed") || !strcmp(argv[1], "hang-open"))) {
+        signal(SIGTERM, SIG_IGN);
+        if (!strcmp(argv[1], "hang-closed")) close(STDOUT_FILENO);
+        sleep(10);
+        return 0;
+    }
     const char *reader_mode = getenv("SAMOSA_DOCUMENT_CONTRACT_READER_MODE");
     if (argc > 1 && reader_mode) {
         if (!strcmp(argv[1], "--json-pages")) {
+            if (!strcmp(reader_mode, "missing-page")) {
+                puts(atoi(argv[3]) > 1
+                    ? "{\"ok\":true,\"page_count\":2,\"pages\":[]}"
+                    : "{\"ok\":true,\"page_count\":2,\"pages\":[{\"index\":1,\"text_chars\":6,\"text\":\"native\",\"inspection\":{\"needs_ocr\":false}}]}");
+                return 0;
+            }
             puts("{\"ok\":true,\"page_count\":1,\"pages\":[{\"index\":1,\"text_chars\":6,\"tokens\":1,\"has_raster_figure\":true,\"text\":\"native\",\"inspection\":{\"needs_ocr\":true,\"incomplete\":false,\"blank\":false,\"ocr_region\":false}}]}");
             return 0;
         }
@@ -309,6 +414,7 @@ int main(int argc, char **argv) {
         usleep(3000000);
         return 0;
     }
+    if (argc > 1 && strcmp(argv[1], "--real-pdf")) return 64;
     Gateway *gateway = calloc(1, sizeof(*gateway));
     if (!gateway) return 1;
     pthread_mutex_init(&gateway->mu, NULL);
@@ -329,6 +435,11 @@ int main(int argc, char **argv) {
         if (!(expression)) { fprintf(stderr, "test_document_reader_contract: %s failed\n", name); ok = 0; } \
     } while (0)
     CHECK_CONTRACT("capture terminator", check_capture_terminator(gateway));
+    CHECK_CONTRACT("complete read in all depth modes", check_document_read_scope(gateway));
+    CHECK_CONTRACT("missing PDF page never cached as complete", check_missing_pdf_page(gateway, argv[0]));
+    CHECK_CONTRACT("reader deadline with open stdout", check_reader_deadline(gateway, argv[0], 0));
+    CHECK_CONTRACT("reader deadline after EOF", check_reader_deadline(gateway, argv[0], 1));
+    CHECK_CONTRACT("shared full cache", check_shared_full_cache(gateway));
     CHECK_CONTRACT("invalid OCR rejection", check_invalid_ocr_rejected());
     CHECK_CONTRACT("deep OCR rejection", check_deep_ocr_rejected());
     CHECK_CONTRACT("empty OCR review", check_empty_ocr_requires_review(gateway, argv[0]));

@@ -85,6 +85,8 @@ jobs:
       # uses tiny fixtures rather than the 24 GB model, so it runs on a clean
       # runner with no download.
       - name: Test
+        env:
+          SAMOSA_TEST_TRACE: 1
         run: make test
 
       - name: Test automatic file routing
@@ -110,7 +112,7 @@ jobs:
             sh -ec '
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                make gcc libomp-dev curl python3 file nodejs sqlite3 ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config
+                make gcc libomp-dev curl python3 file nodejs sqlite3 procps ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config
 
               useradd -m ci
               mkdir -p /work
@@ -128,6 +130,6 @@ jobs:
               su -s /bin/sh ci -c "
                 cd /work
                 rm -rf build-debian
-                BUILD_DIR=build-debian make debian-portability-test
+                SAMOSA_TEST_TRACE=1 BUILD_DIR=build-debian make debian-portability-test
               "
             '

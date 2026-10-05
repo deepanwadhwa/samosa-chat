@@ -114,7 +114,12 @@ chutni-service:
 	@test -f "$(CHUTNI_DIR)/Makefile" || { echo "missing Chutni submodule; run: git submodule update --init" >&2; exit 2; }
 	$(MAKE) -C "$(CHUTNI_DIR)" BUILD="$(CHUTNI_BUILD)" OPT="$(CHUTNI_OPT)" "$(CHUTNI_BUILD)/chutni-mcp"
 	@mkdir -p $(BUILD_DIR)
-	cp "$(CHUTNI_BUILD)/chutni-mcp" "$(CHUTNI_MCP)"
+# Replace the inode instead of overwriting an executable that macOS may have
+# cached a code signature for during a previous test or build.
+	@set -e; staged=$$(mktemp "$(CHUTNI_MCP).XXXXXX"); \
+	  trap 'rm -f "$$staged"' EXIT HUP INT TERM; \
+	  cp -p "$(CHUTNI_BUILD)/chutni-mcp" "$$staged"; \
+	  mv -f "$$staged" "$(CHUTNI_MCP)"
 
 # Kimi Linear metadata preflight. This does not download or quantize the model;
 # the pure-C KDA/MLA runtime must land before a weight converter is enabled.
@@ -234,7 +239,7 @@ motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_
 tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_escalation.sh
 	sh tests/test_tier2_escalation.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
+samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
@@ -278,11 +283,12 @@ test-native-summarizer-real: samosa-summarizer tests/test_native_summarizer.c
 	$(BUILD_DIR)/test_native_summarizer $(BUILD_DIR)/samosa-summarizer "$(SAMOSA_SUMMARIZER_TEST_MODEL)"
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
-chutni-gateway-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh
+chutni-gateway-test: samosa-gateway samosa-fs chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh tests/test_chutni_crash_resume.sh
 	sh tests/test_chutni_gateway.sh
 	sh tests/test_chutni_controls.sh
+	sh tests/test_chutni_crash_resume.sh
 
-detached-service-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_samosa_detached_service.sh
+detached-service-test: samosa-gateway samosa-fs chutni-service test_fake_openai_backend tests/test_samosa_detached_service.sh
 	sh tests/test_samosa_detached_service.sh
 
 app-lifecycle-test: samosa-gateway chutni-service test_fake_openai_backend tests/test_samosa_app_lifecycle.sh tests/test_samosa_llama_lifecycle.sh
@@ -295,7 +301,7 @@ test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.s
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
-samosa-jobsd: src/samosa_gateway.c src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
+samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
@@ -310,17 +316,23 @@ test_fake_native_summarizer: tests/fake_native_summarizer.c
 	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
 	  -o $(BUILD_DIR)/test_fake_native_summarizer
 
-test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_native_summarizer_supervisor.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_native_summarizer_supervisor \
 	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
-test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_runtime_settings.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_runtime_settings
+
+test-memory-harness: tests/test_memory_harness.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
+	  tests/test_memory_harness.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_memory_harness $(DL_LDFLAGS)
+	$(BUILD_DIR)/test_memory_harness
 
 # fake_model_download_server: deterministic stand-in for the trusted model
 # catalog's artifact host (docs/TASKS_UI_CHUTNI.md T0.1/T2.2). Ordinary tests
@@ -359,7 +371,7 @@ test-ui-setup: test-fake-download-server test_fake_openai_backend samosa-gateway
 	node tests/test_web_activity_ui.mjs
 	node tests/test_developer_mode_ui.mjs
 
-compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
+compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test_fake_openai_backend test_fake_native_summarizer test-native-summarizer-supervisor test-chutni-sampling test-runtime-settings tests/test_compiled_gateway.sh tests/test_settings_compact_proxy.sh tests/test_attachments.sh tests/test_document_context_prefix.sh tests/test_web_search.sh tests/test_developer_trace.sh
 	BUILD_DIR="$(BUILD_DIR)" \
 	SAMOSA_COMPILED_GATEWAY="$$PWD/$(BUILD_DIR)/samosa-gateway" \
 	SAMOSA_COMPILED_JOBSD="$$PWD/$(BUILD_DIR)/samosa-jobsd" \
@@ -385,7 +397,15 @@ compiled-gateway-test: samosa-gateway samosa-extract samosa-jobsd samosa-fs test
 # regression for the PDF page-batch-cap fix. The required routing gate below
 # must fail when PDFium is absent; it must never turn a portable build into a
 # false passing/skip result.
-test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_chutni_sampling.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test-chutni-sampling $(DL_LDFLAGS)
+	$(BUILD_DIR)/test-chutni-sampling
+
+test-chutni-throughput: samosa-gateway test-chutni-sampling test_fake_native_summarizer
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_chutni_throughput.py
+
+test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_document_reader_contract.c $(GATEWAY_SUPPORT_SRCS) \
@@ -394,12 +414,18 @@ test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_
 
 test-document-harness: samosa-gateway test_fake_openai_backend test-document-reader-contract tests/test_document_harness.py tests/document_reader_spy.py
 	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_document_harness.py
+	node tests/test_document_detail_ui.mjs
 
 test-pdf-ocr-runtime: samosa-ocr test-document-reader-contract
 	SAMOSA_OCR="$$PWD/$(BUILD_DIR)/samosa-ocr" \
 	SAMOSA_OCR_TEST_RUNNER="$$PWD/$(BUILD_DIR)/test-document-reader-contract" \
 	SAMOSA_EXTRACT="$${SAMOSA_EXTRACT:-$$PWD/$(BUILD_DIR)/samosa-extract}" \
 	$(OCR_TEST_PYTHON) tests/test_pdf_ocr_runtime.py
+
+test-document-mixed-pdf: samosa-gateway samosa-ocr test_fake_openai_backend
+	BUILD_DIR="$(BUILD_DIR)" $(OCR_TEST_PYTHON) tests/test_document_mixed_pdf.py
+	BUILD_DIR="$(BUILD_DIR)" SAMOSA_MIXED_TEST_CONTEXT=8192 $(OCR_TEST_PYTHON) tests/test_document_mixed_pdf.py
+	BUILD_DIR="$(BUILD_DIR)" SAMOSA_MIXED_TEST_CONTEXT=8192 SAMOSA_FAKE_DOCUMENT_REVIEW_FAIL=1 $(OCR_TEST_PYTHON) tests/test_document_mixed_pdf.py
 
 test-pdf-ocr-routing: tests/test_pdf_ocr_routing.py
 	@if [ -n "$${SAMOSA_EXTRACT:-}" ]; then \
@@ -503,7 +529,7 @@ test-docx-extractor: tests/test_samosa_docx.c tests/test_samosa_docx.sh src/samo
 	  $(MINIZ_READ_SRCS) -o $(BUILD_DIR)/test-samosa-docx
 	SAMOSA_DOCX_TEST_RUNNER=./$(BUILD_DIR)/test-samosa-docx sh tests/test_samosa_docx.sh
 
-test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_local_document_runtime_guard.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py
+test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_local_document_runtime_guard.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.py tests/test_decision_eval.py
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
@@ -523,12 +549,19 @@ test: pagecache-residency-test test-evidence-contract test-html-extractor test-d
 	python3 tests/test_route_analysis.py
 	python3 tests/test_spec_accept.py
 	python3 tests/test_package_pdfium.py
+	python3 tests/test_decision_eval.py
+	python3 tests/test_samosa_decision.py
+	$(MAKE) test-memory-harness
+	$(MAKE) test-prompt-budget
+	$(MAKE) test-folder-prompt-e2e
 	@if [ -n "$(NUMPY_PYTHON)" ]; then $(NUMPY_PYTHON) tests/test_converter_quant.py; \
 	else echo "converter quant tests: SKIP (NumPy environment unavailable)"; fi
 # The compiled gateway, Chutni, and the Kimi preflight are part of the default
 # gate. They were previously reachable only by name, so a regression in any of
 # them left `make test` green. Run as sub-makes, not prerequisites: several
 # bind fixed ports and must not overlap under `make -j`.
+	$(MAKE) samosa-fs
+	python3 tests/test_selected_copy.py
 	$(MAKE) compiled-gateway-test
 	$(MAKE) test-chutni
 	$(MAKE) chutni-gateway-test
@@ -569,7 +602,7 @@ ci-debian:
 	  sh -ec '\
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc libc6-dev curl python3 nodejs sqlite3 libomp-dev file ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config; \
+	      make gcc libc6-dev curl python3 nodejs sqlite3 procps libomp-dev file ca-certificates libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config; \
 	    useradd -m ci; \
 	    mkdir -p /work; \
 	    tar -C /src --exclude=.git --exclude=./build --exclude="./build-*" \
@@ -596,7 +629,7 @@ ci-ubuntu-full:
 	    sed -i "s|http://archive.ubuntu.com/ubuntu/|$$CI_UBUNTU_APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources; \
 	    apt-get update; \
 	    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 libomp-dev \
+	      make gcc g++ clang libc6-dev curl python3 python3-numpy nodejs sqlite3 procps libomp-dev \
 	      file ca-certificates git bash libtesseract-dev libleptonica-dev tesseract-ocr-eng pkg-config python3-pil python3-reportlab; \
 	    curl -fL --retry 3 -o /tmp/pdfium-linux-x64.tgz "$(CI_PDFIUM_LINUX_X64_URL)"; \
 	    printf "%s  %s\n" "$(CI_PDFIUM_LINUX_X64_SHA256)" /tmp/pdfium-linux-x64.tgz | sha256sum -c -; \
@@ -870,3 +903,13 @@ test-visionpsy-real: samosa-visionpsy tests/test_visionpsy_real.cpp
 	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-visionpsy-real "$(VISIONPSY_MODEL_DIR)" "$$tmp_ppm"
 test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc $^ -o build/$@ $(MLX_LDFLAGS)
+
+.PHONY: test-prompt-budget
+test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.py src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_prompt_budget.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_prompt_budget $(DL_LDFLAGS)
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_prompt_budget.py
+
+.PHONY: test-folder-prompt-e2e
+test-folder-prompt-e2e: samosa-gateway samosa-fs samosa-extract tests/test_folder_prompt_e2e.py
+	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_folder_prompt_e2e.py

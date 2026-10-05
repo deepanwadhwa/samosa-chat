@@ -1,0 +1,34 @@
+{
+  "release": "dev-6b2ce108731f",
+  "ready": true,
+  "native_summarizer": {
+    "available": true,
+    "loaded": false,
+    "model": "Falconsai/text_summarization",
+    "runtime": "native"
+  },
+  "ocr_ready": true,
+  "chutni_available": true,
+  "served_ui_matches_release_after_token_injection": true,
+  "installed_native_scalar_and_batch_smoke": "passed",
+  "scope_control_state": "canceled_initial",
+  "pending_memory_deferred": true,
+  "hashes": {
+    "gateway": {
+      "sha256": "610504965c4e14f39623adad86117ecb8fcd9c6acdedac32f61971b8ca47f98a",
+      "matches_tested_build": true
+    },
+    "chutni_service": {
+      "sha256": "2bd65066efbdc7c3b1d8e5dc37d189b7be386e09f7d72fb3e123f3d3385805bd",
+      "matches_tested_build": true
+    },
+    "summarizer": {
+      "sha256": "514e5c8512d44ecc3da246039d30fcd7a8218e0be6f363364a53e18c212df397",
+      "matches_tested_build": true
+    },
+    "ui": {
+      "sha256": "406cde346e41790b40d7ec64d39521476f9c8073ebaa88e3328f54ca64ded1aa",
+      "matches_tested_build": true
+    }
+  }
+}

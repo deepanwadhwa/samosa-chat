@@ -1,0 +1,53 @@
+{
+  "source_revision": "b41886fd70a2209640a99e3940417469e6fbf9c6",
+  "completed_utc": "2026-10-04T20:20:44.177084+00:00",
+  "workflow": ".github/workflows/ci.yml",
+  "all_required_local_gates": "pass",
+  "environments": {
+    "macos": {
+      "architecture": "arm64",
+      "sdk": "installed native host SDK; not an exact macos-14 runner",
+      "result": "pass"
+    },
+    "ubuntu": {
+      "version": "24.04",
+      "architecture": "amd64 under emulation",
+      "container": "samosa-ci-ubuntu-rerun",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    "debian": {
+      "version": "bookworm",
+      "architecture": "amd64 under emulation",
+      "container": "samosa-ci-debian-rerun",
+      "exit_code": 0,
+      "result": "pass"
+    }
+  },
+  "resume_note": "Ubuntu installer and earlier make test stages passed in ubuntu-rerun.log; after the test-only fortified-read fix, every remaining make test command and additional workflow gate passed in ubuntu-resume.log. macOS affected checks were rerun after test-only corrections.",
+  "submodules": [
+    "f6eeb533598cfe6cd5eb42152e5cdab8f924ff32 vendor/chutni (heads/test-fix-lm)",
+    " eba96c16158f032821b0bf374ea1421cfddef0a9 vendor/maple-reference (heads/main)",
+    " 7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247 vendor/mlx (v0.32.0)"
+  ],
+  "source_sha256": {
+    "src/samosa_gateway.c": "2edf4556efb20640a19b21dfadae4c5d837b0854f3d4bce6eb007beb5e0e3d28",
+    "src/samosa_prompt_budget.h": "7c47ecbdcaf26d27a255010235e03a40afe08db651008d141e657e8f82bfc9bd",
+    "tests/test_prompt_budget.c": "89a738539bff59d61a7c10f621acd8704fe77e49bfff6f267e32b869518d375c",
+    "tests/test_compiled_gateway.sh": "d7f365293e3d761d3028a4d3211e1dd3568f954838ac19b8ac725e11e3d995d8",
+    "tests/assert_folder_memory.py": "22d68819f65a9d885981e8eec236b3ac3ef58248af7b9b2c0c27246b1d14c047",
+    "Makefile": "8a91a210ee0c24b0d9923f0ba2662d9812f7c332d4e40dd8a9426161dcb01add"
+  },
+  "local_log_directory": "/private/tmp/samosa-local-ci-20261004",
+  "log_sha256": {
+    "macos-final.log": "cf5a9a04f4aab76ff653ca3da32c3c5aefc67ef91154ba6606f69ac90d02291f",
+    "macos-finish.log": "ad1dc2affda0d26cd4f5ca16c9bd65acb40bc72c6d01cb5e8000caf7f9511a6a",
+    "macos-publication.log": "085d2386e6845ca1a4eb664fe3f33f4b8cdba1fb63924747aca7fa88e6cb49d5",
+    "macos-prompt-fixture.log": "9f0c5c3f9bc2a326681f36c530d2f2a91286c71e9c12da8d64df7cc9f0456f01",
+    "debian-publication.log": "735531d54e7d17d08749e0addffdfb7121d1587304c37ef31339a33d7fefbdbe",
+    "ubuntu-rerun.log": "a143e107484bf82c077cd6c2c27164219186672e08cd8fce15018bbba3f83b77",
+    "ubuntu-resume.log": "1916f349add6874af239eb1bd1252683038203cd513d7a9935870d611b6c368d"
+  },
+  "privacy": "Generated fixtures and isolated homes only; no Downloads folder, its registered memory, existing conversations, or app runtime logs read.",
+  "acceptance_note": "Offline CI does not close FW-6 browser/real-model acceptance."
+}

@@ -1,0 +1,15 @@
+{"seconds": 0.0, "activity": "Checking the filename and choosing what to read\u2026"}
+{"seconds": 0.0, "activity": "Reading every page; scanned text is read with Tesseract\u2026"}
+{"seconds": 0.0, "activity": "Reading section 1 of the extracted document\u2026"}
+{"seconds": 130.35, "activity": "Reading section 2 of the extracted document\u2026"}
+Traceback (most recent call last):
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_document_mixed_live.py", line 64, in <module>
+    answer = request("/v1/chat/completions", {
+        "model_id": health["backend"], "model_version": health["model_version"],
+    ...<4 lines>...
+            "then state how many blue lanterns were approved at stations 01, 20, 37 and 40. "
+            "Cite the document page for each count. State any reading gaps."}]}, stream=True)
+  File "/Users/deepanwadhwa/Documents/samosa-chat/tests/test_document_mixed_live.py", line 38, in request
+    assert "error" not in event, event
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'choices': [{'index': 0, 'delta': {'content': ''}, 'finish_reason': 'error'}], 'error': {'message': 'Text was extracted, but the model did not finish reviewing every section. No complete answer was generated. Ask about a page range to continue.', 'code': 'document_review_incomplete'}}

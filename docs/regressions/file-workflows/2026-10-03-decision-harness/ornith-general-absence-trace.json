@@ -1,0 +1,88 @@
+{
+  "turn_id": "f0da49c82244e30cf8bafc01b80180d6",
+  "backend": "ornith",
+  "question": "Are there any documents about Mira Wen?",
+  "facts": {
+    "memory_route": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.22807513363659382,
+        "files": 0.7719248533248901
+      },
+      "actions": [
+        "inventory"
+      ],
+      "action_scores": {
+        "overview": 0.0385746993124485,
+        "inventory": 0.9953994154930115,
+        "metadata": 0.00228277500718832,
+        "content": 0.06483088433742523
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_decision": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.22807513363659382,
+        "files": 0.7719248533248901
+      },
+      "actions": [
+        "inventory"
+      ],
+      "action_scores": {
+        "overview": 0.0385746993124485,
+        "inventory": 0.9953994154930115,
+        "metadata": 0.00228277500718832,
+        "content": 0.06483088433742523
+      },
+      "sources": [
+        {
+          "number": 0,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 1,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 2,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 3,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 4,
+          "choice": "plausible",
+          "score": 1.0
+        }
+      ],
+      "membership_kind": "named",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_subject": {
+      "subject": "Mira Wen"
+    },
+    "memory_membership_validated": {
+      "subject": "Mira Wen",
+      "match": [],
+      "uncertain": [
+        0
+      ],
+      "filename_proofs": []
+    }
+  }
+}

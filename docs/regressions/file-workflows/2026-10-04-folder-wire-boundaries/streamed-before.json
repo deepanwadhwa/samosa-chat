@@ -1,0 +1,718 @@
+{
+  "seconds": 0.54,
+  "files": 80,
+  "errors": [
+    {
+      "message": "The folder evidence could not be summarized within this model's context. No incomplete answer was sent. Retry with a shorter question or fewer attached sources.",
+      "code": "folder_context_budget_failed"
+    }
+  ],
+  "answer": "",
+  "model_metrics": [
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1207,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    },
+    {
+      "path": "/v1/chat/completions",
+      "review": false,
+      "final": false,
+      "prompt_tokens": 1211,
+      "max_tokens": 256,
+      "valid_utf8": true
+    }
+  ],
+  "events": [
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Folder memory",
+              "stage": "planning",
+              "message": "Checking the folder question\u2026",
+              "progress": 0,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Generated multilingual records",
+              "stage": "inventory",
+              "message": "Checking indexed files\u2026",
+              "progress": 20,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "file_activity": {
+              "filename": "Generated multilingual records",
+              "stage": "reading",
+              "message": "Reading the indexed evidence\u2026",
+              "progress": 70,
+              "indeterminate": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": ""
+          },
+          "finish_reason": "error"
+        }
+      ],
+      "error": {
+        "message": "The folder evidence could not be summarized within this model's context. No incomplete answer was sent. Retry with a shorter question or fewer attached sources.",
+        "code": "folder_context_budget_failed"
+      }
+    }
+  ]
+}

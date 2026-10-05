@@ -1,0 +1,113 @@
+[
+  {
+    "stage": "backend_ready",
+    "backend": "ornith"
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "556a286809767ef7c35d43f641aff87f",
+    "files": 5
+  },
+  {
+    "stage": "memory_reused",
+    "scope": "4a937476a37450b042743cd8d8c11529",
+    "files": 0
+  },
+  {
+    "stage": "answer",
+    "question": "Give me the gist of this directory in two sentences.",
+    "answer": "The \"General Harness Qwen\" directory contains a mix of synthetic test fixtures and personal notes, including a 7-page PDF used as a fixture for extractor tests, a gardening diary, and several project-related notes referencing a \"Cedar project\" and a shopping list.",
+    "seconds": 34.715
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents concern Mira Lee, and how many are there?",
+    "answer": "Three documents concern Mira Lee:\n\n1. **Mira Lee brief.pdf** \u2014 a 7-page PDF (3,533 bytes) containing a Samosa Chat synthetic fixture document.\n2. **alpha/notes.txt** \u2014 a text file (67 bytes) noting that Mira Lee has a Cedar project meeting on 11 June 2032 (reference CE-405).\n3. **beta/notes.txt** \u2014 a text file (74 bytes) stating that Mira Lee owns the Cedar project launch checklist (release code BETA-619).\n\nThe file **Mira Leena diary.txt** does not match, as it refers to a different name.",
+    "seconds": 91.666
+  },
+  {
+    "stage": "answer",
+    "question": "How long is Mira Lee brief.pdf in pages?",
+    "answer": "Mira Lee brief.pdf is 7 pages long.",
+    "seconds": 22.43
+  },
+  {
+    "stage": "answer",
+    "question": "What is the release code in beta/notes.txt?",
+    "answer": "The release code in `beta/notes.txt` is **BETA-619**.",
+    "seconds": 22.436
+  },
+  {
+    "stage": "answer",
+    "question": "What is the meeting date and its reference?",
+    "answer": "The meeting date is **11 June 2032**, and the reference is **CE-405**. This information comes from the file **alpha/notes.txt**, which states: \"Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.\"",
+    "seconds": 56.068
+  },
+  {
+    "stage": "answer",
+    "question": "How many files are indexed here?",
+    "answer": "There are 5 files indexed in the \"General Harness Qwen\" folder.",
+    "seconds": 22.409
+  },
+  {
+    "stage": "answer",
+    "question": "Summarize this empty folder.",
+    "answer": "The folder \"General Harness Qwen-empty\" is empty: it contains 0 indexed source records and 0 inventory records. No files of any type (PDF, text, or other) are present, and there are no uncertain associations. The folder has no content to summarize.",
+    "seconds": 28.639
+  },
+  {
+    "stage": "answer",
+    "question": "What is in notes.txt?",
+    "answer": "There are two files matching `notes.txt`:\n\n1. **`alpha/notes.txt`** \u2014 Contains: \"Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.\"\n2. **`beta/notes.txt`** \u2014 Contains: \"Cedar project: Mira Lee owns the launch checklist. Release code BETA-619.\"\n\nBoth are text files with no PDF page count.",
+    "seconds": 41.444
+  },
+  {
+    "stage": "answer",
+    "question": "Are there any documents about Mira Wen?",
+    "answer": "No confirmed documents about \"Mira Wen\" were found in the checked evidence. The only file with an uncertain association is \"Mira Lee brief.pdf,\" which pertains to a different individual (Mira Lee) and does not contain the requested identity \"Mira Wen.\"",
+    "seconds": 58.156
+  },
+  {
+    "stage": "answer",
+    "question": "What meeting date is recorded in alpha/notes.txt?",
+    "answer": "The meeting date recorded in alpha/notes.txt is **11 June 2032**, for the Cedar project meeting with Mira Lee, reference CE-405.",
+    "seconds": 31.669
+  },
+  {
+    "stage": "answer",
+    "question": "And what is its reference?",
+    "answer": "The reference recorded in `alpha/notes.txt` is **CE-405**.",
+    "seconds": 46.035
+  },
+  {
+    "stage": "answer",
+    "question": "Which documents are about horticulture?",
+    "answer": "No confirmed matches for horticulture were found in the checked evidence. The only file with an uncertain association is **Mira Lee brief.pdf**, but its content consists entirely of synthetic fixture text unrelated to horticulture. The remaining files (**Mira Leena diary.txt**, **alpha/notes.txt**, **beta/notes.txt**, **groceries.txt**) are explicitly marked as not matching the requested subject.",
+    "seconds": 63.481
+  },
+  {
+    "stage": "answer",
+    "question": "What is in absent.txt?",
+    "answer": "There is no confirmed match for `absent.txt` in the supplied evidence. The folder \"General Harness Qwen\" contains five files: `Mira Lee brief.pdf`, `Mira Leena diary.txt`, `alpha/notes.txt`, `beta/notes.txt`, and `groceries.txt`. None of these files are named `absent.txt`. One uncertain association exists (`Mira Lee brief.pdf`), but it is a PDF and does not match the requested filename.",
+    "seconds": 67.25
+  },
+  {
+    "stage": "passed",
+    "backend": "ornith",
+    "cases": [
+      "overview",
+      "membership",
+      "pages",
+      "qualified_content",
+      "content",
+      "total",
+      "empty",
+      "ambiguous_basename",
+      "missing_subject",
+      "reference",
+      "semantic_topic",
+      "missing_file"
+    ],
+    "questions": 13
+  }
+]

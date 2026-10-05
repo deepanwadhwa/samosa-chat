@@ -5,6 +5,7 @@ GATEWAY=${SAMOSA_COMPILED_GATEWAY:-./samosa-gateway}
 JOBSD=${SAMOSA_COMPILED_JOBSD:-./samosa-jobsd}
 BACKEND=${SAMOSA_FAKE_BACKEND:-./test_fake_openai_backend}
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+PYTHON=${SAMOSA_TEST_PYTHON:-$(command -v python3 || printf /usr/bin/python3)}
 BUILD_DIR=${BUILD_DIR:-build}
 FS_SIDECAR=${SAMOSA_FS:-"$ROOT/$BUILD_DIR/samosa-fs"}
 EXTRACTOR=${SAMOSA_EXTRACT:-"$ROOT/$BUILD_DIR/samosa-extract"}
@@ -15,13 +16,22 @@ PORT=18977
 BACKEND_PORT=18978
 PID=""
 PID2=""
+DOGFOOD_RSS_MONITOR=""
 
 cleanup() {
+  if [ -n "$DOGFOOD_RSS_MONITOR" ]; then
+    /usr/bin/touch "$TMP/dogfood-rss-stop"
+    wait "$DOGFOOD_RSS_MONITOR" 2>/dev/null || true
+  fi
   [ -z "$PID" ] || kill "$PID" 2>/dev/null || true
   [ -z "$PID" ] || wait "$PID" 2>/dev/null || true
   [ -z "$PID2" ] || kill "$PID2" 2>/dev/null || true
   [ -z "$PID2" ] || wait "$PID2" 2>/dev/null || true
-  /bin/rm -rf "$TMP"
+  if [ "${SAMOSA_TEST_KEEP_TMP:-0}" = 1 ]; then
+    printf 'compiled gateway evidence retained at %s\n' "$TMP" >&2
+  else
+    /bin/rm -rf "$TMP"
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -37,6 +47,31 @@ printf 'png\n' >"$TMP/logo.png"
 printf "Titli vaccination record, rabies booster 2026.\n" >"$TMP/files/cat-medical-note.txt"
 printf "Miso vaccination record.\n" >"$TMP/files/miso-record.txt"
 printf "Cafe total 4.50\n" >"$TMP/files/receipt-b.txt"
+/bin/mkdir "$TMP/report-files"
+printf 'same size A\n' >"$TMP/report-files/first.txt"
+printf 'same size B\n' >"$TMP/report-files/second.txt"
+/bin/cp "$TMP/report-files/first.txt" "$TMP/report-files/copy.txt"
+printf 'a tiny csv value\n' >"$TMP/report-files/third.csv"
+printf 'outside secret\n' >"$TMP/outside-report-secret.txt"
+/bin/ln -s "$TMP/outside-report-secret.txt" "$TMP/report-files/escape-link"
+/bin/mkdir "$TMP/duplicate-limit-files"
+i=1
+while [ "$i" -le 129 ]; do
+  printf 'same-size candidate\n' >"$TMP/duplicate-limit-files/item-$i.txt"
+  i=$((i + 1))
+done
+/bin/mkdir "$TMP/sort-stale-files"
+printf 'before preview\n' >"$TMP/sort-stale-files/item.txt"
+/bin/mkdir "$TMP/inbox-files"
+printf 'September invoice\n' >"$TMP/inbox-files/invoice-september.txt"
+printf 'Vaccination history\n' >"$TMP/inbox-files/vaccination-history.txt"
+printf 'Project sprint plan\n' >"$TMP/inbox-files/sprint-plan.txt"
+printf 'Family travel notes\n' >"$TMP/inbox-files/family-travel.txt"
+printf 'Conflicting evidence\n' >"$TMP/inbox-files/medical-invoice.pdf"
+printf 'Unclear document\n' >"$TMP/inbox-files/misc.pdf"
+/bin/mkdir "$TMP/watch-folder"
+printf 'Initial invoice\n' >"$TMP/watch-folder/invoice-initial.txt"
+printf 'Steady file\n' >"$TMP/watch-folder/steady.txt"
 /bin/mkdir "$TMP/interlock-files"
 printf "First interlock receipt.\n" >"$TMP/interlock-files/a.txt"
 printf "Second interlock receipt.\n" >"$TMP/interlock-files/b.txt"
@@ -80,8 +115,18 @@ printf '{"unit_id":"u1","status":"review_required","input_path":"%s","extracted"
 printf '{"unit_id":"u2","status":"passed","extracted":{"merchant":"Done"}}\n' \
   >>"$HOME_DIR/jobs/review-native/results/output.jsonl"
 /bin/mkdir "$TMP/slow"
+REPORT_CRASH_ROOT="$TMP/report-crash-files"
+/bin/mkdir "$REPORT_CRASH_ROOT"
+i=1
+while [ "$i" -le 8 ]; do
+  /usr/bin/printf 'durable folder report inventory fixture %s\n' "$i" >"$REPORT_CRASH_ROOT/file-$i.txt"
+  i=$((i + 1))
+done
 printf '%s\n' '#!/bin/sh' \
   'last=""; for arg do last=$arg; done' \
+  'if [ "${SAMOSA_TEST_SLOW_INVENTORY_ROOT:-}" ] && [ -f "$SAMOSA_TEST_SLOW_INVENTORY_ENABLE" ]; then' \
+  '  previous=""; for arg do if [ "$previous" = "--root" ] && [ "$arg" = "$SAMOSA_TEST_SLOW_INVENTORY_ROOT" ] && [ "$1" = "chutni-inventory" ]; then printf "%s\\n" "$$" >"$SAMOSA_TEST_SLOW_INVENTORY_PID_FILE"; SAMOSA_CHUTNI_TEST_DELAY_US=300000 exec "'$FS_SIDECAR'" "$@"; fi; previous=$arg; done' \
+  'fi' \
   'case "$last" in' \
   '  */slow) printf "%s\\n" "$$" >"'$TMP'/slow-sidecar.pid"; exec /bin/sleep 30 ;;' \
   'esac' \
@@ -89,6 +134,7 @@ printf '%s\n' '#!/bin/sh' \
 /bin/chmod +x "$TMP/samosa-fs-wrapper"
 /usr/bin/printf '%s\n' '#!/bin/sh' \
   'if [ "$1" = "--json-pages" ]; then' \
+  '  case "$2" in */Samosa-Dogfood/Documents/anonymous-scan.pdf) exec "$SAMOSA_REAL_EXTRACT" "$@" ;; esac' \
   '  /usr/bin/printf "%s %s\n" "$3" "$4" >>"$SAMOSA_EXTRACT_CALLS"' \
   '  case "$3" in' \
   '    1) /usr/bin/printf '\''%s\n'\'' '\''{"ok":true,"text_layer":true,"page_count":3,"page_start":1,"page_end":1,"text":"FIRST PAGE TITLE"}'\'' ;;' \
@@ -99,6 +145,10 @@ printf '%s\n' '#!/bin/sh' \
   'fi' \
   'exec "$SAMOSA_REAL_EXTRACT" "$@"' >"$TMP/samosa-extract-wrapper"
 /bin/chmod +x "$TMP/samosa-extract-wrapper"
+printf '%s\n' '#!/bin/sh' \
+  'printf "%s\\n" "$$" >"$SAMOSA_TEST_CHUTNI_PID_FILE"' \
+  'exec "$SAMOSA_REAL_CHUTNI_SERVICE" "$@"' >"$TMP/chutni-service-wrapper"
+/bin/chmod +x "$TMP/chutni-service-wrapper"
 
 # Deliberately expose no external executable through PATH. All utilities used
 # below have absolute paths; the gateway/backend receive the same environment.
@@ -118,12 +168,16 @@ fi
 launch_main_gateway() {
   SAMOSA_HOME="$HOME_DIR" \
   SAMOSA_PORT="$PORT" \
+  CHUTNI_HOME="$HOME_DIR/chutni-home" \
   SAMOSA_BACKEND_PORT="$BACKEND_PORT" \
   SAMOSA_APP_HTML="$TMP/app.html" \
   SAMOSA_APP_LOGO="$TMP/logo.png" \
   SAMOSA_BONSAI_SERVER="$BACKEND" \
   SAMOSA_ORNITH_MODEL="$HOME_DIR/models/ornith-9b/Ornith-1.0-9B-Q4_K_M.gguf" \
   SAMOSA_FS="$TMP/samosa-fs-wrapper" \
+  SAMOSA_CHUTNI_SERVICE="$TMP/chutni-service-wrapper" \
+  SAMOSA_REAL_CHUTNI_SERVICE="$ROOT/$BUILD_DIR/chutni-mcp" \
+  SAMOSA_TEST_CHUTNI_PID_FILE="$TMP/chutni-worker.pid" \
   SAMOSA_EXTRACT="$TMP/samosa-extract-wrapper" \
   SAMOSA_EXTRACT_CALLS="$TMP/extract-calls.log" \
   SAMOSA_REAL_EXTRACT="$EXTRACTOR" \
@@ -136,6 +190,10 @@ launch_main_gateway() {
   SAMOSA_FAKE_TRIAGE_FIRST="$TMP/fake-triage-first" \
   SAMOSA_FAKE_TRIAGE_DELAY="$TMP/fake-triage-delay" \
   SAMOSA_FAKE_VERIFY_DELAY="$TMP/fake-verify-delay" \
+  SAMOSA_TEST_MOVE_PAUSE_FILE="$TMP/dogfood-move-pause" \
+  SAMOSA_TEST_SLOW_INVENTORY_ROOT="$REPORT_CRASH_ROOT" \
+  SAMOSA_TEST_SLOW_INVENTORY_ENABLE="$TMP/report-crash-inventory-enable" \
+  SAMOSA_TEST_SLOW_INVENTORY_PID_FILE="$TMP/report-crash-inventory.pid" \
   "$GATEWAY" >>"$TMP/gateway.log" 2>&1 &
   PID=$!
   i=0
@@ -153,6 +211,243 @@ launch_main_gateway() {
   return 1
 }
 launch_main_gateway
+
+"$PYTHON" "$ROOT/tests/assert_folder_memory.py" "http://127.0.0.1:$PORT" "$MAIN_TOKEN" "$HOME_DIR" before
+
+# Selection writes are native, scoped to saved results, and survive the crash
+# restart exercised below without loading the optional decision model.
+"$PYTHON" "$ROOT/tests/assert_job_selection.py" "http://127.0.0.1:$PORT" "$MAIN_TOKEN" "$HOME_DIR" before
+
+# End-to-end mixed-folder dogfood: the same selected root drives Chutni and
+# Jobs through their gateway routes. Large generated trees are present so the
+# test checks pruning at the product boundary, not only in the scanner unit.
+DOGFOOD="$TMP/Samosa-Dogfood"
+/bin/mkdir -p "$DOGFOOD/Documents" "$DOGFOOD/Inbox" \
+  "$DOGFOOD/Software/src" "$DOGFOOD/Software/.venv/decoys" \
+  "$DOGFOOD/Software/node_modules/fixture/decoys" \
+  "$DOGFOOD/Software/custom-python-env/decoys" "$DOGFOOD/Software/build" \
+  "$DOGFOOD/Software/.git/objects" "$DOGFOOD/Private"
+"$PYTHON" "$ROOT/tests/make_test_pdf.py" "$DOGFOOD/Documents/anonymous-scan.pdf" \
+  'Titli vaccination date is 2026-06-14. DOGFOOD_TITLI_PDF_SENTINEL'
+/usr/bin/printf 'DOGFOOD_TITLI_SENTINEL: the cat vaccination fact is on 2026-06-14.\n' \
+  >"$DOGFOOD/Documents/chutni-evidence.txt"
+/usr/bin/printf '# Project plan\nMilestones and owners for the Q4 launch.\n' \
+  >"$DOGFOOD/Documents/project-plan.md"
+/usr/bin/printf 'Invoice 848 due October 1; billing account total 128.\n' \
+  >"$DOGFOOD/Inbox/clear-billing.txt"
+/usr/bin/printf 'Vaccination history and clinic follow-up for Titli.\n' \
+  >"$DOGFOOD/Inbox/clear-medical.txt"
+/usr/bin/printf 'Sprint plan, project milestones, team owners, and action items.\n' \
+  >"$DOGFOOD/Inbox/clear-work.txt"
+/usr/bin/printf 'Insurance reimbursement invoice conflicts with medical claim category.\n' \
+  >"$DOGFOOD/Inbox/mixed-ambiguous.txt"
+/usr/bin/printf '# Software fixture\n' >"$DOGFOOD/Software/README.md"
+/usr/bin/printf 'int main(void) { return 0; }\n' >"$DOGFOOD/Software/src/main.c"
+/usr/bin/printf '3.10\n' >"$DOGFOOD/Software/custom-python-env/pyvenv.cfg"
+/usr/bin/printf 'BUILD_OUTPUT_SENTINEL\n' >"$DOGFOOD/Software/build/generated.txt"
+/usr/bin/printf 'PRIVATE_DOGFOOD_SENTINEL\n' >"$DOGFOOD/Private/secret.txt"
+/usr/bin/printf 'OUTSIDE_DOGFOOD_SECRET\n' >"$TMP/dogfood-outside-secret.txt"
+/bin/ln -s "$TMP/dogfood-outside-secret.txt" "$DOGFOOD/escape-link"
+i=1
+while [ "$i" -le 10000 ]; do
+  printf 'virtual environment decoy %s\n' "$i" \
+    >"$DOGFOOD/Software/.venv/decoys/file-$i.txt"
+  printf 'package tree decoy %s\n' "$i" \
+    >"$DOGFOOD/Software/node_modules/fixture/decoys/file-$i.txt"
+  printf 'marker environment decoy %s\n' "$i" \
+    >"$DOGFOOD/Software/custom-python-env/decoys/file-$i.txt"
+  i=$((i + 1))
+done
+
+# Sample gateway and active Chutni worker RSS while the mixed-root build and
+# Jobs scenarios run; the fixture includes 30,000 generated decoys.
+(
+  peak=0
+  peak_processes=0
+  while [ ! -f "$TMP/dogfood-rss-stop" ]; do
+    gateway_rss=$(/bin/ps -o rss= -p "$PID" | /usr/bin/tr -d ' ')
+    chutni_rss=0
+    if [ -f "$TMP/chutni-worker.pid" ]; then
+      chutni_pid=$(/bin/cat "$TMP/chutni-worker.pid")
+      chutni_comm=$(/bin/ps -o comm= -p "$chutni_pid" | /usr/bin/tr -d ' ')
+      case "$chutni_comm" in */chutni-mcp|chutni-mcp) chutni_rss=$(/bin/ps -o rss= -p "$chutni_pid" | /usr/bin/tr -d ' ') ;; esac
+    fi
+    case "$gateway_rss" in ''|*[!0-9]*) gateway_rss=0 ;; esac
+    case "$chutni_rss" in ''|*[!0-9]*) chutni_rss=0 ;; esac
+    rss=$((gateway_rss + chutni_rss))
+    processes=1
+    [ "$chutni_rss" -le 0 ] || processes=2
+    [ "$rss" -le "$peak" ] || peak=$rss
+    [ "$processes" -le "$peak_processes" ] || peak_processes=$processes
+    /bin/sleep 0.02
+  done
+  /usr/bin/printf '%s %s\n' "$peak" "$peak_processes" >"$TMP/dogfood-peak-rss-kb"
+) &
+DOGFOOD_RSS_MONITOR=$!
+
+/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/preflight" \
+  --data-binary "{\"kind\":\"folder\",\"roots\":[{\"path\":\"$DOGFOOD\"}],\"user_exclusions\":[\"Private\"]}" \
+  >"$TMP/dogfood-preflight.json"
+DOGFOOD_PF=$(/bin/cat "$TMP/dogfood-preflight.json")
+# A skip reason carries one representative, chosen by filesystem enumeration
+# order. Check every excluded group and its count, without assuming which
+# member of a group macOS or Linux returns first.
+"$PYTHON" - "$TMP/dogfood-preflight.json" <<'PY'
+import json, sys
+inventory = json.load(open(sys.argv[1]))['inventory']
+assert inventory['complete'] and not inventory['partial'], inventory
+assert inventory['regular_files'] == 9 and inventory['skipped'] == 7, inventory
+reasons = {row['reason']: row for row in inventory['skip_reasons']}
+expected = {
+    'hidden_excluded': (2, {'Software/.venv', 'Software/.git'}),
+    'generated_tree': (2, {'Software/node_modules', 'Software/build'}),
+    'python_environment_marker': (1, {'Software/custom-python-env'}),
+    'user_exclusion': (1, {'Private'}),
+    'symlink': (1, {'escape-link'}),
+}
+assert set(reasons) == set(expected), reasons
+for reason, (count, paths) in expected.items():
+    assert reasons[reason]['count'] == count, reasons[reason]
+    assert reasons[reason]['representative_path'] in paths, reasons[reason]
+PY
+DOGFOOD_PREFLIGHT=$(printf '%s' "$DOGFOOD_PF" | /usr/bin/sed -n 's/.*"preflight_id":"\([^"]*\)".*/\1/p')
+DOGFOOD_POLICY=$(printf '%s' "$DOGFOOD_PF" | /usr/bin/sed -n 's/.*"policy_fingerprint":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$DOGFOOD_PREFLIGHT" ] && [ -n "$DOGFOOD_POLICY" ]
+DOGFOOD_CREATED=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/scopes" \
+  --data-binary "{\"preflight_id\":\"$DOGFOOD_PREFLIGHT\",\"policy_fingerprint\":\"$DOGFOOD_POLICY\",\"display_name\":\"Samosa Dogfood\",\"summary_token_budget\":128}")
+DOGFOOD_SCOPE=$(printf '%s' "$DOGFOOD_CREATED" | /usr/bin/sed -n 's/.*"scope_id":"\([^"]*\)".*/\1/p')
+[ -n "$DOGFOOD_SCOPE" ]
+i=0
+while [ "$i" -lt 300 ]; do
+  DOGFOOD_STATUS=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+    "http://127.0.0.1:$PORT/v1/chutni/scopes/$DOGFOOD_SCOPE")
+  printf '%s' "$DOGFOOD_STATUS" | /usr/bin/grep -q '"state":"ready"' && break
+  /bin/sleep 0.05
+  i=$((i + 1))
+done
+[ "$i" -lt 300 ] || { printf '%s\n' "$DOGFOOD_STATUS" >&2; exit 1; }
+printf '%s' "$DOGFOOD_STATUS" | /usr/bin/grep -q "\"policy_fingerprint\":\"$DOGFOOD_POLICY\""
+DOGFOOD_QUERY=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/query" \
+  --data-binary "{\"query\":\"DOGFOOD_TITLI_SENTINEL\",\"directory_context\":{\"scope_id\":\"$DOGFOOD_SCOPE\"}}")
+printf '%s' "$DOGFOOD_QUERY" | /usr/bin/grep -q '"used":true'
+printf '%s' "$DOGFOOD_QUERY" | /usr/bin/grep -q 'chutni-evidence.txt'
+DOGFOOD_UNRELATED=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/query" \
+  --data-binary "{\"query\":\"the moon made of purple marshmallows\",\"directory_context\":{\"scope_id\":\"$DOGFOOD_SCOPE\"}}")
+printf '%s' "$DOGFOOD_UNRELATED" | /usr/bin/grep -q '"used":false'
+DOGFOOD_EXCLUDED=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  -H 'Content-Type: application/json' -X POST \
+  "http://127.0.0.1:$PORT/v1/chutni/query" \
+  --data-binary "{\"query\":\"PRIVATE_DOGFOOD_SENTINEL\",\"directory_context\":{\"scope_id\":\"$DOGFOOD_SCOPE\"}}")
+printf '%s' "$DOGFOOD_EXCLUDED" | /usr/bin/grep -q '"used":false'
+! printf '%s' "$DOGFOOD_QUERY" | /usr/bin/grep -q 'node_modules/fixture'
+! printf '%s' "$DOGFOOD_QUERY" | /usr/bin/grep -q 'OUTSIDE_DOGFOOD_SECRET'
+
+DOGFOOD_FIND=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"goal\":\"find anonymous Titli PDF fixture\",\"folder\":\"$DOGFOOD/Documents\",\"recipe\":\"find\",\"mode\":\"confirm\"}")
+printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'anonymous-scan.pdf'
+if "$EXTRACTOR" --version 2>/dev/null | /usr/bin/grep -F ';pdfium)' >/dev/null; then
+  printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'Titli vaccination date is 2026-06-14'
+else
+  [ "${SAMOSA_REQUIRE_PDF_ATTACHMENTS:-0}" != 1 ] || {
+    echo 'mixed-folder test requires the configured PDFium reader' >&2; exit 1;
+  }
+  # The minimal Debian gate deliberately builds the portable reader. It must
+  # disclose the missing capability rather than invent the PDF's contents.
+  printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q '"source":"pdf_extractor_unavailable"'
+  ! printf '%s' "$DOGFOOD_FIND" | /usr/bin/grep -q 'Titli vaccination date is 2026-06-14'
+fi
+
+"$PYTHON" "$ROOT/tests/tree_manifest.py" "$DOGFOOD/Inbox" >"$TMP/dogfood-inbox-before.json"
+/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$DOGFOOD\"}" \
+  >"$TMP/dogfood-report.sse"
+DOGFOOD_REPORT=$(/bin/cat "$TMP/dogfood-report.sse")
+printf '%s' "$DOGFOOD_REPORT" | /usr/bin/grep -q '"recipe":"folder_report"'
+printf '%s' "$DOGFOOD_REPORT" | /usr/bin/grep -q '"type":"report"'
+"$FS_SIDECAR" chutni-inventory --root "$DOGFOOD" >"$TMP/dogfood-inventory.ndjson"
+"$PYTHON" "$ROOT/tests/assert_jobs_report_inventory.py" \
+  "$TMP/dogfood-inventory.ndjson" "$TMP/dogfood-report.sse" \
+  >"$TMP/dogfood-report-parity.json"
+/bin/cat "$TMP/dogfood-report-parity.json"
+DOGFOOD_TRIAGE=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"classify_inbox\",\"folder\":\"$DOGFOOD/Inbox\"}")
+printf '%s' "$DOGFOOD_TRIAGE" | /usr/bin/grep -q '"category":"billing"'
+printf '%s' "$DOGFOOD_TRIAGE" | /usr/bin/grep -q '"category":"medical"'
+printf '%s' "$DOGFOOD_TRIAGE" | /usr/bin/grep -q '"category":"work"'
+printf '%s' "$DOGFOOD_TRIAGE" | /usr/bin/grep -q '"category":"review"'
+DOGFOOD_SORT=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$DOGFOOD/Inbox\"}")
+printf '%s' "$DOGFOOD_SORT" | /usr/bin/grep -q '"type":"plan"'
+printf '%s' "$DOGFOOD_SORT" | /usr/bin/grep -q '"moves":4'
+DOGFOOD_SORT_JOB=$(printf '%s' "$DOGFOOD_SORT" | /usr/bin/sed -n 's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$DOGFOOD_SORT_JOB" ]
+[ -f "$DOGFOOD/Inbox/clear-billing.txt" ]
+[ ! -e "$DOGFOOD/Inbox/Sorted by type" ]
+DOGFOOD_SORT_APPLY=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$DOGFOOD_SORT_JOB\"}")
+printf '%s' "$DOGFOOD_SORT_APPLY" | /usr/bin/grep -q '"applied":4'
+[ -f "$DOGFOOD/Inbox/Sorted by type/txt/clear-billing.txt" ]
+DOGFOOD_SORT_UNDO=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/undo" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$DOGFOOD_SORT_JOB\"}")
+printf '%s' "$DOGFOOD_SORT_UNDO" | /usr/bin/grep -q '"undone":4'
+[ -f "$DOGFOOD/Inbox/clear-billing.txt" ]
+[ ! -e "$DOGFOOD/Inbox/Sorted by type/txt/clear-billing.txt" ]
+"$PYTHON" "$ROOT/tests/tree_manifest.py" "$DOGFOOD/Inbox" >"$TMP/dogfood-inbox-after.json"
+/usr/bin/cmp "$TMP/dogfood-inbox-before.json" "$TMP/dogfood-inbox-after.json"
+
+/bin/mkdir "$DOGFOOD/Watch"
+/usr/bin/printf 'Initial invoice amount 12.00\n' >"$DOGFOOD/Watch/invoice.txt"
+DOGFOOD_WATCH_DEF="{\"job\":{\"job_id\":\"dogfood-watch-delta\",\"input\":{\"folder\":\"$DOGFOOD/Watch\"},\"watch_recipe\":\"classify_inbox\",\"resources\":{\"run_on_battery\":true}},\"window_start\":\"00:00\",\"window_end\":\"00:00\",\"missed_policy\":\"run_next_start\",\"keep_awake\":false}"
+/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/schedule/arm" \
+  -H 'Content-Type: application/json' --data-binary "$DOGFOOD_WATCH_DEF" \
+  | /usr/bin/grep -q '"ok":true'
+/usr/bin/printf 'Changed invoice amount 14.00\n' >"$DOGFOOD/Watch/invoice.txt"
+/usr/bin/printf 'New family travel note\n' >"$DOGFOOD/Watch/travel.txt"
+DOGFOOD_WATCH_RUN=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"now_minutes":0,"on_battery":false}')
+printf '%s' "$DOGFOOD_WATCH_RUN" | /usr/bin/grep -q '"job_id":"dogfood-watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":1,"changed":1.*"processed":2' \
+  "$HOME_DIR/jobs/dogfood-watch-delta/events.jsonl"
+DOGFOOD_WATCH_AGAIN=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"now_minutes":0,"on_battery":false}')
+printf '%s' "$DOGFOOD_WATCH_AGAIN" | /usr/bin/grep -q '"job_id":"dogfood-watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":0,"changed":0.*"processed":0' \
+  "$HOME_DIR/jobs/dogfood-watch-delta/events.jsonl"
+/usr/bin/touch "$TMP/dogfood-rss-stop"
+wait "$DOGFOOD_RSS_MONITOR"
+DOGFOOD_RSS_MONITOR=""
+DOGFOOD_PEAK_RSS_KB=$(/bin/cat "$TMP/dogfood-peak-rss-kb")
+set -- $DOGFOOD_PEAK_RSS_KB
+DOGFOOD_PEAK_RSS_KB=$1
+DOGFOOD_PEAK_PROCESS_COUNT=$2
+[ "$DOGFOOD_PEAK_RSS_KB" -gt 0 ] && [ "$DOGFOOD_PEAK_PROCESS_COUNT" -ge 1 ]
+[ "$DOGFOOD_PEAK_RSS_KB" -lt 8388608 ] || { echo "dogfood gateway/Chutni RSS exceeded 8 GiB: $DOGFOOD_PEAK_RSS_KB KiB" >&2; exit 1; }
+printf '{"fixture":"mixed-folder-dogfood","generated_decoys_per_tree":10000,"generated_trees":3,"peak_gateway_chutni_rss_kib":%s,"peak_matching_process_count":%s,"result":"pass"}\n' \
+  "$DOGFOOD_PEAK_RSS_KB" "$DOGFOOD_PEAK_PROCESS_COUNT" >"$TMP/dogfood-result.json"
+/bin/cat "$TMP/dogfood-result.json"
+printf 'mixed-folder gateway plus Chutni worker peak RSS: %s KiB\n' "$DOGFOOD_PEAK_RSS_KB"
+if [ "${SAMOSA_TEST_TRACE:-0}" = 1 ]; then
+  # Trace assertions after fixture creation, without logging all 30,000 decoys.
+  # CI must identify the failing command instead of only reporting Error 1.
+  set -x
+fi
+# Startup health may have reported a loading backend. Assert the current
+# state after the real requests above, rather than that stale first snapshot.
+health=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/healthz")
 printf '%s' "$health" | /usr/bin/grep -q '"compiled":true'
 printf '%s' "$health" | /usr/bin/grep -q '"ready":true'
 status=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/internal/v1/status")
@@ -181,6 +476,105 @@ report=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   --data-binary "{\"goal\":\"report what is here\",\"folder\":\"$TMP/files\"}")
 printf '%s' "$report" | /usr/bin/grep -q '"type":"report"'
 printf '%s' "$report" | /usr/bin/grep -q '"type":"done"'
+
+# The productized Folder report recipe takes the bounded metadata inventory,
+# reports size-only duplicate candidates honestly, and leaves the source tree
+# untouched. It does not invoke model intent classification.
+report_recipe=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"recipe":"folder_report"'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"total":4'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"duplicate_candidates":3'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"duplicate_size_groups":1'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"symlink":1'
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"size_bands":\['
+printf '%s' "$report_recipe" | /usr/bin/grep -q '"age":\['
+REPORT_JOB_ID=$(printf '%s' "$report_recipe" | /usr/bin/sed -n 's/.*"job_id":"\([A-Za-z0-9_-]*\)".*/\1/p' | /usr/bin/head -n 1)
+[ -n "$REPORT_JOB_ID" ]
+history_unauth_code=$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/jobs/history")
+[ "$history_unauth_code" = 401 ]
+history=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" "http://127.0.0.1:$PORT/v1/jobs/history")
+printf '%s' "$history" | /usr/bin/grep -q "\"job_id\":\"$REPORT_JOB_ID\""
+printf '%s' "$history" | /usr/bin/grep -q '"goal":"Folder report"'
+saved_events=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" "http://127.0.0.1:$PORT/v1/jobs/history/events?job_id=$REPORT_JOB_ID")
+printf '%s' "$saved_events" | /usr/bin/grep -q '"type":"report"'
+printf '%s' "$saved_events" | /usr/bin/grep -q '"type":"done"'
+[ "$(/usr/bin/find "$TMP/report-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 4 ]
+report_again=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$TMP/report-files\"}")
+REPORT_SNAPSHOT=$(printf '%s' "$report_recipe" | /usr/bin/grep '"type":"report"' | /usr/bin/sed 's/.*"type":"report"/"type":"report"/')
+REPORT_AGAIN_SNAPSHOT=$(printf '%s' "$report_again" | /usr/bin/grep '"type":"report"' | /usr/bin/sed 's/.*"type":"report"/"type":"report"/')
+[ "$REPORT_SNAPSHOT" = "$REPORT_AGAIN_SNAPSHOT" ] || { echo "Folder report was not deterministic" >&2; exit 1; }
+DUPLICATES=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"find_duplicates\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"type":"duplicates"'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"candidate_files":3'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"hashed_files":3'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"duplicate_groups":1'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'first.txt'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'copy.txt'
+! printf '%s' "$DUPLICATES" | /usr/bin/grep -q 'second.txt'
+printf '%s' "$DUPLICATES" | /usr/bin/grep -q '"partial":false'
+[ "$(/usr/bin/find "$TMP/report-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 4 ]
+LIMITED_DUPLICATES=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"find_duplicates\",\"folder\":\"$TMP/duplicate-limit-files\"}")
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"candidate_files":129'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"hashed_files":0'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"deferred_files":129'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"partial":true'
+printf '%s' "$LIMITED_DUPLICATES" | /usr/bin/grep -q '"limiting_reason":"hash_file_limit"'
+SORT_PREVIEW=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$TMP/report-files\"}")
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"type":"plan"'
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"moves":4'
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q 'Sorted by type/txt/first.txt'
+[ -f "$TMP/report-files/first.txt" ]
+[ ! -e "$TMP/report-files/Sorted by type" ]
+SORT_JOB=$(printf '%s' "$SORT_PREVIEW" | /usr/bin/sed -n 's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$SORT_JOB" ]
+printf '%s' "$SORT_PREVIEW" | /usr/bin/grep -q '"type":"done"'
+sorted=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$SORT_JOB\"}")
+printf '%s' "$sorted" | /usr/bin/grep -q '"applied":4'
+[ -f "$TMP/report-files/Sorted by type/txt/first.txt" ]
+[ -f "$TMP/report-files/Sorted by type/csv/third.csv" ]
+unsorted=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/undo" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$SORT_JOB\"}")
+printf '%s' "$unsorted" | /usr/bin/grep -q '"undone":4'
+[ -f "$TMP/report-files/first.txt" ]
+[ -f "$TMP/report-files/third.csv" ]
+[ ! -e "$TMP/report-files/Sorted by type/txt/first.txt" ]
+[ ! -e "$TMP/report-files/Sorted by type/csv/third.csv" ]
+INBOX=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"classify_inbox\",\"folder\":\"$TMP/inbox-files\"}")
+printf '%s' "$INBOX" | /usr/bin/grep -q '"type":"inbox_classification"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"billing","signal":"invoice"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"medical","signal":"vaccination"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"work","signal":"sprint"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"personal","signal":"family"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"review","signal":"conflicting filename clues"'
+printf '%s' "$INBOX" | /usr/bin/grep -q '"category":"review","signal":"no clear filename clue"'
+[ "$(/usr/bin/find "$TMP/inbox-files" -type f | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = 6 ]
+STALE_SORT=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$TMP/sort-stale-files\"}")
+STALE_SORT_JOB=$(printf '%s' "$STALE_SORT" | /usr/bin/sed -n 's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$STALE_SORT_JOB" ]
+printf 'changed after preview with a different size\n' >"$TMP/sort-stale-files/item.txt"
+STALE_APPLY=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$STALE_SORT_JOB\"}")
+printf '%s' "$STALE_APPLY" | /usr/bin/grep -q '"applied":0,"skipped":1'
+/usr/bin/grep -q 'changed after preview' "$TMP/sort-stale-files/item.txt"
+[ ! -e "$TMP/sort-stale-files/Sorted by type" ]
+REPORT_JOB=$(printf '%s' "$report_recipe" | /usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -f "$HOME_DIR/jobs/$REPORT_JOB/events.jsonl" ]
+/usr/bin/grep -q '"recipe":"folder_report"' "$HOME_DIR/jobs/$REPORT_JOB/events.jsonl"
 
 # Phase JI find: model triages every filename (Phase A), the verify loop reads
 # content and ends with a structured finish() result card (JI.2/JI.4/JI.5). No
@@ -256,6 +650,92 @@ kill_main_for_crash() {
   [ -z "$crash_backend" ] || kill -KILL "$crash_backend" 2>/dev/null || true
   /bin/sleep 0.05
 }
+
+# A report interrupted while its real shared inventory subprocess is scanning
+# must be visible after restart as an explicit non-resumable terminal event.
+/usr/bin/touch "$TMP/report-crash-inventory-enable"
+/usr/bin/curl -sS -N -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"folder_report\",\"folder\":\"$REPORT_CRASH_ROOT\"}" \
+  >"$TMP/report-crash.sse" 2>/dev/null &
+REPORT_CRASH_CURL=$!
+REPORT_CRASH_JOB=""
+i=0
+while [ "$i" -lt 200 ]; do
+  kill -0 "$PID" 2>/dev/null || { /bin/cat "$TMP/gateway.log" >&2; exit 1; }
+  REPORT_CRASH_JOB=$(/usr/bin/sed -n \
+    's/.*"type":"inventory_started","job_id":"\([^"]*\)".*/\1/p' \
+    "$TMP/report-crash.sse" | /usr/bin/head -1)
+  if [ -f "$TMP/report-crash-inventory.pid" ] && [ -n "$REPORT_CRASH_JOB" ]; then
+    break
+  fi
+  /bin/sleep 0.02
+  i=$((i + 1))
+done
+[ -f "$TMP/report-crash-inventory.pid" ]
+[ -n "$REPORT_CRASH_JOB" ]
+# Background memory publication can update an older job directory at any time.
+# Exercise that competing update and identify this report by its own SSE ID,
+# never by directory mtime.
+/usr/bin/touch "$HOME_DIR/jobs/$REPORT_JOB"
+REPORT_CRASH_JOB_DIR="$HOME_DIR/jobs/$REPORT_CRASH_JOB"
+/usr/bin/grep -q '"type":"inventory_started"' "$REPORT_CRASH_JOB_DIR/events.jsonl"
+/usr/bin/grep -Fq "\"folder\":\"$REPORT_CRASH_ROOT\"" "$REPORT_CRASH_JOB_DIR/events.jsonl"
+/bin/sleep 0.8
+REPORT_CRASH_INVENTORY_PID=$(/bin/cat "$TMP/report-crash-inventory.pid")
+kill_main_for_crash
+kill -KILL "$REPORT_CRASH_INVENTORY_PID" 2>/dev/null || true
+wait "$REPORT_CRASH_CURL" 2>/dev/null || true
+/bin/rm -f "$TMP/report-crash-inventory-enable" "$TMP/report-crash-inventory.pid"
+launch_main_gateway
+REPORT_CRASH_EVENTS=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" \
+  "http://127.0.0.1:$PORT/v1/jobs/history/events?job_id=$REPORT_CRASH_JOB")
+printf '%s' "$REPORT_CRASH_EVENTS" | /usr/bin/grep -q '"type":"inventory_started"'
+printf '%s' "$REPORT_CRASH_EVENTS" | /usr/bin/grep -q '"type":"interrupted"'
+printf '%s' "$REPORT_CRASH_EVENTS" | /usr/bin/grep -q '"phase":"inventory"'
+printf '%s' "$REPORT_CRASH_EVENTS" | /usr/bin/grep -q '"resumable":false'
+! printf '%s' "$REPORT_CRASH_EVENTS" | /usr/bin/grep -q '"type":"report"'
+
+# A sort apply may be killed after its first rename. The fsynced applied
+# journal must already contain that operation so a restarted gateway can undo
+# exactly the move it performed without touching the rest of the preview.
+DOGFOOD_CRASH_SORT=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"recipe\":\"sort_by_type\",\"folder\":\"$DOGFOOD/Inbox\"}")
+DOGFOOD_CRASH_JOB=$(printf '%s' "$DOGFOOD_CRASH_SORT" | /usr/bin/sed -n \
+  's/.*"type":"await_apply","job_id":"\([^"]*\)".*/\1/p' | /usr/bin/head -1)
+[ -n "$DOGFOOD_CRASH_JOB" ]
+/usr/bin/touch "$TMP/dogfood-move-pause"
+/usr/bin/curl -sS -N -X POST "http://127.0.0.1:$PORT/v1/jobs/apply" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"job_id\":\"$DOGFOOD_CRASH_JOB\"}" \
+  >"$TMP/dogfood-move-crash.sse" 2>/dev/null &
+DOGFOOD_MOVE_CURL=$!
+i=0
+while [ "$i" -lt 200 ] && [ ! -f "$TMP/dogfood-move-pause.reached" ]; do
+  kill -0 "$PID" 2>/dev/null || { /bin/cat "$TMP/gateway.log" >&2; exit 1; }
+  /bin/sleep 0.02
+  i=$((i + 1))
+done
+[ -f "$TMP/dogfood-move-pause.reached" ]
+DOGFOOD_APPLIED="$HOME_DIR/jobs/$DOGFOOD_CRASH_JOB/applied.jsonl"
+[ "$(/usr/bin/grep -c '"src":' "$DOGFOOD_APPLIED")" = 1 ]
+DOGFOOD_MOVE_SRC=$(/usr/bin/sed -n 's/.*"src":"\([^"]*\)".*/\1/p' "$DOGFOOD_APPLIED" | /usr/bin/head -1)
+DOGFOOD_MOVE_DST=$(/usr/bin/sed -n 's/.*"dst":"\([^"]*\)".*/\1/p' "$DOGFOOD_APPLIED" | /usr/bin/head -1)
+[ -n "$DOGFOOD_MOVE_SRC" ] && [ -n "$DOGFOOD_MOVE_DST" ]
+[ ! -e "$DOGFOOD_MOVE_SRC" ] && [ -f "$DOGFOOD_MOVE_DST" ]
+kill_main_for_crash
+wait "$DOGFOOD_MOVE_CURL" 2>/dev/null || true
+/bin/rm -f "$TMP/dogfood-move-pause" "$TMP/dogfood-move-pause.reached"
+launch_main_gateway
+[ -f "$DOGFOOD_APPLIED" ]
+DOGFOOD_MOVE_UNDO=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/undo" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"job_id\":\"$DOGFOOD_CRASH_JOB\"}")
+printf '%s' "$DOGFOOD_MOVE_UNDO" | /usr/bin/grep -q '"undone":1'
+[ -f "$DOGFOOD_MOVE_SRC" ] && [ ! -e "$DOGFOOD_MOVE_DST" ]
+[ ! -e "$DOGFOOD_APPLIED" ]
+
 /usr/bin/curl -sS -N -X POST "http://127.0.0.1:$PORT/v1/jobs/run" \
   -H 'Content-Type: application/json' \
   --data-binary "{\"goal\":\"find triage crash fixtures\",\"folder\":\"$TMP/triage-crash-files\"}" \
@@ -278,11 +758,18 @@ while [ "$i" -lt 200 ] && [ ! -f "$TMP/fake-triage-delay" ]; do
 done
 [ -f "$TMP/fake-triage-first" ]
 [ -f "$TMP/fake-triage-delay" ]
-TRIAGE_JOB=$(/bin/ls -dt "$HOME_DIR"/jobs/job-* | /usr/bin/head -1 | /usr/bin/xargs /usr/bin/basename)
+TRIAGE_JOB=$(/usr/bin/sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p' "$TMP/triage-crash.sse" | /usr/bin/head -1)
+[ -n "$TRIAGE_JOB" ]
 [ "$(/usr/bin/grep -c '"rel_path":' "$HOME_DIR/jobs/$TRIAGE_JOB/verdicts.jsonl")" = 16 ]
 kill_main_for_crash
 wait "$TRIAGE_CRASH_CURL" 2>/dev/null || true
 launch_main_gateway
+history_after_restart=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" "http://127.0.0.1:$PORT/v1/jobs/history")
+"$PYTHON" "$ROOT/tests/assert_folder_memory.py" "http://127.0.0.1:$PORT" "$MAIN_TOKEN" "$HOME_DIR" after
+"$PYTHON" "$ROOT/tests/assert_job_selection.py" "http://127.0.0.1:$PORT" "$MAIN_TOKEN" "$HOME_DIR" after
+printf '%s' "$history_after_restart" | /usr/bin/grep -q "\"job_id\":\"$REPORT_JOB_ID\""
+saved_after_restart=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" "http://127.0.0.1:$PORT/v1/jobs/history/events?job_id=$REPORT_JOB_ID")
+printf '%s' "$saved_after_restart" | /usr/bin/grep -q '"type":"report"'
 triage_resume=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/continue" \
   -H 'Content-Type: application/json' --data-binary "{\"job_id\":\"$TRIAGE_JOB\"}")
 printf '%s' "$triage_resume" | /usr/bin/grep -q '"type":"triage_progress"'
@@ -566,6 +1053,9 @@ done
 
 /bin/mkdir "$TMP/pdf-files"
 /usr/bin/printf '%%PDF-1.4\n' >"$TMP/pdf-files/article.pdf"
+# Earlier automatic memory builds legitimately make bounded preview reads.
+# Scope this contract assertion to the definition request below.
+: >"$TMP/extract-calls.log"
 pdf_definition="{\"job\":{\"job_id\":\"native-definition-pdf-pages\",\"input\":{\"folder\":\"$TMP/pdf-files\"},\"instruction\":\"PDF first-final page probe.\",\"output_schema\":{\"type\":\"object\",\"properties\":{\"merchant\":{\"type\":\"string\"},\"total\":{\"type\":\"number\"}}},\"output\":{\"dir\":\"$TMP/definition-pdf-out\"}}}"
 pdf_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/definition/run" \
   -H 'Content-Type: application/json' --data-binary "$pdf_definition")
@@ -675,6 +1165,29 @@ missed=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
 printf '%s' "$missed" | /usr/bin/grep -q '"job_id":"missed-skip","action":"defer","reason":"window_expired"'
 printf '%s' "$missed" | /usr/bin/grep -q '"job_id":"missed-run","action":"run","reason":"missed_window"'
 /usr/bin/grep -q '"type":"scheduled_job_complete"' "$HOME_DIR/jobs/missed-run/events.jsonl"
+
+# Folder watches snapshot a baseline, process only additions/changes, repeat
+# on the daemon's five-minute poll, and can be stopped from the UI session.
+WATCH_DEF="{\"job\":{\"job_id\":\"watch-delta\",\"input\":{\"folder\":\"$TMP/watch-folder\"},\"watch_recipe\":\"classify_inbox\",\"resources\":{\"run_on_battery\":true}},\"window_start\":\"00:00\",\"window_end\":\"00:00\",\"missed_policy\":\"run_next_start\",\"keep_awake\":false}"
+/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobs/schedule/arm" \
+  -H 'Content-Type: application/json' --data-binary "$WATCH_DEF" | /usr/bin/grep -q '"ok":true'
+[ -f "$HOME_DIR/jobs/watch-delta/watch-state.json" ]
+printf 'Changed invoice with a longer body\n' >"$TMP/watch-folder/invoice-initial.txt"
+printf 'New family trip\n' >"$TMP/watch-folder/family-trip.txt"
+watch_run=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' --data-binary '{"now_minutes":720,"on_battery":false}')
+printf '%s' "$watch_run" | /usr/bin/grep -q '"job_id":"watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":1,"changed":1.*"processed":2' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+/usr/bin/grep -q '"category":"billing"' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+/usr/bin/grep -q '"category":"personal"' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+watch_again=$(/usr/bin/curl -fsS -X POST "http://127.0.0.1:$PORT/v1/jobsd/once" \
+  -H 'Content-Type: application/json' --data-binary '{"now_minutes":720,"on_battery":false}')
+printf '%s' "$watch_again" | /usr/bin/grep -q '"job_id":"watch-delta","action":"run"'
+/usr/bin/grep -q '"type":"watch_delta".*"added":0,"changed":0.*"processed":0' "$HOME_DIR/jobs/watch-delta/events.jsonl"
+stopped=$(/usr/bin/curl -fsS -H "X-Samosa-Token: $MAIN_TOKEN" -X POST \
+  "http://127.0.0.1:$PORT/v1/jobs/schedule/stop" -H 'Content-Type: application/json' \
+  --data-binary '{"job_id":"watch-delta"}')
+printf '%s' "$stopped" | /usr/bin/grep -q '"stopped":true'
 
 # --- launchd lifecycle (dry-run, temp LaunchAgents dir) ---
 /usr/bin/curl -fsS "http://127.0.0.1:$PORT/v1/jobs/launchd/status" | /usr/bin/grep -q '"installed":false'

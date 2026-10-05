@@ -1,0 +1,3 @@
+selected copy source/destination permission refusal: PASS
+selected copy staging interruption/retry/undo: PASS
+test_selected_copy.py: PASS

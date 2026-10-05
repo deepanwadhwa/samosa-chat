@@ -70,4 +70,59 @@ assert.deepEqual(removeChatsById(chats, ["a", "c"]), [{ id: "b" }],
 assert.deepEqual(removeChatsById(chats, ["missing"]), chats,
   "unknown IDs must not remove healthy conversations");
 
+// The home file action opens the existing file workflow without sending a
+// message or replacing a draft. Prompt suggestions remain editable, and a
+// missing model still opens model settings rather than promising a response.
+{
+  const welcomeStart = app.indexOf("      function welcomeHTML() {");
+  const welcomeEnd = app.indexOf("      // A document attachment", welcomeStart);
+  const renderStart = app.indexOf("      function renderMessages() {");
+  const renderEnd = app.indexOf("      function appendMessageNode", renderStart);
+  assert.ok(welcomeStart >= 0 && welcomeEnd > welcomeStart && renderStart >= 0 && renderEnd > renderStart);
+  const controls = [];
+  const messages = {
+    set innerHTML(html) {
+      this.html = html;
+      controls.length = 0;
+      for (const match of html.matchAll(/<button\b([^>]*)>/g)) {
+        const attrs = match[1];
+        controls.push({ attrs, dataset: { prompt: attrs.match(/data-prompt="([^"]*)"/)?.[1] },
+          addEventListener(_event, handler) { this.onclick = handler; } });
+      }
+    },
+    querySelectorAll(selector) { return controls.filter(control => control.attrs.includes(selector.slice(1, -1))); },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+  };
+  const prompt = { value: "My unfinished draft", focus() { this.focused = true; } };
+  const views = [];
+  const backend = { ready: true };
+  let modelSettingsOpened = false;
+  const renderHome = eval(`(() => {
+    const profileName = "A&B";
+    const escapeHTML = text => text.replaceAll("&", "&amp;");
+    const els = { messages, prompt };
+    const activeChat = () => null;
+    const showView = view => views.push(view);
+    const resizePrompt = () => {};
+    const openModelSettings = () => { modelSettingsOpened = true; };
+    ${app.slice(welcomeStart, welcomeEnd)}
+    ${app.slice(renderStart, renderEnd)}
+    return renderMessages;
+  })()`);
+  renderHome();
+  assert.ok(messages.html.includes("A&amp;B"), "profile names must remain escaped");
+  messages.querySelector("[data-open-files]").onclick();
+  assert.deepEqual(views, ["jobs"]);
+  assert.equal(prompt.value, "My unfinished draft");
+  const suggestion = messages.querySelector("[data-prompt]");
+  suggestion.onclick();
+  assert.equal(prompt.value, suggestion.dataset.prompt);
+  assert.equal(prompt.focused, true);
+  backend.ready = false;
+  renderHome();
+  assert.equal(messages.querySelector("[data-open-files]"), null);
+  messages.querySelector("[data-choose-model]").onclick();
+  assert.equal(modelSettingsOpened, true);
+}
+
 console.log("sidebar UI fixtures: PASS");

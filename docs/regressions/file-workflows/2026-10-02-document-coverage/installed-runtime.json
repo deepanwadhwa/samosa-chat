@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-10-03T00:59:10.703748+00:00",
+  "release": "dev-ae0b3e11c9d8",
+  "ready": true,
+  "backend": "ornith",
+  "model_version": "Ornith-1.0-9B-Q4_K_M.gguf",
+  "build_binary_matches": true,
+  "ocr": {
+    "ok": true,
+    "engine": "tesseract"
+  }
+}

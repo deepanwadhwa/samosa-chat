@@ -1,0 +1,43 @@
+{
+  "run_date_local": "2026-09-22",
+  "host": {
+    "machine": "MacBook Air Mac15,12",
+    "chip": "Apple M3",
+    "memory_bytes": 17179869184,
+    "os": "macOS 26.5.1",
+    "device": "PyTorch MPS"
+  },
+  "environment": {
+    "python": "3.10.18",
+    "torch": "2.13.0",
+    "transformers": "4.57.3",
+    "laya": "0.3.6",
+    "numpy": "2.2.6",
+    "thermal_telemetry": "unavailable to this process; stored as null",
+    "thermal_pressure_spot_check": "pmset -g therm recorded no thermal or performance warning; queried separately, not per inference",
+    "memory_pressure": "sampled using memory_pressure -Q before each case",
+    "swap": "sampled using sysctl vm.swapusage"
+  },
+  "models": {
+    "modernbert": {
+      "repo": "MoritzLaurer/ModernBERT-large-zeroshot-v2.0",
+      "revision": "a51e07b524299e309dd2b88d48b0cfa2bd9ec598",
+      "reference_artifact": "model.safetensors",
+      "reference_artifact_bytes": 791684972,
+      "reference_artifact_sha256": "9e88e3ba0721cee770645d262f10dbe8125ed592ff349b7ba2eedaaded97230a",
+      "configured_context_tokens": 8192,
+      "license": "Apache-2.0"
+    },
+    "laya_typed_decisions": {
+      "repo": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+      "reference_artifact": "model.safetensors",
+      "reference_artifact_bytes": 842609220,
+      "reference_artifact_sha256": "4fa56de72383a9d3efa9cfa78955733c81b9fc8067a587ca4beb82c78107a24e",
+      "configured_context_tokens": 1024,
+      "license": "Apache-2.0",
+      "qualification_note": "The package warned that choice:11+ temperature 0.10058 is outside its supported range and was clamped; probability calibration for that bucket is not qualified."
+    }
+  },
+  "scope": "36 hand-authored English development cases, same option sets and gold labels at every run budget. No native runtime parity or product qualification is claimed."
+}

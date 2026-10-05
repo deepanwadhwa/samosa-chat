@@ -1,0 +1,8 @@
+$ node tests/test_jobs_ui.mjs
+jobs UI DOM fixtures: PASS
+$ python3 tests/test_samosa_decision.py
+...sss..
+----------------------------------------------------------------------
+Ran 8 tests in 0.061s
+
+OK (skipped=3)

@@ -1,0 +1,26 @@
+[
+  {
+    "file": "Native pages.pdf",
+    "seconds": 0.156,
+    "page_count": 20,
+    "pages_read": 3,
+    "characters_read": 3213,
+    "stop_reason": "character_target"
+  },
+  {
+    "file": "Large first page.pdf",
+    "seconds": 0.069,
+    "page_count": 20,
+    "pages_read": 1,
+    "characters_read": 5024,
+    "stop_reason": "character_target"
+  },
+  {
+    "file": "Blank pages.pdf",
+    "seconds": 0.535,
+    "page_count": 20,
+    "pages_read": 12,
+    "characters_read": 0,
+    "stop_reason": "page_guard"
+  }
+]

@@ -1,0 +1,26 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 8157.02it/s]
+{"method": "original", "path": "opaque-form.pdf", "score": 0.7145912051200867, "choice": "plausible"}
+{"method": "raw_goal", "path": "opaque-form.pdf", "scores": {"plausible": 0.6725468039512634, "unrelated": 0.3274531960487366}}
+{"method": "normalised", "path": "opaque-form.pdf", "scores": {"plausible": 0.9052385687828064, "unrelated": 0.0947614386677742}}
+{"method": "original", "path": "research.pdf", "score": 0.7890508770942688, "choice": "plausible"}
+{"method": "raw_goal", "path": "research.pdf", "scores": {"plausible": 0.29239320755004883, "unrelated": 0.7076067328453064}}
+{"method": "normalised", "path": "research.pdf", "scores": {"plausible": 0.0014214043039828539, "unrelated": 0.9985786080360413}}
+{"method": "original", "path": "investing.pdf", "score": 0.6143575310707092, "choice": "plausible"}
+{"method": "raw_goal", "path": "investing.pdf", "scores": {"plausible": 0.4089846909046173, "unrelated": 0.5910152792930603}}
+{"method": "normalised", "path": "investing.pdf", "scores": {"plausible": 0.009545539505779743, "unrelated": 0.9904544353485107}}
+{"method": "original", "path": "writing.pdf", "score": 0.637652724981308, "choice": "plausible"}
+{"method": "raw_goal", "path": "writing.pdf", "scores": {"plausible": 0.38931429386138916, "unrelated": 0.6106856465339661}}
+{"method": "normalised", "path": "writing.pdf", "scores": {"plausible": 0.010189337655901909, "unrelated": 0.9898106455802917}}
+{"method": "original", "path": "other-form.pdf", "score": 0.6819493174552917, "choice": "plausible"}
+{"method": "raw_goal", "path": "other-form.pdf", "scores": {"plausible": 0.4792599678039551, "unrelated": 0.5207400918006897}}
+{"method": "normalised", "path": "other-form.pdf", "scores": {"plausible": 0.0468120314180851, "unrelated": 0.9531879425048828}}
+{"method": "original", "path": "instructions.pdf", "score": 0.7590588331222534, "choice": "plausible"}
+{"method": "raw_goal", "path": "instructions.pdf", "scores": {"plausible": 0.16052906215190887, "unrelated": 0.8394709229469299}}
+{"method": "normalised", "path": "instructions.pdf", "scores": {"plausible": 0.045777272433042526, "unrelated": 0.9542227387428284}}
+{"method": "original", "path": "receipt.pdf", "score": 0.8110488057136536, "choice": "plausible"}
+{"method": "raw_goal", "path": "receipt.pdf", "scores": {"plausible": 0.4014531373977661, "unrelated": 0.5985468626022339}}
+{"method": "normalised", "path": "receipt.pdf", "scores": {"plausible": 0.12485183030366898, "unrelated": 0.8751481771469116}}

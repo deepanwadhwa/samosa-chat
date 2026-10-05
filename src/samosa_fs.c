@@ -24,9 +24,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifndef PATH_MAX
@@ -751,12 +754,23 @@ typedef struct {
     int cross_filesystems;
     char **exclude_names;
     size_t exclude_count;
+    unsigned int max_depth;
+    unsigned long long max_files;
+    unsigned long long max_directories;
+    unsigned long long max_seconds;
+    unsigned long long max_file_bytes;
+    unsigned long long max_eligible_bytes;
+    unsigned long long deadline_ms;
 } ChutniPolicy;
 
 typedef struct {
     unsigned long long files;
+    unsigned long long eligible_bytes;
     unsigned long long skipped;
+    unsigned long long directories_seen;
     unsigned long long directories_entered;
+    const char *limiting_reason;
+    int stop;
 } ChutniCounters;
 
 static volatile sig_atomic_t g_chutni_canceled = 0;
@@ -764,6 +778,13 @@ static volatile sig_atomic_t g_chutni_canceled = 0;
 static void chutni_on_signal(int signum) {
     (void)signum;
     g_chutni_canceled = 1;
+}
+
+static unsigned long long chutni_monotonic_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (unsigned long long)ts.tv_sec * 1000ull +
+           (unsigned long long)ts.tv_nsec / 1000000ull;
 }
 
 /* Test-only determinism seam: SAMOSA_CHUTNI_TEST_DELAY_US inserts a per-file
@@ -780,12 +801,42 @@ static long chutni_test_delay_us(void) {
     return delay;
 }
 
-static int chutni_name_excluded(const ChutniPolicy *policy, const char *name) {
-    size_t i;
-    for (i = 0; i < policy->exclude_count; ++i)
-        if (strcmp(policy->exclude_names[i], name) == 0)
+static int chutni_generated_name_excluded(const char *name) {
+    static const char *generated[] = {
+        ".git", ".svn", ".hg", "node_modules", ".cache", "__pycache__",
+        ".venv", "venv", "env", "target", "build", "dist", "DerivedData",
+        ".Trash", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+        "site-packages", ".next", ".nuxt", ".yarn", ".pnpm-store",
+        ".gradle", "coverage", ".idea", NULL
+    };
+    static const char *packages[] = {
+        ".app", ".bundle", ".framework", ".plugin", ".xcodeproj",
+        ".xcworkspace", ".photoslibrary", NULL
+    };
+    for (const char **p = generated; *p; p++)
+        if (!strcasecmp(*p, name)) return 1;
+    size_t length = strlen(name);
+    for (const char **p = packages; *p; p++) {
+        size_t suffix_length = strlen(*p);
+        if (length > suffix_length && !strcasecmp(name + length - suffix_length, *p))
+            return 1;
+    }
+    return 0;
+}
+
+static int chutni_user_name_excluded(const ChutniPolicy *policy, const char *name) {
+    for (size_t i = 0; i < policy->exclude_count; ++i)
+        if (strcasecmp(policy->exclude_names[i], name) == 0)
             return 1;
     return 0;
+}
+
+static int chutni_python_environment(const char *parent, const char *name) {
+    char marker[PATH_MAX];
+    struct stat st;
+    int n = snprintf(marker, sizeof marker, "%s/%s/pyvenv.cfg", parent, name);
+    return n >= 0 && (size_t)n < sizeof marker &&
+           lstat(marker, &st) == 0 && S_ISREG(st.st_mode);
 }
 
 static int chutni_emit_file(const char *rel_path, const struct stat *st) {
@@ -814,14 +865,42 @@ static int chutni_emit_skip(const char *rel_path, const char *reason) {
     return 1;
 }
 
+static void chutni_inventory_policy_fingerprint(const ChutniPolicy *policy,
+                                                const struct stat *root_st,
+                                                char out[65]) {
+    Sha256 sha;
+    unsigned char digest[32];
+    char identity[256];
+    int n = snprintf(identity, sizeof identity,
+        "samosa-folder-policy-v3\n%llu:%llu\n%d:%d:%u:%llu:%llu:%llu:%llu:%llu\n",
+        (unsigned long long)root_st->st_dev, (unsigned long long)root_st->st_ino,
+        policy->include_hidden, policy->cross_filesystems, policy->max_depth,
+        policy->max_files, policy->max_directories, policy->max_seconds,
+        policy->max_file_bytes, policy->max_eligible_bytes);
+    sha256_init(&sha);
+    if (n > 0) sha256_update(&sha, identity, (size_t)n);
+    for (size_t i = 0; i < policy->exclude_count; i++) {
+        sha256_update(&sha, policy->exclude_names[i], strlen(policy->exclude_names[i]));
+        sha256_update(&sha, "\n", 1);
+    }
+    sha256_final(&sha, digest);
+    sha256_hex(digest, out);
+}
+
 /* Returns 0 only on an unrecoverable output failure (caller reports
  * output_too_large); an unreadable directory is a recorded skip, not a
  * failure, so the scan can continue past it. */
 static int chutni_walk(dev_t root_dev, const char *dir_abs, const char *rel_prefix,
+                       unsigned int depth,
                        const ChutniPolicy *policy, ChutniCounters *counters) {
     DIR *dir;
     struct dirent *de;
     if (g_chutni_canceled) return 1;
+    if (policy->deadline_ms && chutni_monotonic_ms() >= policy->deadline_ms) {
+        counters->limiting_reason = "deadline";
+        counters->stop = 1;
+        return 1;
+    }
     dir = opendir(dir_abs);
     if (!dir) {
         if (!chutni_emit_skip(rel_prefix[0] ? rel_prefix : ".",
@@ -831,16 +910,26 @@ static int chutni_walk(dev_t root_dev, const char *dir_abs, const char *rel_pref
         return 1;
     }
     counters->directories_entered++;
-    while (!g_chutni_canceled && (de = readdir(dir)) != NULL) {
+    while (!g_chutni_canceled && !counters->stop && (de = readdir(dir)) != NULL) {
         char child_abs[PATH_MAX];
         char child_rel[PATH_MAX];
         struct stat st;
         int n;
+        if (policy->deadline_ms && chutni_monotonic_ms() >= policy->deadline_ms) {
+            counters->limiting_reason = "deadline";
+            counters->stop = 1;
+            break;
+        }
         if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
             continue;
         {
             long delay_us = chutni_test_delay_us();
             if (delay_us > 0) usleep((useconds_t)delay_us);
+        }
+        if (policy->deadline_ms && chutni_monotonic_ms() >= policy->deadline_ms) {
+            counters->limiting_reason = "deadline";
+            counters->stop = 1;
+            break;
         }
         if (!join_path(child_abs, sizeof(child_abs), dir_abs, de->d_name)) {
             if (!chutni_emit_skip(rel_prefix[0] ? rel_prefix : ".", "unreadable")) {
@@ -874,18 +963,51 @@ static int chutni_walk(dev_t root_dev, const char *dir_abs, const char *rel_pref
             counters->skipped++;
             continue;
         }
-        if (chutni_name_excluded(policy, de->d_name)) {
+        if (chutni_generated_name_excluded(de->d_name)) {
+            if (!chutni_emit_skip(child_rel, "generated_tree")) { closedir(dir); return 0; }
+            counters->skipped++;
+            continue;
+        }
+        if (chutni_user_name_excluded(policy, de->d_name)) {
             if (!chutni_emit_skip(child_rel, "user_exclusion")) { closedir(dir); return 0; }
             counters->skipped++;
             continue;
         }
         if (S_ISDIR(st.st_mode)) {
+            /* Adjacent portable stores contain generated databases and
+             * artifacts, including transient SQLite files. Never inventory
+             * those as source documents when scanning a parent folder. */
+            size_t name_length = strlen(de->d_name);
+            if (name_length > 7 && !strcasecmp(de->d_name + name_length - 7, ".chutni")) {
+                if (!chutni_emit_skip(child_rel, "generated_tree")) { closedir(dir); return 0; }
+                counters->skipped++;
+                continue;
+            }
+            if (chutni_python_environment(dir_abs, de->d_name)) {
+                if (!chutni_emit_skip(child_rel, "python_environment_marker")) { closedir(dir); return 0; }
+                counters->skipped++;
+                continue;
+            }
+            if (counters->directories_seen >= policy->max_directories) {
+                if (!chutni_emit_skip(child_rel, "directory_limit")) { closedir(dir); return 0; }
+                counters->skipped++;
+                counters->limiting_reason = "maximum_directories";
+                counters->stop = 1;
+                continue;
+            }
+            counters->directories_seen++;
+            if (depth >= policy->max_depth) {
+                if (!chutni_emit_skip(child_rel, "depth_limit")) { closedir(dir); return 0; }
+                counters->skipped++;
+                counters->limiting_reason = "maximum_depth";
+                continue;
+            }
             if (!policy->cross_filesystems && st.st_dev != root_dev) {
                 if (!chutni_emit_skip(child_rel, "cross_filesystem")) { closedir(dir); return 0; }
                 counters->skipped++;
                 continue;
             }
-            if (!chutni_walk(root_dev, child_abs, child_rel, policy, counters)) {
+            if (!chutni_walk(root_dev, child_abs, child_rel, depth + 1, policy, counters)) {
                 closedir(dir);
                 return 0;
             }
@@ -896,8 +1018,30 @@ static int chutni_walk(dev_t root_dev, const char *dir_abs, const char *rel_pref
             counters->skipped++;
             continue;
         }
+        if (counters->files >= policy->max_files) {
+            if (!chutni_emit_skip(child_rel, "file_limit")) { closedir(dir); return 0; }
+            counters->skipped++;
+            counters->limiting_reason = "maximum_files";
+            counters->stop = 1;
+            break;
+        }
+        unsigned long long file_bytes = st.st_size > 0 ? (unsigned long long)st.st_size : 0;
+        if (file_bytes > policy->max_file_bytes) {
+            if (!chutni_emit_skip(child_rel, "file_size_limit")) { closedir(dir); return 0; }
+            counters->skipped++;
+            counters->limiting_reason = "maximum_file_bytes";
+            continue;
+        }
+        if (file_bytes > policy->max_eligible_bytes - counters->eligible_bytes) {
+            if (!chutni_emit_skip(child_rel, "eligible_bytes_limit")) { closedir(dir); return 0; }
+            counters->skipped++;
+            counters->limiting_reason = "maximum_eligible_bytes";
+            counters->stop = 1;
+            break;
+        }
         if (!chutni_emit_file(child_rel, &st)) { closedir(dir); return 0; }
         counters->files++;
+        counters->eligible_bytes += file_bytes;
     }
     closedir(dir);
     return 1;
@@ -911,21 +1055,40 @@ static int command_chutni_inventory(const char *root, const ChutniPolicy *policy
         put_error("folder_unavailable");
         return 65;
     }
+    if (!policy->max_directories || !policy->max_files) {
+        put_error("invalid_budget");
+        return 64;
+    }
+    if (policy->deadline_ms == 0) {
+        /* A zero deadline is reserved for an expired monotonic clock; the CLI
+         * always supplies a positive duration. */
+        put_error("invalid_budget");
+        return 64;
+    }
     if (lstat(root_abs, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) {
         put_error("folder_unavailable");
         return 65;
     }
-    if (!chutni_walk(root_st.st_dev, root_abs, "", policy, &counters)) {
+    counters.directories_seen = 1;
+    char policy_fingerprint[65];
+    chutni_inventory_policy_fingerprint(policy, &root_st, policy_fingerprint);
+    if (!chutni_walk(root_st.st_dev, root_abs, "", 0, policy, &counters)) {
         put_error("output_too_large");
         return 65;
     }
     {
         Buffer out = {0};
         int ok = buf_printf(&out,
-            "{\"type\":\"done\",\"canceled\":%s,\"files\":%llu,\"skipped\":%llu,"
-            "\"directories_entered\":%llu}\n",
+            "{\"type\":\"done\",\"canceled\":%s,\"partial\":%s,\"files\":%llu,\"eligible_bytes\":%llu,\"skipped\":%llu,"
+            "\"directories_seen\":%llu,\"directories_entered\":%llu,\"limiting_reason\":\"%s\","
+            "\"policy_fingerprint\":\"%s\"}\n",
             g_chutni_canceled ? "true" : "false",
-            counters.files, counters.skipped, counters.directories_entered);
+            (g_chutni_canceled || counters.limiting_reason) ? "true" : "false",
+            counters.files, counters.eligible_bytes, counters.skipped, counters.directories_seen,
+            counters.directories_entered,
+            g_chutni_canceled ? "canceled" :
+                (counters.limiting_reason ? counters.limiting_reason : "none"),
+            policy_fingerprint);
         if (!ok) { free(out.data); put_error("output_too_large"); return 65; }
         fputs(out.data, stdout);
         free(out.data);
@@ -1217,6 +1380,8 @@ static int atomic_no_clobber_move(const char *src, const char *dst, const char *
 
 static int validate_move_source(const char *src, off_t expected_size, int have_size,
                                 double expected_mtime, int have_mtime,
+                                unsigned long long expected_dev, int have_dev,
+                                unsigned long long expected_ino, int have_ino,
                                 const char *expected_hash, const char **reason) {
     struct stat path_st, st;
     int flags = O_RDONLY;
@@ -1248,7 +1413,9 @@ static int validate_move_source(const char *src, off_t expected_size, int have_s
     }
     if ((have_size && st.st_size != expected_size) ||
         (have_mtime && (stat_mtime(&st) - expected_mtime > 0.0001 ||
-                        expected_mtime - stat_mtime(&st) > 0.0001))) {
+                        expected_mtime - stat_mtime(&st) > 0.0001)) ||
+        (have_dev && (unsigned long long)st.st_dev != expected_dev) ||
+        (have_ino && (unsigned long long)st.st_ino != expected_ino)) {
         close(fd);
         *reason = "changed_since_scan";
         return 0;
@@ -1300,9 +1467,181 @@ static int emit_move_result(int ok, const char *reason) {
     return 0;
 }
 
+/* Copy receipts are hard links outside the destination folder, under the
+   authorized root. They prove ownership across a crash between publication
+   and the gateway journal update. Undo checks both identity and full content;
+   a later edit/replacement is preserved. No directory component is followed. */
+static int action_parent(int root_fd, const char *relative, int create,
+                         char leaf[PATH_MAX]) {
+    if (!relative || !*relative || *relative == '/' || strlen(relative) >= PATH_MAX) return -1;
+    char parts[PATH_MAX]; snprintf(parts, sizeof(parts), "%s", relative);
+    int directory = dup(root_fd);
+    char *cursor = parts;
+    while (directory >= 0) {
+        char *slash = strchr(cursor, '/');
+        if (slash) *slash = 0;
+        if (!*cursor || !strcmp(cursor, ".") || !strcmp(cursor, "..")) { close(directory); return -1; }
+        if (!slash) { snprintf(leaf, PATH_MAX, "%s", cursor); return directory; }
+        if (create && mkdirat(directory, cursor, 0700) != 0 && errno != EEXIST) { close(directory); return -1; }
+        int next = openat(directory, cursor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        close(directory); directory = next; cursor = slash + 1;
+    }
+    return -1;
+}
+
+static int action_hash_fd(int fd, const char *expected) {
+    if (lseek(fd, 0, SEEK_SET) < 0) return 0;
+    Sha256 sha; unsigned char digest[32], block[65536]; char hash[65];
+    sha256_init(&sha);
+    for (;;) {
+        ssize_t got = read(fd, block, sizeof(block));
+        if (got < 0 && errno == EINTR) continue;
+        if (got < 0) return 0;
+        if (!got) break;
+        sha256_update(&sha, block, (size_t)got);
+    }
+    sha256_final(&sha, digest); sha256_hex(digest, hash);
+    return !strcmp(hash, expected);
+}
+
+static int emit_copy_result(int applied, int already, const char *reason) {
+    Buffer out = {0};
+    int ok = buf_printf(&out, "{\"ok\":true,\"applied\":%s,\"already_completed\":%s",
+                        applied ? "true" : "false", already ? "true" : "false");
+    if (reason) ok = ok && buf_put(&out, ",\"reason\":") && buf_json_string(&out, reason);
+    ok = ok && buf_put(&out, "}\n");
+    if (ok) fputs(out.data, stdout);
+    free(out.data); return ok ? 0 : 65;
+}
+
+static int command_copy(const char *root, const char *src, const char *dst,
+                        const char *operation_id, const char *expected_hash,
+                        off_t expected_size, int have_size,
+                        double expected_mtime, int have_mtime,
+                        unsigned long long expected_dev, int have_dev,
+                        unsigned long long expected_ino, int have_ino, int undo) {
+    char root_abs[PATH_MAX], root_input[PATH_MAX], source_abs[PATH_MAX], destination_abs[PATH_MAX];
+    if (!root || !src || !dst || !operation_id || !*operation_id ||
+        strlen(operation_id) > 100 || !expected_hash || strlen(expected_hash) != 64 ||
+        !have_size || !have_mtime || !have_dev || !have_ino ||
+        has_dotdot_component(src) || has_dotdot_component(dst)) return emit_copy_result(0, 0, "bad_args");
+    for (const char *p = operation_id; *p; p++)
+        if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+               (*p >= '0' && *p <= '9') || *p == '-')) return emit_copy_result(0, 0, "bad_operation_id");
+    if (!realpath(root, root_abs) || !make_absolute_path(root_input, sizeof(root_input), root) ||
+        !make_absolute_path(source_abs, sizeof(source_abs), src) ||
+        !make_absolute_path(destination_abs, sizeof(destination_abs), dst) ||
+        (!inside_root_abs(root_abs, source_abs) && !inside_root_abs(root_input, source_abs)) ||
+        (!inside_root_abs(root_abs, destination_abs) && !inside_root_abs(root_input, destination_abs)) ||
+        !strcmp(source_abs, destination_abs)) return emit_copy_result(0, 0, "outside_jail");
+    const char *src_base = inside_root_abs(root_abs, source_abs) ? root_abs : root_input;
+    const char *dst_base = inside_root_abs(root_abs, destination_abs) ? root_abs : root_input;
+    const char *source_rel = source_abs + strlen(src_base) + (strcmp(src_base, "/") != 0);
+    const char *destination_rel = destination_abs + strlen(dst_base) + (strcmp(dst_base, "/") != 0);
+    if (!strncmp(destination_rel, ".samosa-actions", 15) ||
+        !strncmp(source_rel, ".samosa-actions", 15)) return emit_copy_result(0, 0, "reserved_path");
+    int root_fd = open(root_abs, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (root_fd < 0) return emit_copy_result(0, 0, "folder_unavailable");
+    char anchor_rel[160], anchor_leaf[PATH_MAX], dst_leaf[PATH_MAX], src_leaf[PATH_MAX];
+    snprintf(anchor_rel, sizeof(anchor_rel), ".samosa-actions/%s", operation_id);
+    int anchor_dir = action_parent(root_fd, anchor_rel, !undo, anchor_leaf);
+    int dst_dir = action_parent(root_fd, destination_rel, !undo, dst_leaf);
+    int src_dir = -1, source = -1, anchor = -1, stage = -1, lock = -1;
+    int applied = 0, already = 0;
+    const char *reason = "cannot_open_destination";
+    char lock_name[160], temporary[160];
+    snprintf(lock_name, sizeof(lock_name), "%s.lock", operation_id);
+    snprintf(temporary, sizeof(temporary), "%s-%ld.partial", operation_id, (long)getpid());
+    if (anchor_dir < 0 || dst_dir < 0) goto done;
+    lock = openat(anchor_dir, lock_name, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
+    if (lock < 0 || flock(lock, LOCK_EX) != 0) { reason = "lock_failed"; goto done; }
+    struct stat dst_st, anchor_st, before, after;
+    int destination_exists = fstatat(dst_dir, dst_leaf, &dst_st, AT_SYMLINK_NOFOLLOW) == 0;
+    anchor = openat(anchor_dir, anchor_leaf, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (anchor >= 0) {
+        if (fstat(anchor, &anchor_st) != 0 || !S_ISREG(anchor_st.st_mode) ||
+            !action_hash_fd(anchor, expected_hash)) { reason = "copy_receipt_changed"; goto done; }
+        if (destination_exists) {
+            if (!S_ISREG(dst_st.st_mode) || dst_st.st_dev != anchor_st.st_dev || dst_st.st_ino != anchor_st.st_ino) {
+                reason = "destination_replaced"; goto done;
+            }
+            if (undo) {
+                if (unlinkat(dst_dir, dst_leaf, 0) != 0 || fsync(dst_dir) != 0) { reason = "unlink_failed"; goto done; }
+                if (unlinkat(anchor_dir, anchor_leaf, 0) != 0 || fsync(anchor_dir) != 0) { reason = "receipt_cleanup_failed"; goto done; }
+            } else already = 1;
+            applied = 1; reason = NULL; goto done;
+        }
+        if (undo) {
+            /* Also completes undo interrupted after destination removal. */
+            if (unlinkat(anchor_dir, anchor_leaf, 0) == 0 && fsync(anchor_dir) == 0) { applied = 1; already = 1; reason = NULL; }
+            else reason = "receipt_cleanup_failed";
+            goto done;
+        }
+    } else if (undo) {
+        if (!destination_exists) { applied = 1; already = 1; reason = NULL; }
+        else reason = "copy_receipt_missing";
+        goto done;
+    }
+    if (destination_exists) { reason = "dest_exists"; goto done; }
+    if (anchor < 0) {
+        src_dir = action_parent(root_fd, source_rel, 0, src_leaf);
+        source = src_dir >= 0 ? openat(src_dir, src_leaf, O_RDONLY | O_NOFOLLOW | O_NONBLOCK) : -1;
+        if (source < 0 || fstat(source, &before) != 0 || !S_ISREG(before.st_mode) ||
+            before.st_size != expected_size || (unsigned long long)before.st_dev != expected_dev ||
+            (unsigned long long)before.st_ino != expected_ino ||
+            stat_mtime(&before) - expected_mtime > 0.0001 || expected_mtime - stat_mtime(&before) > 0.0001) {
+            reason = "changed_since_scan"; goto done;
+        }
+        stage = openat(anchor_dir, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (stage < 0) { reason = "cannot_create_copy"; goto done; }
+        Sha256 sha; unsigned char digest[32], block[65536]; char hash[65]; sha256_init(&sha);
+        off_t copied = 0;
+        for (;;) {
+            ssize_t got = read(source, block, sizeof(block));
+            if (got < 0 && errno == EINTR) continue;
+            if (got < 0) { reason = "cannot_read_src"; goto done; }
+            if (!got) break;
+            sha256_update(&sha, block, (size_t)got); copied += got;
+            size_t sent = 0;
+            while (sent < (size_t)got) {
+                ssize_t n = write(stage, block + sent, (size_t)got - sent);
+                if (n < 0 && errno == EINTR) continue;
+                if (n <= 0) { reason = "cannot_write_copy"; goto done; }
+                sent += (size_t)n;
+            }
+        }
+        sha256_final(&sha, digest); sha256_hex(digest, hash);
+        if (copied != expected_size || strcmp(hash, expected_hash) || fstat(source, &after) != 0 ||
+            after.st_size != before.st_size || stat_mtime(&after) != stat_mtime(&before)) {
+            reason = "changed_during_copy"; goto done;
+        }
+        if (fchmod(stage, before.st_mode & 0777) != 0 || fsync(stage) != 0 ||
+            renameat(anchor_dir, temporary, anchor_dir, anchor_leaf) != 0 || fsync(anchor_dir) != 0) {
+            reason = "copy_publish_failed"; goto done;
+        }
+    }
+    if (linkat(anchor_dir, anchor_leaf, dst_dir, dst_leaf, 0) != 0) {
+        reason = errno == EEXIST ? "dest_exists" : "copy_publish_failed"; goto done;
+    }
+    if (fsync(dst_dir) != 0) { reason = "copy_sync_failed"; goto done; }
+    applied = 1; reason = NULL;
+done:
+    if (stage >= 0) { close(stage); unlinkat(anchor_dir, temporary, 0); }
+    if (source >= 0) close(source);
+    if (src_dir >= 0) close(src_dir);
+    if (anchor >= 0) close(anchor);
+    if (lock >= 0) { flock(lock, LOCK_UN); close(lock); }
+    if (anchor_dir >= 0) close(anchor_dir);
+    if (dst_dir >= 0) close(dst_dir);
+    close(root_fd);
+    return emit_copy_result(applied, already, reason);
+}
+
 static int command_move(const char *root, const char *src, const char *dst,
                         off_t expected_size, int have_size,
                         double expected_mtime, int have_mtime,
+                        unsigned long long expected_dev, int have_dev,
+                        unsigned long long expected_ino, int have_ino,
                         const char *expected_hash) {
     char root_abs[PATH_MAX], src_abs[PATH_MAX], dst_abs[PATH_MAX], src_real[PATH_MAX];
     const char *reason = NULL;
@@ -1314,6 +1653,11 @@ static int command_move(const char *root, const char *src, const char *dst,
         put_error("folder_unavailable");
         return 65;
     }
+    if (expected_hash && access(src, F_OK) != 0 && errno == ENOENT &&
+        realpath(dst, dst_abs) && inside_root_abs(root_abs, dst_abs) &&
+        validate_move_source(dst_abs, expected_size, have_size, expected_mtime,
+                             have_mtime, expected_dev, have_dev, expected_ino,
+                             have_ino, expected_hash, &reason)) return emit_move_result(1, NULL);
     if (!realpath(src, src_real) || !make_absolute_path(src_abs, sizeof(src_abs), src) ||
         !canonicalize_parent_path(dst_abs, sizeof(dst_abs), dst)) {
         return emit_move_result(0, "cannot_open_src");
@@ -1321,7 +1665,8 @@ static int command_move(const char *root, const char *src, const char *dst,
     if (!inside_root_abs(root_abs, src_real) || !inside_root_abs(root_abs, dst_abs))
         return emit_move_result(0, "outside_jail");
     if (!validate_move_source(src_abs, expected_size, have_size, expected_mtime,
-                              have_mtime, expected_hash, &reason))
+                              have_mtime, expected_dev, have_dev,
+                              expected_ino, have_ino, expected_hash, &reason))
         return emit_move_result(0, reason);
     if (!ensure_parent_dirs(dst_abs, root_abs))
         return emit_move_result(0, "mkdir_failed");
@@ -1330,7 +1675,11 @@ static int command_move(const char *root, const char *src, const char *dst,
     return emit_move_result(1, NULL);
 }
 
-static int command_undo(const char *root, const char *src, const char *dst) {
+static int command_undo(const char *root, const char *src, const char *dst,
+                        off_t expected_size, int have_size,
+                        double expected_mtime, int have_mtime,
+                        unsigned long long expected_dev, int have_dev,
+                        unsigned long long expected_ino, int have_ino, const char *expected_hash) {
     struct stat st;
     char root_abs[PATH_MAX], src_abs[PATH_MAX], dst_abs[PATH_MAX], dst_real[PATH_MAX];
     const char *reason = NULL;
@@ -1342,6 +1691,11 @@ static int command_undo(const char *root, const char *src, const char *dst) {
         put_error("folder_unavailable");
         return 65;
     }
+    if (expected_hash && access(dst, F_OK) != 0 && errno == ENOENT &&
+        realpath(src, src_abs) && inside_root_abs(root_abs, src_abs) &&
+        validate_move_source(src_abs, expected_size, have_size, expected_mtime,
+                             have_mtime, expected_dev, have_dev, expected_ino,
+                             have_ino, expected_hash, &reason)) return emit_move_result(1, NULL);
     if (!realpath(dst, dst_real) || !canonicalize_parent_path(src_abs, sizeof(src_abs), src) ||
         !make_absolute_path(dst_abs, sizeof(dst_abs), dst))
         return emit_move_result(0, "dest_missing");
@@ -1349,6 +1703,16 @@ static int command_undo(const char *root, const char *src, const char *dst) {
         return emit_move_result(0, "outside_jail");
     if (lstat(dst_abs, &st) != 0)
         return emit_move_result(0, "dest_missing");
+    if (!S_ISREG(st.st_mode) ||
+        (have_size && st.st_size != expected_size) ||
+        (have_mtime && (stat_mtime(&st) - expected_mtime > 0.0001 ||
+                        expected_mtime - stat_mtime(&st) > 0.0001)) ||
+        (have_dev && (unsigned long long)st.st_dev != expected_dev) ||
+        (have_ino && (unsigned long long)st.st_ino != expected_ino))
+        return emit_move_result(0, "destination_changed_since_move");
+    if (expected_hash && !validate_move_source(dst_abs, expected_size, have_size,
+            expected_mtime, have_mtime, expected_dev, have_dev, expected_ino, have_ino,
+            expected_hash, &reason)) return emit_move_result(0, reason);
     if (!ensure_parent_dirs(src_abs, root_abs))
         return emit_move_result(0, "mkdir_failed");
     if (!atomic_no_clobber_move(dst_abs, src_abs, &reason))
@@ -1360,10 +1724,14 @@ static void usage(void) {
     fputs("usage: samosa-fs survey [--recursive] [--max-file-bytes N] ROOT\n"
           "       samosa-fs list [--recursive] [--max-file-bytes N] ROOT\n"
           "       samosa-fs metadata [--max-file-bytes N] PATH\n"
-          "       samosa-fs move --root ROOT [--size N] [--mtime T] [--sha256 H] SRC DST\n"
-          "       samosa-fs undo --root ROOT SRC DST\n"
+          "       samosa-fs move --root ROOT [--size N] [--mtime T] [--dev N] [--ino N] [--sha256 H] SRC DST\n"
+          "       samosa-fs copy|undo-copy --root ROOT --operation-id ID --size N --mtime T --dev N --ino N --sha256 H SRC DST\n"
+          "       samosa-fs undo --root ROOT [--size N] [--mtime T] [--dev N] [--ino N] SRC DST\n"
           "       samosa-fs chutni-inventory --root ROOT [--include-hidden]\n"
           "                          [--cross-filesystems] [--exclude NAME]...\n"
+          "                          [--max-depth N] [--max-files N]\n"
+          "                          [--max-directories N] [--max-seconds N]\n"
+          "                          [--max-file-bytes N] [--max-eligible-bytes N]\n"
           "       samosa-fs chutni-hash --root ROOT PATH\n"
           "       samosa-fs --version\n", stderr);
 }
@@ -1379,6 +1747,16 @@ static int parse_size_arg(const char *text, size_t *out) {
     return 1;
 }
 
+static int parse_ull_arg(const char *text, unsigned long long *out) {
+    char *end = NULL;
+    unsigned long long parsed;
+    errno = 0;
+    parsed = strtoull(text, &end, 10);
+    if (errno || !end || *end) return 0;
+    *out = parsed;
+    return 1;
+}
+
 int main(int argc, char **argv) {
     const char *cmd;
     const char *path = NULL;
@@ -1386,11 +1764,20 @@ int main(int argc, char **argv) {
     const char *src = NULL;
     const char *dst = NULL;
     const char *expected_hash = NULL;
+    const char *operation_id = NULL;
     size_t max_bytes = DEFAULT_MAX_FILE_BYTES;
+    unsigned long long max_files = 100000;
+    unsigned long long max_directories = 20000;
+    unsigned long long max_seconds = 60;
+    unsigned long long max_depth = 64;
+    unsigned long long max_inventory_file_bytes = 64ull * 1024ull * 1024ull;
+    unsigned long long max_eligible_bytes = 2ull * 1024ull * 1024ull * 1024ull;
+    unsigned long long expected_dev = 0, expected_ino = 0;
     off_t expected_size = 0;
     double expected_mtime = 0.0;
     int have_size = 0;
     int have_mtime = 0;
+    int have_dev = 0, have_ino = 0;
     int recursive = 0;
     int include_hidden = 0;
     int cross_filesystems = 0;
@@ -1417,7 +1804,12 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "--recursive") == 0) {
             recursive = 1;
         } else if (strcmp(argv[i], "--max-file-bytes") == 0 && i + 1 < argc) {
-            if (!parse_size_arg(argv[++i], &max_bytes)) {
+            if (strcmp(cmd, "chutni-inventory") == 0) {
+                if (!parse_ull_arg(argv[++i], &max_inventory_file_bytes) ||
+                    !max_inventory_file_bytes || max_inventory_file_bytes > (1ull << 40)) {
+                    usage(); return 64;
+                }
+            } else if (!parse_size_arg(argv[++i], &max_bytes)) {
                 usage();
                 return 64;
             }
@@ -1441,12 +1833,36 @@ int main(int argc, char **argv) {
                 return 64;
             }
             have_mtime = 1;
+        } else if (strcmp(argv[i], "--dev") == 0 && i + 1 < argc) {
+            char *end = NULL;
+            errno = 0;
+            expected_dev = strtoull(argv[++i], &end, 10);
+            if (errno || !end || *end) { usage(); return 64; }
+            have_dev = 1;
+        } else if (strcmp(argv[i], "--ino") == 0 && i + 1 < argc) {
+            char *end = NULL;
+            errno = 0;
+            expected_ino = strtoull(argv[++i], &end, 10);
+            if (errno || !end || *end) { usage(); return 64; }
+            have_ino = 1;
+        } else if (strcmp(argv[i], "--operation-id") == 0 && i + 1 < argc) {
+            operation_id = argv[++i];
         } else if (strcmp(argv[i], "--sha256") == 0 && i + 1 < argc) {
             expected_hash = argv[++i];
         } else if (strcmp(argv[i], "--include-hidden") == 0) {
             include_hidden = 1;
         } else if (strcmp(argv[i], "--cross-filesystems") == 0) {
             cross_filesystems = 1;
+        } else if (strcmp(argv[i], "--max-files") == 0 && i + 1 < argc) {
+            if (!parse_ull_arg(argv[++i], &max_files) || !max_files || max_files > 1000000) { usage(); return 64; }
+        } else if (strcmp(argv[i], "--max-directories") == 0 && i + 1 < argc) {
+            if (!parse_ull_arg(argv[++i], &max_directories) || !max_directories || max_directories > 100000) { usage(); return 64; }
+        } else if (strcmp(argv[i], "--max-seconds") == 0 && i + 1 < argc) {
+            if (!parse_ull_arg(argv[++i], &max_seconds) || !max_seconds || max_seconds > 3600) { usage(); return 64; }
+        } else if (strcmp(argv[i], "--max-depth") == 0 && i + 1 < argc) {
+            if (!parse_ull_arg(argv[++i], &max_depth) || max_depth > 64) { usage(); return 64; }
+        } else if (strcmp(argv[i], "--max-eligible-bytes") == 0 && i + 1 < argc) {
+            if (!parse_ull_arg(argv[++i], &max_eligible_bytes) || !max_eligible_bytes || max_eligible_bytes > (1ull << 44)) { usage(); return 64; }
         } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
             char **next;
             if (exclude_count == exclude_cap) {
@@ -1460,7 +1876,8 @@ int main(int argc, char **argv) {
                 exclude_cap = cap;
             }
             exclude_names[exclude_count++] = argv[++i];
-        } else if (strcmp(cmd, "move") == 0 || strcmp(cmd, "undo") == 0) {
+        } else if (strcmp(cmd, "move") == 0 || strcmp(cmd, "undo") == 0 ||
+                   strcmp(cmd, "copy") == 0 || strcmp(cmd, "undo-copy") == 0) {
             if (!src) src = argv[i];
             else if (!dst) dst = argv[i];
             else {
@@ -1478,6 +1895,14 @@ int main(int argc, char **argv) {
         ChutniPolicy policy = {0};
         policy.include_hidden = include_hidden;
         policy.cross_filesystems = cross_filesystems;
+        policy.max_depth = (unsigned int)max_depth;
+        policy.max_files = max_files;
+        policy.max_directories = max_directories;
+        policy.max_seconds = max_seconds;
+        policy.max_file_bytes = max_inventory_file_bytes;
+        policy.max_eligible_bytes = max_eligible_bytes;
+        unsigned long long now = chutni_monotonic_ms();
+        policy.deadline_ms = now ? now + max_seconds * 1000ull : 0;
         policy.exclude_names = exclude_names;
         policy.exclude_count = exclude_count;
         signal(SIGINT, chutni_on_signal);
@@ -1491,11 +1916,19 @@ int main(int argc, char **argv) {
     }
 
     if (!path) {
+        if (strcmp(cmd, "copy") == 0 || strcmp(cmd, "undo-copy") == 0)
+            return command_copy(root, src, dst, operation_id, expected_hash,
+                                expected_size, have_size, expected_mtime, have_mtime,
+                                expected_dev, have_dev, expected_ino, have_ino,
+                                strcmp(cmd, "undo-copy") == 0);
         if (strcmp(cmd, "move") == 0)
             return command_move(root, src, dst, expected_size, have_size,
-                                expected_mtime, have_mtime, expected_hash);
+                                expected_mtime, have_mtime, expected_dev, have_dev,
+                                expected_ino, have_ino, expected_hash);
         if (strcmp(cmd, "undo") == 0)
-            return command_undo(root, src, dst);
+            return command_undo(root, src, dst, expected_size, have_size,
+                                expected_mtime, have_mtime, expected_dev, have_dev,
+                                expected_ino, have_ino, expected_hash);
         usage();
         return 64;
     }

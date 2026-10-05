@@ -1,0 +1,63 @@
+{
+  "fixture": "mixed-folder-dogfood",
+  "run_date": "2026-09-22",
+  "environment": {
+    "machine": "Apple M3 MacBook Air",
+    "memory_bytes": 17179869184,
+    "os": "macOS 26.5.1",
+    "os_build": "25F80"
+  },
+  "fixture_shape": {
+    "generated_trees": 3,
+    "decoy_files_per_tree": 10000,
+    "pdf": "synthetic searchable anonymous-scan.pdf",
+    "chutni_text_sentinel": true,
+    "symlink_escape": true
+  },
+  "acceptance": {
+    "result": "pass",
+    "compiled_gateway_without_python": "pass",
+    "chutni_retrieval_with_citation": "pass",
+    "unrelated_query_no_match": "pass",
+    "anonymous_pdf_find_via_real_extractor": "pass",
+    "fake_backend_requires_extracted_fact": "pass",
+    "folder_report_matches_shared_inventory": "pass",
+    "sort_undo_full_path_hash_manifest": "pass",
+    "inbox_ambiguous_case_held_for_review": "pass",
+    "scheduled_delta_only_changed_and_added": "pass",
+    "scope_ready_policy_fingerprint_matches_preflight": "pass"
+  },
+  "interruption_recovery": {
+    "folder_report_gateway_killed_during_inventory": "persisted interrupted state; retry available",
+    "real_chutni_scanner_killed_after_scan_progress": "gateway restart and explicit resume indexed all 30 fixture files",
+    "classification_gateway_restart_after_durable_batch": "resumed remaining classification",
+    "move_batch_gateway_restart": "journal replay followed by undo"
+  },
+  "observed_resources": {
+    "peak_gateway_and_chutni_worker_rss_kib": 6672,
+    "matching_processes_at_peak": 2,
+    "scope": "sampled processes in this synthetic fixture run; not system-wide memory pressure or swap"
+  },
+  "ui_coverage": {
+    "production_jobs_submit_handler_and_sse_reader_fixture": "pass",
+    "compiled_gateway_product_api_flow": "pass",
+    "interactive_browser_visual_run": "unavailable; in-app Browser returned no browser session"
+  },
+  "limitations": [
+    "synthetic small files and one generated searchable PDF; not broad format, OCR, image, multilingual, or real-user-folder qualification",
+    "fake decision backend verifies evidence reaches the model request; this is not a live-model qualification",
+    "controlled process kills do not prove recovery from every power-loss or concurrent-writer scenario",
+    "RSS is a sampled peak from one run on one host"
+  ],
+  "validation_commands": [
+    "make test",
+    "make jobs-test",
+    "make test-ui-setup",
+    "make -C vendor/chutni test",
+    "git diff --check",
+    "git -C vendor/chutni diff --check",
+    "sh -n tests/chutni_real_slow_wrapper.sh tests/test_chutni_crash_resume.sh",
+    "node tests/test_jobs_ui.mjs"
+  ],
+  "validation_result": "all commands passed on 2026-09-22"
+}

@@ -1,5 +1,6 @@
 {
   "client_request_id": "same-caller-random-id",
   "preflight_id": "random-id",
+  "policy_fingerprint": "sha256:policy-digest",
   "display_name": "Research"
 }

@@ -1,0 +1,36 @@
+cc -O2 -Wall -Wextra -Werror -std=c11 tools/pagecache_residency.c -o build/pagecache-residency
+sh tests/test_pagecache_residency.sh ./build/pagecache-residency
+cc -O2 -Wall -Wextra -Werror -std=c11 -Isrc tests/test_samosa_evidence.c \
+	  src/samosa_evidence.c -o build/test-samosa-evidence
+build/test-samosa-evidence
+samosa evidence contracts: PASS
+cc -O2 -Wall -Wextra -Werror -std=c11 -Isrc tests/test_samosa_html.c \
+	  src/samosa_html.c -o build/test-samosa-html
+build/test-samosa-html
+test_samosa_html: PASS
+cc -O2 -Wall -Wextra -Werror -Wno-unused-function -std=c11 -Isrc -Ivendor/miniz \
+	  tests/test_samosa_docx.c src/samosa_docx.c src/samosa_html.c \
+	  vendor/miniz/miniz.c vendor/miniz/miniz_tinfl.c vendor/miniz/miniz_zip.c -o build/test-samosa-docx
+SAMOSA_DOCX_TEST_RUNNER=./build/test-samosa-docx sh tests/test_samosa_docx.sh
+test_samosa_docx: PASS
+cc -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o build/test_expert_cache && ./build/test_expert_cache
+expert cache tests: ok (16,807 exhaustive traces + 50,000 random transitions)
+cc -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o build/test_kv_cache -lm && ./build/test_kv_cache
+Qwen GQA KV target: f32=1342177280 bytes, int8=340787200 bytes (25.391%)
+Randomized int8 rows: 32880 values, normalized RMSE 0.00436092
+Long-context int8: score NRMSE 0.0049931, context NRMSE 0.000390599, late/early score MSE 1.018
+kv_cache: 57529 checks passed
+cc -O1 -Isrc tests/test_repetition_guard.c -o build/test_repetition_guard && ./build/test_repetition_guard
+repetition guard tests: ok
+cc -O1 -Isrc tests/test_thinking_budget.c -o build/test_thinking_budget && ./build/test_thinking_budget
+thinking budget transition: ok
+cc -O1 -Isrc tests/test_groupwise_q4.c -o build/test_groupwise_q4 -lm && ./build/test_groupwise_q4
+groupwise q4 and mixed q8-down tests: ok
+cc -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c src/vision.c -o build/test_samosa_serve -lm && ./build/test_samosa_serve
+[context] model_limit=262144 configured=131072 effective=131072 kv=3.91 MiB/1K tokens
+requested context 262145 exceeds this model's 262144-token limit
+[session] saved /tmp/samosa-compaction-session-3vPbEe/session.qws: 6 tokens, 0.0 MB
+[session] evicted hot conversation hot-fixture (unit test, 4 tokens)
+Assertion failed: (samosa_http_server_init(&server,0,samosa_serve_handler,&context)), function main, file test_samosa_serve.c, line 138.
+/bin/sh: line 1: 28578 Abort trap: 6           ./build/test_samosa_serve
+make: *** [test] Error 134

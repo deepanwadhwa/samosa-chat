@@ -1,0 +1,3 @@
+{"depth": "fast", "pages": 40, "ocr_pages": 27, "seconds": 37.89, "review_calls": 0, "all_page_facts_reached_model": true}
+{"depth": "detailed", "pages": 40, "ocr_pages": 27, "seconds": 0.01, "review_calls": 0, "all_page_facts_reached_model": true}
+test_document_mixed_pdf.py: PASS

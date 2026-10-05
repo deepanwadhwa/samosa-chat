@@ -1,0 +1,372 @@
+[
+  {
+    "question": "Give me the gist of this directory.",
+    "scope": "folder",
+    "required_actions": [
+      "overview"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.727,
+        "files": 0.273
+      },
+      "actions": [
+        "overview",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.6715,
+        "inventory": 0.3162,
+        "metadata": 0.2735,
+        "content": 0.5806
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 1.151,
+    "passed": true
+  },
+  {
+    "question": "Which documents mention the Beacon project?",
+    "scope": "files",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.2382,
+        "files": 0.7618
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.1832,
+        "inventory": 0.4711,
+        "metadata": 0.1736,
+        "content": 0.5201
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.937,
+    "passed": false
+  },
+  {
+    "question": "How many pages are in the lease.pdf, and what does it say about rent?",
+    "scope": "files",
+    "required_actions": [
+      "metadata",
+      "content"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.445,
+        "files": 0.555
+      },
+      "actions": [
+        "inventory",
+        "metadata"
+      ],
+      "action_scores": {
+        "overview": 0.1949,
+        "inventory": 0.5952,
+        "metadata": 0.6101,
+        "content": 0.2904
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 1.161,
+    "passed": false
+  },
+  {
+    "question": "When is the meeting scheduled?",
+    "scope": "files",
+    "required_actions": [
+      "content"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.4329,
+        "files": 0.5671
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.1414,
+        "inventory": 0.1581,
+        "metadata": 0.1114,
+        "content": 0.1817
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.892,
+    "passed": true
+  },
+  {
+    "question": "Count everything indexed here.",
+    "scope": "folder",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.6633,
+        "files": 0.3367
+      },
+      "actions": [
+        "inventory"
+      ],
+      "action_scores": {
+        "overview": 0.1689,
+        "inventory": 0.5888,
+        "metadata": 0.4939,
+        "content": 0.1863
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.886,
+    "passed": true
+  },
+  {
+    "question": "Summarise archive.txt in one sentence.",
+    "scope": "files",
+    "required_actions": [
+      "content"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.5144,
+        "files": 0.4856
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.4866,
+        "inventory": 0.1188,
+        "metadata": 0.1361,
+        "content": 0.498
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.921,
+    "passed": false
+  },
+  {
+    "question": "Show files about Ada, and describe them briefly.",
+    "scope": "files",
+    "required_actions": [
+      "inventory",
+      "content"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.2662,
+        "files": 0.7338
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.5039,
+        "inventory": 0.2257,
+        "metadata": 0.3039,
+        "content": 0.5307
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.922,
+    "passed": false
+  },
+  {
+    "question": "Which folder am I asking about?",
+    "scope": "folder",
+    "required_actions": [],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.4387,
+        "files": 0.5613
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.1922,
+        "inventory": 0.2646,
+        "metadata": 0.1858,
+        "content": 0.2578
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.92,
+    "passed": false
+  },
+  {
+    "question": "what is this folder about? summarize it for me in about 2 sentences.",
+    "scope": "folder",
+    "required_actions": [
+      "overview"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "folder",
+      "scope_scores": {
+        "folder": 0.7509,
+        "files": 0.2491
+      },
+      "actions": [
+        "overview",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.6224,
+        "inventory": 0.3306,
+        "metadata": 0.2595,
+        "content": 0.5061
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.834,
+    "passed": true
+  },
+  {
+    "question": "does Person X have any files in this folder?",
+    "scope": "files",
+    "required_actions": [
+      "inventory"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.4228,
+        "files": 0.5772
+      },
+      "actions": [
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.3789,
+        "inventory": 0.494,
+        "metadata": 0.407,
+        "content": 0.5701
+      },
+      "sources": [],
+      "membership_kind": "named",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 0.811,
+    "passed": false
+  },
+  {
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+    "scope": "files",
+    "required_actions": [
+      "inventory",
+      "metadata",
+      "content"
+    ],
+    "engine": "laya",
+    "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2",
+    "prediction": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.4586,
+        "files": 0.5414
+      },
+      "actions": [
+        "inventory",
+        "metadata",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.3737,
+        "inventory": 0.5334,
+        "metadata": 0.5123,
+        "content": 0.5495
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "convaiinnovations/laya-typed-decisions",
+      "revision": "f9ab0b228f0fc0f14d873dbc99038f135c2da1b2"
+    },
+    "seconds": 1.155,
+    "passed": true
+  }
+]

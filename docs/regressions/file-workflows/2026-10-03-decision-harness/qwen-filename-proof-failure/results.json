@@ -1,0 +1,17 @@
+[
+  {
+    "stage": "composer_focus",
+    "outline": "none",
+    "shadow": "none"
+  },
+  {
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+    "answer": "There is no single unique file named \"Person X\"; the reference matches multiple files. Below are the confirmed related files and their contents:\n\nConfirmed Related Files:\n\nText Files (10 files):\n\n* 01/report.txt: Person X document 1. Record reference: X-101.\n\n* 02/report.txt: Person X document 2. Record reference: X-102.\n\n* misc/note-2.txt: Person X document 3. Record reference: X-103.\n\n* 01/note-3.txt: Person X document 4. Record reference: X-104.\n\n* 02/note-4.txt: Person X document 5. Record reference: X-105.\n\n* misc/note-5.txt: Person X document 6. Record reference: X-106.\n\n* 01/note-6.txt: Person X document 7. Record reference: X-107.\n\n* 02/note-7.txt: Person X document 8. Record reference: X-108.\n\n* misc/note-8.txt: Person X document 9. Record reference: X-109.\n\n* Person X appointment.txt: Person X appointment date is 17 May 2031. Reference: WX-482.\n\nPDF File (1 supported match):\n\n* Person X scan.pdf: Contains a scanned certificate. Scan reference: SC-913. Issued 4 April 2030.\n\n* Page Count: 1 page.\n\nUncertain Association (1 file):\n\n* Person X records.pdf: This file is associated with Person X but marked as an uncertain association.\n\n* Page Count: 40 pages.\n\n* Content: The visible content consists of synthetic fixture text (\"Samosa Chat synthetic fixture document...\") rather than substantive records about Person X. Due to the uncertain association status, this file is not confirmed as a definitive record for Person X in the checked evidence.\n\nSummary:\n\nWhat is in the files? The files contain various documents labeled \"Person X document\" with references X-101 through X-109, an appointment record dated 17 May 2031, and a scanned certificate issued on 4 April 2030. One PDF (Person X records.pdf) has an uncertain association and contains synthetic test data.\nHow many pages?\n\n* Text files do not have intrinsic page counts.\n\n* Person X scan.pdf has 1 page.\n\n* Person X records.pdf has 40 pages (but is an uncertain match).\n\nAre there files related to Person X? Yes, there are 11 supported matches (10 text files, 1 PDF) and 1 uncertain association (1 PDF).",
+    "error": "",
+    "seconds": 710.972
+  },
+  {
+    "stage": "failed",
+    "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(/12|twelve/i.test(answer))\n\n    at file:///Users/deepanwadhwa/Documents/samosa-chat/tests/test_memory_harness_browser.mjs:33:93"
+  }
+]

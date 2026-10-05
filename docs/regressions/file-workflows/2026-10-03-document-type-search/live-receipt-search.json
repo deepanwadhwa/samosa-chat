@@ -1,0 +1,976 @@
+{
+  "fixture_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v4",
+  "fixture_sha256": {
+    "scan-042.pdf": "30d662c817420057c1402ed145b709ae08a751af261820db7a0c7dc361a90e0c",
+    "scan-087.pdf": "e8a235e547f1b653a70137d17defdd647fd6d7fdca1433db11ebaa562e8f6468",
+    "research.pdf": "3a1a5ab77150619db7416b8223868462cab37d44e7dece2ec17893166d83d017",
+    "I539.pdf": "721d84e7cab4b352c24926c103e7ef89efffc9e23ae24142219af0a0f518d5e9",
+    "investing.pdf": "105012dbbfc21ff11ed3d91f3ba94148d99383b744eb18d912a9678a09700d8b",
+    "guide-019.pdf": "f4314c110beaf25c225a7363d7037ef5a209627b3e7432113a067d5e7a52e3a7",
+    "notice-022.pdf": "9c3ea34b676323360bc336688fab38608fb4aa5e7640530dd98d0c1afc6d1c87",
+    "scan-118.pdf": "01a35f643119b00abd87aee4a4d46f9a8dea9ec62f018bd0891fcd7dfe5bcb12",
+    "supplement-061.pdf": "f890be8d2d14387bb01aa90eb9d468558d230daadd58ed7bc4b775c0a0b52941",
+    "tax-209.pdf": "977ab41ea8a1d157a2d0df2a874ee0a5dc2495448ad064dbe4d9b4eee92a14d6",
+    "opaque-731.pdf": "f7a5a1cf83692c423239d39281eb852401134bd4baf074fb96752581035ce872",
+    "scan-205.pdf": "d5ccae1dfe4344a7301e7fcce7101835a512a0d9f3dbe24721a40ec9f8954d73",
+    "raster-301.pdf": "6e76c02c408a30ae94d9c4c8218cb58a9dde162264f48761f53ee9c04f8bcc22",
+    "I539-unreadable.bin": "0e233fb2adc5d04839e0739a6de5ec2da59bc410594df23cacca2da9c9ca857d",
+    "meeting.txt": "81417778d5a0dbe6276d7773df9dfac4e55cd2e4e5388a1a6d18a716ec77145f"
+  },
+  "base_url": "http://127.0.0.1:18642",
+  "health": {
+    "gateway": true,
+    "compiled": true,
+    "app_owned": false,
+    "listen_address": "127.0.0.1",
+    "lan_access": false,
+    "lan_auth": "none",
+    "backend": "ornith",
+    "label": "Ornith 9B",
+    "model": "ornith-1.0-9b",
+    "model_version": "Ornith-1.0-9B-Q4_K_M.gguf",
+    "supports_images": false,
+    "supports_image_attachments": true,
+    "supports_video_attachments": true,
+    "supports_documents": true,
+    "vision": {
+      "auxiliary_runtime_available": true,
+      "visionpsy_runtime_available": true,
+      "molmo2_runtime_available": true,
+      "molmo2_model_ready": true,
+      "video_available": true,
+      "specialist_active": false,
+      "specialist_model": "Local vision model"
+    },
+    "ocr": {
+      "runtime_available": true,
+      "pack_ready": true,
+      "ready": true
+    },
+    "chutni": {
+      "available": true,
+      "managed_by": "samosa",
+      "can_create_memory": true,
+      "protocol": "0.1"
+    },
+    "native_summarizer": {
+      "available": true,
+      "loaded": false,
+      "model": "Falconsai/text_summarization",
+      "runtime": "native"
+    },
+    "ready": true,
+    "loading": false,
+    "generating": false,
+    "pid": 32277,
+    "installed": true,
+    "backend_state": "ready"
+  },
+  "cases": [
+    {
+      "case": "receipt",
+      "goal": "Find receipt notices for I-539 applications.",
+      "job_id": "type-search-receipt-1791074488704040000",
+      "expected": [
+        "notice-022.pdf"
+      ],
+      "route": {
+        "ok": true,
+        "action": "find",
+        "scores": {
+          "find": 0.5889392197132111,
+          "duplicates": 0.16296466067433357,
+          "report": 0.03926458861678839,
+          "sort": 0.08714857883751392,
+          "classify": 0.06388106197118759,
+          "watch": 0.05780188925564289
+        },
+        "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+        "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+      },
+      "response": {
+        "ok": true,
+        "job_id": "type-search-receipt-1791074488704040000",
+        "result": {
+          "ok": true,
+          "schema_version": 7,
+          "goal": "Find receipt notices for I-539 applications.",
+          "folder": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v4",
+          "items": [
+            {
+              "path": "notice-022.pdf",
+              "excerpt": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323587,
+              "size": 820,
+              "mtime_ns": "1791071767268200258",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "supported",
+              "document_role": {
+                "choice": "notice",
+                "probabilities": {
+                  "form": 0.009904497303068638,
+                  "instructions": 0.001498278696089983,
+                  "notice": 0.9868828654289246,
+                  "other": 0.0017144333105534315
+                }
+              },
+              "model_state": "Notice of Action USCIS Form I-797C Case type: I-539 Application to Extend/Change Nonimmigrant Status This notice confirms receipt of an application and is not the application itself.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "plausible",
+              "model_scores": {
+                "plausible": 0.9951796531677246,
+                "unrelated": 0.0048203435726463795
+              },
+              "needs_check": false,
+              "decision": "match",
+              "score": 0.9951796531677246,
+              "reason": "identifier_and_role"
+            },
+            {
+              "path": "I539-unreadable.bin",
+              "excerpt": "",
+              "source": "name_only",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323594,
+              "size": 80,
+              "mtime_ns": "1791071767269241837",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": null,
+              "document_role": null,
+              "model_state": "File name: I539-unreadable.bin\nPreview: ",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.25832599401474,
+                "unrelated": 0.74167400598526
+              },
+              "needs_check": true,
+              "decision": "needs_check",
+              "score": 0.25832599401474,
+              "reason": "no_readable_excerpt"
+            },
+            {
+              "path": "supplement-061.pdf",
+              "excerpt": "Supplement A to Application to Extend/Change Nonimmigrant Status U.S. Citizenship and Immigration Services Form I-539A Information about additional applicants Family Name: Example Four Given Name: Jordan This is a supplement, not the principal application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323589,
+              "size": 941,
+              "mtime_ns": "1791071767268498799",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Supplement A to Application to Extend/Change Nonimmigrant Status U.S. Citizenship and Immigration Services Form I-539A Information about additional applicants Family Name: Example Four Given Name: Jordan This is a supplement, not the principal application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.19147880375385284,
+                "unrelated": 0.8085211515426636
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.19147880375385284,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-118.pdf",
+              "excerpt": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323588,
+              "size": 973,
+              "mtime_ns": "1791071767268351383",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Application for Employment Authorization Department of Homeland Security U.S. Citizenship and Immigration Services Form I-765 Part 1. Reason for Applying Part 2. Information About You Family Name: Example Three Given Name: Casey Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.16451646387577057,
+                "unrelated": 0.8354834914207458
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.16451646387577057,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-087.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323582,
+              "size": 1078,
+              "mtime_ns": "1791071767267357846",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "supported",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.9911419153213501,
+                  "instructions": 0.004819575697183609,
+                  "notice": 0.002385862870141864,
+                  "other": 0.0016526388935744762
+                }
+              },
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example Two Given Name: Robin Mailing Address: 200 Example Street Part 2. Application Type I am applying for a change of status. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.11951085925102234,
+                "unrelated": 0.8804891109466553
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.11951085925102234,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-205.pdf",
+              "excerpt": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323592,
+              "size": 924,
+              "mtime_ns": "1791071767268941296",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Form W-9 Request for Taxpayer Identification Number and Certification Department of the Treasury. Internal Revenue Service. Name: Example Company Part I. Taxpayer Identification Number Part II. Certification Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.07668379694223404,
+                "unrelated": 0.9233161807060242
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.07668379694223404,
+              "reason": "model_choice"
+            },
+            {
+              "path": "guide-019.pdf",
+              "excerpt": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323586,
+              "size": 797,
+              "mtime_ns": "1791071767268065426",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "supported",
+              "document_role": {
+                "choice": "instructions",
+                "probabilities": {
+                  "form": 0.04627039283514023,
+                  "instructions": 0.9458464980125427,
+                  "notice": 0.0011583565501496196,
+                  "other": 0.006724726874381304
+                }
+              },
+              "model_state": "Instructions for Application to Extend/Change Nonimmigrant Status Form I-539 Instructions This guide explains how to fill in the application. It is not the application form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.07306544482707977,
+                "unrelated": 0.926934540271759
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.07306544482707977,
+              "reason": "model_choice"
+            },
+            {
+              "path": "scan-042.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323581,
+              "size": 1079,
+              "mtime_ns": "1791071767266998056",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "supported",
+              "document_role": {
+                "choice": "form",
+                "probabilities": {
+                  "form": 0.9918710589408875,
+                  "instructions": 0.004382933024317026,
+                  "notice": 0.002260551555082202,
+                  "other": 0.0014854040928184986
+                }
+              },
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form I-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type I am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.07112203538417816,
+                "unrelated": 0.9288779497146606
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.07112203538417816,
+              "reason": "model_choice"
+            },
+            {
+              "path": "raster-301.pdf",
+              "excerpt": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "source": "ocr",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323593,
+              "size": 28465,
+              "mtime_ns": "1791071767269111587",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Application to Extend/Change Nonimmigrant Status Department of Homeland Security U.S. Citizenship and Immigration Services Form 1-539 Part 1. Information About You Family Name: Example One Given Name: Alex Mailing Address: 100 Example Street Part 2. Application Type | am applying for an extension of stay. Synthetic test form. Not for filing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.05321235582232475,
+                "unrelated": 0.9467875957489014
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.05321235582232475,
+              "reason": "model_choice"
+            },
+            {
+              "path": "opaque-731.pdf",
+              "excerpt": "Form AB-731 Application for Synthetic Equipment Access Part 1. Applicant Information Family Name: Example Five Given Name: Quinn Part 2. Access requested A completely invented form identifier for generality testing, not a real government form.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323591,
+              "size": 923,
+              "mtime_ns": "1791071767268801089",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Form AB-731 Application for Synthetic Equipment Access Part 1. Applicant Information Family Name: Example Five Given Name: Quinn Part 2. Access requested A completely invented form identifier for generality testing, not a real government form.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.04958902299404144,
+                "unrelated": 0.9504109621047974
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.04958902299404144,
+              "reason": "model_choice"
+            },
+            {
+              "path": "meeting.txt",
+              "excerpt": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "source": "text",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323595,
+              "size": 67,
+              "mtime_ns": "1791071767269367669",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "The design team meeting is at 9 AM. Bring the prototype and notes.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.04103744029998779,
+                "unrelated": 0.9589625597000122
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.04103744029998779,
+              "reason": "model_choice"
+            },
+            {
+              "path": "investing.pdf",
+              "excerpt": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323585,
+              "size": 764,
+              "mtime_ns": "1791071767267931718",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "10 Investing Questions Personal finance, investment strategy and asset allocation Compound interest, stock markets and portfolio management.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0391400046646595,
+                "unrelated": 0.9608599543571472
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0391400046646595,
+              "reason": "model_choice"
+            },
+            {
+              "path": "tax-209.pdf",
+              "excerpt": "Form W-8BEN Certificate of Foreign Status of Beneficial Owner for United States Tax Withholding Department of the Treasury. Internal Revenue Service. Part I. Identification of Beneficial Owner Name: Example Taxpayer",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323590,
+              "size": 867,
+              "mtime_ns": "1791071767268660506",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Form W-8BEN Certificate of Foreign Status of Beneficial Owner for United States Tax Withholding Department of the Treasury. Internal Revenue Service. Part I. Identification of Beneficial Owner Name: Example Taxpayer",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.023843826726078987,
+                "unrelated": 0.9761561155319214
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.023843826726078987,
+              "reason": "model_choice"
+            },
+            {
+              "path": "I539.pdf",
+              "excerpt": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323584,
+              "size": 821,
+              "mtime_ns": "1791071767267787761",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Writing to Learn Writing across the curriculum Classroom teaching methods and educational outcomes. Teachers use reflective essays in education. This paper is about classroom writing.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0028091217391192913,
+                "unrelated": 0.9971908926963806
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0028091217391192913,
+              "reason": "model_choice"
+            },
+            {
+              "path": "research.pdf",
+              "excerpt": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "source": "shared_pdf_cache",
+              "excerpt_chars": 1200,
+              "dev": 16777232,
+              "ino": 70323583,
+              "size": 881,
+              "mtime_ns": "1791071767267609428",
+              "search_intent": {
+                "subject": "receipt notices for I-539 applications",
+                "kind": "document_type",
+                "target": "receipt notices for I-539 applications",
+                "constraints": [],
+                "requested_role": "notice",
+                "document_role": {
+                  "choice": "notice",
+                  "probabilities": {
+                    "form": 0.13213138282299042,
+                    "instructions": 0.0027719163335859776,
+                    "notice": 0.8624466061592102,
+                    "other": 0.002650151727721095
+                  }
+                }
+              },
+              "type_variant_evidence": {},
+              "condition_evidence": [],
+              "identifier_evidence": "identifier_not_readable",
+              "document_role": null,
+              "model_state": "Journal of Materials Science Thermal conductivity of semiconductors and crystal lattice properties Abstract: This research investigates phonon scattering in nanoscale materials. This is a research paper about heat conduction in semiconductors.",
+              "model_instructions": "Classify the document itself.",
+              "model_criteria": {
+                "plausible": "This document is receipt notices for I-539 applications.",
+                "unrelated": "This document is not receipt notices for I-539 applications."
+              },
+              "model_choice": "unrelated",
+              "model_scores": {
+                "plausible": 0.0005759092164225876,
+                "unrelated": 0.9994240999221802
+              },
+              "needs_check": false,
+              "decision": "rejected",
+              "score": 0.0005759092164225876,
+              "reason": "model_choice"
+            }
+          ],
+          "shortlist_count": 1,
+          "total_files": 15,
+          "checked_files": 15,
+          "next_offset": 15,
+          "remaining_files": 0,
+          "partial": false,
+          "limiting_reason": "none",
+          "folders_pending": false,
+          "folder_decisions": [],
+          "skipped_folders": 0,
+          "model_folders": 0,
+          "needs_check_count": 1,
+          "steps": [
+            {
+              "action": "decide_folders",
+              "folders": 0,
+              "skipped": 0
+            },
+            {
+              "action": "inventory",
+              "files": 15,
+              "partial": false
+            },
+            {
+              "action": "read_previews",
+              "characters_per_file": 1200,
+              "files": 15
+            },
+            {
+              "action": "score_matches",
+              "files": 15
+            },
+            {
+              "action": "show_shortlist",
+              "files": 15
+            }
+          ],
+          "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+          "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2",
+          "search_intent": {
+            "subject": "receipt notices for I-539 applications",
+            "kind": "document_type",
+            "target": "receipt notices for I-539 applications",
+            "constraints": [],
+            "requested_role": "notice",
+            "document_role": {
+              "choice": "notice",
+              "probabilities": {
+                "form": 0.13213138282299042,
+                "instructions": 0.0027719163335859776,
+                "notice": 0.8624466061592102,
+                "other": 0.002650151727721095
+              }
+            }
+          }
+        },
+        "selected_paths": [],
+        "conversation_id": null,
+        "actions": [],
+        "folder_memory": {
+          "handoff": {
+            "type": "folder_memory",
+            "state": "queued",
+            "scope_id": "d12df01fd25df1f4d709d302be2682fb",
+            "build_job_id": "62ac960eda92e0a27288e01aa99a097b",
+            "message": "Folder memory is refreshing. Coverage is available in its saved build status."
+          },
+          "scope": {
+            "id": "d12df01fd25df1f4d709d302be2682fb",
+            "schema_version": 2,
+            "kind": "folder",
+            "display_name": "Document Type Search v4",
+            "canonical_root": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v4",
+            "volume_identity": "16777232",
+            "root_file_identity": "16777232:70323580",
+            "summary_token_budget": 3000,
+            "policy_fingerprint": "5490c5355af8abed734fddb995be750e13c0ba57e9c63c694e68597f81cbb766",
+            "state": "running",
+            "freshness_state": "complete",
+            "active_job_id": "",
+            "phase": "complete",
+            "evidence_generation": 17,
+            "enhancement_revision": 0,
+            "regular_files_seen": 15,
+            "files_indexed": 15,
+            "files_skipped": 0,
+            "chunks_indexed": 14,
+            "content_readable_files": 14,
+            "metadata_only_files": 1,
+            "content_artifacts": 14,
+            "scan_files_seen": 15,
+            "scan_sources_indexed": 15,
+            "scan_unchanged": 15,
+            "scan_text_artifacts": 0,
+            "scan_metadata_artifacts": 0,
+            "scan_errors": 0,
+            "enrichment_files_total": 15,
+            "enrichment_files_done": 15,
+            "pdf_pages_read": 12,
+            "ocr_outputs": 1,
+            "image_captions": 0,
+            "summaries_created": 0,
+            "enrichment_failures": 0,
+            "progress_started_ms": 1791074336522,
+            "progress_updated_ms": 1791074336729,
+            "elapsed_seconds": 0.207,
+            "files_per_second": 72.464,
+            "current_file": "",
+            "source_bytes_indexed": 0,
+            "extracted_text_bytes": 0,
+            "last_successful_build_at": "2026-10-04T00:38:56Z",
+            "last_successful_check_at": "2026-10-04T00:38:56Z",
+            "active_database": "/Users/deepanwadhwa/Documents/Samosa Walkthrough/Document Type Search v4.chutni",
+            "effective_policy": {
+              "include_hidden": false,
+              "cross_filesystems": false,
+              "follow_symlinks": false,
+              "maximum_depth": 32,
+              "maximum_files": 10000,
+              "maximum_directories": 5000,
+              "maximum_seconds": 20,
+              "maximum_file_bytes": 67108864,
+              "maximum_eligible_bytes": 2147483648,
+              "mandatory_exclusions": [
+                ".git",
+                ".svn",
+                ".hg",
+                "node_modules",
+                ".cache",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "env",
+                "target",
+                "build",
+                "dist",
+                "DerivedData",
+                ".Trash",
+                ".mypy_cache",
+                ".pytest_cache",
+                ".ruff_cache",
+                "site-packages",
+                ".next",
+                ".nuxt",
+                ".yarn",
+                ".pnpm-store",
+                ".gradle",
+                "coverage",
+                ".idea"
+              ],
+              "marker_exclusions": [
+                "directory containing pyvenv.cfg"
+              ],
+              "user_exclusions": []
+            },
+            "warnings": [],
+            "build_partial": false,
+            "complete_for_policy": true
+          }
+        }
+      },
+      "matches": [
+        "notice-022.pdf"
+      ],
+      "passed": true,
+      "elapsed_seconds": 74.098
+    }
+  ]
+}

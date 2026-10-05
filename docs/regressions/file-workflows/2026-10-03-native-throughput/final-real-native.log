@@ -1,0 +1,13 @@
+c++ -O3 -std=c++17 -I"/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/include" -I"/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/ggml/include" \
+	  src/samosa_summarizer.cpp -o build/samosa-summarizer \
+	  -Wl,-rpath,@loader_path/../lib -Wl,-rpath,"/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libllama.0.dylib" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libggml.0.dylib" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libggml-cpu.0.dylib" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libggml-blas.0.dylib" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libggml-metal.0.dylib" \
+	  "/Users/deepanwadhwa/.samosa/backends/prism-llama.cpp/build/bin/libggml-base.0.dylib"
+cc -O2 -Wall -Wextra -Werror -std=c11 tests/test_native_summarizer.c \
+	  -o build/test_native_summarizer
+build/test_native_summarizer build/samosa-summarizer "/Users/deepanwadhwa/.samosa/current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf"
+test_native_summarizer: PASS (South Carolina officials reported 30 cases of cyclosporiasis in 2026 . None were linked to the national outbreak . Eleven cases had been reported by July 8 but the total increased to 30 by July 24 .)

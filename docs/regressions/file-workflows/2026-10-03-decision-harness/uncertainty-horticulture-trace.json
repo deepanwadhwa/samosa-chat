@@ -1,0 +1,92 @@
+{
+  "turn_id": "82ced441ffe66182411a3b5d457abf7e",
+  "backend": "ornith",
+  "question": "Which documents are about horticulture?",
+  "facts": {
+    "memory_route": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.17683561146259308,
+        "files": 0.8231643736362457
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.17709815502166748,
+        "inventory": 0.9908567667007446,
+        "metadata": 0.003721708431839943,
+        "content": 0.9619649052619934
+      },
+      "sources": [],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_decision": {
+      "ok": true,
+      "version": 1,
+      "scope": "files",
+      "scope_scores": {
+        "folder": 0.17683561146259308,
+        "files": 0.8231643736362457
+      },
+      "actions": [
+        "inventory",
+        "content"
+      ],
+      "action_scores": {
+        "overview": 0.17709815502166748,
+        "inventory": 0.9908567667007446,
+        "metadata": 0.003721708431839943,
+        "content": 0.9619649052619934
+      },
+      "sources": [
+        {
+          "number": 0,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 1,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 2,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 3,
+          "choice": "plausible",
+          "score": 1.0
+        },
+        {
+          "number": 4,
+          "choice": "plausible",
+          "score": 1.0
+        }
+      ],
+      "membership_kind": "semantic",
+      "model": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0",
+      "revision": "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
+    },
+    "memory_subject": {
+      "subject": "horticulture"
+    },
+    "memory_membership_validated": {
+      "subject": "horticulture",
+      "match": [
+        1
+      ],
+      "uncertain": [
+        0
+      ],
+      "filename_proofs": []
+    }
+  }
+}

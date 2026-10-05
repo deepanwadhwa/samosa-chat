@@ -1,0 +1,13 @@
+Loading /Users/deepanwadhwa/.cache/huggingface/hub/models--MoritzLaurer--deberta-v3-large-zeroshot-v2.0/snapshots/cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2
+Device: -1
+/Users/deepanwadhwa/Documents/projects/OpenDecision/.venv/lib/python3.13/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Loading weights:   0%|          | 0/394 [00:00<?, ?it/s]Loading weights: 100%|██████████| 394/394 [00:00<00:00, 13369.00it/s]
+{"question": "Are there any documents about Mira Wen?", "scope": "files", "actions": ["inventory"], "membership_kind": "named"}
+{"question": "Which documents concern Mira Lee, and how many are there?", "scope": "files", "actions": ["inventory", "metadata", "content"], "membership_kind": "named"}
+{"question": "List documents about horticulture.", "scope": "files", "actions": ["inventory"], "membership_kind": "semantic"}
+{"question": "does Person X have any files in this folder?", "scope": "files", "actions": ["inventory"], "membership_kind": "named"}
+{"question": "does Person X have any files in this folder?", "quote": "Person X appointment.txt", "proof": [{"number": 0, "choice": "unrelated", "score": 0.08159290999174118}]}
+{"question": "Which documents concern Mira Lee, and how many are there?", "quote": "Mira Lee brief.pdf", "proof": [{"number": 0, "choice": "unrelated", "score": 0.24803294241428375}]}
+{"question": "Which documents concern Mira Lee, and how many are there?", "quote": "Cedar project: Mira Lee meeting is 11 June 2032, reference CE-405.", "proof": [{"number": 0, "choice": "unrelated", "score": 0.2270405888557434}]}
+{"question": "List documents about horticulture.", "quote": "Mira Leena gardening diary. This is a different person.", "proof": [{"number": 0, "choice": "unrelated", "score": 0.03649376332759857}]}

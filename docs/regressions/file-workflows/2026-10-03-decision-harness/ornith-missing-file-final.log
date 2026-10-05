@@ -1,0 +1,5 @@
+{"stage": "backend_ready", "backend": "ornith"}
+{"stage": "memory_reused", "scope": "556a286809767ef7c35d43f641aff87f", "files": 5}
+{"stage": "memory_reused", "scope": "4a937476a37450b042743cd8d8c11529", "files": 0}
+{"stage": "answer", "question": "What is in absent.txt?", "answer": "There is no confirmed match for `absent.txt` in the supplied evidence. The folder \"General Harness Qwen\" contains five files: `Mira Lee brief.pdf`, `Mira Leena diary.txt`, `alpha/notes.txt`, `beta/notes.txt`, and `groceries.txt`. None of these files are named `absent.txt`. One uncertain association was noted, but it was not fully checked and does not constitute a confirmed match.", "seconds": 75.41}
+{"stage": "passed", "backend": "ornith", "cases": ["missing_file"], "questions": 1}

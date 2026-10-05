@@ -1,0 +1,11 @@
+{"question": "Give me the gist of this directory.", "scope": "folder", "required_actions": ["overview"]}
+{"question": "Which documents mention the Beacon project?", "scope": "files", "required_actions": ["inventory"]}
+{"question": "How many pages are in the lease.pdf, and what does it say about rent?", "scope": "files", "required_actions": ["metadata", "content"]}
+{"question": "When is the meeting scheduled?", "scope": "files", "required_actions": ["content"]}
+{"question": "Count everything indexed here.", "scope": "folder", "required_actions": ["inventory"]}
+{"question": "Summarise archive.txt in one sentence.", "scope": "files", "required_actions": ["content"]}
+{"question": "Show files about Ada, and describe them briefly.", "scope": "files", "required_actions": ["inventory", "content"]}
+{"question": "Which folder am I asking about?", "scope": "folder", "required_actions": []}
+{"question": "what is this folder about? summarize it for me in about 2 sentences.", "scope": "folder", "required_actions": ["overview"]}
+{"question": "does Person X have any files in this folder?", "scope": "files", "required_actions": ["inventory"]}
+{"question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?", "scope": "files", "required_actions": ["inventory", "metadata", "content"]}

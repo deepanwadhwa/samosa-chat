@@ -1,0 +1,164 @@
+[
+  {
+    "stage": "live_progress",
+    "rows": [
+      [
+        "guide-019.pdf",
+        "No match in preview",
+        "173 characters"
+      ],
+      [
+        "I539-unreadable.bin",
+        "Needs review",
+        "0 characters"
+      ],
+      [
+        "I539.pdf",
+        "No match in preview",
+        "183 characters"
+      ],
+      [
+        "investing.pdf",
+        "No match in preview",
+        "140 characters"
+      ],
+      [
+        "meeting.txt",
+        "No match in preview",
+        "66 characters"
+      ],
+      [
+        "notice-022.pdf",
+        "No match in preview",
+        "182 characters"
+      ],
+      [
+        "opaque-731.pdf",
+        "No match in preview",
+        "243 characters"
+      ],
+      [
+        "raster-301.pdf",
+        "Needs review",
+        "343 characters"
+      ],
+      [
+        "research.pdf",
+        "No match in preview",
+        "243 characters"
+      ],
+      [
+        "scan-042.pdf",
+        "Likely match",
+        "343 characters"
+      ],
+      [
+        "scan-087.pdf",
+        "Checking",
+        "—"
+      ],
+      [
+        "scan-118.pdf",
+        "Pending",
+        "—"
+      ],
+      [
+        "scan-205.pdf",
+        "Pending",
+        "—"
+      ],
+      [
+        "supplement-061.pdf",
+        "Pending",
+        "—"
+      ],
+      [
+        "tax-209.pdf",
+        "Pending",
+        "—"
+      ]
+    ],
+    "counts": "10 checked of 15 listed · 1 likely matches · 2 need review · 4 pending · 1 checking"
+  },
+  {
+    "stage": "checked_files",
+    "files": [
+      {
+        "path": "scan-042.pdf",
+        "status": "Likely match"
+      },
+      {
+        "path": "scan-087.pdf",
+        "status": "Likely match"
+      },
+      {
+        "path": "raster-301.pdf",
+        "status": "Needs review"
+      },
+      {
+        "path": "I539-unreadable.bin",
+        "status": "Needs review"
+      },
+      {
+        "path": "guide-019.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "notice-022.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "supplement-061.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "meeting.txt",
+        "status": "No match in preview"
+      },
+      {
+        "path": "scan-118.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "opaque-731.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "tax-209.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "I539.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "scan-205.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "investing.pdf",
+        "status": "No match in preview"
+      },
+      {
+        "path": "research.pdf",
+        "status": "No match in preview"
+      }
+    ]
+  },
+  {
+    "stage": "selected_deepen",
+    "job_id": "job-1791074621390-xu7o5vqx",
+    "selected_paths": [
+      "scan-042.pdf"
+    ],
+    "matches": [
+      "scan-042.pdf",
+      "scan-087.pdf"
+    ]
+  },
+  {
+    "stage": "passed",
+    "job_id": "job-1791074621390-xu7o5vqx",
+    "selected": "Select scan-042.pdf"
+  }
+]

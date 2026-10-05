@@ -1,0 +1,11 @@
+{
+  "release": "dev-035c4f81d7b1",
+  "ready": true,
+  "backend": "ornith",
+  "installed_binaries_match_build": {
+    "samosa-gateway": true,
+    "samosa-jobsd": true
+  },
+  "restart_deferred_pending_memory": true,
+  "scope_or_conversation_queries": 0
+}

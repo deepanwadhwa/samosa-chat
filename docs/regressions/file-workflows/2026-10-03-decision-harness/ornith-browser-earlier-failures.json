@@ -1,0 +1,56 @@
+[
+  {
+    "stage": "asking",
+    "question": "what is this folder about? summarize it for me in about 2 sentences."
+  },
+  {
+    "question": "what is this folder about? summarize it for me in about 2 sentences.",
+    "answer": "This folder contains synthetic test data for a chatbot extractor, organized into subdirectories (01, 02, misc) with numbered notes and reports for \"Person X,\" appointment records, scanned certificates, and a large fixture PDF. It also includes separate record files for \"Person Xavier\" and \"Person Y,\" all structured as sample documents for testing extraction workflows.",
+    "error": "",
+    "seconds": 64.202
+  },
+  {
+    "stage": "asking",
+    "question": "does Person X have any files in this folder?"
+  },
+  {
+    "question": "does Person X have any files in this folder?",
+    "answer": "This folder contains a mix of personal records and notes organized into subdirectories (01, 02, misc) and a root level, with files covering appointments, scans, and various records for different people. It appears to be a collection of documents related to tracking information about individuals, including Person X, Person Y, and Person Xavier.\n\nYes, Person X has files in this folder:\n\nPerson X appointment.txt\nPerson X records.pdf (40 pages)\nPerson X scan.pdf (1 page)",
+    "error": "",
+    "seconds": 186.759
+  },
+  {
+    "stage": "asking",
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?"
+  },
+  {
+    "question": "tell me what is in the Person X file? How many pages in that file? are there files related to person X?",
+    "answer": "This folder contains synthetic test fixture documents for a chat extraction system, organized into subfolders (01, 02, misc) and including both text and PDF files. It holds records for multiple people—primarily Person X, Person Y, and Person Xavier—along with appointment dates, scanned certificates, and numbered document series.\n\nYes, Person X has files in this folder. There are 10 text files explicitly labeled as \"Person X document\" (references X-101 through X-109), plus a dedicated \"Person X appointment.txt\" file and a \"Person X records.pdf\" file.\n\nThe \"Person X records.pdf\" file is 40 pages long. The \"Person X scan.pdf\" file is 1 page long. In addition to these PDFs, there are 10 text files associated with Person X (note-3.txt, note-4.txt, note-5.txt, note-6.txt, note-7.txt, note-8.txt, report.txt in both 01 and 02 folders, plus misc/note-2.txt, misc/note-5.txt, and misc/note-8.txt), and the \"Person X appointment.txt\" file.",
+    "error": "",
+    "seconds": 165.098
+  },
+  {
+    "stage": "asking",
+    "question": "How many pages does Person X records.pdf have?"
+  },
+  {
+    "question": "How many pages does Person X records.pdf have?",
+    "answer": "This folder contains a mix of personal records and notes, including appointment details, scanned documents, and various text files organized into subdirectories. It appears to hold information about multiple individuals, with specific records for \"Person X\" and \"Person Y,\" along with general notes and reports.\n\nYes, Person X has files in this folder. There are two files specifically related to Person X: \"Person X appointment.txt\" and \"Person X records.pdf.\"\n\nThe \"Person X records.pdf\" file has 40 pages. Additionally, there is another file named \"Person X scan.pdf\" which has 1 page.\n\nThere are indeed files related to Person X in this folder, as mentioned above.",
+    "error": "",
+    "seconds": 146.488
+  },
+  {
+    "stage": "asking",
+    "question": "What is the code on page 37 in Person X records.pdf? Cite the page."
+  },
+  {
+    "question": "What is the code on page 37 in Person X records.pdf? Cite the page.",
+    "answer": "This folder contains synthetic fixture documents for extractor testing, organized into subfolders (01, 02, misc) and a root level, with files referencing Person X, Person Y, and Person Xavier. It includes text notes, reports, appointments, scanned certificates, and a 40-page PDF record file for Person X.\n\nYes, Person X has multiple files in this folder:\n\nPerson X records.pdf (40 pages)\nPerson X appointment.txt\nPerson X scan.pdf (1 page)\n01/note-3.txt, 01/note-6.txt, 01/report.txt\n02/note-4.txt, 02/note-7.txt, 02/report.txt\nmisc/note-2.txt, misc/note-5.txt, misc/note-8.txt\n\nPerson X records.pdf has 40 pages.\n\nThe code on page 37 of Person X records.pdf is:\n\n\"Samosa Chat synthetic fixture document for extractor tests. This paragraph exists only to keep the text layer well above the short-page OCR-fallback threshold.\"\n\nCited page: PDF page 37 of Person X records.pdf.",
+    "error": "",
+    "seconds": 161.365
+  },
+  {
+    "stage": "failure",
+    "error": "AssertionError [ERR_ASSERTION]: late-page evidence absent\n    at file:///private/tmp/fw6-browser/memory-acceptance.mjs:34:11"
+  }
+]

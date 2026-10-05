@@ -1,0 +1,21 @@
+node:internal/modules/run_main:104
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert(/12|twelve/i.test(answer))
+
+    at assertMultipartAnswer (file:///Users/deepanwadhwa/Documents/samosa-chat/tests/assert_memory_browser.mjs:13:3)
+    at file:///Users/deepanwadhwa/Documents/samosa-chat/tests/assert_memory_browser.mjs:23:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:274:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:644:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:98:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '=='
+}
+
+Node.js v23.10.0
