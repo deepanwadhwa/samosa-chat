@@ -434,6 +434,11 @@ printf '{"fixture":"mixed-folder-dogfood","generated_decoys_per_tree":10000,"gen
   "$DOGFOOD_PEAK_RSS_KB" "$DOGFOOD_PEAK_PROCESS_COUNT" >"$TMP/dogfood-result.json"
 /bin/cat "$TMP/dogfood-result.json"
 printf 'mixed-folder gateway plus Chutni worker peak RSS: %s KiB\n' "$DOGFOOD_PEAK_RSS_KB"
+if [ "${SAMOSA_TEST_TRACE:-0}" = 1 ]; then
+  # Trace assertions after fixture creation, without logging all 30,000 decoys.
+  # CI must identify the failing command instead of only reporting Error 1.
+  set -x
+fi
 # Startup health may have reported a loading backend. Assert the current
 # state after the real requests above, rather than that stale first snapshot.
 health=$(/usr/bin/curl -fsS "http://127.0.0.1:$PORT/healthz")

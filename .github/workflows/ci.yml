@@ -85,6 +85,8 @@ jobs:
       # uses tiny fixtures rather than the 24 GB model, so it runs on a clean
       # runner with no download.
       - name: Test
+        env:
+          SAMOSA_TEST_TRACE: 1
         run: make test
 
       - name: Test automatic file routing
@@ -128,6 +130,6 @@ jobs:
               su -s /bin/sh ci -c "
                 cd /work
                 rm -rf build-debian
-                BUILD_DIR=build-debian make debian-portability-test
+                SAMOSA_TEST_TRACE=1 BUILD_DIR=build-debian make debian-portability-test
               "
             '
