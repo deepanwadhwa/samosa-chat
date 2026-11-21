@@ -438,6 +438,38 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07c component visual residency is qualified on this Mac. The existing
+Vision/temporal verification, white-alpha P6 preparation, command encoders and
+strict replies now share `visual_assets.c`; both legacy and resident adapters
+reuse them. `visual_host.c` adapts existing Activation, guardian workspace/duplex
+ownership and SamosaMmSession. No model/backend algorithm or App policy changed.
+Optional public registry profiles require bounded native generation before ready
+and preserve complete pins/last-good state. Exact commands, source/artifact hashes,
+excluded development failures and limitations:
+`components/samosa-inference/docs/qualification/life07c-visual-residency/README.md`.
+Qualified Inference revision/pin: `4b35a35`, committed and backed up on
+`origin/refactor/extract-working-modules`; older preservation pins below are
+historical checkpoints.
+
+Native normal/SAN owner and public registry pass changing-input residency, queued
+cancellation preserving the active request, deadline invalidation, mutation and
+unsafe-directory refusal, failed-ready last-good retention, parent death/unrelated
+peer survival/reacquisition and active EOF cleanup. Retained actual VisionPsy
+heading and Molmo2 changing-frame cases pass normal/SAN C owners on isolated
+private clones. External model engines are not SAN instrumented. Original
+one-shot/protocol/activation/registry regressions, fresh owner source-subset builds
+and Chat gateway/summary/runtime checks pass. No Python or Docker was invoked.
+Gateway lifecycle cutover, Whisper audit, full area3 and independent release stay
+open; this is a component checkpoint rather than full Inference completion.
+
+Read-only next-boundary inventory is now in EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md.
+Next LIFE-07d: mechanically extract original visual launch-profile/close glue
+through the existing public supervisor/trace boundary, then the shared Whisper
+runner. Preserve larger-image, long video/audio and App policy behavior; current
+prepared-input profiles are not full gateway substitutes. Areas4–7, remaining
+Python tooling/CI migration, Agent/App/assembly and
+legacy retirement remain open. The checkpoint below retains earlier evidence.
+
 LIFE-07b is qualified on this Mac: the existing gateway Molmo2 analyze and
 VisionPsy inspect bodies now belong to Inference's `specialist_protocol.c` and
 public header. Gateway keeps thin calls and explicit trace callbacks. Original
@@ -478,7 +510,7 @@ dirty Chutni files were left unchanged/outside these commits and remain covered
 by the verified local snapshot. Remote backups preserve source; they do not imply
 full current-suite qualification or completed Python removal.
 
-Next LIFE-07c: reuse vision.c run/model_verify and temporal.c prepared-frame/
+Historical next LIFE-07c: reuse vision.c run/model_verify and temporal.c prepared-frame/
 package validation with the existing guardian workspace/duplex owner and summary
 host launch/activation pattern. Finish visual residency and qualify actual
 generation before public readiness; preserve model loops and App policy. Full area 3,
