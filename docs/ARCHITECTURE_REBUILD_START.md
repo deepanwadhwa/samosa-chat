@@ -12,6 +12,15 @@ Required target, 2026-11-20: this Mac first. Build/test/install natively here;
 do not start Docker/VMs. Docker/Linux checks are deferred and do not block the
 current refactor. This overrides older cross-platform execution instructions.
 
+Current implementation handoff, LIFE-07b, 2026-11-20: the original gateway visual
+protocol bodies are now in Inference. Native owner/control/SAN, standalone build,
+product regression and native shell packaging/install/upgrade gates pass on this
+Mac. Read the verification Resume checkpoint and
+`components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md`.
+Next LIFE-07c reuses existing visual verifier/preparation and guardian/activation
+code for resident ownership and actual-generation readiness. Following checkpoints
+are historical where superseded; do not restart completed codec/close work.
+
 Latest checkpoint, 2026-10-25: LIFE-07a is in progress. Added bounded caller
 control to the existing extracted visual supervisor; both original protocols keep
 their framing and retain ownership until close/reap. Evidence and remaining work:

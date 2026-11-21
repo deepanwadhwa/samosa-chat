@@ -34,11 +34,7 @@ make fake_model_download_server >/dev/null 2>&1 || true
 
 FIXTURE="$TMP/artifact.bin"
 # 5000 deterministic bytes, not all-zero, so a single flipped byte is detectable.
-python3 -c "
-import sys
-data = bytes((i * 37 + 11) % 256 for i in range(5000))
-open('$FIXTURE', 'wb').write(data)
-"
+LC_ALL=C awk 'BEGIN {for (i=0; i<5000; i++) printf "%c", (i * 37 + 11) % 256}' >"$FIXTURE"
 EXPECTED_SHA=$(sha256_file "$FIXTURE")
 
 start_server() {
@@ -115,10 +111,7 @@ stop_server
 
 # --- oversize: fixture larger than a hypothetical catalog-declared size ---
 BIGGER="$TMP/bigger.bin"
-python3 -c "
-data = bytes((i * 37 + 11) % 256 for i in range(6000))
-open('$BIGGER', 'wb').write(data)
-"
+LC_ALL=C awk 'BEGIN {for (i=0; i<6000; i++) printf "%c", (i * 37 + 11) % 256}' >"$BIGGER"
 start_server oversize "$BIGGER"
 curl -fsS "http://127.0.0.1:$PORT/artifact" -o "$TMP/oversize.bin"
 GOT_LEN=$(wc -c <"$TMP/oversize.bin" | tr -d ' ')

@@ -142,6 +142,7 @@ INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md
 # Chutni is an application runtime component, not a user-installed prerequisite.
 INSTALL_FILES="$INSTALL_FILES engine/stage_tesseract_runtime.sh"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_supervisor.c engine/inference/include/samosa_inference/specialist_supervisor.h engine/inference/LICENSE"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_protocol.c engine/inference/engines/json.h engine/inference/include/samosa_inference/specialist_protocol.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/summary_process.c engine/inference/src/controlled_pipe.h engine/inference/src/json.h engine/inference/include/samosa_inference/summary_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/llama_launch.c engine/inference/include/samosa_inference/llama_launch.h"
 # These pinned sources build the same generic service Samosa uses locally and
@@ -207,7 +208,7 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
 fi
 
 # Primary chat-model weights are a separate, optional concern from the runtime:
-# a runtime-only release (tools/package_hf.py --runtime-only) omits them, and a
+# a runtime-only release (tools/package_hf.sh --runtime-only) omits them, and a
 # clean install must make no request for any of them. The small summarizer model
 # above is an application runtime component. Stage each optional chat artifact
 # only if the release manifest actually lists it -- same pattern as the
@@ -453,6 +454,10 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
   -o "$STAGE/engine/inference/specialist_supervisor.o" ||
   fail "staged Inference supervisor compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/specialist_protocol.c" \
+  -o "$STAGE/engine/inference/specialist_protocol.o" ||
+  fail "staged Inference protocol compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
   -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/summary_process.c" \
   -o "$STAGE/engine/inference/summary_process.o" ||
   fail "staged Inference summary compilation failed; live release was not changed"
@@ -461,7 +466,8 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   -o "$STAGE/engine/inference/llama_launch.o" ||
   fail "staged Inference text launch compilation failed; live release was not changed"
 ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
-  "$STAGE/engine/inference/specialist_supervisor.o" "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" ||
+  "$STAGE/engine/inference/specialist_supervisor.o" "$STAGE/engine/inference/specialist_protocol.o" \
+  "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" ||
   fail "staged Inference archive failed; live release was not changed"
 
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md

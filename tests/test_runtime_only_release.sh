@@ -30,10 +30,13 @@ sha256_file() {
 
 MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json'
 
+make -C "$ROOT" fake_model_download_server >/dev/null
+
 serve_remote() {
   SERVER_LOG="$TMP/http-server.log"
   : >"$SERVER_LOG"
-  ( cd "$REMOTE" && python3 -m http.server "$SERVER_PORT" >"$SERVER_LOG" 2>&1 ) &
+  SAMOSA_FAKE_DOWNLOAD_ROOT="$REMOTE" \
+    "$ROOT/${BUILD_DIR:-build}/fake_model_download_server" --port "$SERVER_PORT" >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   i=0
   while [ "$i" -lt 100 ]; do
@@ -59,7 +62,7 @@ assert_no_model_requests() {
 }
 
 # --- Package a runtime-only release: no --snapshot, no --tokenizer -----------
-SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --runtime-only \
+SAMOSA_PACKAGE_TEST=1 sh "$ROOT/tools/package_hf.sh" --out "$REMOTE" --runtime-only \
   --repo-id test/samosa \
   --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \

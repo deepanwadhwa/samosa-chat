@@ -2,21 +2,23 @@
 
 Priority review and shared agent handoff, 2026-11-20:
 [Modular rebuild priorities](ARCHITECTURE_REBUILD_PRIORITIES.md).
-This records the ordered remaining work and completion criteria; no new build or
-test results are claimed. Implementation checkpoints below retain their dates.
+This records the ordered remaining work and completion criteria. Executed
+verification evidence is linked below; older checkpoints retain their dates.
 User constraint, 2026-11-20: all runtime, build/release tooling, tests and CI must
 be Python-free. Existing Python-backed checks require native/shell replacements.
 Required target, 2026-11-20: this Mac first. Docker/Linux work is deferred and
 does not block native Mac extraction, verification or product qualification.
 
-Native Mac checkpoint, 2026-11-20: resumed visual ownership fixture and inherited
-supervisor pass normal/SAN, including a clean independent source build. Chat
-summary/runtime-settings/build and existing Molmo gateway assertions pass. Shell
-fixtures replace Python in that visual product check; native Makefile parsing no
-longer probes Python. Parent/Agent ace72ef and Inference 214fe75 are committed and
-backed up on refactor/extract-working-modules branches. Remaining visual lifecycle,
-Python-tooling removal and full component/product qualification stay open.
-Exact commands and limits are in the verification Resume checkpoint.
+Native Mac checkpoint, 2026-11-20: LIFE-07b moves the existing Molmo2 analyze and
+VisionPsy inspect operations into Inference (`3e9b6f1`), with gateway adapters and
+host trace callbacks. Native protocol normal/SAN, fresh standalone archive/control
+regressions, Chat summary/runtime/Molmo and clean/atomic/PATH/runtime-only
+installation/upgrade gates pass. The release packager/manifest tests and HTTP
+fixtures now use shell/C; replaced Python package scripts are retired.
+Remaining visual residency/readiness, other Python drivers/default CI and full
+component/product qualification stay open. Next LIFE-07c reuses the existing
+visual verifier/preparation, guardian workspace/duplex and activation machinery.
+Exact commands, source hashes and limits are in the verification Resume checkpoint.
 
 Latest checkpoint, 2026-10-25: LIFE-07a is in progress. Added bounded caller
 control to the existing extracted visual supervisor; both original protocols keep

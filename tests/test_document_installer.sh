@@ -34,7 +34,7 @@ cp "$ARCHIVE" "$PDFIUM/pdfium-mac-arm64.tgz"
 printf 'not selected on this platform\n' >"$PDFIUM/pdfium-linux-x64.tgz"
 printf 'not selected on this platform\n' >"$PDFIUM/pdfium-linux-arm64.tgz"
 
-SAMOSA_PACKAGE_TEST=1 python3 "$ROOT/tools/package_hf.py" --out "$REMOTE" --snapshot "$SNAP" \
+SAMOSA_PACKAGE_TEST=1 sh "$ROOT/tools/package_hf.sh" --out "$REMOTE" --snapshot "$SNAP" \
   --tokenizer "$TMP/tokenizer.json" --repo-id test/samosa --pdfium-dir "$PDFIUM" \
   --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \

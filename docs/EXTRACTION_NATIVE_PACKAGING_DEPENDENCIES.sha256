@@ -1,0 +1,4 @@
+b1fe1321c2f027b297315a9e1a9f638828d5d3e2023b57d44823f1012638ec1c  vendor/chutni/Makefile
+8d00efb8d2becb6f017083b178af651b4d1c9df0cc852fa075539f64962d40cf  vendor/chutni/docs/API-JSON.md
+2938dfe07b67ec39388415b130a6fab43245f3f823a324a6989872d3eef5a267  vendor/chutni/src/chutni.c
+352e6ef05766adef1deb84276533975f932df604488b416b762c4f060e87ff4a  vendor/chutni/tests/call_surface.c

@@ -49,7 +49,7 @@ MODELS_CATALOG="$RELEASE_DIR/models.json"
 SESSION="$HOME_DIR/last_session.qws"
 
 # Version. Packaging replaces the empty assignment below with the real number
-# (tools/package_hf.py). In a source checkout it stays empty, so fall back to
+# (tools/package_hf.sh). In a source checkout it stays empty, so fall back to
 # the VERSION file at the release/repo root. The marker string appears here
 # once, only in the assignment, so a whole-string substitution cannot corrupt
 # the fallback logic.

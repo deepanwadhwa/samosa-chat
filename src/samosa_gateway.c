@@ -13012,6 +13012,7 @@ static void visionpsy_session_close(Gateway *g, VisionPsySession *s) {
                                 ? "molmo2_process_stopped" : "visionpsy_process_stopped", fields);
 }
 
+/* Also used by product-level document selectors and request validation. */
 static int vision_json_bounded_integer(jval *value, int minimum, int maximum,
                                        int *output) {
     if (!value || value->t != J_NUM || !isfinite(value->num) ||
@@ -13019,6 +13020,13 @@ static int vision_json_bounded_integer(jval *value, int minimum, int maximum,
         value->num > maximum) return 0;
     if (output) *output = (int)value->num;
     return 1;
+}
+
+static void visual_protocol_trace_event(void *context, const char *event, const char *fields) {
+    developer_trace_event(context, event, fields);
+}
+static void visual_protocol_trace_payload(void *context, const char *event, const char *provider, const char *bytes, size_t size) {
+    developer_trace_payload(context, event, provider, bytes, size);
 }
 
 static int molmo2_session_analyze_request(
@@ -13033,90 +13041,11 @@ static int molmo2_session_analyze_request(
                                   double *out_duration_seconds, int *out_frames,
                                   int *out_images,
                                   char *out_err_code, size_t err_cap) {
-    if (!s || !s->active) {
-        path_copy(out_err_code, err_cap, "vision_not_ready"); return 0;
-    }
-    TextBuffer cmd = {0}; char numbers[256];
-    int ok = text_add(&cmd, "{\"command\":\"analyze\",\"id\":\"gateway\",");
-    if (image_count > 0) {
-        ok = ok && image_count <= MOLMO2_MAX_IMAGES_PER_REQUEST &&
-             media_paths && text_add(&cmd, "\"media_paths\":[");
-        for (int index = 0; ok && index < image_count; ++index) {
-            if (index) ok = text_add(&cmd, ",");
-            ok = ok && media_paths[index] && text_json_string(&cmd, media_paths[index]);
-        }
-        ok = ok && text_add(&cmd, "],\"media_kind\":\"images\",\"prompt\":");
-    } else {
-        ok = ok && media_path && text_add(&cmd, "\"media_path\":") &&
-             text_json_string(&cmd, media_path) && text_add(&cmd, ",\"media_kind\":") &&
-             text_json_string(&cmd, media_kind) && text_add(&cmd, ",\"prompt\":");
-    }
-    ok = ok && text_json_string(
-        &cmd, prompt && *prompt ? prompt : "Describe the visual content in detail.");
-    snprintf(numbers, sizeof(numbers),
-             ",\"max_tokens\":%d,\"start_seconds\":%.3f,\"end_seconds\":%.3f,\"max_frames\":%d}",
-             max_tokens >= 32 && max_tokens <= 1024 ? max_tokens : 256,
-             start_seconds, end_seconds,
-             max_frames >= 1 && max_frames <= MOLMO2_MAX_FRAMES_PER_REQUEST
-                 ? max_frames : MOLMO2_MAX_FRAMES_PER_REQUEST);
-    ok = ok && text_add(&cmd, numbers);
-    if (!ok) { free(cmd.data); path_copy(out_err_code, err_cap, "vision_request_encode_failed"); return 0; }
-    developer_trace_payload(g, "molmo2_request", "samosa-molmo2", cmd.data, cmd.len);
-    char *reply = NULL; size_t reply_len = 0; char transport[SAMOSA_MM_ERROR_MAX] = {0};
-    int request_ok = samosa_mm_session_request(s, cmd.data, cmd.len, &reply, &reply_len,
-                                               transport, sizeof(transport));
-    free(cmd.data);
-    if (!request_ok) {
-        path_copy(out_err_code, err_cap, strstr(transport, "timeout") ? "vision_timeout" : "vision_pipe_error");
-        free(reply); return 0;
-    }
-    developer_trace_payload(g, "molmo2_raw_response", "samosa-molmo2", reply, reply_len);
-    char *arena = NULL; jval *root = json_parse(reply, &arena);
-    jval *status = root && root->t == J_OBJ ? json_get(root, "status") : NULL;
-    jval *reply_id = root && root->t == J_OBJ ? json_get(root, "id") : NULL;
-    if (!reply_id || reply_id->t != J_STR || strcmp(reply_id->str, "gateway")) {
-        path_copy(out_err_code, err_cap, "vision_malformed_response");
-        json_free(root); free(arena); free(reply); return 0;
-    }
-    if (!status || status->t != J_STR || strcmp(status->str, "ok")) {
-        jval *code = root && root->t == J_OBJ ? json_get(root, "code") : NULL;
-        path_copy(out_err_code, err_cap,
-                  code && code->t == J_STR ? code->str : "vision_inference_failed");
-        json_free(root); free(arena); free(reply); return 0;
-    }
-    jval *observation = json_get(root, "observation");
-    if (!observation || observation->t != J_STR) {
-        path_copy(out_err_code, err_cap, "vision_malformed_response");
-        json_free(root); free(arena); free(reply); return 0;
-    }
-    path_copy(out_obs, out_cap, observation->str);
-    jval *pt = json_get(root, "prompt_tokens"), *gt = json_get(root, "generated_tokens");
-    jval *duration = json_get(root, "duration_seconds"), *frames = json_get(root, "frames");
-    jval *images = json_get(root, "images");
-    int prompt_tokens = 0, generated_tokens = 0, decoded_frames = 0, decoded_images = 0;
-    int numeric_ok = vision_json_bounded_integer(pt, 0, 36864, &prompt_tokens) &&
-                     vision_json_bounded_integer(gt, 0, 1024, &generated_tokens) &&
-                     vision_json_bounded_integer(frames, 0,
-                                                 MOLMO2_MAX_FRAMES_PER_REQUEST,
-                                                 &decoded_frames) &&
-                     vision_json_bounded_integer(images, 0,
-                                                 MOLMO2_MAX_IMAGES_PER_REQUEST,
-                                                 &decoded_images) &&
-                     duration && duration->t == J_NUM && isfinite(duration->num) &&
-                     duration->num >= 0.0 &&
-                     (!image_count || decoded_images == image_count);
-    if (!numeric_ok) {
-        path_copy(out_err_code, err_cap, "vision_malformed_response");
-        json_free(root); free(arena); free(reply); return 0;
-    }
-    if (out_prompt_tokens) *out_prompt_tokens = prompt_tokens;
-    if (out_gen_tokens) *out_gen_tokens = generated_tokens;
-    if (out_duration_seconds) *out_duration_seconds = duration->num;
-    if (out_frames) *out_frames = decoded_frames;
-    if (out_images) *out_images = decoded_images;
-    json_free(root); free(arena); free(reply);
-    if (out_err_code && err_cap) out_err_code[0] = 0;
-    return 1;
+    SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+    return samosa_mm_molmo2_analyze_request(s, &trace, media_path, media_paths, image_count,
+        media_kind, prompt, max_tokens, start_seconds, end_seconds, max_frames,
+        out_obs, out_cap, out_prompt_tokens, out_gen_tokens, out_duration_seconds,
+        out_frames, out_images, out_err_code, err_cap);
 }
 
 static int molmo2_session_analyze(Gateway *g, VisionPsySession *s,
@@ -13154,94 +13083,9 @@ static int visionpsy_session_inspect(Gateway *g, VisionPsySession *s, const char
                                      char *out_obs, size_t out_cap,
                                      int *out_prompt_tokens, int *out_gen_tokens,
                                      char *out_err_code, size_t err_cap) {
-    if (!s || !s->active || s->in_fd < 0 || s->out_fd < 0) {
-        if (out_err_code) path_copy(out_err_code, err_cap, "vision_not_ready");
-        return 0;
-    }
-    TextBuffer cmd = {0};
-    text_add(&cmd, "{\"command\":\"inspect\",\"image_path\":");
-    text_json_string(&cmd, image_path);
-    text_add(&cmd, ",\"prompt\":");
-    text_json_string(&cmd, prompt && *prompt ? prompt : "Describe what is visible in this image in detail.");
-    char token_buf[96];
-    snprintf(token_buf, sizeof(token_buf), ",\"max_tokens\":%d,\"max_side_len\":",
-             max_tokens >= 32 && max_tokens <= 1024 ? max_tokens : 256);
-    text_add(&cmd, token_buf);
-    char len_buf[32]; snprintf(len_buf, sizeof(len_buf), "%d}", max_side_len > 0 ? max_side_len : 2048);
-    text_add(&cmd, len_buf);
-
-    long long started = monotonic_millis();
-    developer_trace_payload(g, "visionpsy_request", "samosa-visionpsy",
-                            cmd.data, cmd.len);
-    char *line = NULL; size_t line_len = 0;
-    char transport_error[SAMOSA_MM_ERROR_MAX] = {0};
-    int request_ok = samosa_mm_session_request(s, cmd.data, cmd.len,
-                                               &line, &line_len,
-                                               transport_error, sizeof(transport_error));
-    free(cmd.data);
-    if (!request_ok) {
-        const char *vision_code = strstr(transport_error, "timeout")
-                                ? "vision_timeout" : "vision_pipe_error";
-        TextBuffer fields = {0};
-        if (text_add(&fields, "\"code\":") && text_json_string(&fields, vision_code) &&
-            text_add(&fields, ",\"transport_code\":") && text_json_string(&fields, transport_error))
-            developer_trace_event(g, "visionpsy_error", fields.data);
-        free(fields.data);
-        if (out_err_code) path_copy(out_err_code, err_cap, vision_code);
-        free(line);
-        return 0;
-    }
-    developer_trace_payload(g, "visionpsy_raw_response", "samosa-visionpsy",
-                            line, line_len);
-
-    char *arena = NULL;
-    jval *root = json_parse(line, &arena);
-    if (!root || root->t != J_OBJ) {
-        developer_trace_event(g, "visionpsy_error", "\"code\":\"vision_malformed_response\"");
-        if (root) json_free(root);
-        if (arena) free(arena);
-        if (out_err_code) path_copy(out_err_code, err_cap, "vision_malformed_response");
-        free(line);
-        return 0;
-    }
-
-    jval *status_v = json_get(root, "status");
-    if (!status_v || status_v->t != J_STR || strcmp(status_v->str, "ok")) {
-        jval *code_v = json_get(root, "code");
-        const char *failure = (code_v && code_v->t == J_STR) ? code_v->str : "vision_inference_failed";
-        if (out_err_code) path_copy(out_err_code, err_cap, failure);
-        TextBuffer failure_fields = {0};
-        if (text_add(&failure_fields, "\"code\":") && text_json_string(&failure_fields, failure))
-            developer_trace_event(g, "visionpsy_error", failure_fields.data);
-        free(failure_fields.data);
-        json_free(root); free(arena);
-        free(line);
-        return 0;
-    }
-
-    jval *obs_v = json_get(root, "observation");
-    if (obs_v && obs_v->t == J_STR && out_obs && out_cap > 0) {
-        path_copy(out_obs, out_cap, obs_v->str);
-    }
-    jval *pt_v = json_get(root, "prompt_tokens");
-    if (pt_v && pt_v->t == J_NUM && out_prompt_tokens) *out_prompt_tokens = (int)pt_v->num;
-    jval *gt_v = json_get(root, "generated_tokens");
-    if (gt_v && gt_v->t == J_NUM && out_gen_tokens) *out_gen_tokens = (int)gt_v->num;
-
-    {
-        char fields[192];
-        snprintf(fields, sizeof(fields),
-                 "\"max_side_len\":%d,\"prompt_tokens\":%d,\"generated_tokens\":%d,"
-                 "\"observation_chars\":%zu,\"duration_ms\":%lld",
-                 max_side_len, out_prompt_tokens ? *out_prompt_tokens : 0,
-                 out_gen_tokens ? *out_gen_tokens : 0,
-                 obs_v && obs_v->t == J_STR ? strlen(obs_v->str) : 0,
-                 monotonic_millis() - started);
-        developer_trace_event(g, "visionpsy_complete", fields);
-    }
-
-    json_free(root); free(arena); free(line);
-    return 1;
+    SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+    return samosa_mm_visionpsy_inspect(s, &trace, image_path, prompt, max_side_len,
+        max_tokens, out_obs, out_cap, out_prompt_tokens, out_gen_tokens, out_err_code, err_cap);
 }
 
 static char *web_model_json_judgement(Gateway *g, const char *system_text,

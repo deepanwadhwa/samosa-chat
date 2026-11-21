@@ -43,7 +43,7 @@ RUN ln -s /model /release/model \
 # Where `samosa pull` fetches the 24 GB model from.
 #
 # dist/samosa ships the literal token REPO_ID_PLACEHOLDER as its default; that
-# token is only substituted by tools/package_hf.py at Hugging Face packaging
+# token is only substituted by tools/package_hf.sh at Hugging Face packaging
 # time, and this image COPYs dist/samosa directly. Without this, `samosa pull`
 # resolves to .../REPO_ID_PLACEHOLDER/... and 404s on the very first command.
 # Overridable at build time: --build-arg SAMOSA_REPO_ID=owner/repo

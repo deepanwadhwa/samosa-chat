@@ -438,17 +438,32 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07a borrowed-endpoint/retryable-close fixture now qualifies natively on this
-Mac: missing spawn/environment declarations fixed using the existing summary
-fixture convention; no supervisor/engine algorithm change. Owner normal/SAN,
-inherited supervisor normal/SAN and summary-process tests pass in the workspace
-and a fresh independent native subset. Chat summary/runtime-settings/build and
-the unchanged Molmo gateway assertions pass. The Molmo fixture's small Python
-generator was replaced by shell printf/dd with the same WAV/model bytes/lengths;
-the parent Makefile's eager Python probe was removed. Initial socket-bind sandbox
-failure is excluded; the successful product check ran natively outside it.
-Commands, host, logs and exact source hashes:
-`components/samosa-inference/docs/qualification/life07a-specialist-owned/README.md`.
+LIFE-07b is qualified on this Mac: the existing gateway Molmo2 analyze and
+VisionPsy inspect bodies now belong to Inference's `specialist_protocol.c` and
+public header. Gateway keeps thin calls and explicit trace callbacks. Original
+function bodies, JSON fields/defaults, framing, Unicode, limits/error behavior
+and engine loops are preserved; the host retains its generic numeric helper for
+document selectors/product validation. Inference commit: 3e9b6f1.
+
+Public native protocol normal/SAN passes 25 cases per build. A fresh native
+source subset builds the owner archive and passes protocol/control/owned-close
+normal/SAN plus summary regression. Chat summary/runtime/Molmo assertions pass.
+Shell manifest/version checks and clean installed gateway/jobsd, atomic upgrade/
+corruption refusal, all six PATH cases, native HTTP fixture and runtime-only
+install/upgrade with unchanged model-request/legacy-identity assertions pass.
+The guarded package/HTTP/runtime-only checks refuse/record PATH-based Python calls.
+An exploratory fixture run still invoked a second overlooked Python generator;
+it is excluded from Python-free evidence, replaced with shell/awk and rerun under
+the guard. No Docker/Linux tests ran in this assignment.
+
+Retired tools/package_hf.py and tests/test_package_pdfium.py; their shell ports
+preserve existing staging, verification and version behavior. Remaining Python
+drivers/default CI are still open and were not broadly run. The real OCR Python
+test only received an updated shell-package reference; its migration is pending.
+Commands, host, logs, source audit and exact hashes:
+`components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md`
+and docs/EXTRACTION_NATIVE_PACKAGING.md. Earlier owned-close evidence is retained
+at qualification/life07a-specialist-owned/README.md in Inference.
 
 Local pre-edit recovery snapshot: /private/tmp/samosa-extraction-checkpoint-z6b6bwly
 (parent/Inference/modified Chutni base source, working/index patches and verified
@@ -463,10 +478,10 @@ dirty Chutni files were left unchanged/outside these commits and remain covered
 by the verified local snapshot. Remote backups preserve source; they do not imply
 full current-suite qualification or completed Python removal.
 
-Next LIFE-07a: extract/reuse gateway visionpsy_session_inspect and
-molmo2_session_analyze_request with the existing Inference vision/temporal
-preparation/verifier/guardian paths. Preserve request/reply semantics and product
-trace hooks; qualify actual generation before public readiness. Full area 3,
+Next LIFE-07c: reuse vision.c run/model_verify and temporal.c prepared-frame/
+package validation with the existing guardian workspace/duplex owner and summary
+host launch/activation pattern. Finish visual residency and qualify actual
+generation before public readiness; preserve model loops and App policy. Full area 3,
 areas 4–7, Python-helper removal, Agent/App/assembly/retirement remain open.
 The entries below retain their historical dates and evidence.
 

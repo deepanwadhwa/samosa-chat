@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="samosa-tesseract-install-") as temp:
     for platform_name in ("linux-x64", "linux-arm64"):
         (sdk / f"pdfium-{platform_name}.tgz").write_text("not selected on macOS")
     fixture = ROOT / "tests/fixtures/maple-runtime/samosa-maple"
-    command = [sys.executable, ROOT / "tools/package_hf.py", "--out", remote,
+    command = ["/bin/sh", ROOT / "tools/package_hf.sh", "--out", remote,
                "--runtime-only", "--repo-id", "test/samosa", "--pdfium-dir", sdk,
                "--maple-metallib", ROOT / "tests/fixtures/maple-runtime/mlx.metallib",
                "--summarizer-model", ROOT / "tests/fixtures/native-summarizer/model.gguf",

@@ -83,6 +83,28 @@ static int handler(SamosaHttpServer *server, int fd,
         samosa_http_response(fd, 200, "application/json", "{}", NULL);
         samosa_http_server_stop(server); return 1;
     }
+    /* The runtime-only installer fixture needs the same native HTTP host for
+       several staged files, replacing its former Python directory server. */
+    const char *root = getenv("SAMOSA_FAKE_DOWNLOAD_ROOT");
+    if (root && *root && !strcmp(request->method, "GET")) {
+        fprintf(stderr, "GET %s\n", request->path); fflush(stderr);
+        if (strstr(request->path, "..") || strchr(request->path, '\\') ||
+            strchr(request->path, '%'))
+            return samosa_http_json_error(fd, 404, "not_found", "Not found.");
+        char path[4096];
+        int n = snprintf(path, sizeof(path), "%s%s", root, request->path);
+        if (n < 0 || (size_t)n >= sizeof(path))
+            return samosa_http_json_error(fd, 404, "not_found", "Not found.");
+        struct stat st;
+        if (stat(path, &st) || !S_ISREG(st.st_mode))
+            return samosa_http_json_error(fd, 404, "not_found", "Not found.");
+        size_t length = 0;
+        char *body = read_whole_file(path, &length);
+        if (!body) return samosa_http_json_error(fd, 404, "not_found", "Not found.");
+        int sent = samosa_http_headers(fd, 200, "application/octet-stream", length, NULL) &&
+                   samosa_send_all(fd, body, length);
+        free(body); return sent;
+    }
     if (strcmp(request->method, "GET") || strcmp(request->path, "/artifact"))
         return samosa_http_json_error(fd, 404, "not_found", "Not found.");
 

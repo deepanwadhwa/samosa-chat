@@ -177,8 +177,9 @@ and CI catches broken component boundaries and integration packaging.
 
 ### 4. Finish Inference lifecycle ownership
 
-Complete LIFE-07a VisionPsy/Molmo2 integration: borrowed process endpoints,
-retryable close, workspace cleanup, resource leases and existing GPU cache behavior.
+LIFE-07a owned endpoints/close and LIFE-07b original visual protocol extraction now
+qualify on this Mac. Complete remaining VisionPsy/Molmo2 residency integration:
+workspace cleanup, verified preparation, resource leases and existing GPU cache behavior.
 Then close remaining Whisper and other modality lifecycle gaps.
 
 Preserve working engine algorithms and protocols. Public readiness requires a
@@ -292,10 +293,11 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. Extract/reuse the remaining visual request/response and resident host code,
-   starting with gateway `visionpsy_session_inspect` and
-   `molmo2_session_analyze_request` plus the existing Inference verifier/preparation
-   and guardian paths. Preserve their protocols and product trace hooks.
+1. LIFE-07c: reuse Inference `vision.c`'s existing `run`/`model_verify`,
+   `temporal.c`'s prepared-frame/package validation, the guardian workspace/duplex
+   owner and the existing summary-host launch/activation pattern to finish visual
+   resident ownership. The gateway's two request/response bodies are already
+   extracted; do not implement another codec or another model loop.
 2. Qualify the same behavior natively on this Mac and require actual generation
    before reporting public provider readiness.
 3. Record a buildable integration checkpoint and one exact next action.
@@ -303,12 +305,14 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-Native Mac progress, 2026-11-20: the visual ownership fixture declaration failure
-is repaired. Existing ownership/supervisor normal/SAN and summary tests pass both
-in the checkout and a fresh standalone native subset; Chat summary/runtime settings,
-gateway build and existing Molmo gateway regression pass. The latter's fixture
-generator is now shell-based, and native parent builds no longer probe Python.
-See the [qualified assignment](../components/samosa-inference/docs/qualification/life07a-specialist-owned/README.md).
+Native Mac progress, 2026-11-20: LIFE-07b moves the original Molmo2 analyze and
+VisionPsy inspect functions into Inference with thin gateway adapters and explicit
+trace callbacks. Native codec normal/SAN, standalone archive/control regressions,
+Chat summary/runtime/Molmo assertions and clean/atomic/PATH/runtime-only install
+and upgrade checks pass. The release packager, manifest/version tests and HTTP
+fixture are now native shell/C; their replaced Python packager/test were removed.
+See [visual extraction evidence](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md)
+and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
 Source preservation: the parent/Agent checkpoint `ace72ef` and Inference checkpoint
@@ -320,6 +324,11 @@ they do not qualify every preserved feature or remove the remaining Python tools
 The four pre-existing modified Chutni files remain unchanged and outside these
 commits, with a verified local recovery copy in the snapshot noted in the
 verification checkpoint.
+
+Latest Inference extraction commit: `3e9b6f1` on the same refactor branch. The
+parent's updated pin assembles that implementation through public headers and
+the owner archive. Remaining Python drivers/default CI still require migration;
+passing native gates do not imply a Python-free whole project yet.
 
 ## Deferred follow-up after refactor completion
 

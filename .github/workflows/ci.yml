@@ -74,7 +74,7 @@ jobs:
 
       # Maple is a shipped Apple-Silicon runtime, so the arm64 release tests
       # must package a real clean-runner build rather than relying on a local
-      # developer artifact or weakening package_hf.py's fail-closed contract.
+      # developer artifact or weakening package_hf.sh's fail-closed contract.
       - name: Build Maple runtime (Apple Silicon)
         if: runner.os == 'macOS' && runner.arch == 'ARM64'
         run: |
