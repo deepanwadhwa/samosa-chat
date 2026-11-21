@@ -1,5 +1,14 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07e extracts the shared Whisper runner into Inference's
+whisper_process.c/public archive API, preserving txt/SRT/long-window behavior and
+all original coordination through explicit callbacks. Source audit, native/SAN,
+actual retained Mac model, voice/durable-audio and packaging/install checks pass.
+Shared voice admission and legacy/verified guardian consolidation remain open;
+the earlier inventory below still governs those semantics. Next LIFE-07f moves
+the existing Mac visual resource/reclaim policy, with unchanged thresholds and
+retry behavior. Evidence: Inference qualification/life07e-whisper-runner/README.md.
+
 Progress, 2026-11-21: LIFE-07d extracted the three original visual launch/close
 bodies below into Inference's existing specialist module/public archive, with
 thin gateway calls and preserved settings/traces. A reproduced inactive-session

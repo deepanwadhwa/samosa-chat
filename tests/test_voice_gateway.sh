@@ -10,6 +10,7 @@ set -eu
 BUILD_DIR="${BUILD_DIR:-build}"
 GATEWAY="${SAMOSA_COMPILED_GATEWAY:-./$BUILD_DIR/samosa-gateway}"
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+checks() { node "$ROOT/tests/voice_gateway_checks.mjs" "$@"; }
 RUNTIME_SCRIPT="$ROOT/tools/samosa_voice_runtime.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/voice_gateway_test.XXXXXX")
 HOME_DIR="$TMP/home"
@@ -35,8 +36,7 @@ mkdir -p "$HOME_DIR"
 printf '<!doctype html><title>Samosa voice fixture</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 
-python3 -c "from pathlib import Path; Path('$TMP/ggml-base.en.bin').write_bytes(b''); Path('$TMP/ggml-base.en.bin').open('r+b').truncate(147964211)"
-python3 -c "from pathlib import Path; Path('$TMP/ggml-tiny.en.bin').write_bytes(b''); Path('$TMP/ggml-tiny.en.bin').open('r+b').truncate(77704715)"
+checks fixtures "$TMP"
 cat >"$TMP/whisper-cli" <<'EOF'
 #!/bin/sh
 set -eu
@@ -52,13 +52,6 @@ printf 'hello from local whisper\n' >"$out.txt"
 EOF
 chmod 700 "$TMP/whisper-cli"
 
-python3 -c "
-import struct
-samples = [0, 500, -500, 0] * 400
-data = struct.pack('<%dh' % len(samples), *samples)
-wav = b'RIFF' + struct.pack('<I', 36 + len(data)) + b'WAVEfmt ' + struct.pack('<IHHIIHH', 16, 1, 1, 16000, 32000, 2, 16) + b'data' + struct.pack('<I', len(data)) + data
-open('$TMP/voice.wav', 'wb').write(wav)
-"
 
 SAMOSA_HOME="$HOME_DIR" \
 SAMOSA_PORT="$PORT" \
@@ -86,55 +79,27 @@ grep -q 'browser_onnx_host.js' "$TMP/moss-host.html" || exit 1
 
 STATUS=$(curl -sS -o "$TMP/status.json" -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/voice/status")
 [ "$STATUS" = 200 ] || { cat "$TMP/status.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/status.json'))
-assert d['stt_model_id'] == 'voice-stt-whisper-base-en'
-assert d['stt_runtime_ready'] is True and d['stt_model_downloaded'] is True and d['stt_ready'] is True, d
-"
+checks status "$TMP/status.json"
 
 STATUS=$(curl -sS -o "$TMP/select-tiny.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"kind":"stt","model_id":"voice-stt-whisper-tiny-en"}' "http://127.0.0.1:$PORT/v1/voice/select")
 [ "$STATUS" = 200 ] || { cat "$TMP/select-tiny.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/select-tiny.json'))
-assert d['stt_model_id'] == 'voice-stt-whisper-tiny-en'
-assert d['stt_ready'] is True and d['stt_model_downloaded'] is True, d
-"
+checks tiny "$TMP/select-tiny.json"
 
 STATUS=$(curl -sS -o "$TMP/select-browser.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"kind":"tts","model_id":"voice-tts-browser"}' "http://127.0.0.1:$PORT/v1/voice/select")
 [ "$STATUS" = 200 ] || { cat "$TMP/select-browser.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/select-browser.json'))
-assert d['tts_model_id'] == 'voice-tts-browser'
-assert d['tts_neural_ready'] is False, d
-"
+checks browser "$TMP/select-browser.json"
 
 STATUS=$(curl -sS -o "$TMP/select-moss.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"kind":"tts","model_id":"voice-tts-moss-nano"}' "http://127.0.0.1:$PORT/v1/voice/select")
 [ "$STATUS" = 409 ] || { cat "$TMP/select-moss.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/select-moss.json'))
-assert d['error']['code'] == 'voice_model_not_ready', d
-"
+checks moss-not-ready "$TMP/select-moss.json"
 
 STATUS=$(curl -sS -o "$TMP/select-moss-browser.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"kind":"tts","model_id":"voice-tts-moss-nano","browser_ready":true}' "http://127.0.0.1:$PORT/v1/voice/select")
 [ "$STATUS" = 200 ] || { cat "$TMP/select-moss-browser.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/select-moss-browser.json'))
-assert d['tts_model_id'] == 'voice-tts-moss-nano'
-assert d['tts_neural_ready'] is True and d['tts_engine'] == 'moss_browser', d
-"
+checks moss-browser "$TMP/select-moss-browser.json"
 
 STATUS=$(curl -sS -o "$TMP/browser-speech.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"text":"one two four four three three three what what"}' "http://127.0.0.1:$PORT/v1/voice/speech/stream")
 [ "$STATUS" = 409 ] || { cat "$TMP/browser-speech.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/browser-speech.json'))
-assert d['error']['code'] == 'browser_tts_only', d
-"
+checks browser-speech "$TMP/browser-speech.json"
 
 STATUS=$(curl -sS -o "$TMP/prepare-moss.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: application/json' --data '{"model_id":"voice-tts-moss-nano"}' "http://127.0.0.1:$PORT/v1/voice/tts/runtime")
 [ "$STATUS" = 409 ] || { cat "$TMP/prepare-moss.json"; exit 1; }
@@ -147,11 +112,7 @@ STATUS=$(curl -sS -o "$TMP/bad.json" -w '%{http_code}' -X POST -H "X-Samosa-Toke
 
 STATUS=$(curl -sS -o "$TMP/transcript.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: audio/wav' --data-binary @"$TMP/voice.wav" "http://127.0.0.1:$PORT/v1/voice/transcriptions")
 [ "$STATUS" = 200 ] || { cat "$TMP/transcript.json"; exit 1; }
-python3 -c "
-import json
-d=json.load(open('$TMP/transcript.json'))
-assert d == {'text':'hello from local whisper','duration_seconds':0.1,'engine':'whisper.cpp'}, d
-"
+checks transcript "$TMP/transcript.json"
 
 [ ! -d "$HOME_DIR/voice/tmp" ] || [ -z "$(find "$HOME_DIR/voice/tmp" -type f -print -quit)" ] || {
   echo 'FAIL: local voice recording was not removed' >&2

@@ -438,6 +438,31 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07e checkpoint, 2026-11-21: the original shared Whisper runner now belongs
+to Inference's whisper_process.c/public API and owner archive. Gateway retains
+explicit original selection/fingerprint and shared busy/PID/cancel callbacks.
+Mechanical source audit proves helper/core/coordination and seven return values
+preserved; no model algorithm, CLI flags, long-window or cache behavior changed.
+Native normal/SAN txt/SRT/271-second/16-MiB/control/cleanup gates, unchanged
+verified Whisper508/511 checks and fresh standalone builds pass. Original voice
+and full durable-audio workflows pass after porting all embedded Python fixtures
+and assertions to Node/shell. Native Mac AAC/MP3/video audio, resume/cancel/restart,
+overlap/tail and30-window retrieval assertions remain. Clean owner-source staging
+and gateway installation pass. Retained actual Mac Whisper recognizes expected
+native-generated words through txt and SRT in normal/SAN C owners; SRT timing
+accuracy is not qualified. No Python or Docker/VM/Linux work was invoked.
+Commands, source/artifact hashes, excluded attempts and precise limits:
+components/samosa-inference/docs/qualification/life07e-whisper-runner/README.md.
+Qualified Inference revision/pin: 4ad140d, backed up on
+origin/refactor/extract-working-modules. Older pins below remain historical.
+
+Next LIFE-07f extracts the existing Mac visual budget/reclaim policy, then audits
+remaining area3 and consolidates existing guardian/shared-admission ownership.
+Preserve the original workloads; do not add a new scheduler or narrow the
+legacy paths to prepared-clip limits. Full area3/areas4–7, Python/CI migration,
+Agent/App/assembly and legacy retirement remain open. Earlier checkpoints below
+retain historical evidence and pins.
+
 LIFE-07d checkpoint, 2026-11-21: original gateway visual launch-profile/close
 bodies now belong to Inference's existing specialist module/public archive.
 Mechanical source audit proves identical starts after explicit input/trace

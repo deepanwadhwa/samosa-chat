@@ -49,6 +49,7 @@
 #include "samosa_multimodal.h"
 #include <samosa_inference/summary_process.h>
 #include <samosa_inference/llama_launch.h>
+#include <samosa_inference/whisper_process.h>
 
 typedef struct {
     SamosaHttpServer *server;
@@ -20115,16 +20116,6 @@ static int voice_stt_ready(Gateway *g) {
            voice_stt_model_present(g, model_id);
 }
 
-enum {
-    WHISPER_TRANSCRIBE_OK = 1,
-    WHISPER_TRANSCRIBE_NOT_READY = -1,
-    WHISPER_TRANSCRIBE_BUSY = -2,
-    WHISPER_TRANSCRIBE_PREPARE_FAILED = -3,
-    WHISPER_TRANSCRIBE_PROCESS_FAILED = -4,
-    WHISPER_TRANSCRIBE_OUTPUT_INVALID = -5,
-    WHISPER_TRANSCRIBE_CANCELLED = -6
-};
-
 static int voice_stt_fingerprint(Gateway *g, char *model_id, size_t model_cap,
                                  char *model_path, size_t path_cap,
                                  char *fingerprint, size_t fingerprint_cap) {
@@ -20141,105 +20132,61 @@ static int voice_stt_fingerprint(Gateway *g, char *model_id, size_t model_cap,
                     (long long)model_stat.st_mtime) < (int)fingerprint_cap;
 }
 
-/* One argv-safe Whisper runner serves both short microphone turns and durable
- * file evidence. It owns the existing voice mutex, produces either plain text
- * or SRT, caps all child output, and removes every temporary result. */
+/* Keep the existing shared voice/audio coordination explicit while the native
+ * Whisper execution and temporary-output ownership live in Inference. */
+static int whisper_process_acquire(void *context, int preserve_cancel) {
+    Gateway *g = context;
+    pthread_mutex_lock(&g->voice_mu);
+    if (g->voice_runtime_installing || g->voice_transcribing ||
+        (!preserve_cancel && g->audio_attachment_processing)) {
+        pthread_mutex_unlock(&g->voice_mu);
+        return 0;
+    }
+    g->voice_transcribing = 1;
+    if (!preserve_cancel) atomic_store(&g->audio_cancel_requested, 0);
+    pthread_mutex_unlock(&g->voice_mu);
+    return 1;
+}
+static int whisper_process_cancelled(void *context) {
+    return atomic_load(&((Gateway *)context)->audio_cancel_requested);
+}
+static void whisper_process_started(void *context, pid_t pid) {
+    Gateway *g = context;
+    pthread_mutex_lock(&g->voice_mu);
+    g->voice_transcription_pid = pid;
+    if (atomic_load(&g->audio_cancel_requested)) kill(pid, SIGTERM);
+    pthread_mutex_unlock(&g->voice_mu);
+    track_job_pid(g, pid, 1);
+}
+static void whisper_process_reaped(void *context, pid_t pid) {
+    track_job_pid(context, pid, 0);
+}
+static void whisper_process_release(void *context) {
+    Gateway *g = context;
+    pthread_mutex_lock(&g->voice_mu);
+    g->voice_transcription_pid = 0;
+    g->voice_transcribing = 0;
+    pthread_mutex_unlock(&g->voice_mu);
+}
+
 static int whisper_transcribe_path(Gateway *g, const char *wav_path,
                                    int timestamped, char **output,
                                    char *model_id, size_t model_cap,
                                    char *fingerprint, size_t fingerprint_cap,
                                    int preserve_cancel) {
     *output = NULL;
-    char model_path[PATH_MAX];
+    char model_path[PATH_MAX], temporary[PATH_MAX];
     if (!voice_stt_fingerprint(g, model_id, model_cap, model_path,
                                sizeof(model_path), fingerprint,
                                fingerprint_cap))
-        return WHISPER_TRANSCRIBE_NOT_READY;
-
-    pthread_mutex_lock(&g->voice_mu);
-    if (g->voice_runtime_installing || g->voice_transcribing ||
-        (!preserve_cancel && g->audio_attachment_processing)) {
-        pthread_mutex_unlock(&g->voice_mu);
-        return WHISPER_TRANSCRIBE_BUSY;
-    }
-    g->voice_transcribing = 1;
-    if (!preserve_cancel) atomic_store(&g->audio_cancel_requested, 0);
-    pthread_mutex_unlock(&g->voice_mu);
-
-    int result = WHISPER_TRANSCRIBE_PREPARE_FAILED;
-    char voice_dir[PATH_MAX], out_base[PATH_MAX] = "", out_path[PATH_MAX] = "";
-    int placeholder = -1;
-    if (!path_join(voice_dir, sizeof(voice_dir), g->home, "voice/tmp") ||
-        !mkdirs(voice_dir) ||
-        snprintf(out_base, sizeof(out_base), "%s/result-XXXXXX", voice_dir) >=
-            (int)sizeof(out_base))
-        goto done;
-    placeholder = mkstemp(out_base);
-    if (placeholder < 0) goto done;
-    close(placeholder); placeholder = -1;
-    unlink(out_base);
-    if (snprintf(out_path, sizeof(out_path), "%s.%s", out_base,
-                 timestamped ? "srt" : "txt") >= (int)sizeof(out_path))
-        goto done;
-    if (atomic_load(&g->audio_cancel_requested)) {
-        result = WHISPER_TRANSCRIBE_CANCELLED;
-        goto done;
-    }
-
-    pid_t pid = fork();
-    if (pid < 0) { result = WHISPER_TRANSCRIBE_PROCESS_FAILED; goto done; }
-    if (pid == 0) {
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
-        if (timestamped)
-            execl(g->whisper_cli, g->whisper_cli, "-m", model_path, "-f",
-                  wav_path, "-l", "en", "-nt", "-osrt", "-of", out_base,
-                  (char *)NULL);
-        else
-            execl(g->whisper_cli, g->whisper_cli, "-m", model_path, "-f",
-                  wav_path, "-l", "en", "-nt", "-otxt", "-of", out_base,
-                  (char *)NULL);
-        _exit(127);
-    }
-    pthread_mutex_lock(&g->voice_mu);
-    g->voice_transcription_pid = pid;
-    if (atomic_load(&g->audio_cancel_requested)) kill(pid, SIGTERM);
-    pthread_mutex_unlock(&g->voice_mu);
-    track_job_pid(g, pid, 1);
-    int status = 0;
-    pid_t waited;
-    do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
-    track_job_pid(g, pid, 0);
-    if (waited != pid || !WIFEXITED(status) || WEXITSTATUS(status)) {
-        result = atomic_load(&g->audio_cancel_requested)
-               ? WHISPER_TRANSCRIBE_CANCELLED
-               : WHISPER_TRANSCRIBE_PROCESS_FAILED;
-        goto done;
-    }
-    *output = read_file_limit(out_path, 16 << 20);
-    if (!*output) { result = WHISPER_TRANSCRIBE_OUTPUT_INVALID; goto done; }
-    trim_ascii_ws(*output);
-    if (!(*output)[0] ||
-        utf8_scalar_count((const unsigned char *)*output, strlen(*output)) < 0) {
-        free(*output); *output = NULL;
-        result = WHISPER_TRANSCRIBE_OUTPUT_INVALID;
-        goto done;
-    }
-    result = WHISPER_TRANSCRIBE_OK;
-
-done:
-    if (placeholder >= 0) close(placeholder);
-    if (out_base[0]) unlink(out_base);
-    if (out_path[0]) unlink(out_path);
-    pthread_mutex_lock(&g->voice_mu);
-    g->voice_transcription_pid = 0;
-    g->voice_transcribing = 0;
-    pthread_mutex_unlock(&g->voice_mu);
-    return result;
+        return SAMOSA_WHISPER_NOT_READY;
+    const char *directory = path_join(temporary, sizeof(temporary), g->home, "voice/tmp") ? temporary : NULL;
+    SamosaWhisperProcessConfig config = {g->whisper_cli, model_path, directory};
+    SamosaWhisperProcessControl control = {whisper_process_acquire,
+        whisper_process_started, whisper_process_reaped, whisper_process_release,
+        whisper_process_cancelled, g};
+    return samosa_whisper_process_run(&config, &control, wav_path, timestamped,
+                                      preserve_cancel, output);
 }
 
 static int audio_wav_info_path(const char *path, AttachmentWavInfo *info) {
@@ -21086,9 +21033,9 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
     int total_windows = audio_transcript_window_count(total_frames,
                                                        window_frames);
     int window_hits = 0, window_misses = 0, window_count = 0;
-    int transcribed = total_windows > 0 ? WHISPER_TRANSCRIBE_OK
-                                        : WHISPER_TRANSCRIBE_PREPARE_FAILED;
-    if (transcribed == WHISPER_TRANSCRIBE_OK && total_windows == 1) {
+    int transcribed = total_windows > 0 ? SAMOSA_WHISPER_OK
+                                        : SAMOSA_WHISPER_PREPARE_FAILED;
+    if (transcribed == SAMOSA_WHISPER_OK && total_windows == 1) {
         char used_model[80], used_fingerprint[192];
         char decoded_path[PATH_MAX] = "";
         const char *whisper_path = blob_path;
@@ -21096,33 +21043,33 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                 g, blob_path, 0, source_audio.duration_seconds,
                 decoded_path, sizeof(decoded_path)))
             transcribed = atomic_load(&g->audio_cancel_requested)
-                        ? WHISPER_TRANSCRIBE_CANCELLED
-                        : WHISPER_TRANSCRIBE_PREPARE_FAILED;
+                        ? SAMOSA_WHISPER_CANCELLED
+                        : SAMOSA_WHISPER_PREPARE_FAILED;
         if (compressed && decoded_path[0]) whisper_path = decoded_path;
-        if (transcribed == WHISPER_TRANSCRIBE_OK)
+        if (transcribed == SAMOSA_WHISPER_OK)
             transcribed = whisper_transcribe_path(
                 g, whisper_path, 1, &srt, used_model, sizeof(used_model),
                 used_fingerprint, sizeof(used_fingerprint), 1);
         if (decoded_path[0]) unlink(decoded_path);
-        if (transcribed == WHISPER_TRANSCRIBE_OK &&
+        if (transcribed == SAMOSA_WHISPER_OK &&
             (strcmp(used_model, model_id) ||
              strcmp(used_fingerprint, whisper_fingerprint))) {
             free(srt); srt = NULL;
-            transcribed = WHISPER_TRANSCRIBE_NOT_READY;
+            transcribed = SAMOSA_WHISPER_NOT_READY;
         }
-        if (transcribed == WHISPER_TRANSCRIBE_OK &&
+        if (transcribed == SAMOSA_WHISPER_OK &&
             (atomic_load(&g->audio_cancel_requested) ||
              (progress && !progress(progress_context, meta->filename,
                                     1, 1, 0)))) {
             free(srt); srt = NULL;
-            transcribed = WHISPER_TRANSCRIBE_CANCELLED;
+            transcribed = SAMOSA_WHISPER_CANCELLED;
         }
-    } else if (transcribed == WHISPER_TRANSCRIBE_OK) {
+    } else if (transcribed == SAMOSA_WHISPER_OK) {
         TextBuffer combined = {0}; int cue_index = 0;
         uint64_t start_frame = 0;
         for (int index = 0; start_frame < total_frames; ++index) {
             if (atomic_load(&g->audio_cancel_requested)) {
-                transcribed = WHISPER_TRANSCRIBE_CANCELLED;
+                transcribed = SAMOSA_WHISPER_CANCELLED;
                 break;
             }
             uint64_t end_frame = start_frame + window_frames;
@@ -21147,8 +21094,8 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                                               sizeof(window_path));
                 if (!prepared) {
                     transcribed = atomic_load(&g->audio_cancel_requested)
-                                ? WHISPER_TRANSCRIBE_CANCELLED
-                                : WHISPER_TRANSCRIBE_PREPARE_FAILED;
+                                ? SAMOSA_WHISPER_CANCELLED
+                                : SAMOSA_WHISPER_PREPARE_FAILED;
                     break;
                 }
                 char used_model[80], used_fingerprint[192];
@@ -21157,14 +21104,14 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                     sizeof(used_model), used_fingerprint,
                     sizeof(used_fingerprint), 1);
                 unlink(window_path);
-                if (transcribed != WHISPER_TRANSCRIBE_OK) {
+                if (transcribed != SAMOSA_WHISPER_OK) {
                     free(window_srt); window_srt = NULL;
                     break;
                 }
                 if (strcmp(used_model, model_id) ||
                     strcmp(used_fingerprint, whisper_fingerprint)) {
                     free(window_srt); window_srt = NULL;
-                    transcribed = WHISPER_TRANSCRIBE_NOT_READY;
+                    transcribed = SAMOSA_WHISPER_NOT_READY;
                     break;
                 }
                 char *window_raw = audio_window_evidence_from_srt(
@@ -21206,39 +21153,39 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                 (progress && !progress(progress_context, meta->filename,
                                        window_count, total_windows,
                                        cache_hit))) {
-                transcribed = WHISPER_TRANSCRIBE_CANCELLED;
+                transcribed = SAMOSA_WHISPER_CANCELLED;
                 break;
             }
             if (end_frame == total_frames) break;
             if (end_frame <= AUDIO_TRANSCRIPT_OVERLAP_FRAMES ||
                 end_frame - AUDIO_TRANSCRIPT_OVERLAP_FRAMES <= start_frame) {
-                transcribed = WHISPER_TRANSCRIBE_PREPARE_FAILED;
+                transcribed = SAMOSA_WHISPER_PREPARE_FAILED;
                 break;
             }
             start_frame = end_frame - AUDIO_TRANSCRIPT_OVERLAP_FRAMES;
         }
-        if (transcribed == WHISPER_TRANSCRIBE_OK) {
+        if (transcribed == SAMOSA_WHISPER_OK) {
             if (!combined.data || !combined.len || !cue_index)
-                transcribed = WHISPER_TRANSCRIBE_OUTPUT_INVALID;
+                transcribed = SAMOSA_WHISPER_OUTPUT_INVALID;
             else srt = combined.data;
         }
-        if (transcribed != WHISPER_TRANSCRIBE_OK) free(combined.data);
+        if (transcribed != SAMOSA_WHISPER_OK) free(combined.data);
     }
-    if (transcribed != WHISPER_TRANSCRIBE_OK) {
-        *out_status = transcribed == WHISPER_TRANSCRIBE_BUSY ||
-                      transcribed == WHISPER_TRANSCRIBE_NOT_READY ||
-                      transcribed == WHISPER_TRANSCRIBE_CANCELLED ? 409 : 500;
+    if (transcribed != SAMOSA_WHISPER_OK) {
+        *out_status = transcribed == SAMOSA_WHISPER_BUSY ||
+                      transcribed == SAMOSA_WHISPER_NOT_READY ||
+                      transcribed == SAMOSA_WHISPER_CANCELLED ? 409 : 500;
         path_copy(out_code, code_cap,
-                  transcribed == WHISPER_TRANSCRIBE_BUSY ? "audio_stt_busy" :
-                  transcribed == WHISPER_TRANSCRIBE_NOT_READY ? "audio_stt_model_required" :
-                  transcribed == WHISPER_TRANSCRIBE_CANCELLED ? "audio_transcription_cancelled" :
+                  transcribed == SAMOSA_WHISPER_BUSY ? "audio_stt_busy" :
+                  transcribed == SAMOSA_WHISPER_NOT_READY ? "audio_stt_model_required" :
+                  transcribed == SAMOSA_WHISPER_CANCELLED ? "audio_transcription_cancelled" :
                   "audio_transcription_failed");
         path_copy(out_message, message_cap,
-                  transcribed == WHISPER_TRANSCRIBE_BUSY
+                  transcribed == SAMOSA_WHISPER_BUSY
                       ? "Another local speech-to-text operation is already in progress."
-                      : transcribed == WHISPER_TRANSCRIBE_NOT_READY
+                      : transcribed == SAMOSA_WHISPER_NOT_READY
                           ? "The selected local Whisper model changed or became unavailable. Try again."
-                          : transcribed == WHISPER_TRANSCRIBE_CANCELLED
+                          : transcribed == SAMOSA_WHISPER_CANCELLED
                               ? "Audio transcription was stopped. Completed windows are saved and will resume on retry."
                           : "The local Whisper provider could not transcribe this audio file. Completed windows will resume on retry.");
         free(srt);
@@ -22005,18 +21952,18 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
     int transcribed = whisper_transcribe_path(
         g, wav_path, 0, &text, stt_model_id, sizeof(stt_model_id),
         fingerprint, sizeof(fingerprint), 0);
-    if (transcribed != WHISPER_TRANSCRIBE_OK) {
-        if (transcribed == WHISPER_TRANSCRIBE_BUSY) {
+    if (transcribed != SAMOSA_WHISPER_OK) {
+        if (transcribed == SAMOSA_WHISPER_BUSY) {
             sent = samosa_http_json_error(fd, 409, "voice_busy",
                                           "Another local voice operation is in progress.");
             goto done;
         }
-        if (transcribed == WHISPER_TRANSCRIBE_NOT_READY) {
+        if (transcribed == SAMOSA_WHISPER_NOT_READY) {
             sent = samosa_http_json_error(fd, 409, "voice_not_ready",
                 "Download the selected speech-recognition model and prepare local speech recognition first.");
             goto done;
         }
-        if (transcribed == WHISPER_TRANSCRIBE_CANCELLED) {
+        if (transcribed == SAMOSA_WHISPER_CANCELLED) {
             sent = samosa_http_json_error(fd, 409, "voice_transcription_cancelled",
                                           "Local speech recognition was stopped.");
             goto done;

@@ -11,6 +11,7 @@ BACKEND="${SAMOSA_FAKE_BACKEND:-./$BUILD_DIR/test_fake_openai_backend}"
 AUDIO_DECODER="${SAMOSA_AUDIO_DECODER:-./$BUILD_DIR/samosa-audio-decode}"
 ACTIVE_AUDIO_DECODER="$AUDIO_DECODER"
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+checks() { node "$ROOT/tests/audio_attachment_checks.mjs" "$@"; }
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/audio_attachments_test.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=19024
@@ -44,7 +45,7 @@ printf '<!doctype html><title>Samosa audio fixture</title>\n' >"$TMP/app.html"
 printf 'png\n' >"$TMP/logo.png"
 printf 'experts-fixture\n' >"$HOME_DIR/qwen-model/experts.bin"
 printf 'tokenizer-fixture\n' >"$TMP/tokenizer.json"
-python3 -c "from pathlib import Path; p=Path('$TMP/ggml-base.en.bin'); p.write_bytes(b''); p.open('r+b').truncate(147964211)"
+checks model "$TMP/ggml-base.en.bin"
 
 cat >"$TMP/whisper-cli" <<'EOF'
 #!/bin/sh
@@ -170,71 +171,7 @@ exec "$SAMOSA_REAL_AUDIO_DECODER" "$@"
 EOF
 chmod 700 "$TMP/video-audio-decode-wrapper"
 
-python3 - "$TMP/podcast.wav" "$TMP/stereo.wav" "$TMP/long.wav" "$TMP/cancel.wav" "$TMP/compressed-source.wav" "$TMP/malformed.m4a" "$TMP/compressed-cancel-source.wav" "$TMP/video-audio.wav" "$TMP/exact-window.wav" "$TMP/ranking.wav" <<'PY'
-import array, math, struct, sys, wave
-
-def wav(path, channels, seconds, marker=0):
-    frames = 16000 * seconds
-    samples = [0] * (frames * channels)
-    samples[0] = marker
-    data = struct.pack('<%dh' % len(samples), *samples)
-    body = (b'WAVEfmt ' + struct.pack('<IHHIIHH', 16, 1, channels, 16000,
-            16000 * channels * 2, channels * 2, 16) +
-            b'data' + struct.pack('<I', len(data)) + data)
-    open(path, 'wb').write(b'RIFF' + struct.pack('<I', len(body)) + body)
-
-wav(sys.argv[1], 1, 14)
-# Trailing bytes cannot supply PCM outside the declared RIFF container.
-malformed = bytearray(open(sys.argv[1], 'rb').read())
-struct.pack_into('<I', malformed, 4, 36)
-open(sys.argv[1] + '.short-riff', 'wb').write(malformed)
-wav(sys.argv[2], 2, 4)
-wav(sys.argv[4], 1, 25, 1)
-
-# A sparse three-minute fixture crosses the ordinary 4 MiB HTTP body limit,
-# exercising streamed prefix sniffing without wasting test I/O on zero PCM.
-data_bytes = 16000 * 2 * 180
-header = (b'RIFF' + struct.pack('<I', 36 + data_bytes) + b'WAVEfmt ' +
-          struct.pack('<IHHIIHH', 16, 1, 1, 16000, 32000, 2, 16) +
-          b'data' + struct.pack('<I', data_bytes))
-with open(sys.argv[3], 'wb') as f:
-    f.write(header)
-    f.truncate(len(header) + data_bytes)
-
-# Thirty overlapped windows make repeated middle evidence exceed the
-# retrieval budget while keeping both endpoint facts in the source.
-data_bytes = 16000 * 2 * 271
-header = (b'RIFF' + struct.pack('<I', 36 + data_bytes) + b'WAVEfmt ' +
-          struct.pack('<IHHIIHH', 16, 1, 1, 16000, 32000, 2, 16) +
-          b'data' + struct.pack('<I', data_bytes))
-with open(sys.argv[10], 'wb') as f:
-    f.write(header)
-    f.truncate(len(header) + data_bytes)
-
-# Exercise real resampling and channel folding at the compressed decode
-# boundary instead of feeding the decoder the canonical Whisper format.
-def stereo_tone(path, seconds, frequency):
-    with wave.open(path, 'wb') as f:
-        f.setnchannels(2)
-        f.setsampwidth(2)
-        f.setframerate(44100)
-        for base in range(0, 44100 * seconds, 4410):
-            samples = array.array('h')
-            for i in range(base, min(base + 4410, 44100 * seconds)):
-                sample = int(5000 * math.sin(
-                    2 * math.pi * frequency * i / 44100))
-                samples.extend((sample, sample // 2))
-            f.writeframes(samples.tobytes())
-
-stereo_tone(sys.argv[5], 14, 440)
-stereo_tone(sys.argv[7], 25, 523)
-wav(sys.argv[8], 1, 2)
-wav(sys.argv[9], 1, 30)
-
-# This reaches M4A sniffing, then must fail the native structural/codec probe.
-open(sys.argv[6], 'wb').write(
-    struct.pack('>I', 24) + b'ftypM4A ' + b'\0\0\0\0M4A ')
-PY
+checks fixtures "$TMP"
 
 # A small, deterministic ISO-BMFF-shaped source. The qualified media probe,
 # not this prefix or the client MIME, is what grants transcript capability.
@@ -247,52 +184,21 @@ if [ "$COMPRESSED_AUDIO" = 1 ]; then
   # One second of a generated 440 Hz tone (mono 8 kHz, 8 kbps MP3). Keeping
   # this tiny synthetic fixture inline makes codec qualification independent
   # of ffmpeg, lame, network access, or host media files at test time.
-  python3 - "$TMP/tone.mp3" <<'PY'
-import base64, sys
-encoded = '''
-SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYyLjEyLjEwMgAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAEAAABVgANTU1NTU1Q0NDQ0NDUFBQUFBQXl5eXl5ea2tra2tra3l5eXl5eYaGhoaGhpSUlJSUlKGhoaGhoaGvr6+vr6+8vLy8vLzKysrKysrX19fX19fX5eXl5eXl8vLy8vLy////////AAAAAExhdmM2Mi4yOAAAAAAAAAAAAAAAACQCgAAAAAAAAAVYQfJ/CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+MYxAAK+I7FuUMAAqoFKLbQHd3d3P4iIifu7u//1wMDA3NQQOIg+D78EHXf4Y4DfpDHLv5zp93SJoc4WcQ3/GVEJRyhC3+D/+MYxA8QmUKQAZRQAG8H6ge5ABlxEnAPiYDmR1gd6mHvgGgCQCorCKC6//IR6KpEPh8ab//5CgNCUJA1/4lOg1W0AAWyC2TV/+MYxAcNwJ5yWdUAAvb//UZEWNiHBdIGzQGARIBhnpAY6EABwiDIw7ybIiXTnW/0f7f9///t+/1f//+v6SB///31WkXtMCCM/+MYxAsNsKY0KAa8RokjQJTj2DDAFLNt2gsz0A/zCdBCMDIAsoAKUTROVKw7D/p///////////+lIAAINP9f/8IG5rwetigC/+MYxA8OaKY9kD58YFzwkMJsL81xGIzM1CVMIQCYwLwDzAQAIAgACJ7DHDx////7/////0///1L///k7epdA4BMCEwKbAyHB/+MYxBAKWKY0AAb8RCPQYQHRBgcjAEgOoWAuAIB4YAGRACJstRv1///4BXkX1AoAx4w0Rc6Lgw2A5zexc5NEgK8wtQIggH0M/+MYxCEKUKY0AAa8RAI0EaOylLIsFcABJG5BM///8Fekt0jWy3BgqHpr9OpmWFoCBxH9iAICtAv6ft+7/2/b/69Gz////+3e/+MYxDIMeKJhuA9SZpAABI2xIM35f/7sy5/WUp7CJ4BGwzA8IxhFAGASsqA5+Qz1nyP2f1f7fs//9n+776/9OyrbAAC6zgDv/+MYxDsM0KJeWA46Yu/3/wceeFwljIUhojEoFzzVWzcICxoeiYFE12lvRHY9/7fu/9v2/+kHgAAD7AbbP6/wU8so48vMLAQY/+MYxEILwKJSWBY6YCIumrmtmXIimBgDIrrsciH5ZT/+z+v/b///6f/6v//99bgAAMNgLsvl//ipY05KwqGQIiYKjka4foZh/+MYxE4M2KJe+AB6CIqGBQFqBRGeisupf/b//6Pv/////V//s271+B6jiUqNwOAOGgQQgKsw5gODgvJeNJAC4wxQBzBKAEMB/+MYxFUM4KJaWA46YNALAoA4iAAWWwjSGwAFwtFo/2+3/UaGBuMeLmFagZwrYGIReAMIwuDJc6Qcvn/V9f//3en//7vV///V/+MYxFwK6KY0AAH8QK4QAkABhhAMCAD+xOFMrkX/qHwOAXILuOoDGQiekBA0rMeRO4DwYElAFif/4DrDsCwEsHaMH//47ySH/+MYxGsMMKZ6WVUAAoEwukudS///zRQLkwgA//w2CQDDYJAP//DYJAMyGQiA6gayzT1pqtW21lbXmjoydsuXLrnINQOoySJJ/+MYxHUWkZKiOZRoAOtGTzJi8ytWrXcaXGhQ3EGxBXBTshuIvwV0KkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq/+MYxFUNILaEQcwIAaqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-'''
-open(sys.argv[1], 'wb').write(base64.b64decode(encoded))
-PY
+  cp "$ROOT/tests/fixtures/audio/tone-440hz.mp3" "$TMP/tone.mp3"
   /usr/bin/afconvert "$TMP/compressed-source.wav" "$TMP/podcast.m4a" \
     -f m4af -d aac -b 64000
   /usr/bin/afconvert "$TMP/compressed-cancel-source.wav" "$TMP/cancel.m4a" \
     -f m4af -d aac -b 64000
   "$AUDIO_DECODER" --probe "$TMP/podcast.m4a" >"$TMP/m4a-probe.json"
-  python3 - "$TMP/m4a-probe.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-assert d['ok'] is True and d['audio_streams'] == 1, d
-assert d['video_streams'] == 0 and d['selected_stream'] == 0, d
-assert d['codec_fourcc'] == 'aac ', d
-assert 13.9 <= d['duration_seconds'] <= 14.1, d
-PY
+  checks probe-aac "$TMP/m4a-probe.json"
   "$AUDIO_DECODER" --decode-window "$TMP/podcast.m4a" 9 14 \
     --output "$TMP/decoded-window.wav"
-  python3 - "$TMP/decoded-window.wav" <<'PY'
-import sys, wave
-with wave.open(sys.argv[1], 'rb') as f:
-    assert f.getnchannels() == 1, f.getparams()
-    assert f.getsampwidth() == 2, f.getparams()
-    assert f.getframerate() == 16000, f.getparams()
-    assert 4.9 <= f.getnframes() / 16000 <= 5.1, f.getparams()
-PY
+  checks decoded-window "$TMP/decoded-window.wav"
   "$AUDIO_DECODER" --probe "$TMP/tone.mp3" >"$TMP/mp3-probe.json"
-  python3 - "$TMP/mp3-probe.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-assert d['ok'] is True and d['codec_fourcc'] == '.mp3', d
-assert d['audio_streams'] == 1 and d['video_streams'] == 0, d
-assert 1.0 <= d['duration_seconds'] <= 1.3, d
-PY
+  checks probe-mp3 "$TMP/mp3-probe.json"
   "$AUDIO_DECODER" --decode-window "$TMP/tone.mp3" 0 1 \
     --output "$TMP/decoded-mp3.wav"
-  python3 - "$TMP/decoded-mp3.wav" <<'PY'
-import sys, wave
-with wave.open(sys.argv[1], 'rb') as f:
-    assert f.getnchannels() == 1 and f.getsampwidth() == 2, f.getparams()
-    assert f.getframerate() == 16000 and f.getnframes() > 15000, f.getparams()
-PY
+  checks decoded-mp3 "$TMP/decoded-mp3.wav"
   if command -v ffmpeg >/dev/null 2>&1; then
     # Optional host integration: when ffmpeg is present, generate a real tiny
     # video+AAC container and exercise AVFoundation's actual video demux path.
@@ -303,23 +209,10 @@ PY
       "$TMP/native-video-audio.mp4"
     "$AUDIO_DECODER" --probe "$TMP/native-video-audio.mp4" \
       >"$TMP/native-video-probe.json"
-    python3 - "$TMP/native-video-probe.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-assert d['ok'] is True and d['video_streams'] == 1, d
-assert d['audio_streams'] == 1 and d['codec_fourcc'] == 'aac ', d
-assert d['audio_start_seconds'] <= 0.05, d
-assert d['audio_end_seconds'] >= d['duration_seconds'] - 0.25, d
-PY
+    checks probe-video "$TMP/native-video-probe.json"
     "$AUDIO_DECODER" --decode-window "$TMP/native-video-audio.mp4" 0 2 \
       --output "$TMP/native-video-audio.wav"
-    python3 - "$TMP/native-video-audio.wav" <<'PY'
-import sys, wave
-with wave.open(sys.argv[1], 'rb') as f:
-    assert f.getnchannels() == 1 and f.getsampwidth() == 2, f.getparams()
-    assert f.getframerate() == 16000, f.getparams()
-    assert 1.9 <= f.getnframes() / 16000 <= 2.1, f.getparams()
-PY
+    checks decoded-video "$TMP/native-video-audio.wav"
   fi
 fi
 
@@ -375,35 +268,14 @@ start_gateway
 
 CAPS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   "http://127.0.0.1:$PORT/v1/capabilities/sources")
-printf '%s' "$CAPS" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-audio = {x["kind"]: x for x in d["sources"]}["audio"]
-expected = ["audio/wav", "audio/mpeg", "audio/mp4"] if int(sys.argv[1]) else ["audio/wav"]
-assert audio["media_types"] == expected, audio
-assert "transcribe_audio" in audio["available_operations"], audio
-assert "english_only" in audio["limitations"], audio
-assert ("compressed_audio_macos_only" in audio["limitations"]) == bool(int(sys.argv[1])), audio
-assert d["limits"]["max_audio_duration_seconds"] == 14400, d
-' "$COMPRESSED_AUDIO"
+printf '%s' "$CAPS" | checks caps-audio "$COMPRESSED_AUDIO"
 
 if [ "$COMPRESSED_AUDIO" = 1 ]; then
   VISUAL_ONLY_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
     -H 'X-Samosa-Media-Type: audio/mp4' \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     --data-binary @"$TMP/visual-only.mp4")
-  VISUAL_ONLY_ID=$(printf '%s' "$VISUAL_ONLY_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["media_type"] == "video/mp4", d
-assert d["capabilities"]["video"] is True, d
-assert d["capabilities"]["audio"] is False, d
-s = d["source"]
-assert s["kind"] == "video", s
-assert s["duration_seconds"] is None, s
-assert s["available_operations"] == ["analyze_video", "inspect_metadata"], s
-print(d["id"])
-')
+  VISUAL_ONLY_ID=$(printf '%s' "$VISUAL_ONLY_UPLOAD" | checks visual-only-id)
   WHISPER_BEFORE_UNAVAILABLE=$(wc -l <"$TMP/whisper-count" | tr -d ' ')
   STATUS=$(curl -sS -o "$TMP/video-audio-unavailable.json" -w '%{http_code}' \
     -H "X-Samosa-Token: $TOKEN" -X POST \
@@ -453,7 +325,7 @@ LONG_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   -H "X-Samosa-Filename-B64: $(printf 'long.wav' | base64)" \
   -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary @"$TMP/long.wav")
-LONG_ID=$(printf '%s' "$LONG_UPLOAD" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["source"]["duration_seconds"] == 180.0, d; print(d["id"])')
+LONG_ID=$(printf '%s' "$LONG_UPLOAD" | checks duration-id 180)
 LONG_META=$(find "$HOME_DIR/attachments" -name "$LONG_ID.json" -print -quit)
 LONG_WINDOW="$(dirname "$LONG_META")/$LONG_ID.transcript.window-0000.json"
 printf '{"fixture":true}\n' >"$LONG_WINDOW"
@@ -467,20 +339,8 @@ UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   -H "X-Samosa-Filename-B64: $(printf 'episode.mp3' | base64)" \
   -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary @"$TMP/podcast.wav")
-AUDIO_ID=$(printf '%s' "$UPLOAD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-printf '%s' "$UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["media_type"] == "audio/wav", d
-assert d["capabilities"]["audio"] is True, d
-assert d["capabilities"]["document"] is False, d
-s = d["source"]
-assert s["kind"] == "audio" and s["container"] == "wav", s
-assert s["codec"] == "pcm_s16le", s
-assert s["duration_seconds"] == 14.0, s
-assert "transcribe_audio" in s["available_operations"], s
-assert "speaker_diarization_unavailable" in s["limitations"], s
-'
+AUDIO_ID=$(printf '%s' "$UPLOAD" | checks id)
+printf '%s' "$UPLOAD" | checks wav-upload
 
 # The second bounded window fails once. Window 0 must already be durable, and
 # the final evidence must not be published until every window is complete.
@@ -518,51 +378,11 @@ printf '%s' "$RESPONSE" | grep -q 'saw durable audio transcript' || {
 }
 EVIDENCE=$(find "$HOME_DIR/attachments" -name "$AUDIO_ID.transcript.json" -print -quit)
 [ -n "$EVIDENCE" ] && [ -s "$EVIDENCE" ] || { echo "FAIL: durable transcript evidence was not published"; exit 1; }
-python3 - "$EVIDENCE" "$AUDIO_ID" "$HOME_DIR/attachments" <<'PY'
-import glob
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-assert d['schema'] == 'samosa.evidence.v1', d
-assert d['attachment_id'] == sys.argv[2], d
-assert d['coverage'] == {'start_seconds': 0, 'end_seconds': 14.0, 'complete': True}, d
-assert d['segments'][1] == {
-    'start_seconds': 1.0,
-    'end_seconds': 2.5,
-    'text': 'The podcast sentinel appears here.'
-}, d
-assert any(s == {
-    'start_seconds': 10.0,
-    'end_seconds': 11.5,
-    'text': 'The podcast sentinel appears here.'
-} for s in d['segments']), d['segments']
-windows = sorted(glob.glob(sys.argv[3] + '/**/' + sys.argv[2] +
-                           '.transcript.window-*.json', recursive=True))
-assert len(windows) == 2, windows
-for index, path in enumerate(windows):
-    window = json.load(open(path, encoding='utf-8'))
-    assert window['schema'] == 'samosa.evidence.v1', window
-    assert window['kind'] == 'transcript_window', window
-    assert window['operation'] == 'transcribe_audio', window
-    assert window['attachment_id'] == sys.argv[2], window
-    assert window['window_index'] == index, window
-    assert window['complete'] is True and window['srt'], window
-assert (windows and
-        json.load(open(windows[0]))['start_seconds'] == 0.0 and
-        json.load(open(windows[0]))['end_seconds'] == 10.0)
-assert (json.load(open(windows[1]))['start_seconds'] == 9.0 and
-        json.load(open(windows[1]))['end_seconds'] == 14.0)
-PY
+checks evidence "$EVIDENCE" "$AUDIO_ID" "$HOME_DIR/attachments"
 
 MANIFEST="$HOME_DIR/chats/audio-source-probe/documents.json"
 [ -s "$MANIFEST" ] || { echo "FAIL: conversation source binding was not persisted"; exit 1; }
-python3 - "$MANIFEST" "$AUDIO_ID" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-item = d['documents'][0]
-assert item['attachment_id'] == sys.argv[2], item
-assert item['source_kind'] == 'audio', item
-assert item['mode'] == 'retrieval', item
-PY
+checks manifest "$MANIFEST" "$AUDIO_ID"
 
 RESPONSE=$(audio_question)
 printf '%s' "$RESPONSE" | grep -q 'saw durable audio transcript' || exit 1
@@ -587,7 +407,7 @@ CANCEL_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   -H "X-Samosa-Filename-B64: $(printf 'cancel.wav' | base64)" \
   -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary @"$TMP/cancel.wav")
-CANCEL_ID=$(printf '%s' "$CANCEL_UPLOAD" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["source"]["duration_seconds"] == 25.0, d; print(d["id"])')
+CANCEL_ID=$(printf '%s' "$CANCEL_UPLOAD" | checks duration-id 25)
 printf '5\n' >"$TMP/whisper-block-at"
 rm -f "$TMP/whisper-block-ready" "$TMP/whisper-release"
 curl -sS -m 15 -H "X-Samosa-Token: $TOKEN" -X POST \
@@ -673,20 +493,8 @@ if [ "$COMPRESSED_AUDIO" = 1 ]; then
     -H "X-Samosa-Filename-B64: $(printf 'field-recording.m4a' | base64)" \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     --data-binary @"$TMP/podcast.m4a")
-  M4A_ID=$(printf '%s' "$M4A_UPLOAD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-  printf '%s' "$M4A_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["media_type"] == "audio/mp4", d
-assert d["capabilities"]["audio"] is True, d
-s = d["source"]
-assert s["kind"] == "audio" and s["container"] == "m4a", s
-assert s["codec"] == "aac", s
-assert 13.9 <= s["duration_seconds"] <= 14.1, s
-assert "transcribe_audio" in s["available_operations"], s
-assert "decoded_to_pcm_s16le_mono_16000hz" in s["limitations"], s
-assert "compressed_audio_macos_only" in s["limitations"], s
-'
+  M4A_ID=$(printf '%s' "$M4A_UPLOAD" | checks id)
+  printf '%s' "$M4A_UPLOAD" | checks m4a-upload
 
   M4A_RESPONSE=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -X POST \
     "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -705,15 +513,7 @@ assert "compressed_audio_macos_only" in s["limitations"], s
     echo "FAIL: M4A transcript evidence was not published"
     exit 1
   }
-  python3 - "$M4A_EVIDENCE" "$M4A_ID" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1], encoding='utf-8'))
-assert d['attachment_id'] == sys.argv[2], d
-assert d['operation'] == 'transcribe_audio', d
-assert d['coverage']['complete'] is True, d
-assert 13.9 <= d['coverage']['end_seconds'] <= 14.1, d
-assert d['provider']['id'] == 'whisper_cpp', d
-PY
+  checks m4a-evidence "$M4A_EVIDENCE" "$M4A_ID"
 
   # The compressed source, decoder fingerprint, and transcript evidence are
   # all durable; a process restart must not invoke either decode/transcribe
@@ -735,17 +535,8 @@ PY
     -H "X-Samosa-Filename-B64: $(printf 'voice-note.mp3' | base64)" \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     --data-binary @"$TMP/tone.mp3")
-  MP3_ID=$(printf '%s' "$MP3_UPLOAD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-  printf '%s' "$MP3_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["media_type"] == "audio/mpeg", d
-s = d["source"]
-assert s["kind"] == "audio" and s["container"] == "mp3", s
-assert s["codec"] == "mp3", s
-assert 1.0 <= s["duration_seconds"] <= 1.3, s
-assert "decoded_to_pcm_s16le_mono_16000hz" in s["limitations"], s
-'
+  MP3_ID=$(printf '%s' "$MP3_UPLOAD" | checks id)
+  printf '%s' "$MP3_UPLOAD" | checks mp3-upload
   STATUS=$(curl -sS -o "$TMP/mp3-question.json" -w '%{http_code}' \
     -H "X-Samosa-Token: $TOKEN" -X POST \
     "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -792,7 +583,7 @@ assert "decoded_to_pcm_s16le_mono_16000hz" in s["limitations"], s
     -H "X-Samosa-Filename-B64: $(printf 'decode-cancel.m4a' | base64)" \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     --data-binary @"$TMP/cancel.m4a")
-  DECODE_CANCEL_ID=$(printf '%s' "$DECODE_CANCEL_UPLOAD" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert 24.9 <= d["source"]["duration_seconds"] <= 25.1, d; print(d["id"])')
+  DECODE_CANCEL_ID=$(printf '%s' "$DECODE_CANCEL_UPLOAD" | checks duration-id 24.9 25.1)
   curl -sS -m 15 -H "X-Samosa-Token: $TOKEN" -X POST \
     "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
@@ -855,33 +646,14 @@ assert "decoded_to_pcm_s16le_mono_16000hz" in s["limitations"], s
   start_gateway
   CAPS=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
     "http://127.0.0.1:$PORT/v1/capabilities/sources")
-  printf '%s' "$CAPS" | python3 -c '
-import json, sys
-video = {x["kind"]: x for x in json.load(sys.stdin)["sources"]}["video"]
-assert "analyze_video" in video["available_operations"], video
-assert "transcribe_audio" in video["available_operations"], video
-assert "transcribe_audio_requires_full_span_aac_stream" in video["limitations"], video
-'
+  printf '%s' "$CAPS" | checks caps-video
 
   VIDEO_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
     -H 'X-Samosa-Media-Type: audio/mp4' \
     -H "X-Samosa-Filename-B64: $(printf 'talking-clip.mp4' | base64)" \
     -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     --data-binary @"$TMP/talking.mp4")
-  VIDEO_AUDIO_ID=$(printf '%s' "$VIDEO_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["media_type"] == "video/mp4", d
-assert d["capabilities"]["video"] is True, d
-assert d["capabilities"]["audio"] is False, d
-s = d["source"]
-assert s["kind"] == "video" and s["container"] == "mp4", s
-assert s["duration_seconds"] == 2.0, s
-assert "analyze_video" in s["available_operations"], s
-assert "transcribe_audio" in s["available_operations"], s
-assert "full_span_aac_audio_stream" in s["limitations"], s
-print(d["id"])
-')
+  VIDEO_AUDIO_ID=$(printf '%s' "$VIDEO_UPLOAD" | checks video-audio-id)
   WHISPER_BEFORE=$(wc -l <"$TMP/whisper-count" | tr -d ' ')
   VIDEO_AUDIO_RESPONSE=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -X POST \
     "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -902,12 +674,7 @@ print(d["id"])
     exit 1
   }
   VIDEO_MANIFEST="$HOME_DIR/chats/video-audio-source-probe/documents.json"
-  python3 - "$VIDEO_MANIFEST" "$VIDEO_AUDIO_ID" <<'PY'
-import json, sys
-item = json.load(open(sys.argv[1], encoding='utf-8'))['documents'][0]
-assert item['attachment_id'] == sys.argv[2], item
-assert item['source_kind'] == 'audio', item
-PY
+  checks video-manifest "$VIDEO_MANIFEST" "$VIDEO_AUDIO_ID"
 
   VIDEO_AUDIO_FOLLOWUP=$(curl -fsS -H "X-Samosa-Token: $TOKEN" -X POST \
     "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -943,12 +710,7 @@ EXACT_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   -H "X-Samosa-Filename-B64: $(printf 'exact-window.wav' | base64)" \
   -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary @"$TMP/exact-window.wav")
-EXACT_ID=$(printf '%s' "$EXACT_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["source"]["duration_seconds"] == 30.0, d
-print(d["id"])
-')
+EXACT_ID=$(printf '%s' "$EXACT_UPLOAD" | checks duration-id 30)
 WHISPER_BEFORE=$(wc -l <"$TMP/whisper-count" | tr -d ' ')
 EXACT_RESPONSE=$(curl -fsS -m 20 -H "X-Samosa-Token: $TOKEN" -X POST \
   "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -964,27 +726,7 @@ WHISPER_AFTER=$(wc -l <"$TMP/whisper-count" | tr -d ' ')
   exit 1
 }
 EXACT_EVIDENCE=$(find "$HOME_DIR/attachments" -name "$EXACT_ID.transcript.json" -print -quit)
-python3 - "$EXACT_EVIDENCE" "$EXACT_ID" "$HOME_DIR/attachments" <<'PY'
-import glob, json, sys
-evidence = json.load(open(sys.argv[1], encoding='utf-8'))
-assert evidence['coverage'] == {
-    'start_seconds': 0, 'end_seconds': 30.0, 'complete': True
-}, evidence
-windows = sorted(glob.glob(
-    sys.argv[3] + '/**/' + sys.argv[2] + '.transcript.window-*.json',
-    recursive=True))
-assert len(windows) == 4, windows
-bounds = [(json.load(open(path, encoding='utf-8'))['start_seconds'],
-           json.load(open(path, encoding='utf-8'))['end_seconds'])
-          for path in windows]
-assert bounds == [(0.0, 10.0), (9.0, 19.0), (18.0, 28.0),
-                  (27.0, 30.0)], bounds
-assert evidence['segments'][-1] == {
-    'start_seconds': 27.0,
-    'end_seconds': 30.0,
-    'text': 'The bounded trailing sentinel appears here.'
-}, evidence['segments'][-1]
-PY
+checks exact-evidence "$EXACT_EVIDENCE" "$EXACT_ID" "$HOME_DIR/attachments"
 
 # Repeated high-scoring middle evidence must not crowd a separately requested
 # late fact out of the bounded transcript handoff.
@@ -992,12 +734,7 @@ RANKING_UPLOAD=$(curl -fsS -H "X-Samosa-Token: $TOKEN" \
   -H "X-Samosa-Filename-B64: $(printf 'ranking.wav' | base64)" \
   -X POST "http://127.0.0.1:$PORT/v1/attachments" \
   --data-binary @"$TMP/ranking.wav")
-RANKING_ID=$(printf '%s' "$RANKING_UPLOAD" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-assert d["source"]["duration_seconds"] == 271.0, d
-print(d["id"])
-')
+RANKING_ID=$(printf '%s' "$RANKING_UPLOAD" | checks duration-id 271)
 RANKING_BEFORE=$(wc -l <"$TMP/whisper-count" | tr -d ' ')
 printf '%s %s\n' "$RANKING_BEFORE" 30 >"$TMP/whisper-ranking"
 RANKING_RESPONSE=$(curl -fsS -m 30 -H "X-Samosa-Token: $TOKEN" -X POST \

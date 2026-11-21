@@ -297,21 +297,33 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07e: follow the [gateway lifecycle reuse audit](EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md).
-   Reuse/extract the shared Whisper runner and consolidate ownership.
-   Preserve plain text/SRT, microphone/long-window behavior and exact-child
-   cancellation. Keep App selection/resource policy explicit; reuse its working
-   coordination when scheduling ownership moves.
-2. Preserve original image/video limits and Mac resource/retry policy when
-   consolidating the remaining caller state. Current prepared-input profiles
-   are not full gateway substitutes. Do not add another codec/model loop.
+1. LIFE-07f: follow the [gateway lifecycle reuse audit](EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md).
+   Extract the existing Mac memory/thermal budget and bounded Molmo reclaim wait,
+   retaining its thresholds, detail tiers, traces, stop behavior and turn retry
+   policy. Make telemetry/control inputs explicit; do not design a new scheduler.
+2. Audit remaining area3 ownership against its full checklist, then consolidate
+   existing guardian/shared-admission paths. Preserve original image/video and
+   Whisper text/SRT/long-window behavior. Current prepared-input profiles are not
+   full gateway substitutes; do not add another codec, server or model loop.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-Native Mac progress, 2026-11-21: LIFE-07d extracts the original visual launch/
+Native Mac progress, 2026-11-21: LIFE-07e extracts the original shared Whisper
+runner into Inference with explicit configuration/coordination callbacks.
+Source audit proves original execution/cleanup, model fingerprint, busy/cancel
+and return behavior retained. Native normal/SAN, standalone owner, original
+voice/durable-audio workflows, clean packaging/install and retained actual Mac
+Whisper text/SRT recognition checks pass. The two workflow drivers' Python
+fixtures/assertions are ported to Node/shell without lost coverage. No Python or
+Docker was invoked. Actual SRT timing accuracy is not established by that check.
+See [Whisper extraction evidence](../components/samosa-inference/docs/qualification/life07e-whisper-runner/README.md).
+Shared admission, guarded execution consolidation, full area3/later areas,
+Python removal/CI, Agent/App/assembly and retirement remain open.
+
+Previous native Mac progress, 2026-11-21: LIFE-07d extracts the original visual launch/
 close bodies into Inference with thin gateway calls and unchanged profiles,
 traces and product policy. A reproduced inactive-session cleanup bug is fixed.
 Native normal/SAN, standalone archive, gateway summary/runtime/Molmo/VisionPsy
@@ -346,7 +358,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `ad3a1e1` (LIFE-07d), committed and backed up on
+Current qualified Inference pin: `4ad140d` (LIFE-07e), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 
