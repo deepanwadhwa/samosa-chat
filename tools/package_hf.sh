@@ -187,10 +187,10 @@ for name in \
   [ -f "$source" ] || fail "missing source file: $source"
   place "$source" "engine/$name" copy
 done
-for name in src/specialist_supervisor.c src/specialist_protocol.c engines/json.h src/summary_process.c src/controlled_pipe.h src/json.h src/llama_launch.c src/whisper_process.c \
+for name in src/specialist_supervisor.c src/specialist_protocol.c engines/json.h src/summary_process.c src/controlled_pipe.h src/json.h src/llama_launch.c src/whisper_process.c src/vision_budget.c \
   include/samosa_inference/specialist_protocol.h \
   include/samosa_inference/specialist_supervisor.h include/samosa_inference/summary_process.h \
-  include/samosa_inference/llama_launch.h include/samosa_inference/whisper_process.h LICENSE; do
+  include/samosa_inference/llama_launch.h include/samosa_inference/whisper_process.h include/samosa_inference/vision_budget.h LICENSE; do
   source="$ROOT/components/samosa-inference/$name"
   [ -f "$source" ] || fail "missing Inference source: $source"
   place "$source" "engine/inference/$name" copy

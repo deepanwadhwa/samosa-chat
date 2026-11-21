@@ -297,21 +297,32 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07f: follow the [gateway lifecycle reuse audit](EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md).
-   Extract the existing Mac memory/thermal budget and bounded Molmo reclaim wait,
-   retaining its thresholds, detail tiers, traces, stop behavior and turn retry
-   policy. Make telemetry/control inputs explicit; do not design a new scheduler.
-2. Audit remaining area3 ownership against its full checklist, then consolidate
-   existing guardian/shared-admission paths. Preserve original image/video and
-   Whisper text/SRT/long-window behavior. Current prepared-input profiles are not
-   full gateway substitutes; do not add another codec, server or model loop.
+1. LIFE-07g: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md).
+   Delegate the existing Mac VisionPsy/Molmo2 engine builds and useful tests to
+   their already extracted owner files. Preserve flags, dependencies, output
+   names, media frameworks and kernel pairing; retire each proven parent duplicate
+   after its original behavior and assembled caller pass.
+2. Follow the audit through remaining primary-backend source/launch ownership,
+   Whisper guarded execution and shared coordination. Preserve original wide
+   image/video and text/SRT/long-window behavior. Current prepared-input profiles
+   are not full gateway substitutes; do not design a new scheduler/server/model.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-Native Mac progress, 2026-11-21: LIFE-07e extracts the original shared Whisper
+Native Mac progress, 2026-11-21: LIFE-07f extracts the existing visual resource
+policy into Inference: native probes, adaptive detail/reserve and bounded reclaim
+wait with explicit sampling/control/trace inputs. Original bodies and thresholds
+are preserved. Native normal/SAN25-case boundaries, actual Mac probes, fresh owner
+build, original Molmo/VisionPsy workflows and clean packaging/install pass.
+See [budget evidence](../components/samosa-inference/docs/qualification/life07f-visual-budget/README.md).
+The [full remaining-area3 audit](INFERENCE_AREA3_REMAINING_AUDIT.md) records
+implementation gaps and the next concrete extraction. Area3 and all later full
+component/Agent/App/assembly/retirement requirements remain open.
+
+Previous native Mac progress, 2026-11-21: LIFE-07e extracts the original shared Whisper
 runner into Inference with explicit configuration/coordination callbacks.
 Source audit proves original execution/cleanup, model fingerprint, busy/cancel
 and return behavior retained. Native normal/SAN, standalone owner, original
@@ -358,7 +369,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `4ad140d` (LIFE-07e), committed and backed up on
+Current qualified Inference pin: `056578e` (LIFE-07f), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

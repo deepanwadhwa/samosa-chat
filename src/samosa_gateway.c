@@ -50,6 +50,7 @@
 #include <samosa_inference/summary_process.h>
 #include <samosa_inference/llama_launch.h>
 #include <samosa_inference/whisper_process.h>
+#include <samosa_inference/vision_budget.h>
 
 typedef struct {
     SamosaHttpServer *server;
@@ -10842,14 +10843,9 @@ static int attachment_publish_file(Gateway *g, const char *id, const char *sourc
     flock(lock_fd, LOCK_UN); close(lock_fd); return ok;
 }
 
-typedef struct {
-    int max_side_len;
-    int admitted;
-    int memory_pressure;
-    int thermal_pressure;
-    double available_gb;
-    char reason[96];
-} VisionResourceBudget;
+typedef SamosaVisionResourceBudget VisionResourceBudget;
+
+static void visual_protocol_trace_event(void *, const char *, const char *);
 
 static VisionResourceBudget vision_resource_budget(Gateway *g, int detail_needed);
 static VisionResourceBudget vision_wait_for_molmo_memory(
@@ -12468,22 +12464,14 @@ static int molmo2_available(Gateway *g) {
 
 static double molmo2_required_available_gb(Gateway *g) {
     char path[PATH_MAX];
-    if (!path_join(path, sizeof(path), g->molmo2_model, "manifest.json")) return 7.75;
+    if (!path_join(path, sizeof(path), g->molmo2_model, "manifest.json")) return SAMOSA_MOLMO2_MANIFEST_UNAVAILABLE_GB;
     char *raw = read_file_limit(path, 1 << 20), *arena = NULL;
     jval *root = raw ? json_parse(raw, &arena) : NULL;
     jval *resident = root && root->t == J_OBJ
         ? json_get(root, "estimated_resident_bytes") : NULL;
     long long total_bytes = vision_total_memory_bytes();
-    double total_gb = total_bytes > 0 ? (double)total_bytes / 1e9 : 0.0;
-    /* A fixed 4-GB reserve made the verified 3.76-GB Q4 package impossible to
-       admit on the qualified 16-GiB Mac even after the primary model had fully
-       exited: normal-pressure telemetry stabilized around 7.2 GB available.
-       Keep 3 GB on that tightly bounded profile (the general vision gate still
-       rejects critical pressure/thermal state), and retain 4 GB on roomier
-       hosts. This is never co-resident with the primary backend. */
-    double reserve_gb = total_gb > 0.0 && total_gb <= 18.0 ? 3.0 : 4.0;
-    double required = resident && resident->t == J_NUM && resident->num > 0
-        ? resident->num / 1e9 + reserve_gb : 6.75;
+    double required = samosa_molmo2_required_available_gb(
+        resident && resident->t == J_NUM ? resident->num : 0, total_bytes);
     json_free(root); free(arena); free(raw);
     return required;
 }
@@ -12805,132 +12793,26 @@ static int vision_route_plan(Gateway *g, const char *question, jval *attach_ids,
     return 1;
 }
 
-static double vision_available_memory_gb(void) {
-#if defined(__APPLE__)
-    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-    vm_statistics64_data_t vm;
-    if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
-                          (host_info64_t)&vm, &count) != KERN_SUCCESS) return 0.0;
-    double pages = (double)vm.free_count + (double)vm.inactive_count + (double)vm.purgeable_count;
-    return pages * (double)sysconf(_SC_PAGESIZE) / 1e9;
-#else
-    FILE *f = fopen("/proc/meminfo", "r");
-    if (!f) return 0.0;
-    char line[256]; double kb = 0.0;
-    while (fgets(line, sizeof(line), f))
-        if (sscanf(line, "MemAvailable: %lf", &kb) == 1) break;
-    fclose(f);
-    return kb / 1e6;
-#endif
+static int vision_budget_stopping(void *context) {
+    return atomic_load(&((Gateway *)context)->stopping);
 }
-
-static int vision_memory_pressure(void) {
-#if defined(__APPLE__)
-    int level = 0; size_t length = sizeof(level);
-    if (!sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &length, NULL, 0)) return level;
-#endif
-    return 0;
+static SamosaVisionBudgetControl vision_budget_control(Gateway *g) {
+    SamosaVisionBudgetControl control = {.stopping = vision_budget_stopping,
+        .event = visual_protocol_trace_event, .context = g};
+    return control;
 }
-
 static long long vision_total_memory_bytes(void) {
-#if defined(__APPLE__)
-    uint64_t bytes = 0; size_t length = sizeof(bytes);
-    if (!sysctlbyname("hw.memsize", &bytes, &length, NULL, 0) &&
-        bytes <= (uint64_t)LLONG_MAX) return (long long)bytes;
-#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
-    long pages = sysconf(_SC_PHYS_PAGES), size = sysconf(_SC_PAGESIZE);
-    if (pages > 0 && size > 0 && pages <= LLONG_MAX / size)
-        return (long long)pages * size;
-#endif
-    return 0;
+    return samosa_vision_total_memory_bytes();
 }
-
-static int vision_thermal_pressure(void) {
-#if defined(__APPLE__)
-    int token = 0; uint64_t state = 0;
-    if (notify_register_check("com.apple.system.thermalpressurelevel", &token) == NOTIFY_STATUS_OK) {
-        (void)notify_get_state(token, &state);
-        notify_cancel(token);
-        return (int)state;
-    }
-#endif
-    return 0;
-}
-
 static VisionResourceBudget vision_resource_budget(Gateway *g, int detail_needed) {
-    VisionResourceBudget b;
-    memset(&b, 0, sizeof(b));
-    b.admitted = 1;
-    b.available_gb = vision_available_memory_gb();
-    b.memory_pressure = vision_memory_pressure();
-    b.thermal_pressure = vision_thermal_pressure();
-    long long total_bytes = vision_total_memory_bytes();
-    double total_gb = total_bytes > 0 ? (double)total_bytes / 1e9 : 0.0;
-
-    /* Available memory already includes the active LLM and desktop workload.
-       The total-memory cap keeps a 16 GB machine away from the 17-tile peak
-       while leaving the 2048 standard path available on roomier hosts. */
-    int side = 2048;
-    if ((total_gb > 0.0 && total_gb <= 18.0) || (b.available_gb > 0.0 && b.available_gb < 8.0)) side = 1536;
-    if ((b.available_gb > 0.0 && b.available_gb < 5.5) || b.memory_pressure >= 2) side = 1024;
-    if ((b.available_gb > 0.0 && b.available_gb < 3.5) || b.memory_pressure >= 4 || b.thermal_pressure >= 2) side = 512;
-    if (detail_needed && side == 512 && b.available_gb >= 4.0 && b.memory_pressure < 4) side = 1024;
-    b.max_side_len = side;
-    /* Do not load the measured ~1.1 GB helper into a critically pressured
-       Mac. A text/OCR result can still continue as an honest partial answer;
-       a visual-only turn receives a retryable error instead of forcing swap
-       or risking an OS-level process kill. Unknown telemetry stays usable. */
-    if ((b.available_gb > 0.0 && b.available_gb < 2.5) ||
-        b.memory_pressure >= 4 || b.thermal_pressure >= 3)
-        b.admitted = 0;
-    snprintf(b.reason, sizeof(b.reason), "available=%.2fGB memory_pressure=%d thermal=%d",
-             b.available_gb, b.memory_pressure, b.thermal_pressure);
-    char fields[320];
-    snprintf(fields, sizeof(fields),
-             "\"admitted\":%s,\"max_side_len\":%d,\"detail_needed\":%s,"
-             "\"available_gb\":%.3f,\"total_gb\":%.3f,\"memory_pressure\":%d,"
-             "\"thermal_pressure\":%d,\"reason\":\"%s\"",
-             b.admitted ? "true" : "false", b.max_side_len,
-             detail_needed ? "true" : "false", b.available_gb, total_gb,
-             b.memory_pressure, b.thermal_pressure, b.reason);
-    developer_trace_event(g, "vision_resource_budget", fields);
-    return b;
+    SamosaVisionBudgetControl control = vision_budget_control(g);
+    return samosa_vision_resource_budget(&control, detail_needed);
 }
-
 static VisionResourceBudget vision_wait_for_molmo_memory(
     Gateway *g, int detail_needed, double required_gb,
     VisionResourceBudget initial) {
-    VisionResourceBudget current = initial;
-    if (required_gb <= 0.0 || current.available_gb <= 0.0 ||
-        current.available_gb >= required_gb ||
-        current.memory_pressure >= 4 || current.thermal_pressure >= 3)
-        return current;
-
-    const long long started = monotonic_millis();
-    const long long deadline = started + 3000;
-    double peak_gb = current.available_gb;
-    int samples = 0;
-    while (!atomic_load(&g->stopping) && monotonic_millis() < deadline) {
-        sleep_millis(100);
-        current = vision_resource_budget(g, detail_needed);
-        ++samples;
-        if (current.available_gb > peak_gb) peak_gb = current.available_gb;
-        if (current.available_gb <= 0.0 || current.available_gb >= required_gb ||
-            current.memory_pressure >= 4 || current.thermal_pressure >= 3)
-            break;
-    }
-
-    char fields[256];
-    snprintf(fields, sizeof(fields),
-             "\"required_gb\":%.3f,\"available_gb\":%.3f,\"peak_gb\":%.3f,"
-             "\"waited_ms\":%lld,\"samples\":%d,\"admitted\":%s",
-             required_gb, current.available_gb, peak_gb,
-             monotonic_millis() - started, samples,
-             current.admitted &&
-                 (current.available_gb <= 0.0 || current.available_gb >= required_gb)
-                 ? "true" : "false");
-    developer_trace_event(g, "molmo2_memory_reclaim_wait", fields);
-    return current;
+    SamosaVisionBudgetControl control = vision_budget_control(g);
+    return samosa_vision_wait_for_molmo_memory(&control, detail_needed, required_gb, initial);
 }
 
 static void visual_protocol_trace_event(void *context, const char *event, const char *fields) {

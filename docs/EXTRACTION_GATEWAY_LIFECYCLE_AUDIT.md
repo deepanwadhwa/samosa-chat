@@ -1,5 +1,14 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07f moves the original visual resource probes/budget,
+resident-estimate reserve and bounded reclaim wait into Inference with explicit
+telemetry/control/traces and preserved policy. Native normal/SAN, standalone,
+original visual workflows and packaging/install pass. The complete remaining
+area3 requirement audit and ordered implementation gaps now live in
+[INFERENCE_AREA3_REMAINING_AUDIT.md](INFERENCE_AREA3_REMAINING_AUDIT.md).
+Next LIFE-07g consolidates existing visual engine source/build ownership; the
+original inventory below remains the reference for the rest of the cutover.
+
 Progress, 2026-11-21: LIFE-07e extracts the shared Whisper runner into Inference's
 whisper_process.c/public archive API, preserving txt/SRT/long-window behavior and
 all original coordination through explicit callbacks. Source audit, native/SAN,

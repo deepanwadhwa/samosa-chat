@@ -438,6 +438,24 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07f checkpoint, 2026-11-21: original visual host probes, resource budget,
+resident-estimate reserve and bounded reclaim wait now belong to Inference's
+vision_budget.c/public archive API. Source audit proves original policy, native
+probes and timing/trace bodies preserved after explicit type/sample/control
+wiring. Native normal/SAN25 boundary cases and wait recovery/unknown/critical/
+stop/deadline cases, actual Mac probes, fresh source build, existing gateway
+Molmo/VisionPsy and package/clean-install checks pass. Turn pause/resume and
+lower-side retry behavior remain unchanged. No Python or Docker/VM/Linux work ran.
+Exact commands, hashes and scope: components/samosa-inference/docs/qualification/
+life07f-visual-budget/README.md. INFERENCE_AREA3_REMAINING_AUDIT.md inspects all
+four area3 requirements against current code and records why area3 remains open.
+Qualified Inference revision/pin:056578e, backed up on the same origin refactor
+branch. Earlier pins below remain historical checkpoints.
+Next LIFE-07g delegates existing visual engine builds/tests to their existing
+owner source, retires proven duplicates, then follows that audit through remaining
+primary backend, Whisper guarded execution and shared admission/coordination.
+The full goal and all unfinished later-area/Agent/App/assembly gates stay intact.
+
 LIFE-07e checkpoint, 2026-11-21: the original shared Whisper runner now belongs
 to Inference's whisper_process.c/public API and owner archive. Gateway retains
 explicit original selection/fingerprint and shared busy/PID/cancel callbacks.
