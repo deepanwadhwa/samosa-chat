@@ -292,8 +292,12 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. Preserve the intentional working tree and component revisions.
-2. Repair and verify the unfinished visual ownership assignment.
+1. Extract/reuse the remaining visual request/response and resident host code,
+   starting with gateway `visionpsy_session_inspect` and
+   `molmo2_session_analyze_request` plus the existing Inference verifier/preparation
+   and guardian paths. Preserve their protocols and product trace hooks.
+2. Qualify the same behavior natively on this Mac and require actual generation
+   before reporting public provider readiness.
 3. Record a buildable integration checkpoint and one exact next action.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
@@ -306,6 +310,16 @@ gateway build and existing Molmo gateway regression pass. The latter's fixture
 generator is now shell-based, and native parent builds no longer probe Python.
 See the [qualified assignment](../components/samosa-inference/docs/qualification/life07a-specialist-owned/README.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
+
+Source preservation: the parent/Agent checkpoint `ace72ef` and Inference checkpoint
+`214fe75` are committed and backed up on their respective repositories' remote
+`refactor/extract-working-modules` branches. The parent pins that Inference
+revision and Sources `520550d`. Agent is now tracked in the parent pending its
+independent-repository extraction. These commits preserve pre-existing work;
+they do not qualify every preserved feature or remove the remaining Python tools.
+The four pre-existing modified Chutni files remain unchanged and outside these
+commits, with a verified local recovery copy in the snapshot noted in the
+verification checkpoint.
 
 ## Deferred follow-up after refactor completion
 

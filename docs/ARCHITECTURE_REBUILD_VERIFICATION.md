@@ -455,7 +455,13 @@ Local pre-edit recovery snapshot: /private/tmp/samosa-extraction-checkpoint-z6b6
 changed-file archives). Parent and Inference are on refactor/extract-working-modules
 branches. Inference preservation commit: 214fe75 (existing lifecycle/package work
 plus the resumed native Mac ownership fixture and evidence); this is a checkpoint,
-not full release qualification. Parent/Agent preservation remains in progress.
+not full release qualification. Parent/Agent preservation commit: ace72ef. Both
+repositories' refactor/extract-working-modules branches are backed up on origin;
+the parent pins Inference 214fe75 and Sources 520550d. Agent is now tracked in the
+parent while its independent repository remains future work. The four pre-existing
+dirty Chutni files were left unchanged/outside these commits and remain covered
+by the verified local snapshot. Remote backups preserve source; they do not imply
+full current-suite qualification or completed Python removal.
 
 Next LIFE-07a: extract/reuse gateway visionpsy_session_inspect and
 molmo2_session_analyze_request with the existing Inference vision/temporal

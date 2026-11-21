@@ -9,6 +9,15 @@ be Python-free. Existing Python-backed checks require native/shell replacements.
 Required target, 2026-11-20: this Mac first. Docker/Linux work is deferred and
 does not block native Mac extraction, verification or product qualification.
 
+Native Mac checkpoint, 2026-11-20: resumed visual ownership fixture and inherited
+supervisor pass normal/SAN, including a clean independent source build. Chat
+summary/runtime-settings/build and existing Molmo gateway assertions pass. Shell
+fixtures replace Python in that visual product check; native Makefile parsing no
+longer probes Python. Parent/Agent ace72ef and Inference 214fe75 are committed and
+backed up on refactor/extract-working-modules branches. Remaining visual lifecycle,
+Python-tooling removal and full component/product qualification stay open.
+Exact commands and limits are in the verification Resume checkpoint.
+
 Latest checkpoint, 2026-10-25: LIFE-07a is in progress. Added bounded caller
 control to the existing extracted visual supervisor; both original protocols keep
 their framing and retain ownership until close/reap. Evidence and remaining work:
