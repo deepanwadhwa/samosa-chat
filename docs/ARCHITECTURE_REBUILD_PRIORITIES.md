@@ -1,0 +1,330 @@
+# Modular rebuild: priorities and agent handoff
+
+Updated: 2026-11-20. Requested by the user as a shared record of the prioritized
+remaining work. This file records the agreed direction and completion criteria;
+it does not claim that the work below has been executed.
+
+The user's explicit direction, reaffirmed 2026-11-20: **extract the working
+monolith into separate modules/repositories. The monolith worked well; its size
+and coupled ownership are the problem. Preserve its useful behavior and reuse
+its implementation rather than figuring out or rebuilding the system again.**
+
+The priority is to make the current work recoverable and reproducible, then finish
+extracting working implementations while keeping the existing product usable.
+Preserve the established component order:
+
+**Sources → Inference → Agent → App → assembly and legacy retirement.**
+
+Sources is recorded complete. Preserve unfinished Agent/App work while finishing
+Inference. Do not reopen completed Sources areas without a demonstrated defect,
+changed dependency or integration requirement.
+
+## Governing rule: extraction first, preserve behavior
+
+This rule applies to every priority below, including lifecycle, scheduling,
+sessions, service controls, Agent workflows and App. Their checklist descriptions
+are acceptance responsibilities, not instructions to design new implementations.
+
+- Locate the working monolith implementation and useful tests, then inspect the
+  destination module for code already extracted. Move, wire or consolidate those
+  implementations before considering new code.
+- Preserve working algorithms, protocols, limits, model choices and workflow
+  semantics. Make the smallest interface/configuration/dependency changes needed
+  to give each module explicit ownership and an independent build.
+- For every extraction, record the original entry points/files, destination,
+  boundary adaptation, existing behavioral tests and assembled caller. Verify
+  the same useful behavior independently and through product integration.
+- New code requires a specific missing boundary requirement or demonstrated
+  defect, with an explanation of why the existing code cannot satisfy it.
+  Structural preference or the monolith's size is not such an explanation.
+- Track genuinely new capabilities separately from extraction. Do not turn a
+  move into a scheduler redesign, new model project, installer replacement or
+  speculative hardening effort. Do not delay moving usable code behind unrelated
+  model/package qualification. Keep required release gates truthful and open.
+- Avoid copying the shared `Gateway` object into smaller projects. Extract its
+  working implementations with explicit owner inputs/state and public interfaces.
+- Keep the product usable during migration. Retire each old path after its
+  extracted replacement passes the relevant behavioral and integration checks.
+
+## Governing constraint: no Python anywhere in the project
+
+User direction, 2026-11-20: **do not use Python in this project at all.** This
+applies to runtime code, development/build tooling, installation, packaging,
+qualification scripts, tests and CI. Do not add or invoke Python helpers, install
+Python dependencies or make a component require Python to build/test/release.
+
+Reuse existing native C/C++ implementations and shell tooling. Where a remaining
+Python script supplies required behavior, port that specific behavior and its
+useful assertions into the owning component's native or shell tools, verify the
+replacement, update callers and remove the Python path. Do not replace working
+native engines or redesign workflows to remove a Python wrapper. Check declared
+third-party build dependencies for Python requirements and record any unresolved
+constraint; do not silently introduce a Python-dependent build.
+
+Existing Python checks and older recorded passes are historical evidence only.
+They do not satisfy the new Python-free build/test/release requirement. Keep
+necessary coverage open until its native/shell replacement is verified. This
+constraint applies throughout the priorities below, not only to shipped binaries.
+
+## Required target: this Mac first
+
+User direction, 2026-11-20: **the refactor must work on this machine first.**
+Implement, build, test, install and qualify the components and assembled product
+natively on this Mac. Do not start Docker, containers or VMs for this work.
+Docker/Linux support and verification are deferred and do not block the Mac
+refactor. Earlier cross-platform checklist requirements and evidence remain
+historical or deferred; they are not instructions to run Linux qualification now.
+Preserve portable existing code when moving it, without adding portability work
+that delays the native Mac path. Report current supported/verified scope honestly.
+
+## How agents should use this file
+
+- Read this priority order, the verification plan's current Resume checkpoint,
+  and the active component's extraction checkpoint before implementing work.
+- Recheck Git status and relevant code before acting; the observations below
+  describe the 2026-11-20 review and will become historical.
+- Choose one bounded assignment. Identify its existing implementation, owner,
+  public interface, acceptance checks and retirement condition before editing.
+- Extract and adapt existing working code and useful tests. Record a concrete
+  missing requirement or demonstrated defect before adding a new implementation.
+- Preserve unrelated work. Use isolated fixture state rather than personal
+  files, normal installed state or active user conversations.
+- Record exact revisions, commands, results and remaining work at handoff.
+  Historical passes, planned checks and missing prerequisites are not current
+  passing results. Do not mark an entire milestone complete for one passing slice.
+
+The [architecture plan](ARCHITECTURE_REBUILD_PLAN.md) defines C01–C14 and the
+full acceptance scope. The [verification record](ARCHITECTURE_REBUILD_VERIFICATION.md)
+holds execution evidence. This file orders the remaining work; it does not replace
+those contracts or add an independent set of completion gates.
+
+## Review baseline
+
+The latest recorded implementation checkpoint is 2026-10-25. The 2026-11-20 review
+inspected the checkout and saved evidence; it did not rerun builds or test suites.
+
+| Component | Observed position |
+| --- | --- |
+| Sources | Separate Git repository/submodule. All seven component acceptance areas recorded complete, including standalone release qualification. |
+| Inference | Separate Git repository/submodule. Areas 1–2 complete; area 3 engine lifecycle/readiness active; areas 4–7 remain open. Substantial local changes are uncommitted. |
+| Agent | Substantial native implementation, including durable conversations/runs, evidence, finding and checked copy/move/undo. Still an untracked directory in the parent checkout, without a separate Git repository. |
+| App | Replacement component not built yet. Existing gateway still serves the product. |
+
+The parent branch was 27 commits ahead of its locally recorded `origin/main`;
+this is not a fresh remote comparison. Parent integration changes and architecture
+documents were uncommitted. The gateway still contained 26,660 lines.
+
+LIFE-07a visual transport cancellation/deadline checks have saved passing evidence.
+The subsequent specialist ownership test's saved macOS/Linux attempts failed
+compilation on missing `posix_spawn`/`environ` declarations. Treat that as the next
+specific issue to inspect, not proof that the complete current tree has been tested.
+
+## Priority order
+
+### 1. Preserve the current work in Git
+
+This is the immediate maintenance risk. Inventory changes in each repository and
+preserve intentional work in explicit commits. Distinguish passing checkpoints
+from unfinished work; do not label a preservation commit as a qualified release.
+
+Commit component changes before updating parent submodule references. Check
+generated files, model assets and credentials before staging; avoid a blanket add.
+Preserve Agent's files now; finish its component implementation and independent
+repository work in the established sequence. Establish a remote backup of the
+intentional source checkpoints and verify its refs.
+
+**Done when:** another checkout can recover every intentional source change,
+unfinished work is identified, and parent integration references recoverable
+component revisions.
+
+### 2. Establish a buildable baseline
+
+Inspect and repair the unfinished visual ownership test's declaration failures.
+Run its normal and sanitizer checks; compiling successfully alone does not prove
+ownership, cleanup or recovery behavior.
+
+Verify the existing gateway build, delegated supervisor/summary tests, installer
+and package staging against the exact component revisions using native/shell
+checks. Replace Python-backed entry points before invoking them. Keep new results
+separate from historical evidence. Record any failing prerequisite explicitly.
+
+Relevant starting points:
+
+- `components/samosa-inference/tests/test_specialist_owned.c`
+- `components/samosa-inference/src/specialist_supervisor.c`
+- `components/samosa-inference/include/samosa_inference/specialist_supervisor.h`
+- `components/samosa-inference/docs/qualification/life07a-specialist-owned/`
+- `components/samosa-inference/docs/qualification/life07a-specialist-control/README.md`
+
+**Done when:** an exact revision set has known passing checks and an explicit
+list of remaining failures.
+
+### 3. Make progress and compatibility maintainable
+
+Keep one short current checkpoint linking to detailed evidence: active assignment,
+files, acceptance criteria, results and next action. Mark older next-action entries
+as history so a resuming agent does not restart completed work.
+
+Establish component CI for public contracts, standalone builds and meaningful
+normal/sanitizer checks. Keep heavier actual-model qualification separate. Parent
+integration checks must cover pinned component compatibility and product packaging.
+CI, test orchestration and release tooling must also be Python-free.
+Apply these checks as components become ready rather than postponing CI until
+the full split is finished.
+
+**Done when:** a maintainer can resume without reconstructing project history,
+and CI catches broken component boundaries and integration packaging.
+
+### 4. Finish Inference lifecycle ownership
+
+Complete LIFE-07a VisionPsy/Molmo2 integration: borrowed process endpoints,
+retryable close, workspace cleanup, resource leases and existing GPU cache behavior.
+Then close remaining Whisper and other modality lifecycle gaps.
+
+Preserve working engine algorithms and protocols. Public readiness requires a
+successful bounded inference request. Exercise failed startup, cancellation,
+engine death, parent death, failed replacement and unrelated-process survival.
+
+**Done when:** Inference owns launch, readiness, residency and shutdown through
+public interfaces without gateway process state. This closes area 3 only after
+all of its checklist requirements pass.
+
+### 5. Complete Inference scheduling and admission
+
+Extract and consolidate the existing admission, lease and scheduling code first;
+do not design a new scheduler merely to split repositories.
+Coordinate reservations across text, vision, speech and background work. Bound
+active requests, queued work and retained output. Begin with the planned
+configurable single large-model slot on constrained hosts.
+
+Verify fairness, queued cancellation, expired deadlines, memory refusal and
+crash cleanup. Release exactly the failed operation's resources. Do not hold a
+model reservation while waiting for user approval.
+
+**Done when:** mixed workloads stay within configured limits, background work
+progresses and failed operations release their resources. Cover the complete
+area 4 acceptance checklist.
+
+### 6. Finish Inference sessions, streaming and service controls
+
+Move the existing generation/session, streaming and transport/control paths into
+their owner. Inventory existing behavior before implementing any missing check.
+Preserve exact prompt counting, context/output reservations and owner-bound
+session revisions. Qualify incremental output, bounded buffering, slow consumers,
+disconnects, UTF-8 boundaries and exactly one terminal result. Qualify cold recovery
+separately from reuse of a running model.
+
+Complete authenticated bounded ingress, operation-scoped status/cancellation,
+retry identity and shutdown that stops admission and cleans up owned engines.
+Public requests cannot select private executable commands or storage paths.
+
+**Done when:** clients use Inference independently, recover from interruptions
+and cancel their own work without disturbing others. Cover areas 5 and 6 in full.
+
+### 7. Release Inference independently
+
+Build, test and package outside this checkout using declared dependencies only.
+Include public headers, native dependency declarations, licenses and supported
+platforms. Port remaining Python tooling and test drivers without losing their
+behavioral coverage; remove Python invocations and dependencies from the component.
+Explicitly distinguish native control tests from actual-model execution on this
+Mac; defer other-platform verification.
+
+Resolve production distribution gaps for changed protocols, including the local
+T5 and decision-engine candidates wherever required by the final interface. Reuse
+existing models and packaging machinery. Package qualification supports extraction;
+it must not delay otherwise reusable ownership moves behind unrelated package work.
+
+Pin the qualified revision in product integration. Rerun checks affected by changes;
+broaden verification when failures or unresolved integration concerns justify it.
+
+**Done when:** area 7 passes and a consumer can install and use the released
+component without private parent or sibling source files.
+
+### 8. Finish Agent and establish its separate repository
+
+Reuse both the substantial existing Agent implementation and working gateway
+task policies, workflow code and tests. After Inference completion, close
+remaining task policies, organization/scheduling, admission and service gaps.
+Interactive and scheduled actions must share the checked executor. A one-time
+plan approval does not authorize arbitrary future scheduled actions.
+
+Verify conversation revisions, crash recovery, exact retries, approvals, undo and
+Sources reconciliation. Agent owns conversation/run state and consumes public
+Sources/Inference interfaces; it must not read their private stores.
+
+**Done when:** Agent builds and releases independently, its supported headless
+workflows pass without the gateway, and its separate repository/revision is
+recoverable and pinned for integration.
+
+### 9. Build the thin App
+
+Extract and adapt the existing working UI, launcher and ingress; do not rebuild
+the product's workflows from scratch. Put authoritative conversation state, task execution and
+model lifecycle behind their owning APIs. App displays committed progress,
+reconnects to runs, renders citations, collects approvals and exposes generic
+capability/setup status.
+
+The launcher distinguishes processes it started from existing headless services.
+Verify reload, reconnect, a second client, optional component failure and minimal
+installation without model downloads.
+
+**Done when:** supported workflows operate through the released components,
+with App acting as their client and owning product assembly.
+
+### 10. Qualify assembly, migrate valuable state and retire replaced paths
+
+Pin compatible releases and test ordinary chat, document/folder questions, search,
+media, approved copy/move/undo and scheduled work through the real App. Include
+restart, interrupted operations and resource limits.
+
+Decide explicitly how existing conversations, settings and useful datasets are
+migrated or retained. Test recovery before switching defaults.
+
+As each replacement passes integration, remove its old routes, lifecycle code,
+private storage readers, duplicate installers and implementation-coupled tests.
+Retain useful behavior tests against public interfaces. Remove the gateway and
+alternate `jobsd` build once supported replacement workflows qualify. Temporary
+development coexistence must not become two permanent default implementations.
+
+**Done when:** each responsibility has one maintained implementation, releases
+are reproducible, C01–C14 pass in full and the product no longer needs the monolith.
+
+## Immediate next batch
+
+1. Preserve the intentional working tree and component revisions.
+2. Repair and verify the unfinished visual ownership assignment.
+3. Record a buildable integration checkpoint and one exact next action.
+
+Do not expand this batch into new models, unrelated features or a fresh architecture
+redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
+
+Native Mac progress, 2026-11-20: the visual ownership fixture declaration failure
+is repaired. Existing ownership/supervisor normal/SAN and summary tests pass both
+in the checkout and a fresh standalone native subset; Chat summary/runtime settings,
+gateway build and existing Molmo gateway regression pass. The latter's fixture
+generator is now shell-based, and native parent builds no longer probe Python.
+See the [qualified assignment](../components/samosa-inference/docs/qualification/life07a-specialist-owned/README.md).
+This is a bounded passing slice, not complete Inference or full-refactor closure.
+
+## Deferred follow-up after refactor completion
+
+User request, 2026-11-20: after this refactor is finished, add
+[thinkingmachines/Inkling-2-Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini)
+to the model catalogue through the independently released Inference component.
+Start this only after the refactor's assembly and retirement completion gates
+pass. Preserve the Python-free project constraint. At that point inspect model
+format, license, native backend support, platform/resource requirements and the
+existing catalogue/installer interfaces, then reuse those interfaces to qualify
+and add the model. The URL records the requested model; compatibility, availability
+and catalogue qualification have not been established by this handoff.
+
+## Related records
+
+- [Start and resume guide](ARCHITECTURE_REBUILD_START.md)
+- [Architecture status](ARCHITECTURE_REBUILD_STATUS.md)
+- [Architecture and completion milestones](ARCHITECTURE_REBUILD_PLAN.md)
+- [Verification and Resume checkpoint](ARCHITECTURE_REBUILD_VERIFICATION.md)
+- [Inference extraction checkpoint](../components/samosa-inference/docs/EXTRACTION_STATUS.md)
+- [Inference seven-area acceptance](../components/samosa-inference/docs/INFERENCE_MODULE_PLAN.md)
+- [Agent implementation and public usage](../components/samosa-agent/README.md)

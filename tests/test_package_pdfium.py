@@ -85,6 +85,17 @@ class PackagePdfiumTest(unittest.TestCase):
                 digest, _size, name = line.split("\t")
                 manifest[name] = digest
             self.assertEqual({name: manifest[name] for name in expected}, expected)
+            owner = ROOT / "components/samosa-inference"
+            for name in ("src/specialist_supervisor.c", "src/summary_process.c", "src/controlled_pipe.h", "src/llama_launch.c",
+                         "include/samosa_inference/specialist_supervisor.h",
+                         "include/samosa_inference/summary_process.h",
+                         "include/samosa_inference/llama_launch.h", "LICENSE"):
+                staged = f"engine/inference/{name}"
+                self.assertEqual(manifest[staged], hashlib.sha256((owner / name).read_bytes()).hexdigest())
+                self.assertEqual((output / staged).read_bytes(), (owner / name).read_bytes())
+            self.assertNotIn("engine/samosa_multimodal.c", manifest)
+            self.assertEqual((output / "engine/samosa_summarizer.cpp").read_bytes(),
+                             (owner / "engines/t5_summary.cpp").read_bytes())
 
     def test_bakes_the_version_into_the_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

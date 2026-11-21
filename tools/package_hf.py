@@ -68,7 +68,6 @@ SOURCE_FILES = [
     "samosa_memory.h",
     "samosa_prompt_budget.h",
     "samosa_audio_decode.mm",
-    "samosa_multimodal.c",
     "samosa_multimodal.h",
     "samosa_evidence.c",
     "samosa_evidence.h",
@@ -328,11 +327,27 @@ def main() -> int:
 
     for name in SOURCE_FILES:
         src = ROOT / "src" / name
+        if name == "samosa_summarizer.cpp":
+            # Keep the release source filename while consuming its owner copy.
+            src = ROOT / "components/samosa-inference/engines/t5_summary.cpp"
         if not src.exists():
             print(f"missing source file: {src}", file=sys.stderr)
             return 1
         place(src, out / "engine" / name, link=False)
         staged.append(out / "engine" / name)
+
+    inference_root = ROOT / "components/samosa-inference"
+    for name in ("src/specialist_supervisor.c", "src/summary_process.c", "src/controlled_pipe.h", "src/json.h", "src/llama_launch.c",
+                 "include/samosa_inference/specialist_supervisor.h",
+                 "include/samosa_inference/summary_process.h",
+                 "include/samosa_inference/llama_launch.h", "LICENSE"):
+        source = inference_root / name
+        if not source.is_file():
+            print(f"missing Inference source: {source}", file=sys.stderr)
+            return 1
+        destination = out / "engine/inference" / name
+        place(source, destination, link=False)
+        staged.append(destination)
 
     miniz_root = ROOT / "vendor" / "miniz"
     for name in MINIZ_SOURCE_FILES:

@@ -16,9 +16,9 @@ int main(int argc, char **argv) {
     if (argc != 3) return 2;
     Gateway gateway;
     memset(&gateway, 0, sizeof(gateway));
-    pthread_mutex_init(&gateway.summarizer_mu, NULL);
-    gateway.summarizer_write_fd = -1;
-    gateway.summarizer_read_fd = -1;
+    if (!samosa_summary_process_init(&gateway.summary_process)) return 3;
+    gateway.summary_process.write_fd = -1;
+    gateway.summary_process.read_fd = -1;
     if (!path_copy(gateway.summarizer_engine, sizeof(gateway.summarizer_engine), argv[1]) ||
         !path_copy(gateway.summarizer_model, sizeof(gateway.summarizer_model), argv[2]))
         return 3;
@@ -37,12 +37,12 @@ int main(int argc, char **argv) {
         if (!summary || !strstr(summary, "30") || !strstr(summary, "cases")) {
             fprintf(stderr, "summary request %d failed: %s (pid=%ld, log=%s)\n",
                     i + 1, summary ? summary : "<none>",
-                    (long)gateway.summarizer_pid, log_path);
+                    (long)gateway.summary_process.pid, log_path);
             free(summary); summarizer_stop(&gateway); return 5;
         }
         free(summary);
-        if (!resident_pid) resident_pid = gateway.summarizer_pid;
-        if (gateway.summarizer_pid != resident_pid) {
+        if (!resident_pid) resident_pid = gateway.summary_process.pid;
+        if (gateway.summary_process.pid != resident_pid) {
             summarizer_stop(&gateway); unlink(log_path); return 6;
         }
     }
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
     int mapped = native_summarize_text(
         &gateway, long_source, strlen(long_source), 3, 300, &reduced);
     if (mapped != 3 || !reduced.data || !reduced.len || reduced.len > 300 ||
-        gateway.summarizer_pid != resident_pid) {
+        gateway.summary_process.pid != resident_pid) {
         fprintf(stderr, "native map-reduce failed: mapped=%d bytes=%zu\n",
                 mapped, reduced.len);
         free(reduced.data); summarizer_stop(&gateway); unlink(log_path); return 7;
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
         if (!concurrent[i].ok) return 10;
     }
     summarizer_stop(&gateway);
-    pthread_mutex_destroy(&gateway.summarizer_mu);
+    samosa_summary_process_destroy(&gateway.summary_process);
 
     FILE *log = fopen(log_path, "r");
     long first = 0, value = 0;

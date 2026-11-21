@@ -36,22 +36,11 @@ JSON
 printf '\000\000\000\030ftypisom\000\000\002\000isomiso2fixture-video' >"$TMP/clip.mp4"
 printf '\211PNG\r\n\032\nfixture-a' >"$TMP/a.png"
 printf '\211PNG\r\n\032\nfixture-b' >"$TMP/b.png"
-python3 - "$TMP/video-audio.wav" "$TMP/ggml-base.en.bin" <<'PY'
-import pathlib, struct, sys
-
-seconds = 30
-data_bytes = 16000 * 2 * seconds
-header = (b'RIFF' + struct.pack('<I', 36 + data_bytes) + b'WAVEfmt ' +
-          struct.pack('<IHHIIHH', 16, 1, 1, 16000, 32000, 2, 16) +
-          b'data' + struct.pack('<I', data_bytes))
-with open(sys.argv[1], 'wb') as output:
-    output.write(header)
-    output.truncate(len(header) + data_bytes)
-model = pathlib.Path(sys.argv[2])
-model.write_bytes(b'')
-with model.open('r+b') as output:
-    output.truncate(147964211)
-PY
+# The same 30-second PCM16/16kHz mono fixture: 44-byte RIFF header followed by
+# 960000 zero bytes. Keep both fixtures sparse, using native shell tools.
+printf 'RIFF\044\246\016\000WAVEfmt \020\000\000\000\001\000\001\000\200\076\000\000\000\175\000\000\002\000\020\000data\000\246\016\000' >"$TMP/video-audio.wav"
+dd if=/dev/zero of="$TMP/video-audio.wav" bs=1 count=1 seek=960043 conv=notrunc 2>/dev/null
+dd if=/dev/zero of="$TMP/ggml-base.en.bin" bs=1 count=1 seek=147964210 2>/dev/null
 cat >"$TMP/audio-decode" <<'EOF'
 #!/bin/sh
 set -eu

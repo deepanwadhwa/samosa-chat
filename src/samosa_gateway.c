@@ -47,17 +47,15 @@
 #include "samosa_evidence.h"
 #include "samosa_html.h"
 #include "samosa_multimodal.h"
+#include <samosa_inference/summary_process.h>
+#include <samosa_inference/llama_launch.h>
 
 typedef struct {
     SamosaHttpServer *server;
     pthread_mutex_t mu;
     pid_t backend_pid;
     pid_t backend_pgid;
-    pthread_mutex_t summarizer_mu;
-    pid_t summarizer_pid;
-    int summarizer_write_fd;
-    int summarizer_read_fd;
-    int summarizer_warmed;
+    SamosaSummaryProcess summary_process;
     pid_t job_pids[16];
     pthread_mutex_t job_pid_mu;
     int upstream_fd;
@@ -3624,91 +3622,20 @@ static int summarizer_available(Gateway *g) {
            regular_file(g->summarizer_model, 0);
 }
 
-static void summarizer_stop_locked(Gateway *g) {
-    pid_t pid = g->summarizer_pid;
-    if (g->summarizer_write_fd >= 0) close(g->summarizer_write_fd);
-    if (g->summarizer_read_fd >= 0) close(g->summarizer_read_fd);
-    g->summarizer_write_fd = -1;
-    g->summarizer_read_fd = -1;
-    g->summarizer_pid = 0;
-    g->summarizer_warmed = 0;
-    if (pid <= 0) return;
-    if (waitpid(pid, NULL, WNOHANG) == pid) return;
-    kill(pid, SIGTERM);
-    for (int i = 0; i < 20; ++i) {
-        if (waitpid(pid, NULL, WNOHANG) == pid) return;
-        sleep_millis(25);
-    }
-    kill(pid, SIGKILL);
-    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-}
-
 static void summarizer_stop(Gateway *g) {
-    pthread_mutex_lock(&g->summarizer_mu);
-    summarizer_stop_locked(g);
-    pthread_mutex_unlock(&g->summarizer_mu);
+    samosa_summary_process_stop(&g->summary_process);
 }
-
-/* The summarizer is forked from a live gateway request thread. Closing only
-   its two protocol pipes is not enough: the child would also inherit the
-   browser's HTTP socket (and the listener), keeping an otherwise-complete SSE
-   response alive forever after the gateway closes its own copy. Keep the
-   helper isolated from every gateway descriptor on both macOS and Linux. */
-static void summarizer_close_inherited_fds(void) {
-    long limit = sysconf(_SC_OPEN_MAX);
-    if (limit <= 0 || limit > 65536) limit = 65536;
-    for (int fd = 3; fd < limit; ++fd) close(fd);
-}
-
-static int summarizer_start_locked(Gateway *g) {
-    if (g->summarizer_pid > 0) {
-        int status = 0;
-        pid_t reaped = waitpid(g->summarizer_pid, &status, WNOHANG);
-        if (!reaped && g->summarizer_write_fd >= 0 &&
-            g->summarizer_read_fd >= 0) return 1;
-        summarizer_stop_locked(g);
-    }
-    if (!summarizer_available(g)) return 0;
-    int request_pipe[2] = {-1, -1}, reply_pipe[2] = {-1, -1};
-    if (pipe(request_pipe) || pipe(reply_pipe)) {
-        if (request_pipe[0] >= 0) { close(request_pipe[0]); close(request_pipe[1]); }
-        if (reply_pipe[0] >= 0) { close(reply_pipe[0]); close(reply_pipe[1]); }
-        return 0;
-    }
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(request_pipe[0]); close(request_pipe[1]);
-        close(reply_pipe[0]); close(reply_pipe[1]);
-        return 0;
-    }
-    if (!pid) {
-        int log_fd = open(g->summarizer_log, O_WRONLY | O_CREAT | O_APPEND, 0600);
-        if (dup2(request_pipe[0], STDIN_FILENO) < 0 ||
-            dup2(reply_pipe[1], STDOUT_FILENO) < 0 ||
-            (log_fd >= 0 && dup2(log_fd, STDERR_FILENO) < 0)) _Exit(126);
-        close(request_pipe[0]); close(request_pipe[1]);
-        close(reply_pipe[0]); close(reply_pipe[1]);
-        summarizer_close_inherited_fds();
-        if (log_fd > STDERR_FILENO) close(log_fd);
-        const char *gpu = getenv("SAMOSA_SUMMARIZER_GPU_LAYERS");
+static SamosaSummaryProcessConfig summarizer_process_config(Gateway *g) {
+    const char *gpu = getenv("SAMOSA_SUMMARIZER_GPU_LAYERS");
 #if defined(__APPLE__)
-        if (!gpu || !*gpu) gpu = "99";
+    if (!gpu || !*gpu) gpu = "99";
 #else
-        if (!gpu || !*gpu) gpu = "0";
+    if (!gpu || !*gpu) gpu = "0";
 #endif
-        execl(g->summarizer_engine, g->summarizer_engine,
-              "--model", g->summarizer_model,
-              "--gpu-layers", gpu,
-              "--max-tokens", "128", (char *)NULL);
-        _Exit(127);
-    }
-    close(request_pipe[0]);
-    close(reply_pipe[1]);
-    g->summarizer_pid = pid;
-    g->summarizer_write_fd = request_pipe[1];
-    g->summarizer_read_fd = reply_pipe[0];
-    g->summarizer_warmed = 0;
-    return 1;
+    SamosaSummaryProcessConfig config = {
+        g->summarizer_engine, g->summarizer_model, g->summarizer_log, gpu
+    };
+    return config;
 }
 
 static int fd_write_all(int fd, const void *bytes, size_t length) {
@@ -3723,179 +3650,16 @@ static int fd_write_all(int fd, const void *bytes, size_t length) {
     return 1;
 }
 
-static int fd_read_exact_until(int fd, void *bytes, size_t length,
-                               long long deadline_ms) {
-    unsigned char *cursor = bytes;
-    while (length) {
-        long long remaining = deadline_ms - monotonic_millis();
-        if (remaining <= 0) return 0;
-        struct pollfd wait_for = {.fd = fd, .events = POLLIN};
-        int ready = poll(&wait_for, 1, remaining > INT_MAX ? INT_MAX : (int)remaining);
-        if (ready < 0 && errno == EINTR) continue;
-        if (ready <= 0 || !(wait_for.revents & (POLLIN | POLLHUP))) return 0;
-        ssize_t got = read(fd, cursor, length);
-        if (got < 0 && errno == EINTR) continue;
-        if (got <= 0) return 0;
-        cursor += got;
-        length -= (size_t)got;
-    }
-    return 1;
+static char *native_summarize_once(Gateway *g, const char *source, size_t source_len) {
+    SamosaSummaryProcessConfig config = summarizer_process_config(g);
+    return samosa_summary_process_once(&g->summary_process, &config, source, source_len);
 }
-
-static void summary_normalize_punctuation(char *text) {
-    if (!text) return;
-    size_t read_at = 0, write_at = 0;
-    while (text[read_at]) {
-        if (text[read_at] == ' ' && strchr(".,;:!?", text[read_at + 1])) {
-            read_at++;
-            continue;
-        }
-        text[write_at++] = text[read_at++];
-    }
-    text[write_at] = 0;
-}
-
-static char *native_summarize_once(Gateway *g, const char *source,
-                                   size_t source_len) {
-    if (!source || !source_len || source_len > 60000) return NULL;
-    TextBuffer prompt = {0};
-    if (!text_add(&prompt, "summarize: ") ||
-        !text_add_n(&prompt, source, source_len) || prompt.len > UINT32_MAX) {
-        free(prompt.data); return NULL;
-    }
-    pthread_mutex_lock(&g->summarizer_mu);
-    if (!summarizer_start_locked(g)) {
-        pthread_mutex_unlock(&g->summarizer_mu);
-        free(prompt.data); return NULL;
-    }
-    uint32_t encoded = htonl((uint32_t)prompt.len);
-    int ok = fd_write_all(g->summarizer_write_fd, &encoded, sizeof(encoded)) &&
-             fd_write_all(g->summarizer_write_fd, prompt.data, prompt.len);
-    free(prompt.data);
-    long long deadline = monotonic_millis() +
-        (g->summarizer_warmed ? 15000 : 60000);
-    uint32_t reply_encoded = 0;
-    ok = ok && fd_read_exact_until(g->summarizer_read_fd, &reply_encoded,
-                                   sizeof(reply_encoded), deadline);
-    uint32_t reply_len = ok ? ntohl(reply_encoded) : 0;
-    if (!reply_len || reply_len > 8192) ok = 0;
-    char *reply = ok ? malloc((size_t)reply_len + 1) : NULL;
-    if (reply)
-        ok = fd_read_exact_until(g->summarizer_read_fd, reply, reply_len, deadline);
-    if (ok && reply) {
-        reply[reply_len] = 0;
-        summary_normalize_punctuation(reply);
-        if (strlen(reply) < 12) ok = 0;
-    }
-    if (!ok) {
-        free(reply); reply = NULL;
-        summarizer_stop_locked(g);
-    } else {
-        g->summarizer_warmed = 1;
-    }
-    pthread_mutex_unlock(&g->summarizer_mu);
-    return reply;
-}
-
-/* Batch independent T5 map chunks into one resident native process. The
-   sidecar shares model weights between scalar and batched inference contexts. */
-static int native_summarize_batch_now(Gateway *g, char **parts, int count, char **replies, int concise) {
-    if (count < 1 || count > 64) return 0;
-    pthread_mutex_lock(&g->summarizer_mu);
-    int ok = summarizer_start_locked(g);
-    uint32_t encoded = htonl(0x80000000U | (concise ? 0x40000000U : 0) | (uint32_t)count);
-    ok = ok && fd_write_all(g->summarizer_write_fd, &encoded, sizeof(encoded));
-    for (int i = 0; ok && i < count; i++) {
-        size_t bytes = strlen(parts[i]);
-        uint32_t length = htonl((uint32_t)(11 + bytes));
-        ok = bytes <= 60000 && fd_write_all(g->summarizer_write_fd, &length, sizeof(length)) &&
-            fd_write_all(g->summarizer_write_fd, "summarize: ", 11) &&
-            fd_write_all(g->summarizer_write_fd, parts[i], bytes);
-    }
-    long long deadline = monotonic_millis() + 180000;
-    for (int i = 0; ok && i < count; i++) {
-        uint32_t length = 0;
-        ok = fd_read_exact_until(g->summarizer_read_fd, &encoded, sizeof(encoded), deadline);
-        length = ok ? ntohl(encoded) : 0;
-        if (!length || length > 65536) { ok = 0; break; }
-        replies[i] = malloc((size_t)length + 1);
-        ok = replies[i] && fd_read_exact_until(g->summarizer_read_fd, replies[i], length, deadline);
-        if (ok) {
-            replies[i][length] = 0; summary_normalize_punctuation(replies[i]);
-            if (strlen(replies[i]) < 12) ok = 0;
-        }
-    }
-    if (!ok) {
-        for (int i = 0; i < count; i++) { free(replies[i]); replies[i] = NULL; }
-        summarizer_stop_locked(g);
-    } else g->summarizer_warmed = 1;
-    pthread_mutex_unlock(&g->summarizer_mu);
-    return ok;
-}
-
 static _Thread_local void (*native_summary_activity)(void *, const char *);
 static _Thread_local void *native_summary_activity_context;
-typedef struct NativeSummaryRequest {
-    Gateway *gateway;
-    char **parts, **replies;
-    int count, concise, done, ok;
-    struct NativeSummaryRequest *next;
-    void (*activity)(void *, const char *);
-    void *activity_context;
-} NativeSummaryRequest;
-static pthread_mutex_t native_summary_queue_mu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t native_summary_queue_cv = PTHREAD_COND_INITIALIZER;
-static NativeSummaryRequest *native_summary_queue;
-static int native_summary_dispatching;
-
-/* A request's arrays stay owned by its waiting caller. One coordinator
-   coalesces ready file samples, then demultiplexes replies in input order.
-   This keeps a single model process busy without multiplying model loads. */
 static int native_summarize_batch(Gateway *g, char **parts, int count, char **replies, int concise) {
-    NativeSummaryRequest request = {.gateway = g, .parts = parts, .replies = replies,
-        .count = count, .concise = concise, .activity = native_summary_activity,
-        .activity_context = native_summary_activity_context};
-    if (request.activity) request.activity(request.activity_context, "summary_queued");
-    pthread_mutex_lock(&native_summary_queue_mu);
-    NativeSummaryRequest **tail = &native_summary_queue;
-    while (*tail) tail = &(*tail)->next;
-    *tail = &request;
-    if (native_summary_dispatching) {
-        while (!request.done) pthread_cond_wait(&native_summary_queue_cv, &native_summary_queue_mu);
-        pthread_mutex_unlock(&native_summary_queue_mu); return request.ok;
-    }
-    native_summary_dispatching = 1;
-    while (native_summary_queue) {
-        pthread_mutex_unlock(&native_summary_queue_mu);
-        sleep_millis(4); /* bounded coalescing window, never wait for a full batch */
-        pthread_mutex_lock(&native_summary_queue_mu);
-        NativeSummaryRequest *group[64]; char *inputs[64] = {0}, *outputs[64] = {0};
-        NativeSummaryRequest *first = native_summary_queue;
-        int groups = 0, frames = 0;
-        NativeSummaryRequest **next = &native_summary_queue;
-        while (*next) {
-            NativeSummaryRequest *candidate = *next;
-            if (candidate->gateway == first->gateway && candidate->concise == first->concise && frames + candidate->count <= 64) {
-                *next = candidate->next;
-                group[groups++] = candidate;
-                for (int i = 0; i < candidate->count; i++) inputs[frames++] = candidate->parts[i];
-            } else next = &candidate->next;
-        }
-        pthread_mutex_unlock(&native_summary_queue_mu);
-        for (int i = 0; i < groups; i++)
-            if (group[i]->activity) group[i]->activity(group[i]->activity_context, "summarizing");
-        int ok = native_summarize_batch_now(first->gateway, inputs, frames, outputs, first->concise);
-        pthread_mutex_lock(&native_summary_queue_mu);
-        int offset = 0;
-        for (int i = 0; i < groups; i++) {
-            for (int j = 0; j < group[i]->count; j++) group[i]->replies[j] = outputs[offset++];
-            group[i]->ok = ok; group[i]->done = 1;
-        }
-        pthread_cond_broadcast(&native_summary_queue_cv);
-    }
-    native_summary_dispatching = 0;
-    pthread_mutex_unlock(&native_summary_queue_mu);
-    return request.ok;
+    SamosaSummaryProcessConfig config = summarizer_process_config(g);
+    return samosa_summary_process_coalesce(&g->summary_process, &config, parts, count,
+        replies, concise, native_summary_activity, native_summary_activity_context);
 }
 
 static int job_inference_max_tokens(jval *job) {
@@ -8450,52 +8214,17 @@ static int backend_start(Gateway *g) {
             int is_ornith = !strcmp(g->backend, "ornith");
             char *model = is_ornith ? g->ornith_model : g->bonsai_model;
             char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
-            char *argv[24]; int a = 0;
-            /* Machine safety (CLAUDE.md): llama.cpp defaults to every
-               performance core and a full-size KV cache, which on a fanless
-               M3 Air means sustained heat and a large resident footprint.
-               Both are now tunable without editing code:
-                 SAMOSA_LLAMA_THREADS  cap CPU threads (unset = llama.cpp default)
-                 SAMOSA_LLAMA_CTX      KV cache size in tokens (default 8192)
-                 SAMOSA_LLAMA_NGL      layers offloaded to Metal (default 99)
-               Values are passed through only when they parse as positive
-               integers, so a typo cannot turn into a malformed argv. */
-            const char *env_ctx = getenv("SAMOSA_LLAMA_CTX");
-            const char *env_ngl = getenv("SAMOSA_LLAMA_NGL");
-            const char *env_thr = getenv("SAMOSA_LLAMA_THREADS");
-            char ctx_buf[16], ngl_buf[16], thr_buf[16];
-            snprintf(ctx_buf, sizeof(ctx_buf), "%d", effective.context_effective);
-            const char *ctx_val = ctx_buf, *ngl_val = "99", *thr_val = NULL;
-            if (effective.cpu_effective > 0) {
-                snprintf(thr_buf, sizeof(thr_buf), "%d", effective.cpu_effective);
-                thr_val = thr_buf;
-            }
-            /* An explicit value always wins: the machine is a starting point,
-               not a policy the user cannot escape. */
-            if (env_ctx && atoi(env_ctx) > 0) { snprintf(ctx_buf, sizeof(ctx_buf), "%d", atoi(env_ctx)); ctx_val = ctx_buf; }
-            if (env_ngl && atoi(env_ngl) >= 0) { snprintf(ngl_buf, sizeof(ngl_buf), "%d", atoi(env_ngl)); ngl_val = ngl_buf; }
-            if (env_thr && atoi(env_thr) > 0) { snprintf(thr_buf, sizeof(thr_buf), "%d", atoi(env_thr)); thr_val = thr_buf; }
-            fprintf(stderr, "[samosa] backend sizing: %.0f GB RAM, %d performance cores -> -c %s%s%s\n",
-                    machine_ram_bytes() / 1073741824.0, machine_perf_cores(),
-                    ctx_val, thr_val ? " -t " : "", thr_val ? thr_val : "");
-
-            argv[a++] = g->llama_server; argv[a++] = (char *)"-m"; argv[a++] = model;
-            argv[a++] = (char *)"-ngl"; argv[a++] = (char *)ngl_val;
-            argv[a++] = (char *)"-c"; argv[a++] = (char *)ctx_val;
-            if (thr_val) { argv[a++] = (char *)"-t"; argv[a++] = (char *)thr_val; }
-            argv[a++] = (char *)"-np"; argv[a++] = (char *)"1";
-            argv[a++] = (char *)"--cache-ram"; argv[a++] = (char *)"0";
-            argv[a++] = (char *)"--host"; argv[a++] = (char *)"127.0.0.1";
-            argv[a++] = (char *)"--port"; argv[a++] = port;
-            argv[a++] = (char *)"--no-ui"; argv[a++] = (char *)"--alias"; argv[a++] = alias;
-            /* Bonsai is image-capable via its optional mmproj vision pack; load it
-               only when present so image jobs reach a fast local vision backend.
-               Text-only serving (and Ornith) skips it. */
-            if (!is_ornith && backend_supports_images(g, "bonsai")) {
-                argv[a++] = (char *)"--mmproj"; argv[a++] = g->bonsai_mmproj;
-            }
-            argv[a] = NULL;
-            execv(g->llama_server, argv);
+            SamosaLlamaLaunch launch = {
+                .engine = g->llama_server, .model = model, .alias = alias,
+                .projector = !is_ornith && backend_supports_images(g, "bonsai") ? g->bonsai_mmproj : NULL,
+                .port = g->backend_port, .context_tokens = effective.context_effective,
+                .threads = effective.cpu_effective,
+                .context_override = getenv("SAMOSA_LLAMA_CTX"),
+                .gpu_override = getenv("SAMOSA_LLAMA_NGL"),
+                .threads_override = getenv("SAMOSA_LLAMA_THREADS"),
+                .ram_bytes = machine_ram_bytes(), .perf_cores = machine_perf_cores()
+            };
+            (void)samosa_llama_launch(&launch);
         }
         _Exit(127);
     }
@@ -26195,9 +25924,9 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/healthz")) {
         char body[2304], version[128];
         pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
-        pthread_mutex_lock(&g->summarizer_mu);
-        pid_t summarizer_pid = g->summarizer_pid;
-        pthread_mutex_unlock(&g->summarizer_mu);
+        pthread_mutex_lock(&g->summary_process.mutex);
+        pid_t summarizer_pid = g->summary_process.pid;
+        pthread_mutex_unlock(&g->summary_process.mutex);
         int ready = backend_probe(g);
         int chutni_available = regular_file(g->chutni_service, 1);
         int native_summary_available = summarizer_available(g);
@@ -26613,12 +26342,12 @@ static void jobsd_on_signal(int number) {
 static int load_config(Gateway *g) {
     memset(g, 0, sizeof(*g));
     g->backend_pid = 0; g->backend_pgid = 0; g->upstream_fd = -1;
-    g->summarizer_pid = 0;
-    g->summarizer_write_fd = -1;
-    g->summarizer_read_fd = -1;
+    g->summary_process.pid = 0;
+    g->summary_process.write_fd = -1;
+    g->summary_process.read_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
     pthread_mutex_init(&g->job_pid_mu, NULL);
-    pthread_mutex_init(&g->summarizer_mu, NULL);
+    if (!samosa_summary_process_init(&g->summary_process)) return 0;
     pthread_mutex_init(&g->install_mu, NULL);
     pthread_mutex_init(&g->selection_mu, NULL);
     pthread_mutex_init(&g->voice_mu, NULL);
@@ -26788,7 +26517,7 @@ int main(int argc, char **argv) {
         int ok = jobsd_once_native(&gateway, -1, NULL);
         samosa_mm_supervisor_destroy(&gateway.multimodal_supervisor);
         pthread_mutex_destroy(&gateway.mu);
-        pthread_mutex_destroy(&gateway.summarizer_mu);
+        samosa_summary_process_destroy(&gateway.summary_process);
         pthread_mutex_destroy(&gateway.developer_trace_mu);
         pthread_mutex_destroy(&gateway.app_clients_mu);
         pthread_mutex_destroy(&gateway.generation_gate_mu);
@@ -26918,7 +26647,7 @@ int main(int argc, char **argv) {
     samosa_mm_supervisor_destroy(&gateway.multimodal_supervisor);
     pthread_mutex_destroy(&gateway.job_pid_mu);
     pthread_mutex_destroy(&gateway.mu);
-    pthread_mutex_destroy(&gateway.summarizer_mu);
+    samosa_summary_process_destroy(&gateway.summary_process);
     pthread_mutex_destroy(&gateway.voice_mu);
     pthread_mutex_destroy(&gateway.voice_trace_mu);
     pthread_mutex_destroy(&gateway.developer_trace_mu);

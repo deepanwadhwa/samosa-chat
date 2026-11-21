@@ -7,6 +7,9 @@
 [submodule "vendor/maple-reference"]
 	path = vendor/maple-reference
 	url = https://github.com/deepgrove-ai/mlx-lm-deepgrove.git
+[submodule "components/samosa-sources"]
+	path = components/samosa-sources
+	url = https://github.com/deepanwadhwa/samosa-sources.git
 [submodule "components/samosa-inference"]
 	path = components/samosa-inference
 	url = https://github.com/deepanwadhwa/samosa-inference.git

@@ -137,10 +137,13 @@ destination() { # destination <remote-path>
 # optional package with a raw-Qwen fallback (docs/TASKS_UI_CHUTNI.md T1.0).
 # The compiled gateway and filesystem sidecar are part of that runtime, so
 # they are staged unconditionally rather than gated behind a manifest probe.
-INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_memory.h engine/samosa_prompt_budget.h engine/samosa_audio_decode.mm engine/samosa_multimodal.c engine/samosa_multimodal.h engine/samosa_evidence.c engine/samosa_evidence.h engine/samosa_html.c engine/samosa_html.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
+INSTALL_FILES="app.html samosa-chat.png models.json voice/browser/THIRD_PARTY.md voice/browser/tts/moss/browser_model_store.js voice/browser/tts/moss/browser_onnx_host.html voice/browser/tts/moss/browser_onnx_host.js voice/browser/tts/moss/browser_onnx_runtime.js voice/browser/tts/moss/tokenizer_sandbox.html voice/browser/tts/moss/tokenizer_sandbox.js voice/browser/tts/moss/vendor/ort/ort.wasm.min.mjs voice/browser/tts/moss/vendor/ort/ort-wasm-simd-threaded.wasm voice/browser/tts/kitten/LICENSE voice/browser/tts/kitten/NOTICE voice/browser/tts/kitten/README-upstream.md voice/browser/tts/kitten/kitten-tts.browser.js voice/browser/tts/kitten/worker.js voice/browser/tts/kitten/ort-wasm-simd-threaded.wasm engine/qwen36b.c engine/expert_cache.c engine/expert_cache.h engine/vision.c engine/vision.h engine/stb_image.h engine/kernels.h engine/st.h engine/json.h engine/tok.h engine/tok_unicode.h engine/compat.h engine/repetition_guard.h engine/thinking_budget.h engine/samosa_http.h engine/samosa_kokoro.h samosa engine/samosa_gateway.c engine/samosa_memory.h engine/samosa_prompt_budget.h engine/samosa_audio_decode.mm engine/samosa_multimodal.h engine/samosa_evidence.c engine/samosa_evidence.h engine/samosa_html.c engine/samosa_html.h engine/samosa_fs.c engine/samosa_ocr.c engine/read_cache.h engine/durable_job.h engine/samosa_voice_runtime.sh engine/samosa_kokoro_runtime.sh"
 
 # Chutni is an application runtime component, not a user-installed prerequisite.
 INSTALL_FILES="$INSTALL_FILES engine/stage_tesseract_runtime.sh"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_supervisor.c engine/inference/include/samosa_inference/specialist_supervisor.h engine/inference/LICENSE"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/summary_process.c engine/inference/src/controlled_pipe.h engine/inference/src/json.h engine/inference/include/samosa_inference/summary_process.h"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/llama_launch.c engine/inference/include/samosa_inference/llama_launch.h"
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
 CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
@@ -444,17 +447,34 @@ if [ "$PORTABLE_DOCUMENTS_ENABLED" = 1 ]; then
   rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
 fi
 
+# Build the extracted Inference implementation once behind its public header.
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/specialist_supervisor.c" \
+  -o "$STAGE/engine/inference/specialist_supervisor.o" ||
+  fail "staged Inference supervisor compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/summary_process.c" \
+  -o "$STAGE/engine/inference/summary_process.o" ||
+  fail "staged Inference summary compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/llama_launch.c" \
+  -o "$STAGE/engine/inference/llama_launch.o" ||
+  fail "staged Inference text launch compilation failed; live release was not changed"
+ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
+  "$STAGE/engine/inference/specialist_supervisor.o" "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" ||
+  fail "staged Inference archive failed; live release was not changed"
+
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
-$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
-$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/samosa_multimodal.c" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||

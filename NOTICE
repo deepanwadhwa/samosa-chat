@@ -21,7 +21,7 @@ licensed under the Apache License, Version 2.0.
 The native summarizer runtime uses llama.cpp revision
 9fcaed763ccda38ea81068ad9d7f991aaddca451, copyright the llama.cpp
 contributors, licensed under the MIT License. The encoder/decoder inference
-loop in src/samosa_summarizer.cpp is adapted from llama.cpp's `simple`
+loop in components/samosa-inference/engines/t5_summary.cpp is adapted from llama.cpp's `simple`
 example under that license.
 
 The optional VisionPsy-Nano 460M BF16 weights are the MLX conversion published

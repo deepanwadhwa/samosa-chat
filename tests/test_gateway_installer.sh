@@ -55,6 +55,9 @@ SAMOSA_INSTALL_TEST=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
 
 [ -x "$HOME_DIR/current/bin/samosa-fs" ]
 [ -x "$HOME_DIR/current/bin/samosa-gateway" ]
+[ -f "$HOME_DIR/current/engine/inference/libsamosa-inference-specialist.a" ]
+[ -f "$HOME_DIR/current/engine/inference/include/samosa_inference/specialist_supervisor.h" ]
+[ ! -e "$HOME_DIR/current/engine/samosa_multimodal.c" ]
 [ -f "$HOME_DIR/current/engine/samosa_prompt_budget.h" ]
 [ -x "$HOME_DIR/current/bin/samosa-ocr" ]
 [ -x "$HOME_DIR/current/bin/samosa-extract" ]

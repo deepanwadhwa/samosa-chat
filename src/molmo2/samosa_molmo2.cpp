@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <unistd.h>
@@ -219,6 +220,7 @@ int main(int argc, char** argv) {
             double media_duration = 0;
             int decoded_frames = 0;
             int decoded_images = 0;
+            std::vector<double> sample_times;
             std::string media_error;
             bool prepared = false;
             if (!integer_value(root, "max_tokens", 256, 1, 1024, &max_tokens)) {
@@ -244,6 +246,40 @@ int main(int argc, char** argv) {
                     prepared = prepared && preprocess_images(images, &visual, &media_error);
                     if (prepared) decoded_images = static_cast<int>(images.size());
                 }
+            } else if (kind == "video_frames") {
+                /* The public adapter owns preparation and source provenance.
+                   This host-private protocol reuses native temporal preprocessing. */
+                std::vector<std::string> paths;
+                jval* times = json_get(root, "timestamps_seconds");
+                if (!string_array_value(root, "media_paths", 1, 16, &paths) ||
+                    !times || times->t != J_ARR ||
+                    times->len != static_cast<int>(paths.size())) {
+                    media_error = "video_frames requires one through sixteen timestamped images";
+                } else {
+                    std::vector<RgbImage> frames(paths.size());
+                    prepared = true;
+                    for (std::size_t index = 0; index < paths.size(); ++index) {
+                        jval* time = times->kids[index];
+                        if (!time || time->t != J_NUM || !std::isfinite(time->num) ||
+                            time->num < 0 || time->num > 14400 ||
+                            (index && time->num <= sample_times.back()) ||
+                            !decode_image(paths[index], &frames[index], &media_error)) {
+                            prepared = false;
+                            break;
+                        }
+                        if (frames[index].width > 512 || frames[index].height > 512) {
+                            media_error = "prepared temporal frames exceed512 pixels per axis";
+                            prepared = false;
+                            break;
+                        }
+                        sample_times.push_back(time->num);
+                    }
+                    if (prepared)
+                        prepared = preprocess_video_frames(frames, sample_times,
+                                                           &visual, &media_error);
+                    if (prepared) decoded_frames = static_cast<int>(frames.size());
+                    else if (media_error.empty()) media_error = "invalid temporal frame timestamp";
+                }
             } else if (kind == "video") {
                 DecodedVideo video;
                 const double start = number_value(root, "start_seconds", 0);
@@ -260,8 +296,9 @@ int main(int argc, char** argv) {
                 if (prepared) {
                     media_duration = video.duration_seconds;
                     decoded_frames = static_cast<int>(video.frames.size());
+                    sample_times = video.timestamps;
                 }
-            } else media_error = "media_kind must be image, images, or video";
+            } else media_error = "media_kind must be image, images, video, or video_frames";
             if (!prepared) {
                 send(error_reply(id, "molmo2_media_invalid", media_error));
             } else {
@@ -281,7 +318,16 @@ int main(int argc, char** argv) {
                           << ",\"generated_tokens\":" << result.generated_tokens
                           << ",\"images\":" << decoded_images
                           << ",\"frames\":" << decoded_frames
-                          << ",\"duration_seconds\":" << media_duration << "}";
+                          << ",\"duration_seconds\":" << media_duration;
+                    if (!sample_times.empty()) {
+                        reply << ",\"sample_times_seconds\":[";
+                        for (std::size_t index = 0; index < sample_times.size(); ++index) {
+                            if (index) reply << ',';
+                            reply << std::setprecision(17) << sample_times[index];
+                        }
+                        reply << ']';
+                    }
+                    reply << "}";
                     send(reply.str());
                 }
             }

@@ -8,6 +8,7 @@
 # unconditional flags broke the Linux CI leg. dist/install.sh already branches
 # the same way; keep the two in step.
 UNAME_S := $(shell uname -s)
+.DEFAULT_GOAL := samosa-engine
 BUILD_DIR ?= build
 OCR_TEST_PYTHON ?= .venv/bin/python
 CXX ?= c++
@@ -33,7 +34,9 @@ else
   DL_LDFLAGS := -ldl -lm
   PDFIUM_LOCAL_RPATH := '$$ORIGIN'
 endif
-NUMPY_PYTHON := $(shell python3 -c 'import numpy' >/dev/null 2>&1 && echo python3 || { [ -x .venv/bin/python ] && .venv/bin/python -c 'import numpy' >/dev/null 2>&1 && echo .venv/bin/python; } || { [ -x ../.venv/bin/python ] && echo ../.venv/bin/python; })
+# Do not launch Python while parsing every target, including native builds.
+# The legacy Python-backed test targets still need native/shell replacements.
+NUMPY_PYTHON ?=
 ENGINE_HEADERS := $(wildcard src/*.h)
 PDFIUM_DIR ?=
 PDFIUM_BUNDLED_HEADERS := vendor/pdfium-headers-152.0.7961.0
@@ -55,7 +58,14 @@ endif
 CHUTNI_DIR ?= vendor/chutni
 CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
 CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
-MULTIMODAL_SRCS := src/samosa_multimodal.c
+SAMOSA_INFERENCE_DIR ?= components/samosa-inference
+INFERENCE_SPECIALIST_LIBRARY := $(SAMOSA_INFERENCE_DIR)/build/libsamosa-inference-specialist.a
+MULTIMODAL_SRCS := $(INFERENCE_SPECIALIST_LIBRARY)
+.PHONY: inference-specialist
+inference-specialist:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) specialist
+$(INFERENCE_SPECIALIST_LIBRARY): inference-specialist
+
 EVIDENCE_SRCS := src/samosa_evidence.c
 HTML_SRCS := src/samosa_html.c
 MINIZ_READ_SRCS := vendor/miniz/miniz.c vendor/miniz/miniz_tinfl.c vendor/miniz/miniz_zip.c
@@ -105,6 +115,9 @@ else
   CHUTNI_OPT := -O2 -D_GNU_SOURCE -Wno-error=implicit-function-declaration -Wno-error=format-truncation
   CWARN := -Wall -Wextra $(LINUX_WARNING_FLAGS)
 endif
+
+# Consume only the published Inference header and archive.
+CWARN += -I$(abspath $(SAMOSA_INFERENCE_DIR)/include)
 
 # The generic service is pinned as a submodule and shipped as an application
 # runtime component. Samosa calls its public JSON tool surface; it does not
@@ -239,7 +252,7 @@ motto-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_motto_
 tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_escalation.sh
 	sh tests/test_tier2_escalation.sh
 
-samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
+samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
@@ -262,25 +275,13 @@ endif
 # decoder-only completion route. Release builds stage this executable and the
 # six small shared libraries beside the ordinary Samosa runtime; end users do
 # not need a compiler or Python to run summaries.
-samosa-summarizer: src/samosa_summarizer.cpp
-	@test -f "$(PRISM_LLAMA_DIR)/include/llama.h" || { echo "missing pinned Prism llama.cpp at $(PRISM_LLAMA_DIR)" >&2; exit 2; }
-	@test -f "$(PRISM_LLAMA_BUILD)/bin/libllama.0.dylib" || { echo "missing built Prism libraries under $(PRISM_LLAMA_BUILD)/bin" >&2; exit 2; }
+samosa-summarizer:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) t5-engine T5_LLAMA_DIR="$(abspath $(PRISM_LLAMA_DIR))" T5_LLAMA_BUILD="$(abspath $(PRISM_LLAMA_BUILD))"
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -O3 -std=c++17 -I"$(PRISM_LLAMA_DIR)/include" -I"$(PRISM_LLAMA_DIR)/ggml/include" \
-	  src/samosa_summarizer.cpp -o $(BUILD_DIR)/samosa-summarizer \
-	  -Wl,-rpath,@loader_path/../lib -Wl,-rpath,"$(PRISM_LLAMA_BUILD)/bin" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libllama.0.dylib" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libggml.0.dylib" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libggml-cpu.0.dylib" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libggml-blas.0.dylib" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libggml-metal.0.dylib" \
-	  "$(PRISM_LLAMA_BUILD)/bin/libggml-base.0.dylib"
+	cp $(SAMOSA_INFERENCE_DIR)/build/samosa-summarizer $(BUILD_DIR)/samosa-summarizer
 
-test-native-summarizer-real: samosa-summarizer tests/test_native_summarizer.c
-	@test -n "$(SAMOSA_SUMMARIZER_TEST_MODEL)" || { echo "set SAMOSA_SUMMARIZER_TEST_MODEL to the verified GGUF" >&2; exit 2; }
-	$(CC) -O2 $(CWARN) -std=c11 tests/test_native_summarizer.c \
-	  -o $(BUILD_DIR)/test_native_summarizer
-	$(BUILD_DIR)/test_native_summarizer $(BUILD_DIR)/samosa-summarizer "$(SAMOSA_SUMMARIZER_TEST_MODEL)"
+test-native-summarizer-real: samosa-summarizer
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) test-t5-engine-real T5_TEST_ENGINE="$(abspath $(BUILD_DIR)/samosa-summarizer)" T5_TEST_MODEL="$(SAMOSA_SUMMARIZER_TEST_MODEL)"
 
 # The HTTP controller invokes the same generic service that MCP hosts use.
 chutni-gateway-test: samosa-gateway samosa-fs chutni-service test_fake_openai_backend tests/test_chutni_gateway.sh tests/test_chutni_controls.sh tests/test_chutni_crash_resume.sh
@@ -301,7 +302,7 @@ test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.s
 # samosa-jobsd is the same source under a launchd-friendly name. Invoked as
 # `samosa-jobsd jobsd-once` it polls armed schedules and exits — no listener,
 # no backend — which is exactly what the installed launchd plist fires.
-samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
+samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
@@ -311,24 +312,24 @@ test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
 	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/fake_openai_backend.c -o $(BUILD_DIR)/test_fake_openai_backend
 
-test_fake_native_summarizer: tests/fake_native_summarizer.c
+test_fake_native_summarizer:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) build/fake-native-summarizer
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 $(CWARN) -std=c11 tests/fake_native_summarizer.c \
-	  -o $(BUILD_DIR)/test_fake_native_summarizer
+	cp $(SAMOSA_INFERENCE_DIR)/build/fake-native-summarizer $(BUILD_DIR)/test_fake_native_summarizer
 
-test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-native-summarizer-supervisor: test_fake_native_summarizer tests/test_native_summarizer_supervisor.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_evidence.c src/samosa_html.c
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_native_summarizer_supervisor.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_native_summarizer_supervisor $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_native_summarizer_supervisor \
 	  $(BUILD_DIR)/test_fake_native_summarizer tests/fixtures/native-summarizer/model.gguf
 
-test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-runtime-settings: tests/test_runtime_settings.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_runtime_settings.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_runtime_settings $(DL_LDFLAGS)
 	$(BUILD_DIR)/test_runtime_settings
 
-test-memory-harness: tests/test_memory_harness.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-memory-harness: tests/test_memory_harness.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_memory_harness.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_memory_harness $(DL_LDFLAGS)
@@ -405,7 +406,7 @@ test-chutni-sampling: tests/test_chutni_sampling.c src/samosa_gateway.c src/samo
 test-chutni-throughput: samosa-gateway test-chutni-sampling test_fake_native_summarizer
 	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_chutni_throughput.py
 
-test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h src/samosa_multimodal.c src/samosa_evidence.c src/samosa_html.c
+test-document-reader-contract: tests/test_document_reader_contract.c src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_evidence.c src/samosa_html.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  tests/test_document_reader_contract.c $(GATEWAY_SUPPORT_SRCS) \
@@ -812,11 +813,10 @@ test-visionpsy: test-visionpsy-components samosa-gateway samosa-visionpsy
 	node tests/test_developer_mode_ui.mjs
 	sh tests/test_visionpsy_e2e.sh
 
-test-multimodal-supervisor: tests/fake_multimodal_helper.c tests/test_multimodal_supervisor.c src/samosa_multimodal.c src/samosa_multimodal.h
+test-multimodal-supervisor:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) test-specialist-supervisor
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 $(CWARN) -std=c11 -pthread -Isrc tests/fake_multimodal_helper.c -o $(BUILD_DIR)/fake-multimodal-helper
-	$(CC) -O2 $(CWARN) -std=c11 -pthread -Isrc tests/test_multimodal_supervisor.c src/samosa_multimodal.c -o $(BUILD_DIR)/test-multimodal-supervisor
-	$(BUILD_DIR)/test-multimodal-supervisor "$(abspath $(BUILD_DIR)/fake-multimodal-helper)"
+	cp $(SAMOSA_INFERENCE_DIR)/build/fake-multimodal-helper $(BUILD_DIR)/fake-multimodal-helper
 
 test-molmo2-contract: tests/test_molmo2_contract.cpp src/molmo2/molmo2_contract.cpp src/molmo2/molmo2_contract.h assets/molmo2/config.json assets/molmo2/processor.json
 	@mkdir -p $(BUILD_DIR)
