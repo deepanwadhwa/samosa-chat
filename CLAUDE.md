@@ -65,7 +65,7 @@ spec: [docs/TASKS_LINUX.md](docs/TASKS_LINUX.md) **G9**.
 
 **G10 (OPEN)** — the AVX2/AVX512 kernels are **dead code in every shipped
 x86 build**. `install.sh` and the `Dockerfile` compile with `-O3` and no
-`-march`, so `__AVX2__` is undefined and [kernels.h](src/kernels.h)'s scalar
+`-march`, so `__AVX2__` is undefined and [kernels.h](components/samosa-inference/engines/kernels.h)'s scalar
 remainder does 100% of the work. Measured **7.6× slower** (17.09 → 2.26 GFLOP/s).
 `-march=native` is *not* the fix — one image serves many CPUs — so runtime
 `cpuid` dispatch is required. **Cannot be validated on the reference Mac**: an
@@ -213,11 +213,11 @@ These come from the project owner and override convenience.
 
 - **Experts** (`experts.bin`, 20.9 GB): `groupwise-symmetric-q4-v1`,
   `group_size: 32` — gate, up, **and** down all q4 with **one scale per 32
-  weights**. Parsed at `src/qwen36b.c:1180-1206`.
+  weights**. Parsed at `components/samosa-inference/engines/qwen36b.c:1180-1206`.
 - **Resident** (`resident.safetensors`, 3.0 GB — attention, embeddings,
   `lm_head`, and the vision tower): a **different whole-row** scheme —
   `fmt = (nbytes == O*I) ? int8 : int4`, one F32 scale per output row
-  (`src/qwen36b.c:1134-1152`).
+  (`components/samosa-inference/engines/qwen36b.c:1134-1152`).
 - Norms, biases, `patch_embed.proj`: F32.
 
 ## Build, test, run

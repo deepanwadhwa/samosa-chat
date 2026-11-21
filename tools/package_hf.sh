@@ -185,6 +185,9 @@ for name in \
   source="$ROOT/src/$name"
   if [ "$name" = samosa_summarizer.cpp ]; then source="$ROOT/components/samosa-inference/engines/t5_summary.cpp"; fi
   case "$name" in visionpsy/*) source="$ROOT/components/samosa-inference/engines/$name" ;; esac
+  case "$name" in qwen36b.c|expert_cache.c|expert_cache.h|vision.c|vision.h|kernels.h|st.h|compat.h|repetition_guard.h|thinking_budget.h)
+    source="$ROOT/components/samosa-inference/engines/$name" ;;
+  esac
   [ -f "$source" ] || fail "missing source file: $source"
   place "$source" "engine/$name" copy
 done

@@ -438,6 +438,21 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07h checkpoint, 2026-11-21: the original Qwen model/cache/vision/kernels/
+support implementation and useful tests move into Inference. Chat delegates
+CPU/OpenMP/separate experimental schedule builds with original flags/outputs;
+Maple compiles the owner cache. All11 copied source/support files compare
+identical; test changes only wire owner/include and explicit caller App assets.
+Original native suites normal/SAN, independent source builds, actual old/new
+Mac model CLI comparison, gateway runtime settings, package and clean install/
+upgrade pass.16 parent copies (10297 lines) are retired. Exact evidence and
+remaining limitations: components/samosa-inference/docs/qualification/
+life07h-qwen-sources/README.md. Next LIFE-07i moves original Maple sources/builds/
+tests, then remaining primary launch/group/reap/probe ownership, guarded legacy
+Whisper and shared coordination. Area3/full goal remain open; no Python/Docker ran.
+Qualified Inference revision/pin:cbc165f (code7216f8b plus evidence wording),
+backed up on the same origin refactor branch. Earlier pins remain historical.
+
 LIFE-07g checkpoint, 2026-11-21: native visual engine builds/tests now delegate
 to Inference's existing sources with explicit native MLX inputs. Original flags,
 outputs, media frameworks and kernel pairing are preserved. Original VisionPsy

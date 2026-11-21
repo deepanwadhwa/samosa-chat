@@ -165,7 +165,7 @@
     },
     {
       "id": "tool_document_6",
-      "prompt": "Read the local script src/qwen36b.c to find the main function.",
+      "prompt": "Read the local script components/samosa-inference/engines/qwen36b.c to find the main function.",
       "expected_tool": "read_document",
       "required_args": ["path"]
     },

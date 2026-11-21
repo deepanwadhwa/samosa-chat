@@ -86,9 +86,18 @@ PDFIUM_EXTRACT_CFLAGS := -I$(PDFIUM_INCLUDE_DIR)
 PDFIUM_EXTRACT_LIBS := $(PDFIUM_LIBRARY) -Wl,-rpath,$(PDFIUM_LOCAL_RPATH) -Wl,-rpath,$(dir $(PDFIUM_LIBRARY))
 endif
 
-samosa-engine: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
+samosa-engine:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) qwen-engine CC="$(CC)"
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O3 -Wno-unused-function -pthread src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm
+	cp $(SAMOSA_INFERENCE_DIR)/build/qwen36b $(BUILD_DIR)/qwen36b
+
+.PHONY: test-qwen-engine-components
+test-qwen-engine-components:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) test-qwen-engine-core test-qwen-engine-serve QWEN_TEST_ASSETS="$(abspath assets)" CC="$(CC)"
+	@mkdir -p $(BUILD_DIR)
+	@for name in test_expert_cache test_repetition_guard test_thinking_budget test_groupwise_q4 test_samosa_serve test_qwen_vision; do \
+	  cp "$(SAMOSA_INFERENCE_DIR)/build/$$name" "$(BUILD_DIR)/$$name" || exit 1; \
+	done
 
 samosa-extract: src/samosa_extract.c src/samosa_html.c src/samosa_html.h src/samosa_docx.c src/samosa_docx.h $(MINIZ_READ_HEADERS) src/tok.h src/tok_unicode.h src/json.h $(PDFIUM_READY)
 	@mkdir -p $(BUILD_DIR)
@@ -459,10 +468,10 @@ extract-tokenizer-test: samosa-extract tests/test_samosa_extract.sh
 document-installer-test: tests/test_document_installer.sh
 	sh tests/test_document_installer.sh
 
-omp: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
+omp:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) qwen-omp CC="$(CC)" QWEN_OMP_CFLAGS="$(OMP_CFLAGS)" QWEN_OMP_LDFLAGS="$(OMP_LDFLAGS)"
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) \
-	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b -lm $(OMP_LDFLAGS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/qwen36b $(BUILD_DIR)/qwen36b
 
 ifeq ($(UNAME_S),Darwin)
 install: omp samosa-gateway samosa-extract samosa-audio-decode samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service samosa-visionpsy samosa-molmo2 molmo2-pack
@@ -475,33 +484,33 @@ endif
 # E-X5 experiment build only — never shipped. Same as `omp` plus
 # -DSAMOSA_SCHED_RUNTIME, so OMP_SCHEDULE picks the hot-kernel schedule at run
 # time. Separate output name so it can never be installed by mistake.
-omp-sched-runtime: src/qwen36b.c src/expert_cache.c src/vision.c $(ENGINE_HEADERS)
+omp-sched-runtime:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) qwen-omp-sched-runtime CC="$(CC)" QWEN_OMP_CFLAGS="$(OMP_CFLAGS)" QWEN_OMP_LDFLAGS="$(OMP_LDFLAGS)"
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O3 -Wno-unused-function -pthread $(OMP_CFLAGS) -DSAMOSA_SCHED_RUNTIME \
-	  src/qwen36b.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/qwen36b-sched-runtime -lm $(OMP_LDFLAGS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/qwen36b-sched-runtime $(BUILD_DIR)/qwen36b-sched-runtime
 
 # E-X10 M0 experiment only — never linked into or installed as qwen36b.
 # This target is intentionally Darwin-only: it exercises Apple's Metal API
 # and compares the shader with the exact NEON/OpenMP grouped-q4 reference.
-metal-spike: tools/metal_spike.m src/kernels.h
+metal-spike: tools/metal_spike.m $(SAMOSA_INFERENCE_DIR)/engines/kernels.h
 	@mkdir -p $(BUILD_DIR)
 	@if [ "$(UNAME_S)" != "Darwin" ]; then \
 	  echo "metal-spike requires macOS and Apple Metal" >&2; exit 2; \
 	fi
 	$(CC) -O3 -Wall -Wextra -Wno-unused-function -Wno-unknown-pragmas \
-	  -fobjc-arc -pthread $(OMP_CFLAGS) -Isrc tools/metal_spike.m \
+	  -fobjc-arc -pthread $(OMP_CFLAGS) -I$(SAMOSA_INFERENCE_DIR)/engines -Isrc tools/metal_spike.m \
 	  -o $(BUILD_DIR)/metal-spike -framework Foundation -framework Metal -lm $(OMP_LDFLAGS)
 
 # E-X10 M1 system experiment — separate binary, opt-in again at runtime with
 # SAMOSA_METAL=1. It keeps the normal qwen36b and installer CPU-only.
-metal-omp: src/qwen36b.c src/expert_cache.c src/vision.c src/metal_expert.m $(ENGINE_HEADERS)
+metal-omp: $(SAMOSA_INFERENCE_DIR)/engines/qwen36b.c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c $(SAMOSA_INFERENCE_DIR)/engines/vision.c src/metal_expert.m $(ENGINE_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	@if [ "$(UNAME_S)" != "Darwin" ]; then \
 	  echo "metal-omp requires macOS and Apple Metal" >&2; exit 2; \
 	fi
 	$(CC) -O3 -Wno-unused-function -Wno-unknown-pragmas -pthread \
 	  $(OMP_CFLAGS) -DSAMOSA_METAL -fobjc-arc \
-	  src/qwen36b.c src/expert_cache.c src/vision.c src/metal_expert.m \
+	  $(SAMOSA_INFERENCE_DIR)/engines/qwen36b.c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c $(SAMOSA_INFERENCE_DIR)/engines/vision.c src/metal_expert.m \
 	  -o $(BUILD_DIR)/qwen36b-metal -framework Foundation -framework Metal -lm $(OMP_LDFLAGS)
 
 pagecache-residency: tools/pagecache_residency.c
@@ -530,14 +539,9 @@ test-docx-extractor: tests/test_samosa_docx.c tests/test_samosa_docx.sh src/samo
 	  $(MINIZ_READ_SRCS) -o $(BUILD_DIR)/test-samosa-docx
 	SAMOSA_DOCX_TEST_RUNNER=./$(BUILD_DIR)/test-samosa-docx sh tests/test_samosa_docx.sh
 
-test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor tests/test_expert_cache.c tests/test_kv_cache.c tests/test_repetition_guard.c tests/test_thinking_budget.c tests/test_groupwise_q4.c tests/test_samosa_serve.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_local_document_runtime_guard.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.sh tests/test_decision_eval.py
+test: pagecache-residency-test test-evidence-contract test-html-extractor test-docx-extractor test-qwen-engine-components tests/test_kv_cache.c tests/test_samosa_wrapper.sh tests/test_atomic_install.sh tests/test_install_path.sh tests/test_gateway_installer.sh tests/test_runtime_only_release.sh tests/test_local_document_runtime_guard.sh tests/test_thinking_output.py tests/test_regression_gate.py tests/test_openrouter_control.py tests/test_route_analysis.py tests/test_spec_accept.py tests/test_converter_quant.py tests/test_package_pdfium.sh tests/test_decision_eval.py
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O1 -Isrc tests/test_expert_cache.c src/expert_cache.c -o $(BUILD_DIR)/test_expert_cache && ./$(BUILD_DIR)/test_expert_cache
 	$(CC) -O1 -Itests tests/test_kv_cache.c tests/kv_cache.c -o $(BUILD_DIR)/test_kv_cache -lm && ./$(BUILD_DIR)/test_kv_cache
-	$(CC) -O1 -Isrc tests/test_repetition_guard.c -o $(BUILD_DIR)/test_repetition_guard && ./$(BUILD_DIR)/test_repetition_guard
-	$(CC) -O1 -Isrc tests/test_thinking_budget.c -o $(BUILD_DIR)/test_thinking_budget && ./$(BUILD_DIR)/test_thinking_budget
-	$(CC) -O1 -Isrc tests/test_groupwise_q4.c -o $(BUILD_DIR)/test_groupwise_q4 -lm && ./$(BUILD_DIR)/test_groupwise_q4
-	$(CC) -O1 -pthread -Isrc tests/test_samosa_serve.c src/expert_cache.c src/vision.c -o $(BUILD_DIR)/test_samosa_serve -lm && ./$(BUILD_DIR)/test_samosa_serve
 	sh tests/test_samosa_wrapper.sh
 	sh tests/test_atomic_install.sh
 	sh tests/test_install_path.sh
@@ -669,9 +673,9 @@ MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx $(MLX_JACCL_LIB) -framework Foundation -f
 MAPLE_STREAMING_SRCS = src/maple/maple_expert_views.cpp src/maple/maple_expert_store.cpp
 MAPLE_CACHE_OBJ = $(BUILD_DIR)/expert_cache.o
 
-$(MAPLE_CACHE_OBJ): src/expert_cache.c src/expert_cache.h
+$(MAPLE_CACHE_OBJ): $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -std=c11 -O2 -Wall -Wextra -Isrc -c src/expert_cache.c -o $(MAPLE_CACHE_OBJ)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Isrc -c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c -o $(MAPLE_CACHE_OBJ)
 
 mlx:
 	sh tools/build_mlx_native.sh

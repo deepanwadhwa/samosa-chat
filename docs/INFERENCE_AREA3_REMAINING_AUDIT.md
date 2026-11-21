@@ -1,5 +1,14 @@
 # Inference lifecycle: remaining requirements
 
+LIFE-07h progress, 2026-11-21: Qwen's original model/cache/vision/kernels/support
+and useful native tests now belong to Inference. CPU/OpenMP/schedule builds,
+normal/SAN regressions, fresh independent source builds, actual old/new Mac
+model CLI compatibility, Maple cache consumer and package/install checks pass.
+16 parent source/test/fixture copies (10297 lines) are retired. Next LIFE-07i
+moves original Maple sources/builds/tests, then primary launch/group/reap/probe
+ownership. This does not close any full lifecycle requirement or area3.
+Exact scope: Inference qualification/life07h-qwen-sources/README.md.
+
 LIFE-07g progress, 2026-11-21: visual engine source/build consolidation below
 is complete. Delegated native builds, original component normal/SAN and real
 heading gates, rebuilt actual VisionPsy/Molmo owner normal/SAN, gateway workflows
@@ -47,9 +56,10 @@ fair scheduling remain the full separate area4 acceptance responsibility.
    there. Reuse those exact flags/environment, startup probing, group/reap and
    persisted settings, then wire the existing managed owner where contracts
    match. Model selection and App presentation remain explicit caller policy.
-   Their original native engine sources (src/qwen36b.c, src/maple and supporting
-   kernels/cache/vision code) also still live in the parent. Move their working
-   implementation/build/test ownership into Inference with declared dependencies;
+   Qwen's original native source/cache/vision/kernels and useful tests are now
+   extracted in LIFE-07h. Maple's original src/maple implementation/build/tests
+   remain in the parent; LIFE-07i moves these next with declared dependencies.
+   Then consolidate the remaining primary launch/group/reap/probe ownership;
    HTTP compatibility alone does not complete that source ownership requirement.
 3. **Consolidate the extracted legacy Whisper execution with guarded ownership.**
    Reuse whisper.c and EngineProcess rather than making a second worker/server.

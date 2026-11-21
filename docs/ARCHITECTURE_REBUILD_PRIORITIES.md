@@ -297,11 +297,12 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. Follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
-   through primary-backend source/build/launch ownership. Reuse the working
-   Qwen/Maple engines and existing llama launch helper, preserving native flags,
-   environment, startup probes, process groups/reaping and persisted settings.
-   Keep model selection and App presentation as explicit caller policy.
+1. LIFE-07i: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
+   through the original Maple sources/builds/useful tests. Qwen source ownership
+   is extracted in LIFE-07h. Then move remaining primary launch/group/reap/probe
+   ownership, reusing the original Qwen/Maple bodies and existing llama helper.
+   Preserve native flags/environment, persisted settings and startup behavior;
+   keep model selection and App presentation as explicit caller policy.
 2. Follow the audit through remaining primary-backend source/launch ownership,
    Whisper guarded execution and shared coordination. Preserve original wide
    image/video and text/SRT/long-window behavior. Current prepared-input profiles
@@ -311,6 +312,15 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
+
+Native Mac progress, 2026-11-21: LIFE-07h extracts Qwen's working native model,
+cache, kernels, vision/support and original useful tests. CPU/OpenMP/schedule
+builds delegate to Inference; Maple consumes the owner cache. Original bodies/
+flags are preserved. Independent native builds, original tests normal/SAN,
+actual old/new Mac model CLI compatibility, runtime settings and package/clean
+install/upgrade pass.16 parent files (10297 lines) are retired. See
+[Qwen source evidence](../components/samosa-inference/docs/qualification/life07h-qwen-sources/README.md).
+Maple source/build and primary lifecycle ownership remain next; area3 stays open.
 
 Native Mac progress, 2026-11-21: LIFE-07g delegates visual engine builds/tests to
 Inference with explicit existing MLX inputs, preserves output/flags/media/kernel
@@ -379,7 +389,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `ecf729e` (LIFE-07g), committed and backed up on
+Current qualified Inference pin: `cbc165f` (LIFE-07h), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

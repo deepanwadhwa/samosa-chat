@@ -4,7 +4,9 @@ Copyright (c) 2026 Deepan Wadhwa
 This product is inspired by and built on colibrì
 (https://github.com/JustVugg/colibri), copyright JustVugg (Vincenzo),
 licensed under the Apache License, Version 2.0. The SIMD kernels
-(src/kernels.h) and utility headers (src/st.h, src/json.h, src/compat.h,
+(components/samosa-inference/engines/kernels.h) and utility headers
+(components/samosa-inference/engines/st.h,
+components/samosa-inference/engines/compat.h, src/json.h,
 src/tok.h, src/tok_unicode.h) originate from or derive from the colibrì
 project.
 
