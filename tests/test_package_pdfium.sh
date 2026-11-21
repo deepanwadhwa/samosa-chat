@@ -65,6 +65,9 @@ if awk -F '\t' '$3=="engine/samosa_multimodal.c" {found=1} END {exit !found}' "$
   fail 'retired monolith supervisor was staged'
 fi
 cmp "$ROOT/components/samosa-inference/engines/t5_summary.cpp" "$TMP/complete/out/engine/samosa_summarizer.cpp" || fail 'wrong T5 source owner'
+for name in samosa_visionpsy.cpp visionpsy_model.cpp visionpsy_model.h; do
+  cmp "$ROOT/components/samosa-inference/engines/visionpsy/$name" "$TMP/complete/out/engine/visionpsy/$name" || fail "wrong VisionPsy source owner: $name"
+done
 while IFS="$(printf '\t')" read -r digest bytes relative; do
   [ "$(wc -c <"$TMP/complete/out/$relative" | tr -d '[:space:]')" = "$bytes" ] || fail "wrong manifest size: $relative"
   [ "$(sha256_file "$TMP/complete/out/$relative")" = "$digest" ] || fail "wrong manifest digest: $relative"

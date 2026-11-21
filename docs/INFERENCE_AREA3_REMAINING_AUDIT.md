@@ -1,5 +1,13 @@
 # Inference lifecycle: remaining requirements
 
+LIFE-07g progress, 2026-11-21: visual engine source/build consolidation below
+is complete. Delegated native builds, original component normal/SAN and real
+heading gates, rebuilt actual VisionPsy/Molmo owner normal/SAN, gateway workflows
+and packaging/install pass.18 byte-identical parent files are retired, including
+13 engine files,4 tests and the original packer now owned by Inference. Exact
+evidence/scope: Inference qualification/life07g-visual-builds/README.md.
+Next is item2; all four lifecycle requirements and area3 remain open.
+
 Read-only implementation audit, 2026-11-21, after LIFE-07f. Baselines are Chat
 ce06f94/Inference4ad140d plus the recorded visual-budget extraction. This is not
 an area3 completion claim or a rerun of all historical qualification.
@@ -21,8 +29,8 @@ fair scheduling remain the full separate area4 acceptance responsibility.
 
 ## Concrete ownership work, in order
 
-1. **LIFE-07g: finish existing visual engine source/build extraction.** Current
-   parent builds still compile src/visionpsy and src/molmo2 even though their
+1. **LIFE-07g: completed visual engine source/build extraction.** At the audit
+   baseline, parent builds still compiled src/visionpsy and src/molmo2 although their
    native implementations already exist in Inference/engines. Direct comparison
    finds all3 VisionPsy and all10 Molmo2 C/C++/Objective-C++ source/header files
    identical, plus stb_image.h/tok.h/tok_unicode.h. engines/json.h has the already

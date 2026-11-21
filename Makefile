@@ -658,6 +658,7 @@ ci-ubuntu-full:
 
 # Maple MLX Smoke Test (Stage A)
 MLX_BUILD_DIR ?= $(BUILD_DIR)/mlx-build
+INFERENCE_VISUAL_ARGS = MLX_DIR="$(abspath vendor/mlx)" MLX_BUILD_DIR="$(abspath $(MLX_BUILD_DIR))" CXX="$(CXX)"
 MLX_INCLUDE = -Ivendor/mlx -I$(MLX_BUILD_DIR)
 # MLX builds JACCL only with a sufficiently new macOS SDK; older supported
 # SDKs compile no_jaccl.cpp into libmlx instead. Link the companion archive
@@ -774,11 +775,10 @@ samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tok
 	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
 
-samosa-visionpsy: src/visionpsy/samosa_visionpsy.cpp src/visionpsy/visionpsy_model.cpp src/visionpsy/visionpsy_model.h
-	@echo "Building samosa-visionpsy helper..."
+samosa-visionpsy:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) vision-engine $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/visionpsy/samosa_visionpsy.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/samosa-visionpsy $(MLX_LDFLAGS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/samosa-visionpsy $(BUILD_DIR)/samosa-visionpsy
 
 maple-pack: tools/maple_pack.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/json.h $(MAPLE_CACHE_OBJ)
 	@echo "Building maple-pack..."
@@ -801,12 +801,10 @@ test-maple-expert-views: tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRC
 	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-views $(MLX_LDFLAGS)
 	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-expert-views
 
-test-visionpsy-components: tests/test_visionpsy_components.cpp src/visionpsy/visionpsy_model.cpp src/visionpsy/visionpsy_model.h
-	@echo "Building VisionPsy component tests..."
+test-visionpsy-components:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) test-vision-engine-components $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_visionpsy_components.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/test-visionpsy-components $(MLX_LDFLAGS)
-	$(BUILD_DIR)/test-visionpsy-components
+	cp $(SAMOSA_INFERENCE_DIR)/build/test-visionpsy-components $(BUILD_DIR)/test-visionpsy-components
 
 test-visionpsy: test-visionpsy-components samosa-gateway samosa-visionpsy
 	node tests/test_visionpsy_ui.mjs
@@ -818,45 +816,32 @@ test-multimodal-supervisor:
 	@mkdir -p $(BUILD_DIR)
 	cp $(SAMOSA_INFERENCE_DIR)/build/fake-multimodal-helper $(BUILD_DIR)/fake-multimodal-helper
 
-test-molmo2-contract: tests/test_molmo2_contract.cpp src/molmo2/molmo2_contract.cpp src/molmo2/molmo2_contract.h assets/molmo2/config.json assets/molmo2/processor.json
+test-molmo2-contract:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) build/test-molmo2-contract
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_molmo2_contract.cpp src/molmo2/molmo2_contract.cpp -o $(BUILD_DIR)/test-molmo2-contract
+	cp $(SAMOSA_INFERENCE_DIR)/build/test-molmo2-contract $(BUILD_DIR)/test-molmo2-contract
 	$(BUILD_DIR)/test-molmo2-contract
 
-test-molmo2-processor: tests/test_molmo2_processor.cpp src/molmo2/molmo2_processor.cpp src/molmo2/molmo2_processor.h src/stb_image.h
+test-molmo2-processor:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) build/test-molmo2-processor
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -Wno-unused-function -Isrc \
-	  tests/test_molmo2_processor.cpp src/molmo2/molmo2_processor.cpp -o $(BUILD_DIR)/test-molmo2-processor
+	cp $(SAMOSA_INFERENCE_DIR)/build/test-molmo2-processor $(BUILD_DIR)/test-molmo2-processor
 	$(BUILD_DIR)/test-molmo2-processor
 
-molmo2-pack: tools/molmo2_pack.cpp src/molmo2/molmo2_contract.cpp src/molmo2/molmo2_contract.h
-	@echo "Building native Molmo2 Q4 package builder..."
+molmo2-pack:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) molmo2-pack $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-copy $(MLX_INCLUDE) -Isrc \
-	  tools/molmo2_pack.cpp src/molmo2/molmo2_contract.cpp -o $(BUILD_DIR)/molmo2-pack $(MLX_LDFLAGS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/molmo2-pack $(BUILD_DIR)/molmo2-pack
 
-molmo2-model-compile: src/molmo2/molmo2_model.cpp src/molmo2/molmo2_model.h src/molmo2/molmo2_processor.h src/molmo2/molmo2_contract.h
-	@echo "Compiling native Molmo2 model core..."
+molmo2-model-compile:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) molmo2-model-compile $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-deprecated-copy \
-	  $(MLX_INCLUDE) -Isrc -c src/molmo2/molmo2_model.cpp -o $(BUILD_DIR)/molmo2_model.o
+	cp $(SAMOSA_INFERENCE_DIR)/build/molmo2_model.o $(BUILD_DIR)/molmo2_model.o
 
-ifeq ($(UNAME_S),Darwin)
-MOLMO2_MEDIA_SRC := src/molmo2/molmo2_media.mm
-MOLMO2_MEDIA_LIBS := -framework AVFoundation -framework CoreMedia -framework CoreGraphics
-else
-MOLMO2_MEDIA_SRC := src/molmo2/molmo2_media_stub.cpp
-MOLMO2_MEDIA_LIBS :=
-endif
-
-samosa-molmo2: src/molmo2/samosa_molmo2.cpp src/molmo2/molmo2_model.cpp src/molmo2/molmo2_processor.cpp src/molmo2/molmo2_contract.cpp $(MOLMO2_MEDIA_SRC)
-	@echo "Building on-demand native Molmo2 4B helper..."
+samosa-molmo2:
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) molmo2-engine $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++20 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-deprecated-copy \
-	  $(MLX_INCLUDE) -Isrc $^ -o $(BUILD_DIR)/samosa-molmo2 $(MLX_LDFLAGS) $(MOLMO2_MEDIA_LIBS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/samosa-molmo2 $(BUILD_DIR)/samosa-molmo2
 
 test-molmo2-gateway: samosa-gateway test_fake_openai_backend test-multimodal-supervisor tests/test_molmo2_gateway.sh
 	SAMOSA_COMPILED_GATEWAY=./$(BUILD_DIR)/samosa-gateway \
@@ -891,11 +876,12 @@ test-molmo2-real: samosa-molmo2
 # renders a real PDF page, validates the processor token contract, and performs
 # native MLX/Metal generation. Release automation must provide the downloaded
 # catalog artifact directory explicitly.
-test-visionpsy-real: samosa-visionpsy tests/test_visionpsy_real.cpp
+test-visionpsy-real: samosa-visionpsy
 	@test -n "$(VISIONPSY_MODEL_DIR)" || { echo "set VISIONPSY_MODEL_DIR to the pinned VisionPsy MLX checkpoint" >&2; exit 2; }
 	@test -x "$(BUILD_DIR)/samosa-extract" || { echo "build samosa-extract with PDFium before running the real VisionPsy gate" >&2; exit 2; }
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++20 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_visionpsy_real.cpp src/visionpsy/visionpsy_model.cpp -o $(BUILD_DIR)/test-visionpsy-real $(MLX_LDFLAGS)
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) vision-engine-real-check $(INFERENCE_VISUAL_ARGS)
+	cp $(SAMOSA_INFERENCE_DIR)/build/test-visionpsy-real $(BUILD_DIR)/test-visionpsy-real
 	@tmp_ppm=$$(mktemp "$${TMPDIR:-/tmp}/samosa-visionpsy-real-XXXXXX"); \
 	  trap 'rm -f "$$tmp_ppm"' EXIT; \
 	  rm -f "$$tmp_ppm"; \

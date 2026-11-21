@@ -1,5 +1,14 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07g consolidates visual source/build ownership in
+Inference, with unchanged original engines/tests/tool, declared native MLX
+inputs and18 identical parent copies (3884 lines) retired. Standalone builds,
+component normal/SAN, actual heading and VisionPsy/Molmo owner normal/SAN,
+gateway and package/install checks pass; see Inference qualification/
+life07g-visual-builds/README.md. Next is remaining primary-backend source/build/
+launch ownership per INFERENCE_AREA3_REMAINING_AUDIT.md. Original inventory and
+full lifecycle requirements below remain applicable; area3 stays open.
+
 Progress, 2026-11-21: LIFE-07f moves the original visual resource probes/budget,
 resident-estimate reserve and bounded reclaim wait into Inference with explicit
 telemetry/control/traces and preserved policy. Native normal/SAN, standalone,

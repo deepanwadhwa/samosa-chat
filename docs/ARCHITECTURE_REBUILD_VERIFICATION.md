@@ -433,10 +433,25 @@ Populate this table only after implementing and running the specified checks.
 
 ## Resume checkpoint
 
-Current checkpoint, 2026-11-20: preserve/reuse existing working monolith code;
+Current checkpoint, 2026-11-21: preserve/reuse existing working monolith code;
 no Python anywhere in project runtime/tooling/tests/CI; native Mac is the required
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
+
+LIFE-07g checkpoint, 2026-11-21: native visual engine builds/tests now delegate
+to Inference's existing sources with explicit native MLX inputs. Original flags,
+outputs, media frameworks and kernel pairing are preserved. Original VisionPsy
+tests and Molmo packer move unchanged;18 identical parent files (3884 lines)
+are retired. Fresh standalone builds, original components normal/SAN and real
+heading gate, rebuilt actual VisionPsy/Molmo owner normal/SAN, full gateway
+visual workflows, package and clean-install/upgrade gates pass. Scope, commands,
+source/dependency hashes and excluded attempts are recorded in
+components/samosa-inference/docs/qualification/life07g-visual-builds/README.md.
+Next: remaining primary-backend source/build/launch ownership, guarded legacy
+Whisper and shared coordination per INFERENCE_AREA3_REMAINING_AUDIT.md.
+The complete goal, area3 and all later gates remain open. No Python/Docker ran.
+Qualified Inference revision/pin:ecf729e, backed up on the same origin refactor
+branch. Earlier pins below remain historical checkpoints.
 
 LIFE-07f checkpoint, 2026-11-21: original visual host probes, resource budget,
 resident-estimate reserve and bounded reclaim wait now belong to Inference's

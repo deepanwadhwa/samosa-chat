@@ -297,11 +297,11 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07g: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md).
-   Delegate the existing Mac VisionPsy/Molmo2 engine builds and useful tests to
-   their already extracted owner files. Preserve flags, dependencies, output
-   names, media frameworks and kernel pairing; retire each proven parent duplicate
-   after its original behavior and assembled caller pass.
+1. Follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
+   through primary-backend source/build/launch ownership. Reuse the working
+   Qwen/Maple engines and existing llama launch helper, preserving native flags,
+   environment, startup probes, process groups/reaping and persisted settings.
+   Keep model selection and App presentation as explicit caller policy.
 2. Follow the audit through remaining primary-backend source/launch ownership,
    Whisper guarded execution and shared coordination. Preserve original wide
    image/video and text/SRT/long-window behavior. Current prepared-input profiles
@@ -311,6 +311,16 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
+
+Native Mac progress, 2026-11-21: LIFE-07g delegates visual engine builds/tests to
+Inference with explicit existing MLX inputs, preserves output/flags/media/kernel
+pairing, moves original tests/packer and retires18 identical parent files
+(3884 lines). Fresh standalone builds, original components normal/SAN and real
+heading gate, rebuilt actual VisionPsy/Molmo owner normal/SAN, gateway workflows,
+package and clean-install/upgrade checks pass. See
+[visual source/build evidence](../components/samosa-inference/docs/qualification/life07g-visual-builds/README.md).
+Area3 remains open; remaining primary-backend, Whisper and shared coordination
+work is next. No Python, new models or Docker work ran.
 
 Native Mac progress, 2026-11-21: LIFE-07f extracts the existing visual resource
 policy into Inference: native probes, adaptive detail/reserve and bounded reclaim
@@ -369,7 +379,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `056578e` (LIFE-07f), committed and backed up on
+Current qualified Inference pin: `ecf729e` (LIFE-07g), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 
