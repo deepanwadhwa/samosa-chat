@@ -1,11 +1,22 @@
 # Remaining legacy-to-guardian integration
 
-2026-11-21, after LIFE-07j. This is the next implementation boundary, not a new
+2026-11-21, after LIFE-07k primary guardian integration. This is the next implementation boundary, not a new
 runtime design. Reuse the working EngineProcess/Activation and host adapters.
 Preserve the original Qwen/Maple/llama, Whisper and visual implementations.
 Native Mac first; no Python or Docker/VM work.
 
-LIFE-07j moves primary launch/probe/stop/PID-marker code into backend_process.c.
+LIFE-07k reuses the existing EngineProcess guardian for the primary server,
+retaining the actual worker PID/marker, unlimited lifetime, append/fallback logs,
+original launch/environment,8-second TERM grace, identity through acknowledgement
+and retained ownership through pending shutdown. Final primary676 normal/SAN,
+standalone676 normal/SAN, actual Gateway SIGTERM/SIGKILL plus helper cleanup,
+original selection/settings/App/LAN, package/native install and retained actual
+Qwen generation pass. See components/samosa-inference/docs/qualification/
+life07k-primary-guardian/README.md. Primary common activation/readiness/identity
+and guardian-death policy remain open; guardian reuse alone is not full area3.
+Next default paths are legacy Whisper and visual under the unchanged contracts.
+
+Historical LIFE-07j moves primary launch/probe/stop/PID-marker code into backend_process.c.
 It retains original caller coordination and fork-success/HTTP-availability
 semantics. Its reproduced descendant-cleanup defect is fixed with the existing
 guardian WNOWAIT pattern. That does not provide parent-death ownership or actual
@@ -19,7 +30,7 @@ generation qualification for every legacy/default deployment path.
 
 EngineProcess already supplies guardians, parent-death control, retained leases,
 bound assets/workspaces, separate protocol/stderr, descendant cleanup and sized
-results. Reuse those mechanisms. Its current trusted argv/lifetime/log/model
+results. Reuse those mechanisms. Its original bounded trusted argv/lifetime/log/model
 interfaces must be checked against the table before adopting them. Extend an
 existing boundary only where the preserved contract requires it; do not add a
 second guardian/server or silently narrow an existing workflow to fit a profile.

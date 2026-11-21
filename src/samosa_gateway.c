@@ -8102,8 +8102,9 @@ static void jobs_stop(Gateway *g) {
 static int backend_start(Gateway *g) {
     if (!backend_available(g, g->backend)) return 0;
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return 1;
-    char chats[PATH_MAX];
-    if (!path_join(chats, sizeof(chats), g->home, "chats") || !mkdirs(chats)) return 0;
+    char chats[PATH_MAX], run[PATH_MAX];
+    if (!path_join(chats, sizeof(chats), g->home, "chats") || !mkdirs(chats) ||
+        !path_join(run, sizeof(run), g->home, "run") || !mkdirs(run)) return 0;
     RuntimeConfig runtime;
     RuntimeEffective effective;
     runtime_config_load(g, g->backend, &runtime);
@@ -26013,6 +26014,7 @@ static int load_config(Gateway *g) {
 }
 
 int main(int argc, char **argv) {
+    int dispatched=samosa_backend_process_dispatch(argc,argv);if(dispatched>=0)return dispatched;
     signal(SIGPIPE, SIG_IGN);
     Gateway gateway;
     if (!load_config(&gateway)) {

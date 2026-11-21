@@ -297,24 +297,47 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07k: reuse existing guardians/host adapters under the
-   [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md). Primary
-   launch/group/reap/probe ownership is extracted in LIFE-07j; its legacy/default
-   path still needs guarded parent-death/common lifecycle integration. Preserve
-   original unbounded server lifetime, observed PID/marker/signal behavior,
-   Qwen/Maple/llama environment/flags, persisted selection and runtime settings.
+1. LIFE-07k primary guardian integration is qualified. Next reuse existing
+   EngineProcess/host adapters for legacy Whisper txt/SRT/long-window/16-MiB,
+   then default visual wide/native-video profiles under the
+   [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md). Preserve
+   original code, limits, flags, cancellation and cleanup; narrower modern
+   profiles are not substitutes. Do not design another guardian/server/model.
 2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
-   through guarded Whisper/visual and shared coordination. Preserve original wide
-   image/video and txt/SRT/long-window/16-MiB behavior. Current short-clip/prepared
-   profiles are not full substitutes. Extend only required existing boundaries;
-   do not design another guardian, scheduler, server or model implementation.
+   through common activation/readiness/observed identity/stale rejection,
+   last-good/guardian-death qualification and shared turn/pause/resume/retry
+   coordination. Keep primary selection/settings/rollback explicit caller policy.
+   Guardian ownership and HTTP200 do not close all common lifecycle requirements.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-Native Mac progress, 2026-11-21: LIFE-07j extracts primary launch/probe/group/
+LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing
+EngineProcess guardian, retained ownership lease/lifeline and WNOWAIT cleanup.
+Original Qwen/Maple/llama env/log/argv/exec and actual PID/marker are preserved;
+server lifetime is unlimited, append/fallback logs unchanged,8-second TERM grace
+retained. No second guardian/server or model algorithm was added. Guardian holds
+identity until host acknowledgement/death and marker cleanup/reap; pending stop
+keeps ownership and refuses replacement. Gateway only dispatches before config
+and creates existing run directory before ownership acquisition.
+Final primary676 normal/SAN, fresh independent source676 normal/SAN, existing
+bounded guardian525 normal/SAN, activation/Whisper/Vision/summary normal/SAN,
+actual assembled Gateway SIGTERM/SIGKILL/helper cleanup, original selection/
+rollback/settings/LAN/App/llama, exact package/native clean install/upgrade and
+retained actual Qwen4-token generation/zero swap growth/native shutdown pass.
+Evidence/limits: components/samosa-inference/docs/qualification/
+life07k-primary-guardian/README.md. Failed development/harness attempts are kept
+and excluded from passes. Pre-existing vendor/chutni edits are preserved.
+Next reuse the same guardians for legacy Whisper txt/SRT/long-window/16-MiB,
+then default visual wide/native-video profiles; retain INFERENCE_GUARDIAN_COMPATIBILITY.md.
+Common activation/readiness/identity/stale rejection, guardian-death policy and
+shared coordination/full area3 stay open. Later Inference areas, Python removal,
+Agent/App, pinned assembly and qualified legacy retirement remain; defer Inkling
+until the full refactor. Native Mac first; no Python/new model/Docker/VM ran.
+
+Previous native Mac progress, 2026-11-21: LIFE-07j extracts primary launch/probe/group/
 marker/reap behind Inference's public owner, preserving original caller policy
 and mutex coordination. A reproduced stubborn-helper leak is fixed using the
 existing WNOWAIT ownership pattern. Native normal/SAN398 checks, independent
@@ -409,7 +432,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `20832f5` (LIFE-07j), committed and backed up on
+Current qualified Inference pin: `1194d31` (LIFE-07k), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

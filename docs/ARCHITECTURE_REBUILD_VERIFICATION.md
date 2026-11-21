@@ -438,7 +438,33 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07j checkpoint, 2026-11-21: existing primary-backend launch/probe/group/
+LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing
+EngineProcess guardian, retained ownership lease/lifeline and WNOWAIT cleanup.
+Original Qwen/Maple/llama env/log/argv/exec and actual PID/marker are preserved;
+server lifetime is unlimited, append/fallback logs unchanged,8-second TERM grace
+retained. No second guardian/server or model algorithm was added. Guardian holds
+identity until host acknowledgement/death and marker cleanup/reap; pending stop
+keeps ownership and refuses replacement. Gateway only dispatches before config
+and creates existing run directory before ownership acquisition.
+Final primary676 normal/SAN, fresh independent source676 normal/SAN, existing
+bounded guardian525 normal/SAN, activation/Whisper/Vision/summary normal/SAN,
+actual assembled Gateway SIGTERM/SIGKILL/helper cleanup, original selection/
+rollback/settings/LAN/App/llama, exact package/native clean install/upgrade and
+retained actual Qwen4-token generation/zero swap growth/native shutdown pass.
+Evidence/limits: components/samosa-inference/docs/qualification/
+life07k-primary-guardian/README.md. Failed development/harness attempts are kept
+and excluded from passes. Pre-existing vendor/chutni edits are preserved.
+Next reuse the same guardians for legacy Whisper txt/SRT/long-window/16-MiB,
+then default visual wide/native-video profiles; retain INFERENCE_GUARDIAN_COMPATIBILITY.md.
+Common activation/readiness/identity/stale rejection, guardian-death policy and
+shared coordination/full area3 stay open. Later Inference areas, Python removal,
+Agent/App, pinned assembly and qualified legacy retirement remain; defer Inkling
+until the full refactor. Native Mac first; no Python/new model/Docker/VM ran.
+
+Current qualified Inference revision/pin:1194d31, committed and backed up on
+origin/refactor/extract-working-modules. Earlier pins below are historical.
+
+Previous LIFE-07j checkpoint, 2026-11-21: existing primary-backend launch/probe/group/
 marker/stop and PID state mutations now belong to Inference's backend_process
 public owner/archive. Thin Gateway callbacks preserve original mutex/upstream/
 shared-specialist coordination and trusted selection/settings/llama inputs.
