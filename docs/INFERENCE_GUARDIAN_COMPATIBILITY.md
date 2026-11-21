@@ -1,11 +1,23 @@
 # Remaining legacy-to-guardian integration
 
-2026-11-21, after LIFE-07k primary guardian integration. This is the next implementation boundary, not a new
+2026-11-21, after LIFE-07l primary/Whisper guardian integration. This is the next implementation boundary, not a new
 runtime design. Reuse the working EngineProcess/Activation and host adapters.
 Preserve the original Qwen/Maple/llama, Whisper and visual implementations.
 Native Mac first; no Python or Docker/VM work.
 
-LIFE-07k reuses the existing EngineProcess guardian for the primary server,
+LIFE-07l reuses EngineProcess for the original long-window txt/SRT Whisper CLI,
+keeping English/-nt,16-MiB output/UTF-8/error semantics and on-demand execution.
+It reserves actual PID/workspace through result validation/tracking withdrawal;
+parent death/cancel finish helpers and workspace. Explicit handoff includes only
+caller-prepared microphone/decoded/PCM audio; borrowed durable audio remains.
+Final522 normal/SAN/independent, original54 assertion audit, actual Gateway
+SIGKILL/prepared cleanup, full voice/audio/video/cache/cancel/restart, retained
+actual Whisper and exact native package/install pass. Evidence: components/
+samosa-inference/docs/qualification/life07l-whisper-guardian/README.md.
+Next default visual helpers must retain all contracts in the table; common
+activation/identity/readiness, guardian-death and pre-admission recovery remain open.
+
+Previous LIFE-07k reuses the existing EngineProcess guardian for the primary server,
 retaining the actual worker PID/marker, unlimited lifetime, append/fallback logs,
 original launch/environment,8-second TERM grace, identity through acknowledgement
 and retained ownership through pending shutdown. Final primary676 normal/SAN,
@@ -14,7 +26,7 @@ original selection/settings/App/LAN, package/native install and retained actual
 Qwen generation pass. See components/samosa-inference/docs/qualification/
 life07k-primary-guardian/README.md. Primary common activation/readiness/identity
 and guardian-death policy remain open; guardian reuse alone is not full area3.
-Next default paths are legacy Whisper and visual under the unchanged contracts.
+The next default path is visual under the unchanged wide/native-video contracts.
 
 Historical LIFE-07j moves primary launch/probe/stop/PID-marker code into backend_process.c.
 It retains original caller coordination and fork-success/HTTP-availability

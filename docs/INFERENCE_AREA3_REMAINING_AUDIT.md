@@ -1,6 +1,17 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07k progress, 2026-11-21: primary ownership now reuses EngineProcess with
+LIFE-07l progress, 2026-11-21: legacy Whisper now reuses EngineProcess with
+actual PID/workspace reservation, parent-death/group cleanup and explicit
+handoff for caller-prepared audio. Original long txt/SRT/16-MiB/UTF-8/return/CLI
+semantics remain; borrowed durable inputs stay borrowed. Final native/SAN and
+independent522, original54-assertion audit, old-runner leak proof, actual Gateway
+SIGKILL/prepared cleanup, full voice/audio/video/cache/cancel/restart, actual
+Whisper and native packaging/install pass. See LIFE-07l evidence README.
+Next default visual guardian integration must preserve wide/native-video
+contracts. Common lifecycle/readiness/identity, guardian-death, pre-admission
+recovery/shared coordination and full area3 remain open.
+
+Historical LIFE-07k progress, 2026-11-21: primary ownership now reuses EngineProcess with
 actual PID/marker reservation, retained ownership/lifeline, unlimited lifetime,
 original append/fallback logs and8-second TERM grace. Final native/SAN676 and
 standalone676, guardian525, existing modality profiles, assembled Gateway
@@ -54,9 +65,9 @@ User direction remains extraction/reuse, no Python and native Mac first.
 
 | Area3 requirement | Current implementation evidence | What is still unproven/incomplete |
 | --- | --- | --- |
-| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c now reuses EngineProcess in LIFE-07k, preserving its original primary-server contracts and parent-death cleanup. Common Activation/readiness is still open. Legacy Whisper and default visual profiles still need guardian integration; retain their wider contracts. |
+| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c now reuses EngineProcess in LIFE-07k, preserving its original primary-server contracts and parent-death cleanup. Common Activation/readiness is still open. LIFE-07l also guards the legacy Whisper CLI and explicitly handed-off prepared audio, preserving long-window/txt/SRT/16-MiB behavior. Default visual profiles still need guardian integration; retain their wider/native-video contracts. |
 | Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision and visual lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | Whisper entries in registry_host.c configure only WhisperConfig, without the common lifecycle profile. Nonresident CLI behavior must be represented honestly; do not invent a persistent Whisper server. Default App paths still use legacy health/handshake checks and trusted process state outside the common lifecycle qualification controls. Configuration or saved activation alone cannot prove current readiness. |
-| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary descendant cleanup with WNOWAIT; LIFE-07k adds actual primary owner-death/group/marker cleanup, PID reservation, pending-stop ownership and unrelated-process survival. | These are profile-scoped results, not proof for every default/legacy launch path. The legacy Whisper runner lacks guardian parent-death cleanup. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
+| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary descendant cleanup with WNOWAIT; LIFE-07k adds actual primary owner-death/group/marker cleanup, PID reservation, pending-stop ownership and unrelated-process survival. | These are profile-scoped results, not proof for every default/legacy launch path. LIFE-07l qualifies legacy Whisper owner-death/group/workspace/prepared-audio cleanup; default visual and common guardian-death/pre-admission recovery remain open. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
 | Retain last-good configuration and refuse ambiguous interrupted generation | Activation owns revision/last-good semantics for the managed/resident profiles; existing transports invalidate interrupted framing and retain cleanup ownership. | Original App-selected backend/configuration and legacy on-demand execution have not fully moved behind the common owner. Their persistent selection/caching/error semantics must be preserved when consolidating, not silently replaced by a new global configuration model. |
 
 The new Mac visual policy API owns the original probes, thresholds, reserve and

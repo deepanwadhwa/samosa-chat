@@ -297,12 +297,13 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07k primary guardian integration is qualified. Next reuse existing
-   EngineProcess/host adapters for legacy Whisper txt/SRT/long-window/16-MiB,
-   then default visual wide/native-video profiles under the
-   [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md). Preserve
-   original code, limits, flags, cancellation and cleanup; narrower modern
-   profiles are not substitutes. Do not design another guardian/server/model.
+1. LIFE-07k primary and LIFE-07l legacy Whisper guardian integration are
+   qualified. Next reuse the existing guardian for default visual helpers under
+   the [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md).
+   Preserve VisionPsy sides through2048/64-KiB/120-second and Molmo image/joint/
+   native-video1-MiB/600-second profiles, trace/retry and grace. Prove/fix its
+   stubborn-helper cleanup on that actual supported path. Narrow prepared-pixel/
+   frame profiles are not substitutes; do not build another guardian/server/model.
 2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
    through common activation/readiness/observed identity/stale rejection,
    last-good/guardian-death qualification and shared turn/pause/resume/retry
@@ -314,7 +315,38 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing
+LIFE-07l checkpoint, 2026-11-21: legacy Whisper CLI now reuses existing
+EngineProcess group/lifeline/retained-workspace ownership. Original English/-nt,
+txt/SRT, long-window inputs,16-MiB UTF-8/result validation and return codes stay.
+The command profile reserves actual PID/workspace until output validation and
+tracking withdrawal, then finishes reap/cleanup; cancellation handles resistant
+helpers and retains busy ownership through a stalled guardian. No new model,
+transcription server, guardian or30-second clip restriction was introduced.
+An actual killed-Gateway check reproduced a leaked caller-prepared WAV. Explicit
+owned handoff now moves only prepared microphone/decoded/PCM windows into the
+existing workspace; durable WAV attachments remain borrowed. Readable decoder
+output is made0600 during handoff, preserving the original video workflow.
+Final native/SAN522 and fresh independent522 pass, with all54 original fixture
+assertions retained. Original runner reproduces engine/helper/result leaks on
+owner death (survivors explicitly cleaned); fixed native and actual Gateway
+SIGKILL checks remove processes/prepared/result workspace. Existing guardian525,
+primary676 and activation/Whisper/Vision/summary normal/SAN pass. Full voice and
+durable audio including271 seconds/30 windows, video, cache/cancel/restart pass;
+actual installed Whisper txt/SRT/expected words and exact package/native install/
+upgrade pass. See components/samosa-inference/docs/qualification/
+life07l-whisper-guardian/README.md for evidence, source/input hashes and excluded
+failures. Entire Gateway is audited against only PID withdrawal and explicit
+prepared-input ownership changes; primary owner only moves its self-path helper.
+Next integrate default visual helpers using the existing guardian without
+shrinking VisionPsy2048/64-KiB/120-second or Molmo image/joint/native-video1-MiB/
+600-second profiles, traces/retry/grace. Prove/fix its stubborn-helper path.
+Common activation/identity/readiness/stale rejection/last-good, guardian-death and
+pre-admission crash recovery/shared coordination remain open; area3/full refactor
+are incomplete. Later Inference areas, Python removal, Agent/App, pinned assembly
+and qualified retirement remain. Sources stays closed; defer Inkling until after
+the full refactor. Native Mac only; no Python/model fetch/Docker/VM/Linux work.
+
+Previous LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing
 EngineProcess guardian, retained ownership lease/lifeline and WNOWAIT cleanup.
 Original Qwen/Maple/llama env/log/argv/exec and actual PID/marker are preserved;
 server lifetime is unlimited, append/fallback logs unchanged,8-second TERM grace
@@ -432,7 +464,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `1194d31` (LIFE-07k), committed and backed up on
+Current qualified Inference pin: `f06d5c1` (LIFE-07l), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

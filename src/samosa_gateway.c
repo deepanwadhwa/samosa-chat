@@ -19938,6 +19938,10 @@ static void whisper_process_started(void *context, pid_t pid) {
     track_job_pid(g, pid, 1);
 }
 static void whisper_process_reaped(void *context, pid_t pid) {
+    Gateway *g = context;
+    pthread_mutex_lock(&g->voice_mu);
+    if (g->voice_transcription_pid == pid) g->voice_transcription_pid = 0;
+    pthread_mutex_unlock(&g->voice_mu);
     track_job_pid(context, pid, 0);
 }
 static void whisper_process_release(void *context) {
@@ -19952,7 +19956,7 @@ static int whisper_transcribe_path(Gateway *g, const char *wav_path,
                                    int timestamped, char **output,
                                    char *model_id, size_t model_cap,
                                    char *fingerprint, size_t fingerprint_cap,
-                                   int preserve_cancel) {
+                                   int preserve_cancel, int prepared_owned) {
     *output = NULL;
     char model_path[PATH_MAX], temporary[PATH_MAX];
     if (!voice_stt_fingerprint(g, model_id, model_cap, model_path,
@@ -19964,8 +19968,9 @@ static int whisper_transcribe_path(Gateway *g, const char *wav_path,
     SamosaWhisperProcessControl control = {whisper_process_acquire,
         whisper_process_started, whisper_process_reaped, whisper_process_release,
         whisper_process_cancelled, g};
-    return samosa_whisper_process_run(&config, &control, wav_path, timestamped,
-                                      preserve_cancel, output);
+    return prepared_owned
+        ? samosa_whisper_process_run_owned(&config, &control, wav_path, timestamped, preserve_cancel, output)
+        : samosa_whisper_process_run(&config, &control, wav_path, timestamped, preserve_cancel, output);
 }
 
 static int audio_wav_info_path(const char *path, AttachmentWavInfo *info) {
@@ -20828,7 +20833,7 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
         if (transcribed == SAMOSA_WHISPER_OK)
             transcribed = whisper_transcribe_path(
                 g, whisper_path, 1, &srt, used_model, sizeof(used_model),
-                used_fingerprint, sizeof(used_fingerprint), 1);
+                used_fingerprint, sizeof(used_fingerprint), 1, compressed && decoded_path[0]);
         if (decoded_path[0]) unlink(decoded_path);
         if (transcribed == SAMOSA_WHISPER_OK &&
             (strcmp(used_model, model_id) ||
@@ -20881,7 +20886,7 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                 transcribed = whisper_transcribe_path(
                     g, window_path, 1, &window_srt, used_model,
                     sizeof(used_model), used_fingerprint,
-                    sizeof(used_fingerprint), 1);
+                    sizeof(used_fingerprint), 1, 1);
                 unlink(window_path);
                 if (transcribed != SAMOSA_WHISPER_OK) {
                     free(window_srt); window_srt = NULL;
@@ -21730,7 +21735,7 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
     char *text = NULL, stt_model_id[80], fingerprint[192];
     int transcribed = whisper_transcribe_path(
         g, wav_path, 0, &text, stt_model_id, sizeof(stt_model_id),
-        fingerprint, sizeof(fingerprint), 0);
+        fingerprint, sizeof(fingerprint), 0, 1);
     if (transcribed != SAMOSA_WHISPER_OK) {
         if (transcribed == SAMOSA_WHISPER_BUSY) {
             sent = samosa_http_json_error(fd, 409, "voice_busy",
