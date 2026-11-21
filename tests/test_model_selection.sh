@@ -91,7 +91,7 @@ stop_gateway() {
   printf 'qwen\n' >"$HOME_DIR/model-backend"
 }
 
-field() { printf '%s' "$1" | python3 -c "import json,sys; v=json.load(sys.stdin).get('$2'); print('' if v is None else v)"; } # field <json> <key>
+field() { printf '%s' "$1" | node tests/model_selection_checks.mjs field "$2"; } # field <json> <key>
 select_backend() { curl -sS -H "X-Samosa-Token: $TOKEN" -X POST "http://127.0.0.1:$PORT/v1/backends/select" -d "{\"backend\":\"$1\"}"; }
 selection_status() { curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/models/selection/$1"; }
 wait_terminal() { # wait_terminal <job_id> -> prints final status JSON
@@ -219,11 +219,11 @@ echo "readiness timeout -> failed, restores the prior working backend: PASS"
 #         answering HTTP must not trap the watchdog (and UI) on Starting.
 #         The per-probe socket deadline lets the overall readiness timeout win. ---
 start_gateway SAMOSA_TEST_SELECTION_READY_TIMEOUT_MS=300 SAMOSA_FAKE_BONSAI_HEALTH_DELAY_MS=2000
-START_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+START_MS=$(node tests/model_selection_checks.mjs now)
 RESP=$(select_backend bonsai)
 JOB_ID=$(field "$RESP" job_id)
 FINAL=$(wait_terminal "$JOB_ID")
-END_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+END_MS=$(node tests/model_selection_checks.mjs now)
 [ "$(field "$FINAL" state)" = "failed" ] || { echo "FAIL: wedged health endpoint should fail, got $(field "$FINAL" state)"; echo "$FINAL"; exit 1; }
 printf '%s' "$FINAL" | grep -q '"code": *"readiness_timeout"' || { echo "FAIL: expected readiness_timeout for wedged health endpoint"; echo "$FINAL"; exit 1; }
 [ "$((END_MS - START_MS))" -lt 4000 ] || { echo "FAIL: a wedged health response must not leave selection stuck"; exit 1; }
@@ -234,11 +234,11 @@ echo "wedged health response is bounded and reaches readiness_timeout: PASS"
 #        answering a probe. Distinguished from a timeout (fails fast, not
 #        after the full deadline) and still restores qwen. ---
 start_gateway SAMOSA_BONSAI_SERVER="$TMP/crashes.sh"
-START_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+START_MS=$(node tests/model_selection_checks.mjs now)
 RESP=$(select_backend bonsai)
 JOB_ID=$(field "$RESP" job_id)
 FINAL=$(wait_terminal "$JOB_ID")
-END_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+END_MS=$(node tests/model_selection_checks.mjs now)
 [ "$(field "$FINAL" state)" = "failed" ] || { echo "FAIL: expected failed, got $(field "$FINAL" state)"; echo "$FINAL"; exit 1; }
 printf '%s' "$FINAL" | grep -q '"code": *"backend_crashed"' || { echo "FAIL: expected backend_crashed"; echo "$FINAL"; exit 1; }
 [ "$((END_MS - START_MS))" -lt 10000 ] || { echo "FAIL: an immediate crash should be detected in well under the 20s default timeout"; exit 1; }

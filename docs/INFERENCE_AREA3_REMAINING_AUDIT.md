@@ -1,5 +1,15 @@
 # Inference lifecycle: remaining requirements
 
+LIFE-07j progress, 2026-11-21: primary launch/probe/group/marker/stop/PID state
+mutations now belong to Inference's public backend_process owner, with original
+caller policy/shared-mutex callbacks. A reproduced helper leak is fixed using
+existing WNOWAIT ownership. Native normal/SAN398 checks, standalone archive,
+original selection/settings/LAN/app/llama, actual retained Qwen old/new and
+package/install pass; see qualification/life07j-primary-process in Inference.
+Next LIFE-07k reuses existing guardians/host adapters under
+INFERENCE_GUARDIAN_COMPATIBILITY.md. This is not common parent-death/actual-
+generation readiness/identity qualification for all default paths; area3 is open.
+
 LIFE-07i progress, 2026-11-21: original Maple source/build/native test ownership
 now belongs to Inference.18 supported builds,9 native runs,3 sanitizer checks,
 fresh source/data builds, Gateway quarantine/settings and package/install pass;
@@ -34,9 +44,9 @@ User direction remains extraction/reuse, no Python and native Mac first.
 
 | Area3 requirement | Current implementation evidence | What is still unproven/incomplete |
 | --- | --- | --- |
-| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Legacy backend_start/backend_stop still own the selected primary engine in Gateway. Extracted legacy Whisper runner retains original direct fork/wait and caller coordination; it is not yet the verified guarded profile. All supported deployment paths have not converged on those owners. |
-| Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision and visual lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | Whisper entries in registry_host.c configure only WhisperConfig, without the common lifecycle profile. Nonresident CLI behavior must be represented honestly; do not invent a persistent Whisper server. Legacy App paths still use availability/handshake traces and separate launch state. Configuration or saved activation alone cannot prove current readiness. |
-| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions. | These are profile-scoped results, not proof for every default/legacy launch path. The legacy Whisper runner lacks guardian parent-death cleanup. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
+| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c (LIFE-07j) and the extracted legacy Whisper runner still use original direct fork/wait and caller coordination. They have not converged on the existing guardians/Activation profiles. All supported default paths still need this integration. |
+| Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision and visual lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | Whisper entries in registry_host.c configure only WhisperConfig, without the common lifecycle profile. Nonresident CLI behavior must be represented honestly; do not invent a persistent Whisper server. Default App paths still use legacy health/handshake checks and trusted process state outside the common lifecycle qualification controls. Configuration or saved activation alone cannot prove current readiness. |
+| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary stop/crash descendant cleanup with guardian WNOWAIT. | These are profile-scoped results, not proof for every default/legacy launch path. The legacy Whisper runner lacks guardian parent-death cleanup. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
 | Retain last-good configuration and refuse ambiguous interrupted generation | Activation owns revision/last-good semantics for the managed/resident profiles; existing transports invalidate interrupted framing and retain cleanup ownership. | Original App-selected backend/configuration and legacy on-demand execution have not fully moved behind the common owner. Their persistent selection/caching/error semantics must be preserved when consolidating, not silently replaced by a new global configuration model. |
 
 The new Mac visual policy API owns the original probes, thresholds, reserve and
@@ -59,17 +69,19 @@ fair scheduling remain the full separate area4 acceptance responsibility.
    packaging behavior. Retire each parent duplicate after original behavior and
    assembled callers pass. Use the existing independent release builders too;
    do not require a new model or rebuild working algorithms.
-2. **Move remaining primary-backend ownership.** backend_start currently forks
-   Qwen, Maple or llama-server and stores PID/group/current selection in Gateway.
-   The llama argv helper is already extracted; Qwen/Maple launch bodies remain
-   there. Reuse those exact flags/environment, startup probing, group/reap and
-   persisted settings, then wire the existing managed owner where contracts
-   match. Model selection and App presentation remain explicit caller policy.
+2. **Complete common primary-backend lifecycle integration.** LIFE-07j extracts
+   Qwen/Maple launch bodies, existing llama helper reuse, group/probe/marker/reap
+   and authoritative PID mutation into backend_process.c/public API. Gateway
+   passes trusted inputs and retains original selection/settings/fingerprint/
+   rollback policy and shared coordination callbacks. Next reuse existing
+   EngineProcess/managed owners where contracts match, extending only required
+   boundaries per INFERENCE_GUARDIAN_COMPATIBILITY.md. Model selection and App
+   presentation remain explicit caller policy.
    Qwen's original native source/cache/vision/kernels and useful tests are now
    extracted in LIFE-07h. Maple's original implementation/build/native tests are
    extracted in LIFE-07i with declared native dependencies and preserved inputs.
-   LIFE-07j consolidates remaining primary launch/group/reap/probe ownership;
-   HTTP compatibility alone does not complete that source ownership requirement.
+   Source/build and legacy launch ownership are now extracted; common guarded
+   controls/identity and successful-generation readiness are still required.
 3. **Consolidate the extracted legacy Whisper execution with guarded ownership.**
    Reuse whisper.c and EngineProcess rather than making a second worker/server.
    Preserve text/SRT, selected model fingerprint, long windows, output limits,

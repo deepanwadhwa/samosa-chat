@@ -297,21 +297,32 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07j: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
-   through primary launch/group/reap/probe ownership, reusing the original
-   Qwen/Maple bodies and existing llama helper. Qwen/Maple sources/builds/useful
-   native tests are extracted in LIFE-07h/i; retain those implementations.
-   Preserve native flags/environment, persisted settings and startup behavior;
-   keep model selection and App presentation as explicit caller policy.
-2. Follow the audit through remaining primary-backend source/launch ownership,
-   Whisper guarded execution and shared coordination. Preserve original wide
-   image/video and text/SRT/long-window behavior. Current prepared-input profiles
-   are not full gateway substitutes; do not design a new scheduler/server/model.
+1. LIFE-07k: reuse existing guardians/host adapters under the
+   [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md). Primary
+   launch/group/reap/probe ownership is extracted in LIFE-07j; its legacy/default
+   path still needs guarded parent-death/common lifecycle integration. Preserve
+   original unbounded server lifetime, observed PID/marker/signal behavior,
+   Qwen/Maple/llama environment/flags, persisted selection and runtime settings.
+2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
+   through guarded Whisper/visual and shared coordination. Preserve original wide
+   image/video and txt/SRT/long-window/16-MiB behavior. Current short-clip/prepared
+   profiles are not full substitutes. Extend only required existing boundaries;
+   do not design another guardian, scheduler, server or model implementation.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
+
+Native Mac progress, 2026-11-21: LIFE-07j extracts primary launch/probe/group/
+marker/reap behind Inference's public owner, preserving original caller policy
+and mutex coordination. A reproduced stubborn-helper leak is fixed using the
+existing WNOWAIT ownership pattern. Native normal/SAN398 checks, independent
+archive, original selection/rollback/settings/LAN/app/llama, source staging/
+clean install and retained actual Qwen before/after checks pass. See
+[primary-owner evidence](../components/samosa-inference/docs/qualification/life07j-primary-process/README.md).
+This does not close common guardian/readiness/identity or full area3. The next
+contract-preserving integration is recorded above. No Python/new model/Docker ran.
 
 Native Mac progress, 2026-11-21: LIFE-07i extracts Maple's existing implementation,
 packer and original native tests/diagnostics, preserving algorithms and flags.
@@ -398,7 +409,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `2afb6c5` (LIFE-07i), committed and backed up on
+Current qualified Inference pin: `20832f5` (LIFE-07j), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

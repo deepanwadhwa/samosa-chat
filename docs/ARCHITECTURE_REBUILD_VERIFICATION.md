@@ -438,6 +438,25 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07j checkpoint, 2026-11-21: existing primary-backend launch/probe/group/
+marker/stop and PID state mutations now belong to Inference's backend_process
+public owner/archive. Thin Gateway callbacks preserve original mutex/upstream/
+shared-specialist coordination and trusted selection/settings/llama inputs.
+Audit proves original bodies plus only the reproduced helper-cleanup fix, which
+reuses guardian WNOWAIT before finishing the owned group/reaping. Old compiled
+Gateway reproduces the leak; fixed Gateway passes the same fixture. Native
+normal/SAN398 checks, fresh archive, original selection/rollback/settings/LAN/
+app/llama flows, exact package/clean install and actual retained Qwen old/new
+generation/native shutdown pass. Affected test helpers are ported off Python
+with original assertions retained. Exact evidence/limits: components/
+samosa-inference/docs/qualification/life07j-primary-process/README.md.
+Next LIFE-07k follows INFERENCE_GUARDIAN_COMPATIBILITY.md to reuse existing
+guardians/host adapters without shrinking primary/Whisper/visual contracts.
+Common lifecycle readiness/identity, parent-death, shared coordination and full
+area3/later/full-goal qualification stay open. No Python/new model/Docker ran.
+Qualified Inference revision/pin:20832f5, backed up on the same origin refactor
+branch. Earlier pins and checkpoints below remain historical.
+
 LIFE-07i checkpoint, 2026-11-21: Maple's original10 implementation/header files,
 packer and20 C++ tests/diagnostics move to Inference. Source bytes and assertions
 are preserved after owner include wiring; declared native MLX inputs, frozen

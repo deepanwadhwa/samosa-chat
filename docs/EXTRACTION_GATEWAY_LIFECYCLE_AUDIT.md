@@ -1,5 +1,15 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07j extracts the original primary launch/probe/group/
+marker/reap into Inference's public owner. Thin callbacks retain shared caller
+coordination; raw PID/group mutations are removed from Gateway. A reproduced
+stubborn-helper leak is fixed with existing guardian WNOWAIT ownership. Native
+normal/SAN, standalone, original selection/settings/LAN/app/llama, actual Qwen
+and package/install pass; see Inference qualification/life07j-primary-process.
+The old function inventory below is historical; remaining integration contracts
+are in INFERENCE_GUARDIAN_COMPATIBILITY.md. Primary parent-death/common readiness,
+guarded Whisper/visual, shared coordination and full area3 remain open.
+
 Progress, 2026-11-21: LIFE-07i completes Maple source/build/native test ownership
 in Inference with preserved implementation and inputs.18 supported C++ builds,
 9 native runs,3 sanitizer checks, independent builds and Gateway/package/install

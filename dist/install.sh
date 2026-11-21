@@ -145,6 +145,7 @@ INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_supervisor.c engin
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_protocol.c engine/inference/engines/json.h engine/inference/include/samosa_inference/specialist_protocol.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/summary_process.c engine/inference/src/controlled_pipe.h engine/inference/src/json.h engine/inference/include/samosa_inference/summary_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/llama_launch.c engine/inference/include/samosa_inference/llama_launch.h"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_process.c engine/inference/include/samosa_inference/backend_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/whisper_process.c engine/inference/include/samosa_inference/whisper_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/vision_budget.c engine/inference/include/samosa_inference/vision_budget.h"
 # These pinned sources build the same generic service Samosa uses locally and
@@ -467,6 +468,10 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/llama_launch.c" \
   -o "$STAGE/engine/inference/llama_launch.o" ||
   fail "staged Inference text launch compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/backend_process.c" \
+  -o "$STAGE/engine/inference/backend_process.o" ||
+  fail "staged Inference backend owner compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/whisper_process.c" \
   -o "$STAGE/engine/inference/whisper_process.o" ||
@@ -477,7 +482,7 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   fail "staged Inference visual budget compilation failed; live release was not changed"
 ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
   "$STAGE/engine/inference/specialist_supervisor.o" "$STAGE/engine/inference/specialist_protocol.o" \
-  "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" \
+  "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" "$STAGE/engine/inference/backend_process.o" \
   "$STAGE/engine/inference/whisper_process.o" "$STAGE/engine/inference/vision_budget.o" ||
   fail "staged Inference archive failed; live release was not changed"
 

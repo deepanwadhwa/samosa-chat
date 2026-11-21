@@ -48,15 +48,14 @@
 #include "samosa_html.h"
 #include "samosa_multimodal.h"
 #include <samosa_inference/summary_process.h>
-#include <samosa_inference/llama_launch.h>
+#include <samosa_inference/backend_process.h>
 #include <samosa_inference/whisper_process.h>
 #include <samosa_inference/vision_budget.h>
 
 typedef struct {
     SamosaHttpServer *server;
     pthread_mutex_t mu;
-    pid_t backend_pid;
-    pid_t backend_pgid;
+    SamosaBackendProcess primary_process;
     SamosaSummaryProcess summary_process;
     pid_t job_pids[16];
     pthread_mutex_t job_pid_mu;
@@ -8054,84 +8053,39 @@ static int tcp_connect(int port) {
    launch can still answer there. Reap and clear an exited child before any
    readiness decision so an unrelated/stale listener cannot impersonate the
    backend this gateway actually launched. */
+static SamosaBackendOwner backend_owner(Gateway *g) {
+    return (SamosaBackendOwner){&g->primary_process, &g->mu, g->backend_pid_file};
+}
+
 static int backend_child_running(Gateway *g) {
-    pthread_mutex_lock(&g->mu);
-    pid_t pid = g->backend_pid;
-    if (pid <= 0) {
-        pthread_mutex_unlock(&g->mu);
-        return 0;
-    }
-    int status = 0;
-    pid_t reaped = waitpid(pid, &status, WNOHANG);
-    if (reaped == pid || (reaped < 0 && errno == ECHILD)) {
-        g->backend_pid = 0;
-        g->backend_pgid = 0;
-        unlink(g->backend_pid_file);
-        pthread_mutex_unlock(&g->mu);
-        return 0;
-    }
-    pthread_mutex_unlock(&g->mu);
-    return reaped == 0;
+    SamosaBackendOwner owner = backend_owner(g);
+    return samosa_backend_process_running(&owner);
 }
 
 static int backend_probe(Gateway *g) {
-    /* Direct Molmo chat is deliberately a virtual backend: readiness means
-       the exact native package is verified, not that 4B weights are resident.
-       The helper is leased and torn down inside each visual turn. */
+    /* Direct Molmo remains the original virtual backend, qualified/leased by
+       the visual turn. Primary HTTP availability belongs to Inference. */
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return molmo2_available(g);
-    if (!backend_child_running(g)) return 0;
-    int fd = tcp_connect(g->backend_port);
-    if (fd < 0) return 0;
-    /* A process can accept the TCP connection before its HTTP health handler
-       is usable (or accept and then wedge). Without socket deadlines the
-       selection watchdog blocks forever inside recv(), so the UI remains on
-       "Starting..." and its own readiness deadline is never observed. Keep
-       each probe bounded; the watchdog will retry until its overall deadline. */
-    struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    const char *path = !strcmp(g->backend, "qwen") ? "/healthz" :
-                       !strcmp(g->backend, "maple") ? "/healthz" : "/health";
-    char request[256];
-    int n = snprintf(request, sizeof(request),
-                     "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nConnection: close\r\n\r\n",
-                     path, g->backend_port);
-    char response[64] = {0};
-    int ok = n > 0 && samosa_send_all(fd, request, (size_t)n) &&
-             recv(fd, response, sizeof(response) - 1, 0) > 0 &&
-             strstr(response, " 200 ") != NULL;
-    close(fd);
-    return ok;
+    SamosaBackendOwner owner = backend_owner(g);
+    return samosa_backend_process_probe(&owner, g->backend, g->backend_port);
 }
 
+typedef struct { Gateway *gateway; int upstream; } GatewayBackendStop;
+static void backend_stop_detach(void *context) {
+    GatewayBackendStop *stop = context;
+    stop->upstream = stop->gateway->upstream_fd;
+    stop->gateway->upstream_fd = -1;
+}
+static void backend_stop_interrupted(void *context) {
+    GatewayBackendStop *stop = context;
+    if (stop->upstream >= 0) shutdown(stop->upstream, SHUT_RDWR);
+    (void)samosa_mm_supervisor_cancel(&stop->gateway->multimodal_supervisor);
+}
 static void backend_stop(Gateway *g) {
-    pthread_mutex_lock(&g->mu);
-    pid_t pid = g->backend_pid;
-    pid_t pgid = g->backend_pgid;
-    int upstream = g->upstream_fd;
-    g->backend_pid = 0;
-    g->backend_pgid = 0;
-    g->upstream_fd = -1;
-    unlink(g->backend_pid_file);
-    pthread_mutex_unlock(&g->mu);
-    if (upstream >= 0) shutdown(upstream, SHUT_RDWR);
-    (void)samosa_mm_supervisor_cancel(&g->multimodal_supervisor);
-    if (pid <= 0) return;
-    /* llama-server may create helper processes (for example Metal/runtime
-       helpers). Give every backend its own process group so closing the app
-       cannot leave one of those children behind after the tracked server is
-       gone. The guard prevents a failed setpgid() from ever targeting the
-       gateway's own group. */
-    if (pgid > 1 && pgid != getpgrp()) (void)kill(-pgid, SIGTERM);
-    kill(pid, SIGTERM);
-    for (int i = 0; i < 80; ++i) {
-        if (waitpid(pid, NULL, WNOHANG) == pid) return;
-        struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
-        nanosleep(&pause, NULL);
-    }
-    if (pgid > 1 && pgid != getpgrp()) (void)kill(-pgid, SIGKILL);
-    kill(pid, SIGKILL);
-    waitpid(pid, NULL, 0);
+    SamosaBackendOwner owner = backend_owner(g);
+    GatewayBackendStop context = {g, -1};
+    SamosaBackendStopControl control = {backend_stop_detach, backend_stop_interrupted, &context};
+    samosa_backend_process_stop(&owner, &control);
 }
 
 static void jobs_stop(Gateway *g) {
@@ -8150,101 +8104,44 @@ static int backend_start(Gateway *g) {
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return 1;
     char chats[PATH_MAX];
     if (!path_join(chats, sizeof(chats), g->home, "chats") || !mkdirs(chats)) return 0;
-    /* Never launch into a port already owned by an untracked process. Before
-       this guard, the new child would fail its bind while backend_probe()
-       happily accepted the old process's /health response. That made every
-       model switch fail and then falsely reported Qwen as healthy. */
-    int occupied = tcp_connect(g->backend_port);
-    if (occupied >= 0) {
-        close(occupied);
-        fprintf(stderr, "samosa-gateway: refusing to start %s: private backend port %d "
-                        "is already occupied by an untracked process\n",
-                g->backend, g->backend_port);
-        return 0;
-    }
     RuntimeConfig runtime;
     RuntimeEffective effective;
     runtime_config_load(g, g->backend, &runtime);
     runtime_effective(g, g->backend, &runtime, &effective);
-    pid_t pid = fork();
-    if (pid < 0) return 0;
-    if (pid == 0) {
-        /* Keep llama-server and any helpers it creates in a group owned by
-           this gateway. The parent repeats this call below to close the
-           small fork/exec race before it records the PID. */
-        (void)setpgid(0, 0);
-        /* SAMOSA_BIND controls only the authenticated public gateway. Native
-           qwen/maple backends also use samosa_http.h and inherit the gateway
-           environment, so pin the child back to loopback before exec. Without
-           this, `--lan` would accidentally expose the raw model port + 1. */
-        setenv("SAMOSA_BIND", "127.0.0.1", 1);
-        unsetenv("SAMOSA_LAN");
-        unsetenv("SAMOSA_LAN_PASSWORD");
-        int log = open(g->backend_log, O_WRONLY | O_CREAT | O_APPEND, 0600);
-        if (log >= 0) { dup2(log, STDOUT_FILENO); dup2(log, STDERR_FILENO); close(log); }
-        char port[16];
-        snprintf(port, sizeof(port), "%d", g->backend_port);
-        if (!strcmp(g->backend, "qwen")) {
-            setenv("SNAP", g->qwen_model, 1);
-            setenv("TOKENIZER", g->tokenizer, 1);
-            setenv("SAMOSA_CHATS_DIR", chats, 1);
-            char threads[16], context[16], threshold[16];
-            if (!effective.cpu_locked && !runtime.cpu_auto) {
-                snprintf(threads, sizeof(threads), "%d", effective.cpu_effective);
-                setenv("OMP_NUM_THREADS", threads, 1);
-            }
-            if (!effective.context_locked) {
-                if (runtime.context_auto) setenv("SAMOSA_CONTEXT_TOKENS", "auto", 1);
-                else {
-                    snprintf(context, sizeof(context), "%d", effective.context_effective);
-                    setenv("SAMOSA_CONTEXT_TOKENS", context, 1);
-                }
-            }
-            snprintf(threshold, sizeof(threshold), "%d", runtime.compact_threshold_percent);
-            setenv("SAMOSA_AUTO_COMPACT", runtime.auto_compact ? "1" : "0", 1);
-            setenv("SAMOSA_COMPACT_THRESHOLD", threshold, 1);
-            fprintf(stderr, "[samosa] runtime: qwen threads=%d (%s) context=%d (%s) compact=%s@%d%%\n",
-                    effective.cpu_effective, effective.cpu_source,
-                    effective.context_effective, effective.context_source,
-                    runtime.auto_compact ? "on" : "off", runtime.compact_threshold_percent);
-            execl(g->qwen_engine, g->qwen_engine, "--serve", "--port", port,
-                  "--tokenizer", g->tokenizer, (char *)NULL);
-        } else if (!strcmp(g->backend, "maple")) {
-            fprintf(stderr, "[samosa] runtime: starting maple backend on port %s\n", port);
-            execl(g->maple_engine, g->maple_engine, "--model-dir", g->maple_model, "--port", port, (char *)NULL);
-        } else {
-            int is_ornith = !strcmp(g->backend, "ornith");
-            char *model = is_ornith ? g->ornith_model : g->bonsai_model;
-            char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
-            SamosaLlamaLaunch launch = {
-                .engine = g->llama_server, .model = model, .alias = alias,
-                .projector = !is_ornith && backend_supports_images(g, "bonsai") ? g->bonsai_mmproj : NULL,
-                .port = g->backend_port, .context_tokens = effective.context_effective,
-                .threads = effective.cpu_effective,
-                .context_override = getenv("SAMOSA_LLAMA_CTX"),
-                .gpu_override = getenv("SAMOSA_LLAMA_NGL"),
-                .threads_override = getenv("SAMOSA_LLAMA_THREADS"),
-                .ram_bytes = machine_ram_bytes(), .perf_cores = machine_perf_cores()
-            };
-            (void)samosa_llama_launch(&launch);
+    SamosaBackendLaunch config = {
+        .backend = g->backend, .tokenizer = g->tokenizer, .chats = chats,
+        .log = g->backend_log, .port = g->backend_port,
+        .runtime = {
+            .cpu_auto = runtime.cpu_auto, .context_auto = runtime.context_auto,
+            .auto_compact = runtime.auto_compact,
+            .compact_threshold_percent = runtime.compact_threshold_percent,
+            .cpu_locked = effective.cpu_locked, .context_locked = effective.context_locked,
+            .cpu_effective = effective.cpu_effective, .context_effective = effective.context_effective,
+            .cpu_source = effective.cpu_source, .context_source = effective.context_source
         }
-        _Exit(127);
+    };
+    if (!strcmp(g->backend, "qwen")) {
+        config.engine = g->qwen_engine; config.model = g->qwen_model;
+    } else if (!strcmp(g->backend, "maple")) {
+        config.engine = g->maple_engine; config.model = g->maple_model;
+    } else {
+        int is_ornith = !strcmp(g->backend, "ornith");
+        char *model = is_ornith ? g->ornith_model : g->bonsai_model;
+        char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
+        SamosaLlamaLaunch launch = {
+            .engine = g->llama_server, .model = model, .alias = alias,
+            .projector = !is_ornith && backend_supports_images(g, "bonsai") ? g->bonsai_mmproj : NULL,
+            .port = g->backend_port, .context_tokens = effective.context_effective,
+            .threads = effective.cpu_effective,
+            .context_override = getenv("SAMOSA_LLAMA_CTX"),
+            .gpu_override = getenv("SAMOSA_LLAMA_NGL"),
+            .threads_override = getenv("SAMOSA_LLAMA_THREADS"),
+            .ram_bytes = machine_ram_bytes(), .perf_cores = machine_perf_cores()
+        };
+        config.llama = launch;
     }
-    int grouped = setpgid(pid, pid) == 0;
-    if (!grouped) {
-        pid_t current = getpgid(pid);
-        grouped = current == pid;
-    }
-    pthread_mutex_lock(&g->mu);
-    g->backend_pid = pid;
-    g->backend_pgid = grouped ? pid : 0;
-    char pid_text[32];
-    snprintf(pid_text, sizeof(pid_text), "%ld\n", (long)pid);
-    if (!write_small_file(g->backend_pid_file, pid_text))
-        fprintf(stderr, "samosa-gateway: could not persist backend pid marker %s\n",
-                g->backend_pid_file);
-    pthread_mutex_unlock(&g->mu);
-    return 1;
+    SamosaBackendOwner owner = backend_owner(g);
+    return samosa_backend_process_start(&owner, &config);
 }
 
 static int static_file(int fd, const char *path, const char *type, const char *extra) {
@@ -11002,9 +10899,8 @@ static int vision_turn_start(Gateway *g, VisionTurnContext *turn,
        model, and prevents two Metal decoders from being resident together. */
     if (turn->provider == 2 && vision_total_memory_bytes() > 0 &&
         vision_total_memory_bytes() <= 18LL * 1024 * 1024 * 1024) {
-        pthread_mutex_lock(&g->mu);
-        int running = g->backend_pid > 0;
-        pthread_mutex_unlock(&g->mu);
+        SamosaBackendOwner primary_owner = backend_owner(g);
+        int running = samosa_backend_process_pid(&primary_owner) > 0;
         if (running) { backend_stop(g); turn->backend_paused = 1; }
         turn->budget = vision_resource_budget(g, turn->plan.detail_needed);
         /* waitpid() proves the primary process is gone, but macOS releases its
@@ -22079,7 +21975,7 @@ static void selection_clear_active(Gateway *g) {
 
    Never forks during shutdown (atomic_load(&g->stopping)). A detached
    watchdog thread can still be mid-loop when main()'s SIGTERM-triggered
-   backend_stop() runs -- that call zeroes g->backend_pid out from under
+   backend_stop() runs -- that call zeroes the owner PID out from under
    it, the watchdog's own next check reads pid<=0 and (correctly, from its
    own local view) treats that as "the child crashed," landing here.
    Without this guard it would fork a fresh previous-backend process right
@@ -22127,7 +22023,7 @@ static void *selection_watchdog(void *arg_) {
         /* Checked first, not just left to the pid<=0 fallthrough below: if
            main()'s SIGTERM-triggered backend_stop() runs concurrently (see
            selection_restore_previous()'s comment for the full story of how
-           this was found), it zeroes g->backend_pid out from under this
+           this was found), it zeroes the owner PID out from under this
            loop. Without this check that reads as "crashed" and calls
            selection_restore_previous(), which -- even with that function's
            own guard against forking during shutdown -- is still pointless
@@ -25535,7 +25431,8 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/healthz")) {
         char body[2304], version[128];
-        pthread_mutex_lock(&g->mu); pid_t pid = g->backend_pid; pthread_mutex_unlock(&g->mu);
+        SamosaBackendOwner primary_owner = backend_owner(g);
+        pid_t pid = samosa_backend_process_pid(&primary_owner);
         pthread_mutex_lock(&g->summary_process.mutex);
         pid_t summarizer_pid = g->summary_process.pid;
         pthread_mutex_unlock(&g->summary_process.mutex);
@@ -25953,7 +25850,7 @@ static void jobsd_on_signal(int number) {
 
 static int load_config(Gateway *g) {
     memset(g, 0, sizeof(*g));
-    g->backend_pid = 0; g->backend_pgid = 0; g->upstream_fd = -1;
+    g->upstream_fd = -1;
     g->summary_process.pid = 0;
     g->summary_process.write_fd = -1;
     g->summary_process.read_fd = -1;
@@ -26139,7 +26036,7 @@ int main(int argc, char **argv) {
        health, and diagnostics with zero models installed -- it must NOT
        exit before ever binding the port. A failed backend_start() (no
        model installed for the selected backend, or a genuine start
-       failure) leaves gateway.backend_pid at 0 / gateway.upstream_fd at -1
+       failure) leaves the primary owner PID at 0 / gateway.upstream_fd at -1
        (backend_start()'s own early-return path never forks), which is
        exactly the state /healthz, /v1/backends, and proxy_request() already
        know how to report honestly as "not ready" -- so no other state needs

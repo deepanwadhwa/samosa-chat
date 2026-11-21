@@ -52,7 +52,7 @@ done
 grep -q '"listen_address":"0.0.0.0"' "$TMP/health.json"
 grep -q '"lan_access":true' "$TMP/health.json"
 grep -q '"lan_auth":"password"' "$TMP/health.json"
-python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$TMP/health.json"
+node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$TMP/health.json"
 
 TOKEN=$(tr -d '\r\n' <"$HOME_DIR/run/ui-token")
 [ -n "$TOKEN" ]
