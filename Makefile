@@ -660,70 +660,57 @@ ci-ubuntu-full:
 	    "; \
 	  '
 
-# Maple MLX Smoke Test (Stage A)
+# Native Maple and visual builds belong to the Inference component.
 MLX_BUILD_DIR ?= $(BUILD_DIR)/mlx-build
 INFERENCE_VISUAL_ARGS = MLX_DIR="$(abspath vendor/mlx)" MLX_BUILD_DIR="$(abspath $(MLX_BUILD_DIR))" CXX="$(CXX)"
-MLX_INCLUDE = -Ivendor/mlx -I$(MLX_BUILD_DIR)
-# MLX builds JACCL only with a sufficiently new macOS SDK; older supported
-# SDKs compile no_jaccl.cpp into libmlx instead. Link the companion archive
-# exactly when CMake produced it, so clean runners and newer developer SDKs
-# use the same pinned source without a host-specific hardcoded assumption.
-MLX_JACCL_LIB = $(wildcard $(MLX_BUILD_DIR)/jaccl/libjaccl.a)
-MLX_LDFLAGS = -L$(MLX_BUILD_DIR) -lmlx $(MLX_JACCL_LIB) -framework Foundation -framework Metal -framework Accelerate -lc++
-MAPLE_STREAMING_SRCS = src/maple/maple_expert_views.cpp src/maple/maple_expert_store.cpp
-MAPLE_CACHE_OBJ = $(BUILD_DIR)/expert_cache.o
-
-$(MAPLE_CACHE_OBJ): $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.h
-	@mkdir -p $(BUILD_DIR)
-	$(CC) -std=c11 -O2 -Wall -Wextra -Isrc -c $(SAMOSA_INFERENCE_DIR)/engines/expert_cache.c -o $(MAPLE_CACHE_OBJ)
+# Keep the original parent command/output names while the owner compiles sources.
+define maple_owner_build
+$(MAKE) -C $(SAMOSA_INFERENCE_DIR) $(1) $(INFERENCE_VISUAL_ARGS) CC="$(CC)"
+@mkdir -p $(BUILD_DIR)
+cp $(SAMOSA_INFERENCE_DIR)/build/$(2) $(BUILD_DIR)/$(3)
+endef
 
 mlx:
 	sh tools/build_mlx_native.sh
 
-maple-mlx-smoke: tests/maple_mlx_smoke.cpp
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) tests/maple_mlx_smoke.cpp -o $(BUILD_DIR)/maple-mlx-smoke $(MLX_LDFLAGS)
-	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/maple-mlx-smoke
+maple-mlx-smoke:
+	$(call maple_owner_build,build/maple-mlx-smoke,maple-mlx-smoke,maple-mlx-smoke)
+	METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" $(BUILD_DIR)/maple-mlx-smoke
 
-test-maple-native: tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building test-maple-native..."
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_native.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-native $(MLX_LDFLAGS)
-	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-native
+test-maple-native:
+	$(call maple_owner_build,build/test_maple_native,test_maple_native,test-maple-native)
+	@maple_model_dir="$${MAPLE_MODEL_DIR:-}"; \
+	  if [ -n "$$maple_model_dir" ]; then \
+	    case "$$maple_model_dir" in /*) ;; *) maple_model_dir="$(CURDIR)/$$maple_model_dir" ;; esac; \
+	    export MAPLE_MODEL_DIR="$$maple_model_dir"; \
+	  fi; \
+	  cd "$(SAMOSA_INFERENCE_DIR)" && METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" "$(abspath $(BUILD_DIR))/test-maple-native"
 
-test-maple-components: tests/test_maple_components.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building C++ parity tests..."
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
+test-maple-components:
+	$(call maple_owner_build,build/test_maple_components,test_maple_components,test-maple-components)
 
-test-maple-openai-messages: tests/test_maple_openai_messages.cpp src/maple/openai_message_content.h src/json.h
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tests/test_maple_openai_messages.cpp -o $(BUILD_DIR)/$@
-	$(BUILD_DIR)/$@
+test-maple-openai-messages:
+	$(call maple_owner_build,build/test_maple_openai_messages,test_maple_openai_messages,test-maple-openai-messages)
+	$(BUILD_DIR)/test-maple-openai-messages
 
-test-maple-cache-boundary: tests/test_maple_cache_boundary.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
-	$(BUILD_DIR)/$@
+test-maple-cache-boundary:
+	$(call maple_owner_build,build/test_maple_cache_boundary,test_maple_cache_boundary,test-maple-cache-boundary)
+	METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" $(BUILD_DIR)/test-maple-cache-boundary
 
-test-maple-model: tests/test_maple_model.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building C++ model tests..."
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
+test-maple-model:
+	$(call maple_owner_build,build/test_maple_model,test_maple_model,test-maple-model)
 
-test-maple-gate-a: tests/test_maple_gate_a.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building C++ Gate A test..."
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
+test-maple-gate-a:
+	$(call maple_owner_build,build/test_maple_gate_a,test_maple_gate_a,test-maple-gate-a)
 
-test-maple-gate-c: tests/test_maple_gate_c.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building C++ Gate C test..."
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple $^ -o $(BUILD_DIR)/$@ $(MLX_LDFLAGS)
+test-maple-gate-c:
+	$(call maple_owner_build,build/test_maple_gate_c,test_maple_gate_c,test-maple-gate-c)
 
 test-maple: test-maple-components test-maple-model
 	@echo "Running Maple C++ Components Tests"
-	$(BUILD_DIR)/test-maple-components
+	cd "$(SAMOSA_INFERENCE_DIR)" && METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" "$(abspath $(BUILD_DIR))/test-maple-components"
 	@echo "Running Maple C++ Model Tests"
-	$(BUILD_DIR)/test-maple-model
+	cd "$(SAMOSA_INFERENCE_DIR)" && METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" "$(abspath $(BUILD_DIR))/test-maple-model"
 
 
 test-maple-sanitize: tests/fixtures/maple/test_checkpoint_sanitization.py
@@ -741,22 +728,16 @@ test-maple-real: test-maple-native
 	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
 	  sh tools/run_memory_guarded.sh $(BUILD_DIR)/test-maple-native
 
-test-maple-greedy-parity: tests/test_maple_greedy_parity.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building Maple greedy streaming parity test..."
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple tests/test_maple_greedy_parity.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-greedy-parity $(MLX_LDFLAGS)
+test-maple-greedy-parity:
+	$(call maple_owner_build,build/test_maple_greedy_parity,test_maple_greedy_parity,test-maple-greedy-parity)
 	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-1000} \
 	  MAX_SWAP_DELTA_MB=$${MAX_SWAP_DELTA_MB:-64} \
 	  SAMOSA_MAPLE_EXPERT_BUDGET_MB=$${SAMOSA_MAPLE_EXPERT_BUDGET_MB:-64} \
 	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels \
 	  sh tools/run_memory_guarded.sh $(BUILD_DIR)/test-maple-greedy-parity
 
-test-maple-streamed-logits: tests/test_maple_streamed_logits.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building Maple streamed raw-logit parity test..."
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc -Isrc/maple tests/test_maple_streamed_logits.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-streamed-logits $(MLX_LDFLAGS)
+test-maple-streamed-logits:
+	$(call maple_owner_build,build/test_maple_streamed_logits,test_maple_streamed_logits,test-maple-streamed-logits)
 	MAX_FOOTPRINT_MB=$${MAX_FOOTPRINT_MB:-1000} \
 	  MAX_SWAP_DELTA_MB=$${MAX_SWAP_DELTA_MB:-64} \
 	  SAMOSA_MAPLE_EXPERT_BUDGET_MB=$${SAMOSA_MAPLE_EXPERT_BUDGET_MB:-64} \
@@ -773,37 +754,27 @@ test-maple-parity: samosa-maple tests/fixtures/maple/361db5da5e74ff6fcdd852d478e
 	python3 tests/fixtures/maple/361db5da5e74ff6fcdd852d478e1f266ce11013a/maple_parity_test.py
 
 
-samosa-maple: src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	@echo "Building samosa-maple HTTP server..."
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc src/maple/samosa_maple.cpp src/maple/maple_model.cpp src/maple/tokenizer.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/samosa-maple $(MLX_LDFLAGS)
+samosa-maple:
+	$(call maple_owner_build,maple-engine,samosa-maple,samosa-maple)
 
 samosa-visionpsy:
 	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) vision-engine $(INFERENCE_VISUAL_ARGS)
 	@mkdir -p $(BUILD_DIR)
 	cp $(SAMOSA_INFERENCE_DIR)/build/samosa-visionpsy $(BUILD_DIR)/samosa-visionpsy
 
-maple-pack: tools/maple_pack.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/json.h $(MAPLE_CACHE_OBJ)
-	@echo "Building maple-pack..."
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tools/maple_pack.cpp src/maple/maple_expert_store.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/maple-pack
+maple-pack:
+	$(call maple_owner_build,maple-pack,maple-pack,maple-pack)
 
 test-maple-streaming-quarantine: samosa-gateway
 	sh tests/test_maple_streaming_quarantine.sh
 
-test-maple-expert-store: tests/test_maple_expert_store.cpp src/maple/maple_expert_store.cpp src/maple/maple_expert_store.h src/expert_cache.h src/json.h $(MAPLE_CACHE_OBJ)
-	@echo "Building Maple expert store tests..."
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++17 -O2 -Wall -Wextra -Isrc tests/test_maple_expert_store.cpp src/maple/maple_expert_store.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-store
+test-maple-expert-store:
+	$(call maple_owner_build,build/test_maple_expert_store,test_maple_expert_store,test-maple-expert-store)
 	$(BUILD_DIR)/test-maple-expert-store
 
-test-maple-expert-views: tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp src/expert_cache.h src/json.h $(MAPLE_CACHE_OBJ)
-	@echo "Building Maple MLX expert-view tests..."
-	@mkdir -p $(BUILD_DIR)
-	@test -d $(MLX_BUILD_DIR) || { echo "Run 'make mlx' first to build the native MLX library" >&2; exit 2; }
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc tests/test_maple_expert_views.cpp $(MAPLE_STREAMING_SRCS) src/maple/maple_model.cpp $(MAPLE_CACHE_OBJ) -o $(BUILD_DIR)/test-maple-expert-views $(MLX_LDFLAGS)
-	METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-maple-expert-views
+test-maple-expert-views:
+	$(call maple_owner_build,build/test_maple_expert_views,test_maple_expert_views,test-maple-expert-views)
+	METAL_PATH="$(abspath $(MLX_BUILD_DIR))/mlx/backend/metal/kernels" $(BUILD_DIR)/test-maple-expert-views
 
 test-visionpsy-components:
 	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) test-vision-engine-components $(INFERENCE_VISUAL_ARGS)
@@ -891,8 +862,8 @@ test-visionpsy-real: samosa-visionpsy
 	  rm -f "$$tmp_ppm"; \
 	  $(BUILD_DIR)/samosa-extract --render-ppm tests/fixtures/documents/hello.pdf 1 "$$tmp_ppm" >/dev/null; \
 	  METAL_PATH=$(MLX_BUILD_DIR)/mlx/backend/metal/kernels $(BUILD_DIR)/test-visionpsy-real "$(VISIONPSY_MODEL_DIR)" "$$tmp_ppm"
-test_attn_parity: tests/test_attn_parity.cpp src/maple/maple_model.cpp $(MAPLE_STREAMING_SRCS) $(MAPLE_CACHE_OBJ)
-	$(CXX) -std=c++17 -O2 -Wall -Wextra $(MLX_INCLUDE) -Isrc $^ -o build/$@ $(MLX_LDFLAGS)
+test_attn_parity:
+	$(call maple_owner_build,build/test_attn_parity,test_attn_parity,test_attn_parity)
 
 .PHONY: test-prompt-budget
 test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.py src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)

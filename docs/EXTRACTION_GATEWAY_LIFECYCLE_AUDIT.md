@@ -1,5 +1,13 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07i completes Maple source/build/native test ownership
+in Inference with preserved implementation and inputs.18 supported C++ builds,
+9 native runs,3 sanitizer checks, independent builds and Gateway/package/install
+checks pass;32 parent copies (7115 lines) are retired. Two inherited scratch
+compile failures are reproduced/preserved. See Inference qualification/
+life07i-maple-sources/README.md. Next LIFE-07j moves remaining primary launch/
+group/reap/probe ownership; area3 and real-checkpoint readiness remain open.
+
 Progress, 2026-11-21: LIFE-07h moves the original Qwen native implementation,
 cache/vision/kernels/support and useful tests to Inference with preserved flags
 and behavior. Native normal/SAN, independent builds, actual old/new Mac model

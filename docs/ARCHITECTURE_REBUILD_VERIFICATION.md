@@ -438,6 +438,23 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07i checkpoint, 2026-11-21: Maple's original10 implementation/header files,
+packer and20 C++ tests/diagnostics move to Inference. Source bytes and assertions
+are preserved after owner include wiring; declared native MLX inputs, frozen
+test data, flags/frameworks/output names and original memory guards remain.
+18 supported C++ builds,9 native runs,3 sanitizer checks, independent source/data
+builds, Gateway quarantine/runtime settings, package and clean install/upgrade
+pass.32 parent source/test/header copies (7115 lines) are retired. Two scratch
+compile failures reproduce in the original baseline and remain legacy diagnostics.
+No real Maple checkpoint or catalogue readiness is claimed. Exact commands,
+source/dependency pins, scope and inherited failures are in components/
+samosa-inference/docs/qualification/life07i-maple-sources/README.md.
+Next LIFE-07j moves existing primary launch/group/reap/probe ownership, then
+guarded legacy Whisper and shared coordination. Area3/full goal remain open.
+No Python/new model/Docker work ran. Earlier checkpoints below are historical.
+Qualified Inference revision/pin:2afb6c5, backed up on the same origin refactor
+branch. This is the recorded native source/test boundary, not a full area3 pass.
+
 LIFE-07h checkpoint, 2026-11-21: the original Qwen model/cache/vision/kernels/
 support implementation and useful tests move into Inference. Chat delegates
 CPU/OpenMP/separate experimental schedule builds with original flags/outputs;

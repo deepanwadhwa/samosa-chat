@@ -297,10 +297,10 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07i: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
-   through the original Maple sources/builds/useful tests. Qwen source ownership
-   is extracted in LIFE-07h. Then move remaining primary launch/group/reap/probe
-   ownership, reusing the original Qwen/Maple bodies and existing llama helper.
+1. LIFE-07j: follow the [remaining lifecycle/ownership audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
+   through primary launch/group/reap/probe ownership, reusing the original
+   Qwen/Maple bodies and existing llama helper. Qwen/Maple sources/builds/useful
+   native tests are extracted in LIFE-07h/i; retain those implementations.
    Preserve native flags/environment, persisted settings and startup behavior;
    keep model selection and App presentation as explicit caller policy.
 2. Follow the audit through remaining primary-backend source/launch ownership,
@@ -312,6 +312,15 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
+
+Native Mac progress, 2026-11-21: LIFE-07i extracts Maple's existing implementation,
+packer and original native tests/diagnostics, preserving algorithms and flags.
+18 supported C++ builds,9 native runs,3 sanitizer checks, independent source/data
+builds, Gateway quarantine/settings and package/install/upgrade pass.32 parent
+source/test/header copies (7115 lines) are retired. Two inherited scratch compile
+failures are reproduced/preserved, not presented as passing qualification.
+See [Maple source evidence](../components/samosa-inference/docs/qualification/life07i-maple-sources/README.md).
+Actual Maple checkpoint/catalogue and full area3 qualification remain open.
 
 Native Mac progress, 2026-11-21: LIFE-07h extracts Qwen's working native model,
 cache, kernels, vision/support and original useful tests. CPU/OpenMP/schedule
@@ -389,7 +398,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `cbc165f` (LIFE-07h), committed and backed up on
+Current qualified Inference pin: `2afb6c5` (LIFE-07i), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

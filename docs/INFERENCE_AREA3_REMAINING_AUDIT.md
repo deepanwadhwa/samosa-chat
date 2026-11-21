@@ -1,5 +1,14 @@
 # Inference lifecycle: remaining requirements
 
+LIFE-07i progress, 2026-11-21: original Maple source/build/native test ownership
+now belongs to Inference.18 supported builds,9 native runs,3 sanitizer checks,
+fresh source/data builds, Gateway quarantine/settings and package/install pass;
+32 parent copies (7115 lines) are retired. Two original scratch compile failures
+are reproduced/preserved separately. No actual Maple checkpoint/catalogue claim.
+Next LIFE-07j extracts existing primary launch/group/reap/probe ownership with
+unchanged flags, environment, persisted selection/settings and startup behavior.
+Evidence: Inference qualification/life07i-maple-sources/README.md. Area3 stays open.
+
 LIFE-07h progress, 2026-11-21: Qwen's original model/cache/vision/kernels/support
 and useful native tests now belong to Inference. CPU/OpenMP/schedule builds,
 normal/SAN regressions, fresh independent source builds, actual old/new Mac
@@ -57,9 +66,9 @@ fair scheduling remain the full separate area4 acceptance responsibility.
    persisted settings, then wire the existing managed owner where contracts
    match. Model selection and App presentation remain explicit caller policy.
    Qwen's original native source/cache/vision/kernels and useful tests are now
-   extracted in LIFE-07h. Maple's original src/maple implementation/build/tests
-   remain in the parent; LIFE-07i moves these next with declared dependencies.
-   Then consolidate the remaining primary launch/group/reap/probe ownership;
+   extracted in LIFE-07h. Maple's original implementation/build/native tests are
+   extracted in LIFE-07i with declared native dependencies and preserved inputs.
+   LIFE-07j consolidates remaining primary launch/group/reap/probe ownership;
    HTTP compatibility alone does not complete that source ownership requirement.
 3. **Consolidate the extracted legacy Whisper execution with guarded ownership.**
    Reuse whisper.c and EngineProcess rather than making a second worker/server.

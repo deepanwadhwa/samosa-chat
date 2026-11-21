@@ -1,5 +1,14 @@
 # Maple SSD-streaming engine plan
 
+Current extraction checkpoint, 2026-11-21: the existing implementation now
+belongs to components/samosa-inference/engines/maple and its shared expert_cache.
+Chat delegates its native builds/tests. This refactor preserves the working
+implementation; the redesign plan and August results below are historical.
+Current native source/test evidence and limits are in Inference
+docs/qualification/life07i-maple-sources/README.md. No actual Maple checkpoint or
+catalogue requalification was run in that extraction. Primary launch ownership
+and full area3 qualification remain open under ARCHITECTURE_REBUILD_PRIORITIES.md.
+
 **Status:** M0-M5 correctness path complete: production loading is fail-closed,
 all 24 MoE layers stream from SSD, prefill/decode memory is bounded, and the
 real-checkpoint frozen greedy gate is 10/10 prompts and 320/320 tokens exact
