@@ -1,6 +1,6 @@
 # Modular rebuild: priorities and agent handoff
 
-Updated: 2026-11-20. Requested by the user as a shared record of the prioritized
+Updated: 2026-11-21. Requested by the user as a shared record of the prioritized
 remaining work. This file records the agreed direction and completion criteria;
 it does not claim that the work below has been executed.
 
@@ -297,21 +297,33 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07d: follow the [gateway lifecycle reuse audit](EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md).
-   First extract the original visual launch-profile/close glue through the
-   existing public supervisor and explicit traces. Preserve its original limits;
-   current prepared-input profiles are not a complete gateway substitute.
-2. Then reuse/extract the shared Whisper runner and consolidate ownership.
+1. LIFE-07e: follow the [gateway lifecycle reuse audit](EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md).
+   Reuse/extract the shared Whisper runner and consolidate ownership.
    Preserve plain text/SRT, microphone/long-window behavior and exact-child
    cancellation. Keep App selection/resource policy explicit; reuse its working
    coordination when scheduling ownership moves.
+2. Preserve original image/video limits and Mac resource/retry policy when
+   consolidating the remaining caller state. Current prepared-input profiles
+   are not full gateway substitutes. Do not add another codec/model loop.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-Native Mac progress, 2026-11-20: LIFE-07c qualifies optional component resident
+Native Mac progress, 2026-11-21: LIFE-07d extracts the original visual launch/
+close bodies into Inference with thin gateway calls and unchanged profiles,
+traces and product policy. A reproduced inactive-session cleanup bug is fixed.
+Native normal/SAN, standalone archive, gateway summary/runtime/Molmo/VisionPsy
+workflows and clean package/install checks pass. VisionPsy's Python assertions/
+worker were ported to Node/shell. Its stale image text-only expectation was
+reproduced on the original gateway; the test now retains document text-only
+coverage and checks the established image OCR-plus-visual floor.
+See [launch extraction evidence](../components/samosa-inference/docs/qualification/life07d-visual-launch/README.md).
+Next is the original shared Whisper runner. Full area3/later areas and the
+overall refactor remain unfinished.
+
+Previous native Mac progress, 2026-11-20: LIFE-07c qualifies optional component resident
 VisionPsy/Molmo2 ownership by sharing the original one-shot verification,
 P6 preparation, request encoders and reply validation. Existing Activation,
 guardian and specialist transport provide actual-generation readiness,
@@ -334,7 +346,7 @@ See [visual extraction evidence](../components/samosa-inference/docs/qualificati
 and [native packaging replacement](EXTRACTION_NATIVE_PACKAGING.md).
 This is a bounded passing slice, not complete Inference or full-refactor closure.
 
-Current qualified Inference pin: `4b35a35` (LIFE-07c), committed and backed up on
+Current qualified Inference pin: `ad3a1e1` (LIFE-07d), committed and backed up on
 `origin/refactor/extract-working-modules`. Parent integration uses that revision.
 The original source-preservation pins below are historical recovery checkpoints.
 

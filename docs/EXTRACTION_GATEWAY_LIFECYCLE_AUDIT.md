@@ -1,5 +1,13 @@
 # Remaining gateway lifecycle: reuse audit
 
+Progress, 2026-11-21: LIFE-07d extracted the three original visual launch/close
+bodies below into Inference's existing specialist module/public archive, with
+thin gateway calls and preserved settings/traces. A reproduced inactive-session
+cleanup bug was fixed. Native normal/SAN, standalone and gateway integration/
+installation gates pass; see Inference qualification/life07d-visual-launch.
+Next LIFE-07e is the shared Whisper runner. The original inventory below remains
+the reference for preserving the remaining caller policy and workflow limits.
+
 Read-only audit, 2026-11-20. Parent baseline b3c79c1; follows Inference
 LIFE-07c. No gateway implementation changed in this audit. Governing priorities:
 [extraction first, no Python, this Mac](ARCHITECTURE_REBUILD_PRIORITIES.md).

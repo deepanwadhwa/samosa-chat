@@ -3,6 +3,7 @@ set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/build"
+checks() { node "$REPO_ROOT/tests/visionpsy_e2e_checks.mjs" "$@"; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/samosa-visionpsy-e2e-XXXXXX")"
 
 mkdir -p "$TMP/bin" "$TMP/models/visionpsy" "$TMP/home" "$TMP/jobs" "$TMP/current/bin" "$TMP/current/models"
@@ -85,34 +86,12 @@ trap 'cleanup; rm -rf "$TMP"' EXIT
 start_gateway "$BUILD_DIR/samosa-visionpsy"
 
 HEALTH=$(curl -sS "http://127.0.0.1:$PORT/healthz")
-python3 -c "
-import json
-h=json.loads('''$HEALTH''')
-assert h['supports_images'] is False, h
-assert h['supports_image_attachments'] is True, h
-assert h['vision']['auxiliary_runtime_available'] is True, h
-assert h['ocr'] == {'runtime_available': True, 'pack_ready': False, 'ready': False}, h
-print('Health capability separation: PASS')
-"
+printf '%s' "$HEALTH" | checks health
 
 # Fetch catalog with token
 curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/models/catalog" > "$TMP/catalog.json"
 
-python3 -c "
-import json
-d = json.load(open('$TMP/catalog.json'))
-by_id = {m['id']: m for m in d['models']}
-assert 'visionpsy-nano-460m-mlx-bf16' in by_id, f'VisionPsy missing from catalog: {by_id.keys()}'
-vp = by_id['visionpsy-nano-460m-mlx-bf16']
-assert vp['category'] == 'vision'
-assert vp['role'] == 'auxiliary'
-assert vp['backend_kind'] == 'mlx_vision_native'
-assert vp['active'] is False
-assert vp['routing'] == 'automatic'
-assert vp['load_policy'] == 'on_demand_per_turn'
-assert len(vp['artifacts']) == 7
-print('Catalog verification: PASS')
-"
+checks catalog "$TMP/catalog.json"
 
 # 2. Verify VisionPsy cannot be selected as active chat model
 SELECT_RES=$(curl -s -w "\n%{http_code}" -X POST "http://127.0.0.1:$PORT/v1/backends/select" \
@@ -137,7 +116,7 @@ ATTACH_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     -H "X-Filename: test.png" \
     --data-binary @"$TMP/test.png")
 
-ATTACH_ID=$(echo "$ATTACH_RES" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))")
+ATTACH_ID=$(echo "$ATTACH_RES" | checks id)
 if [ -z "$ATTACH_ID" ]; then
     echo "Failed to upload attachment: $ATTACH_RES" >&2
     exit 1
@@ -158,41 +137,28 @@ CHAT_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
         ]
     }")
 
-python3 -c "
-import json
-d = json.loads('''$CHAT_RES''')
-err = d.get('error', {})
-assert err.get('code') == 'vision_model_required', f'Expected vision_model_required, got: {d}'
-print('Missing VisionPsy error flow: PASS')
-"
+printf '%s' "$CHAT_RES" | checks missing-model
 
 # 4. Test IPC helper communication with all 7 pinned files in place
 mkdir -p "$TMP/models/visionpsy"
-python3 -c "
-with open('$TMP/models/visionpsy/model.safetensors', 'wb') as f:
-    f.truncate(1014772920)
-for fn in ['config.json', 'preprocessor_config.json', 'processor_config.json', 'tokenizer.json', 'tokenizer_config.json', 'chat_template.jinja']:
-    with open(f'$TMP/models/visionpsy/{fn}', 'w') as f:
-        f.write('{}')
-"
+checks model-fixture "$TMP/models/visionpsy"
 
 # Create fake samosa-visionpsy helper to test framed IPC response and session lifecycle
 cat << 'EOF' > "$TMP/bin/fake-visionpsy"
-#!/bin/sh
-while read -r line; do
-    if [ -n "${SAMOSA_VISIONPSY_TEST_LOG:-}" ]; then printf '%s\n' "$line" >> "$SAMOSA_VISIONPSY_TEST_LOG"; fi
-    cmd=$(echo "$line" | python3 -c "import sys, json; print(json.load(sys.stdin).get('command', ''))")
-    if [ "$cmd" = "ping" ]; then
-        echo '{"status":"ok","pong":true}'
-    elif [ "$cmd" = "inspect" ]; then
-        echo '{"status":"ok","observation":"A detailed high-resolution diagram with labels and charts.","n_w":4,"n_h":3,"has_global":true,"prompt_tokens":896,"generated_tokens":45,"prefill_ms":12,"decode_ms":30}'
-    elif [ "$cmd" = "quit" ]; then
-        echo '{"status":"ok","message":"bye"}'
-        break
-    else
-        echo '{"status":"ok"}'
-    fi
-done
+#!/usr/bin/env node
+const fs = require('node:fs');
+const readline = require('node:readline');
+(async () => {
+  const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  for await (const line of lines) {
+    if (process.env.SAMOSA_VISIONPSY_TEST_LOG) fs.appendFileSync(process.env.SAMOSA_VISIONPSY_TEST_LOG, line + '\n');
+    let command = ''; try { command = JSON.parse(line).command; } catch {}
+    if (command === 'ping') console.log('{"status":"ok","pong":true}');
+    else if (command === 'inspect') console.log('{"status":"ok","observation":"A detailed high-resolution diagram with labels and charts.","n_w":4,"n_h":3,"has_global":true,"prompt_tokens":896,"generated_tokens":45,"prefill_ms":12,"decode_ms":30}');
+    else if (command === 'quit') { console.log('{"status":"ok","message":"bye"}'); lines.close(); process.stdin.destroy(); break; }
+    else console.log('{"status":"ok"}');
+  }
+})();
 EOF
 chmod +x "$TMP/bin/fake-visionpsy"
 
@@ -206,23 +172,35 @@ ATTACH_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     -H "X-Filename: test.png" \
     --data-binary @"$TMP/test.png")
 
-ATTACH_ID=$(echo "$ATTACH_RES" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))")
+ATTACH_ID=$(echo "$ATTACH_RES" | checks id)
 
-# This wording contains none of the conservative fallback's OCR keywords. The
-# fake LLM explicitly routes it to OCR only, proving the validated plan is
-# honored instead of the fallback heuristic.
+# Images retain the current OCR-plus-visual evidence floor even if the fixture
+# planner asks for text only. Pure document text can still avoid the specialist.
+# The older image-only assertion predates that policy; both behaviors are checked.
+: > "$TMP/visionpsy-commands.jsonl"
+IMAGE_TEXT_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
+    -H "X-Samosa-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"attachment_ids\":[\"$ATTACH_ID\"],\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Copy the lettering exactly and preserve line breaks.\"}]}")
+printf '%s' "$IMAGE_TEXT_RES" | checks image-floor "$TMP/visionpsy-commands.jsonl"
+printf '%%PDF-1.4\nlettering-only fixture\n' > "$TMP/lettering.pdf"
+TEXT_UPLOAD=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
+    -H "X-Samosa-Token: $TOKEN" -H "Content-Type: application/pdf" -H "X-Filename: lettering.pdf" \
+    --data-binary @"$TMP/lettering.pdf")
+TEXT_DOCUMENT_ID=$(printf '%s' "$TEXT_UPLOAD" | checks id)
+[ -n "$TEXT_DOCUMENT_ID" ] || { echo "Text document upload failed: $TEXT_UPLOAD" >&2; exit 1; }
 : > "$TMP/visionpsy-commands.jsonl"
 OCR_ONLY_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H "X-Samosa-Token: $TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"attachment_ids\":[\"$ATTACH_ID\"],\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Copy the lettering exactly and preserve line breaks.\"}]}")
-python3 -c "import json; assert 'choices' in json.loads('''$OCR_ONLY_RES''')"
+    -d "{\"attachment_ids\":[\"$TEXT_DOCUMENT_ID\"],\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Copy the lettering exactly and preserve line breaks.\"}]}")
+printf '%s' "$OCR_ONLY_RES" | checks choices
 [ ! -s "$TMP/visionpsy-commands.jsonl" ] || {
     echo "FAIL: OCR-only model plan started VisionPsy" >&2
     cat "$TMP/visionpsy-commands.jsonl" >&2
     exit 1
 }
-echo "Validated OCR-only planner route: PASS"
+echo "Validated document text-only route: PASS"
 
 # Developer mode is authenticated, off by default, and persistent. Restart
 # after enabling so this test proves the saved setting is actually honored by
@@ -230,10 +208,10 @@ echo "Validated OCR-only planner route: PASS"
 UNAUTH_DEBUG=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/v1/developer/trace")
 [ "$UNAUTH_DEBUG" = "401" ] || { echo "FAIL: unauthenticated Developer status was $UNAUTH_DEBUG" >&2; exit 1; }
 DEBUG_STATUS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/developer/trace")
-python3 -c "import json; d=json.loads('''$DEBUG_STATUS'''); assert d['enabled'] is False and d['captures_sensitive_data'] is True and d['authentication_tokens_logged'] is False, d"
+printf '%s' "$DEBUG_STATUS" | checks developer-default
 DEBUG_STATUS=$(curl -sS -X PUT -H "X-Samosa-Token: $TOKEN" -H "Content-Type: application/json" \
     -d '{"enabled":true}' "http://127.0.0.1:$PORT/v1/developer/trace")
-FIRST_TRACE_PATH=$(printf '%s' "$DEBUG_STATUS" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['enabled'] is True and d['path']; print(d['path'])")
+FIRST_TRACE_PATH=$(printf '%s' "$DEBUG_STATUS" | checks developer-path)
 [ "$(stat -f '%Lp' "$FIRST_TRACE_PATH")" = "600" ] || { echo "FAIL: Developer trace permissions are not 0600" >&2; exit 1; }
 [ "$(cat "$TMP/home/developer-mode")" = "enabled" ] || { echo "FAIL: Developer mode was not persisted" >&2; exit 1; }
 ACTIVE_CLEAR=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "X-Samosa-Token: $TOKEN" \
@@ -243,14 +221,14 @@ ACTIVE_CLEAR=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "X-Samosa-Token
 cleanup
 start_gateway "$TMP/bin/fake-visionpsy"
 DEBUG_STATUS=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/developer/trace")
-TRACE_PATH=$(printf '%s' "$DEBUG_STATUS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["enabled"] is True; print(d["path"])')
+TRACE_PATH=$(printf '%s' "$DEBUG_STATUS" | checks developer-path)
 [ -f "$TRACE_PATH" ] || { echo "FAIL: persisted Developer trace was not created after restart" >&2; exit 1; }
 
 # Rebind the same content-addressed attachment under the restarted process.
 ATTACH_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     -H "X-Samosa-Token: $TOKEN" -H "Content-Type: image/png" -H "X-Filename: test.png" \
     --data-binary @"$TMP/test.png")
-ATTACH_ID=$(echo "$ATTACH_RES" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))")
+ATTACH_ID=$(echo "$ATTACH_RES" | checks id)
 
 # Send chat request with attachment
 : > "$TMP/visionpsy-commands.jsonl"
@@ -267,51 +245,24 @@ AUGMENTED_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
         ]
     }")
 
-python3 -c "
-import json
-d = json.loads('''$AUGMENTED_RES''')
-assert 'choices' in d, f'Expected choices in response, got: {d}'
-print('VisionPsy end-to-end augmentation: PASS')
-"
+printf '%s' "$AUGMENTED_RES" | checks choices
+echo "VisionPsy end-to-end augmentation: PASS"
 
 # A single correlated trace must contain every decision boundary needed to
 # determine whether the visual specialist ran and whether its observation or
 # the final LLM introduced a bad claim. It must not contain the UI auth token.
-python3 - "$TRACE_PATH" "$TOKEN" <<'PY'
-import json, sys
-path, token = sys.argv[1:]
-raw = open(path, encoding="utf-8").read()
-assert token not in raw, "UI authentication token leaked into Developer trace"
-events = [json.loads(line) for line in raw.splitlines() if line.strip()]
-names = [event["event"] for event in events]
-required = {
-    "chat_request_received", "vision_router_request", "vision_router_response",
-    "vision_router_validated_plan", "vision_resource_budget", "attachment_selected",
-    "visionpsy_process_started", "visionpsy_request", "visionpsy_raw_response",
-    "visionpsy_complete", "vision_evidence_observation", "backend_request",
-    "backend_response", "backend_complete", "chat_turn_completed",
-}
-missing = sorted(required - set(names))
-assert not missing, f"Developer trace missing events: {missing}\n{names}"
-visual = [event for event in events if event["event"] == "visionpsy_raw_response"][-1]
-assert "A detailed high-resolution diagram" in visual["fields"]["payload"], visual
-final_request = [event for event in events if event["event"] == "backend_request"][-1]
-assert "A detailed high-resolution diagram" in final_request["fields"]["payload"], final_request
-turn_ids = {event.get("turn_id") for event in events if event["event"] in required and event.get("turn_id")}
-assert len(turn_ids) == 1, turn_ids
-print("Full correlated Developer trace: PASS")
-PY
+checks developer-trace "$TRACE_PATH" "$TOKEN"
 
 DEBUG_STATUS=$(curl -sS -X PUT -H "X-Samosa-Token: $TOKEN" -H "Content-Type: application/json" \
     -d '{"enabled":false}' "http://127.0.0.1:$PORT/v1/developer/trace")
-python3 -c "import json; assert json.loads('''$DEBUG_STATUS''')['enabled'] is False"
+printf '%s' "$DEBUG_STATUS" | checks developer-disabled
 [ "$(cat "$TMP/home/developer-mode")" = "disabled" ] || { echo "FAIL: Developer mode disable was not persisted" >&2; exit 1; }
 curl -sS -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H "X-Samosa-Token: $TOKEN" -H "Content-Type: application/json" \
     -d '{"stream":false,"messages":[{"role":"user","content":"TRACE_DISABLED_SECRET_7482"}]}' >/dev/null
 ! grep -q 'TRACE_DISABLED_SECRET_7482' "$TRACE_PATH" || { echo "FAIL: disabled Developer mode kept logging" >&2; exit 1; }
 CLEAR_RESULT=$(curl -sS -X POST -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/developer/trace/clear")
-python3 -c "import json; assert json.loads('''$CLEAR_RESULT''')['removed'] >= 1"
+printf '%s' "$CLEAR_RESULT" | checks developer-cleared
 [ ! -e "$TRACE_PATH" ] || { echo "FAIL: Developer trace was not cleared" >&2; exit 1; }
 echo "Developer mode disable and clear: PASS"
 
@@ -325,7 +276,7 @@ PDF_ATTACH_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     -H "Content-Type: application/pdf" \
     -H "X-Filename: visual.pdf" \
     --data-binary @"$TMP/visual.pdf")
-PDF_ATTACH_ID=$(echo "$PDF_ATTACH_RES" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+PDF_ATTACH_ID=$(echo "$PDF_ATTACH_RES" | checks id)
 [ -n "$PDF_ATTACH_ID" ] || { echo "PDF upload failed: $PDF_ATTACH_RES" >&2; exit 1; }
 
 PDF_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
@@ -333,19 +284,7 @@ PDF_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -d "{\"attachment_ids\":[\"$PDF_ATTACH_ID\"],\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Describe every chart across the entire document.\"}]}")
 
-python3 -c "
-import json
-response=json.loads('''$PDF_RES''')
-assert 'choices' in response, response
-commands=[json.loads(line) for line in open('$TMP/visionpsy-commands.jsonl') if line.strip()]
-assert [c['command'] for c in commands].count('ping') == 1, commands
-inspects=[c for c in commands if c.get('command') == 'inspect']
-assert len(inspects) == 3, commands
-assert [next(int(word) for word in c['prompt'].split() if word.isdigit()) for c in inspects] == [1,2,3], inspects
-assert len({c['max_side_len'] for c in inspects}) == 1, inspects
-assert commands[-1]['command'] == 'quit', commands
-print('VisionPsy multi-page turn reuse: PASS')
-"
+printf '%s' "$PDF_RES" | checks multipage "$TMP/visionpsy-commands.jsonl"
 
 # 6. OCR success plus a VisionPsy inference failure is visibly labelled as a
 # partial answer. The helper retries once at the next lower hardware tier,
@@ -371,7 +310,7 @@ start_gateway "$TMP/bin/failing-visionpsy"
 ATTACH_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/attachments" \
     -H "X-Samosa-Token: $TOKEN" -H "Content-Type: image/png" \
     -H "X-Filename: test.png" --data-binary @"$TMP/test.png")
-ATTACH_ID=$(echo "$ATTACH_RES" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+ATTACH_ID=$(echo "$ATTACH_RES" | checks id)
 PARTIAL_RES=$(curl -sN -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
     -H "X-Samosa-Token: $TOKEN" -H "Content-Type: application/json" \
     -d "{\"attachment_ids\":[\"$ATTACH_ID\"],\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Read the text and describe the layout.\"}]}")
@@ -379,13 +318,6 @@ printf '%s' "$PARTIAL_RES" | grep -q 'Partial answer.*text/OCR only' || {
     echo "FAIL: OCR-only recovery was not visibly labelled: $PARTIAL_RES" >&2
     exit 1
 }
-python3 -c "
-import json
-commands=[json.loads(line) for line in open('$TMP/visionpsy-commands.jsonl') if line.strip()]
-assert [c.get('command') for c in commands].count('inspect') == 2, commands
-assert [c.get('command') for c in commands].count('ping') == 2, commands
-assert [c.get('command') for c in commands].count('quit') == 2, commands
-print('Labelled OCR-only partial recovery: PASS')
-"
+checks partial "$TMP/visionpsy-commands.jsonl"
 
 echo "test_visionpsy_e2e.sh: PASS"

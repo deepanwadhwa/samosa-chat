@@ -438,6 +438,28 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
+LIFE-07d checkpoint, 2026-11-21: original gateway visual launch-profile/close
+bodies now belong to Inference's existing specialist module/public archive.
+Mechanical source audit proves identical starts after explicit input/trace
+substitutions. Close has one reproduced defect fix: inactive framing no longer
+skips retained worker/lease cleanup. Native normal/SAN launch/protocol/supervisor/
+guardian, fresh source subset and gateway summary/runtime/Molmo checks pass.
+Full VisionPsy integration passes after porting Python fixtures/assertions to
+Node/shell. An obsolete image text-only expectation was reproduced on a binary
+from original Chat5d5f5fe; tests now preserve both established image-floor and
+document-text-only behaviors. Product routing, resource policy and engines are
+unchanged. Clean package/manifest/version and gateway installation gates pass.
+Exact commands, excluded development failures and limits:
+components/samosa-inference/docs/qualification/life07d-visual-launch/README.md.
+Qualified Inference revision/pin: ad3a1e1, backed up on
+origin/refactor/extract-working-modules. Earlier pins below are historical.
+
+Next LIFE-07e: extract/reuse the original shared Whisper runner with text/SRT,
+microphone/long-window behavior, selected model identity, cancellation and cleanup.
+Follow EXTRACTION_GATEWAY_LIFECYCLE_AUDIT.md; do not narrow long audio or invent a
+new server. Full area3/areas4–7, remaining Python/CI migration, Agent/App/assembly
+and legacy retirement remain open. The following records retain prior evidence.
+
 LIFE-07c component visual residency is qualified on this Mac. The existing
 Vision/temporal verification, white-alpha P6 preparation, command encoders and
 strict replies now share `visual_assets.c`; both legacy and resident adapters

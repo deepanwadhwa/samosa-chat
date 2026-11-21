@@ -12932,84 +12932,30 @@ static VisionResourceBudget vision_wait_for_molmo_memory(
     return current;
 }
 
+static void visual_protocol_trace_event(void *context, const char *event, const char *fields) {
+    developer_trace_event(context, event, fields);
+}
+static void visual_protocol_trace_payload(void *context, const char *event, const char *provider, const char *bytes, size_t size) {
+    developer_trace_payload(context, event, provider, bytes, size);
+}
+
 static int visionpsy_session_start(Gateway *g, VisionPsySession *s) {
     if (!s) return 0;
-    if (!visionpsy_available(g)) {
-        developer_trace_event(g, "visionpsy_start_failed", "\"code\":\"model_unavailable\"");
-        return 0;
-    }
-    TextBuffer start_fields = {0};
-    if (text_add(&start_fields, "\"engine\":") && text_json_string(&start_fields, g->visionpsy_engine) &&
-        text_add(&start_fields, ",\"model_path\":") && text_json_string(&start_fields, g->visionpsy_model))
-        developer_trace_event(g, "visionpsy_starting", start_fields.data);
-    free(start_fields.data);
-    SamosaMmProvider provider = {
-        .provider = "visionpsy_nano_460m",
-        .executable = g->visionpsy_engine,
-        .model_dir = g->visionpsy_model,
-        .protocol = SAMOSA_MM_PROTOCOL_JSON_LINE,
-        .ready_timeout_ms = 20000,
-        .request_timeout_ms = 120000,
-        .shutdown_grace_ms = 2000,
-        .max_frame_bytes = 65536
-    };
-    char error_code[SAMOSA_MM_ERROR_MAX] = {0};
-    if (!samosa_mm_session_start(&g->multimodal_supervisor, &provider, s,
-                                 error_code, sizeof(error_code))) {
-        TextBuffer fields = {0};
-        if (text_add(&fields, "\"code\":") &&
-            text_json_string(&fields, error_code[0] ? error_code : "start_failed"))
-            developer_trace_event(g, "visionpsy_start_failed", fields.data);
-        free(fields.data);
-        return 0;
-    }
-    char fields[96];
-    snprintf(fields, sizeof(fields), "\"pid\":%ld,\"supervisor\":\"multimodal_v1\"",
-             (long)s->pid);
-    developer_trace_event(g, "visionpsy_process_started", fields);
-    developer_trace_event(g, "visionpsy_ready", NULL);
-    return 1;
+    SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+    return samosa_mm_visionpsy_start(&g->multimodal_supervisor, s, &trace,
+        g->visionpsy_engine, g->visionpsy_model, visionpsy_available(g));
 }
 
 static int molmo2_session_start(Gateway *g, VisionPsySession *s) {
-    if (!s || !molmo2_available(g)) return 0;
-    SamosaMmProvider provider = {
-        .provider = "molmo2_4b",
-        .executable = g->molmo2_engine,
-        .model_dir = g->molmo2_model,
-        .protocol = SAMOSA_MM_PROTOCOL_JSON_FRAME_V1,
-        .ready_timeout_ms = 90000,
-        .request_timeout_ms = 600000,
-        .shutdown_grace_ms = 3000,
-        .max_frame_bytes = 1024 * 1024
-    };
-    developer_trace_event(g, "molmo2_starting",
-                          "\"provider\":\"molmo2_4b\",\"protocol\":\"framed_v1\"");
-    char error_code[SAMOSA_MM_ERROR_MAX] = {0};
-    if (!samosa_mm_session_start(&g->multimodal_supervisor, &provider, s,
-                                 error_code, sizeof(error_code))) {
-        TextBuffer fields = {0};
-        if (text_add(&fields, "\"code\":") &&
-            text_json_string(&fields, error_code[0] ? error_code : "start_failed"))
-            developer_trace_event(g, "molmo2_start_failed", fields.data);
-        free(fields.data);
-        return 0;
-    }
-    char fields[128];
-    snprintf(fields, sizeof(fields), "\"pid\":%ld,\"supervisor\":\"multimodal_v1\"", (long)s->pid);
-    developer_trace_event(g, "molmo2_ready", fields);
-    return 1;
+    if (!s) return 0;
+    SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+    return samosa_mm_molmo2_start(&g->multimodal_supervisor, s, &trace,
+        g->molmo2_engine, g->molmo2_model, molmo2_available(g));
 }
 
 static void visionpsy_session_close(Gateway *g, VisionPsySession *s) {
-    if (!s || !s->active) return;
-    pid_t pid = s->pid;
-    samosa_mm_session_close(s);
-    char fields[128];
-    snprintf(fields, sizeof(fields), "\"pid\":%ld,\"supervisor\":\"multimodal_v1\"",
-             (long)pid);
-    developer_trace_event(g, !strcmp(s->provider, "molmo2_4b")
-                                ? "molmo2_process_stopped" : "visionpsy_process_stopped", fields);
+    SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+    samosa_mm_visual_close(s, &trace);
 }
 
 /* Also used by product-level document selectors and request validation. */
@@ -13020,13 +12966,6 @@ static int vision_json_bounded_integer(jval *value, int minimum, int maximum,
         value->num > maximum) return 0;
     if (output) *output = (int)value->num;
     return 1;
-}
-
-static void visual_protocol_trace_event(void *context, const char *event, const char *fields) {
-    developer_trace_event(context, event, fields);
-}
-static void visual_protocol_trace_payload(void *context, const char *event, const char *provider, const char *bytes, size_t size) {
-    developer_trace_payload(context, event, provider, bytes, size);
 }
 
 static int molmo2_session_analyze_request(
