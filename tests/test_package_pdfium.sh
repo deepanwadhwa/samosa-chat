@@ -55,7 +55,7 @@ done
 for name in src/specialist_supervisor.c src/specialist_protocol.c engines/json.h src/summary_process.c src/controlled_pipe.h src/json.h src/llama_launch.c src/engine_process.c src/engine_process.h src/backend_process.c src/backend_process_internal.h src/backend_json.c src/whisper_process.c src/vision_budget.c src/turn_control.c \
   include/samosa_inference/specialist_protocol.h \
   include/samosa_inference/specialist_supervisor.h include/samosa_inference/summary_process.h \
-  include/samosa_inference/llama_launch.h include/samosa_inference/backend_process.h include/samosa_inference/backend_json.h include/samosa_inference/whisper_process.h include/samosa_inference/vision_budget.h include/samosa_inference/turn_control.h LICENSE; do
+  include/samosa_inference/llama_launch.h include/samosa_inference/backend_process.h include/samosa_inference/backend_json.h include/samosa_inference/whisper_process.h include/samosa_inference/vision_budget.h include/samosa_inference/turn_control.h src/primary_host.c src/activation.c src/activation.h src/artifact.c src/artifact.h src/engine_runtime.c src/engine_runtime.h src/library_runtime.c src/library_runtime.h src/sha256.h include/samosa_inference/primary_host.h LICENSE; do
   expected=$(sha256_file "$ROOT/components/samosa-inference/$name")
   actual=$(awk -F '\t' -v name="engine/inference/$name" '$3==name {print $1}' "$manifest")
   [ "$actual" = "$expected" ] || fail "wrong owner-source hash: $name"

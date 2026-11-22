@@ -310,14 +310,25 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    through common activation/readiness/observed identity/stale rejection,
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
-   Guardian ownership and HTTP200 do not close all common lifecycle requirements.
+   Reuse existing release and installer verification to supply pins for ordinary
+   deployments. Qualify the default path with real models and visual reclaim.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original
+LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
+use the Inference primary owner for pinned deployments. Native Qwen passes
+Gateway startup and the separate visual reservation reclaim test on this Mac.
+Resume rechecks retained identity and qualifies the fresh worker at the same
+revision. Visual startup refuses pending primary cleanup. Ordinary installs
+still need pins from trusted installation metadata before default cutover.
+Actual Maple and llama, end-to-end actual visual reclaim, long-window Whisper
+and recovery remain open.
+[Native evidence and deployment contract](../components/samosa-inference/docs/qualification/life07s-primary-reclaim/README.md).
+
+Previous LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original
 backend owner, JSON transport, loader inspector and Activation transaction to
 qualify a pinned engine and model before reporting readiness. The retained
 native Qwen model passed on this Mac. Maple and llama passed protocol fixtures.

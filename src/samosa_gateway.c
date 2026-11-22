@@ -50,6 +50,10 @@
 #include <samosa_inference/summary_process.h>
 #include <samosa_inference/backend_process.h>
 #include <samosa_inference/backend_json.h>
+#ifdef SAMOSA_PRIMARY_HOST
+#include <samosa_inference/primary_host.h>
+typedef struct GatewayPrimary GatewayPrimary;
+#endif
 #include <samosa_inference/whisper_process.h>
 #include <samosa_inference/vision_budget.h>
 #include <samosa_inference/turn_control.h>
@@ -58,6 +62,11 @@ typedef struct {
     SamosaHttpServer *server;
     pthread_mutex_t mu;
     SamosaBackendProcess primary_process;
+#ifdef SAMOSA_PRIMARY_HOST
+    const char *primary_pins;
+    pthread_mutex_t primary_mu;
+    GatewayPrimary *primary;
+#endif
     SamosaSummaryProcess summary_process;
     pid_t job_pids[16];
     pthread_mutex_t job_pid_mu;
@@ -8002,7 +8011,192 @@ static SamosaBackendOwner backend_owner(Gateway *g) {
     return (SamosaBackendOwner){&g->primary_process, &g->mu, g->backend_pid_file};
 }
 
+#ifdef SAMOSA_PRIMARY_HOST
+/* The deployment owns this private manifest. Gateway binds its rows to the
+   original configured launch paths, then lets Inference verify and run them. */
+struct GatewayPrimary {
+    Gateway *gateway;
+    SamosaPrimaryHost *host;
+    SamosaPrimaryConfig config;
+    SamosaPrimaryInput inputs[16], libraries[8];
+    char *pins;
+    char backend[80], chats[PATH_MAX], state[PATH_MAX];
+    pthread_t thread;
+    int joinable;
+    atomic_int running, cancel;
+    const char *error;
+};
+
+static char *primary_read_pins(const char *path) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+    if (fd < 0) return NULL;
+    struct stat st;
+    char *body = NULL;
+    if (!fstat(fd,&st) && S_ISREG(st.st_mode) && st.st_uid == geteuid() &&
+        !(st.st_mode & 022) && st.st_size > 0 && st.st_size <= 65536) {
+        size_t size = (size_t)st.st_size;
+        body = malloc(size + 1);
+        if (body && (pread(fd,body,size,0) != (ssize_t)size || memchr(body,0,size))) {
+            free(body); body = NULL;
+        }
+        if (body) body[size] = 0;
+    }
+    close(fd);
+    return body;
+}
+
+static int primary_pin_matches(const SamosaPrimaryInput *pin, const char *path) {
+    return path && !strcmp(pin->path,path);
+}
+
+static int primary_bind_pins(GatewayPrimary *p, const char *path) {
+    SamosaPrimaryConfig *c = &p->config;
+    const int qwen = !strcmp(p->backend,"qwen");
+    const int maple = !strcmp(p->backend,"maple");
+    const int directory = qwen || maple;
+    const char *engine = directory ? c->launch.engine : c->launch.llama.engine;
+    char anchor[PATH_MAX], metal[PATH_MAX] = {0};
+    if (directory && !path_join(anchor,sizeof(anchor),c->launch.model,
+                               qwen ? "manifest.json" : "maple-manifest.json")) return 0;
+    if (!directory && !path_copy(anchor,sizeof(anchor),c->launch.llama.model)) return 0;
+    if (maple) {
+        char engine_dir[PATH_MAX];
+        if (!path_copy(engine_dir,sizeof(engine_dir),engine)) return 0;
+        char *slash = strrchr(engine_dir,'/');
+        if (!slash) return 0;
+        *slash = 0;
+        if (!path_join(metal,sizeof(metal),engine_dir,"mlx.metallib")) return 0;
+    }
+    size_t model_length = directory ? strlen(c->launch.model) : 0;
+    p->pins = primary_read_pins(path);
+    if (!p->pins) return 0;
+    char *rest = NULL;
+    for (char *line = strtok_r(p->pins,"\n",&rest); line; line = strtok_r(NULL,"\n",&rest)) {
+        char *bytes = strchr(line,'\t');
+        if (!bytes) return 0;
+        *bytes++ = 0;
+        char *name = strchr(bytes,'\t');
+        if (!name) return 0;
+        *name++ = 0;
+        if (strlen(line) != 64 || strspn(line,"0123456789abcdef") != 64 ||
+            !*bytes || strspn(bytes,"0123456789") != strlen(bytes) || name[0] != '/' ||
+            strchr(name,'\t') || strchr(name,'\r')) return 0;
+        errno = 0;
+        unsigned long long size = strtoull(bytes,NULL,10);
+        if (errno || !size || size > INT64_MAX) return 0;
+        SamosaPrimaryInput pin = {name,line,size};
+        if (primary_pin_matches(&pin,engine)) {
+            if (c->engine.path) return 0;
+            c->engine = pin;
+        } else if (primary_pin_matches(&pin,anchor)) {
+            if (c->model.path) return 0;
+            c->model = pin;
+        } else if ((directory && !strncmp(name,c->launch.model,model_length) && name[model_length] == '/') ||
+                   (qwen && primary_pin_matches(&pin,c->launch.tokenizer)) ||
+                   (maple && primary_pin_matches(&pin,metal)) ||
+                   (!directory && primary_pin_matches(&pin,c->launch.llama.projector))) {
+            if (c->input_count == sizeof(p->inputs)/sizeof(p->inputs[0])) return 0;
+            for (size_t i = 0; i < c->input_count; i++)
+                if (primary_pin_matches(&p->inputs[i],name)) return 0;
+            p->inputs[c->input_count++] = pin;
+        } else {
+            const char *ext = strrchr(name,'.');
+            if (ext && !strcmp(ext,".dylib")) {
+                if (c->library_count == sizeof(p->libraries)/sizeof(p->libraries[0])) return 0;
+                for (size_t i = 0; i < c->library_count; i++)
+                    if (primary_pin_matches(&p->libraries[i],name)) return 0;
+                p->libraries[c->library_count++] = pin;
+            }
+        }
+    }
+    if (!c->engine.path || !c->model.path) return 0;
+    if (maple) {
+        for (size_t i = 0; i < c->input_count; i++)
+            if (primary_pin_matches(&p->inputs[i],metal)) return 1;
+        return 0;
+    }
+    return 1;
+}
+
+static int primary_cancelled(void *context) {
+    GatewayPrimary *p = context;
+    return atomic_load(&p->cancel) || atomic_load(&p->gateway->stopping);
+}
+
+static void *primary_activate_thread(void *context) {
+    GatewayPrimary *p = context;
+    p->error = samosa_primary_start(&p->host,&p->config);
+    if (p->error) fprintf(stderr,"[samosa] primary %s activation: %s\n",p->backend,p->error);
+    atomic_store(&p->running,0);
+    return NULL;
+}
+
+static void primary_free(GatewayPrimary *p) {
+    free(p->pins);
+    free(p);
+}
+
+/* At most one attempt owns the launch config. Serializing the Gateway adapter
+   keeps status, shutdown, and setting/selection changes from freeing it while
+   the background verifier is reading it. The worker uses only the owner mutex. */
+static int primary_activate(Gateway *g, SamosaBackendOwner owner, SamosaBackendLaunch launch, int wait) {
+    pthread_mutex_lock(&g->primary_mu);
+    if (g->primary || atomic_load(&g->stopping)) {
+        pthread_mutex_unlock(&g->primary_mu);return 0;
+    }
+    GatewayPrimary *p = calloc(1,sizeof(*p));
+    if (!p) { pthread_mutex_unlock(&g->primary_mu);return 0; }
+    p->gateway = g;
+    atomic_init(&p->running,1);
+    atomic_init(&p->cancel,0);
+    int valid = path_copy(p->backend,sizeof(p->backend),launch.backend) &&
+        path_copy(p->chats,sizeof(p->chats),launch.chats) &&
+        path_join(p->state,sizeof(p->state),g->home,"run/primary-activation");
+    launch.backend = p->backend;
+    launch.chats = p->chats;
+    p->config = (SamosaPrimaryConfig){.owner=owner,.launch=launch,.state=p->state,
+        .inputs=p->inputs,.libraries=p->libraries,.gate=&g->turn_gate,.upstream_fd=&g->upstream_fd,
+        .startup_seconds=20,.generation_seconds=120,.cancelled=primary_cancelled,.cancellation=p};
+    if (valid) valid = primary_bind_pins(p,g->primary_pins);
+    if (valid) {
+        g->primary = p;
+        if (wait) primary_activate_thread(p);
+        else if (!pthread_create(&p->thread,NULL,primary_activate_thread,p)) p->joinable = 1;
+        else { g->primary = NULL; valid = 0; }
+    }
+    if (!valid || (wait && p->error && !p->host)) {
+        g->primary = NULL;primary_free(p);valid = 0;
+    } else if (wait && p->error) {
+        valid = 0;
+    }
+    pthread_mutex_unlock(&g->primary_mu);
+    return valid;
+}
+
+static int primary_status(Gateway *g, int loading_counts) {
+    int locked = pthread_mutex_trylock(&g->primary_mu);
+    if (locked) return locked == EBUSY && loading_counts;
+    GatewayPrimary *p = g->primary;
+    int ok = 0;
+    if (p && !strcmp(p->backend,g->backend)) {
+        if (atomic_load(&p->running)) ok = loading_counts;
+        else if (!p->error) {
+            if (loading_counts) ok = samosa_backend_process_pid(&p->config.owner) > 0;
+            else {
+                pid_t pid;unsigned revision;
+                ok = !samosa_primary_status(p->host,&pid,&revision);
+            }
+        }
+    }
+    pthread_mutex_unlock(&g->primary_mu);
+    return ok;
+}
+#endif
+
 static int backend_child_running(Gateway *g) {
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->primary_pins) return primary_status(g,1);
+#endif
     SamosaBackendOwner owner = backend_owner(g);
     return samosa_backend_process_running(&owner);
 }
@@ -8011,6 +8205,9 @@ static int backend_probe(Gateway *g) {
     /* Direct Molmo remains the original virtual backend, qualified/leased by
        the visual turn. Primary HTTP availability belongs to Inference. */
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return molmo2_available(g);
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->primary_pins) return primary_status(g,0);
+#endif
     SamosaBackendOwner owner = backend_owner(g);
     return samosa_backend_process_probe(&owner, g->backend, g->backend_port);
 }
@@ -8026,12 +8223,45 @@ static void backend_stop_interrupted(void *context) {
     if (stop->upstream >= 0) shutdown(stop->upstream, SHUT_RDWR);
     (void)samosa_mm_supervisor_cancel(&stop->gateway->multimodal_supervisor);
 }
-static void backend_stop(Gateway *g) {
+static int backend_stop_with_reclaim(Gateway *g, int reclaim) {
+    (void)reclaim;
     SamosaBackendOwner owner = backend_owner(g);
     GatewayBackendStop context = {g, -1};
     SamosaBackendStopControl control = {backend_stop_detach, backend_stop_interrupted, &context};
-    samosa_backend_process_stop(&owner, &control);
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->primary_pins) {
+        pthread_mutex_lock(&g->primary_mu);
+        GatewayPrimary *p = g->primary;
+        const char *error = NULL;
+        if (p) {
+            if (p->joinable) {
+                if (!reclaim) {
+                    atomic_store(&p->cancel,1);
+                    pthread_mutex_lock(&g->mu);
+                    if (g->upstream_fd >= 0) shutdown(g->upstream_fd,SHUT_RDWR);
+                    pthread_mutex_unlock(&g->mu);
+                }
+                if (reclaim && atomic_load(&p->running)) {
+                    pthread_mutex_unlock(&g->primary_mu);
+                    return 0;
+                }
+                pthread_join(p->thread,NULL);
+                p->joinable = 0;
+            }
+            if (reclaim) error = samosa_primary_pause(p->host,&control);
+            else {
+                error = samosa_primary_stop(&p->host,&control);
+                if (!p->host) { g->primary = NULL;primary_free(p); }
+            }
+        }
+        pthread_mutex_unlock(&g->primary_mu);
+        if (error) fprintf(stderr,"[samosa] primary cleanup: %s\n",error);
+        return !error;
+    }
+#endif
+    return !samosa_backend_process_stop_owned(&owner, &control);
 }
+static void backend_stop(Gateway *g) { (void)backend_stop_with_reclaim(g,0); }
 
 static void jobs_stop(Gateway *g) {
     atomic_store(&g->chutni_control, 2);
@@ -8044,7 +8274,8 @@ static void jobs_stop(Gateway *g) {
         if (pids[i] > 0) kill(pids[i], SIGKILL);
 }
 
-static int backend_start(Gateway *g) {
+static int backend_start_with_wait(Gateway *g, int wait) {
+    (void)wait;
     if (!backend_available(g, g->backend)) return 0;
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return 1;
     char chats[PATH_MAX], run[PATH_MAX];
@@ -8087,8 +8318,12 @@ static int backend_start(Gateway *g) {
         config.llama = launch;
     }
     SamosaBackendOwner owner = backend_owner(g);
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->primary_pins) return primary_activate(g,owner,config,wait);
+#endif
     return samosa_backend_process_start(&owner, &config);
 }
+static int backend_start(Gateway *g) { return backend_start_with_wait(g,0); }
 
 static int static_file(int fd, const char *path, const char *type, const char *extra) {
     int file = open(path, O_RDONLY | O_NOFOLLOW);
@@ -8582,7 +8817,7 @@ static int runtime_settings_handler(Gateway *g, int fd,
     }
 
     backend_stop(g);
-    if (!backend_start(g)) {
+    if (!backend_start_with_wait(g,1)) {
         /* Fork/start failure is recoverable: put both durable configuration
            and the old launch policy back before answering. */
         runtime_config_save(g, g->backend, &before);
@@ -10769,11 +11004,35 @@ static int turn_available(void *context, int provider) {
 static double turn_molmo_required(void *context) { return molmo2_required_available_gb(context); }
 static long long turn_total_memory(void *context) { (void)context; return vision_total_memory_bytes(); }
 static int turn_primary_running(void *context) {
-    SamosaBackendOwner owner = backend_owner(context);
-    return samosa_backend_process_pid(&owner) > 0;
+    Gateway *g = context;
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->primary_pins) {
+        pthread_mutex_lock(&g->primary_mu);
+        int active = g->primary && (atomic_load(&g->primary->running) || g->primary->host);
+        pthread_mutex_unlock(&g->primary_mu);
+        return active;
+    }
+#endif
+    pthread_mutex_lock(&g->mu);
+    int active = g->primary_process.guardian != NULL;
+    pthread_mutex_unlock(&g->mu);
+    return active;
 }
-static void turn_primary_stop(void *context) { backend_stop(context); }
-static int turn_primary_start(void *context) { return backend_start(context); }
+static int turn_primary_stop(void *context) { return backend_stop_with_reclaim(context,1); }
+static int turn_primary_start(void *context) {
+#ifdef SAMOSA_PRIMARY_HOST
+    Gateway *g = context;
+    if (g->primary_pins) {
+        pthread_mutex_lock(&g->primary_mu);
+        GatewayPrimary *p = g->primary;
+        const char *error = p && !strcmp(p->backend,g->backend) ? samosa_primary_resume(p->host) : "provider_unavailable";
+        pthread_mutex_unlock(&g->primary_mu);
+        if (error) fprintf(stderr,"[samosa] primary resume: %s\n",error);
+        return !error;
+    }
+#endif
+    return backend_start(context);
+}
 static int turn_primary_probe(void *context) { return backend_probe(context); }
 static int turn_stopping(void *context) { return atomic_load(&((Gateway *)context)->stopping); }
 static long long turn_now(void *context) { (void)context; return monotonic_millis(); }
@@ -21885,6 +22144,10 @@ static void *selection_watchdog(void *arg_) {
     selection_job_event(g, job.job_id, "waiting_ready", "Waiting for the new backend to become ready");
 
     long long deadline = monotonic_millis() + selection_ready_timeout_ms();
+#ifdef SAMOSA_PRIMARY_HOST
+    /* Verified startup includes file hashing and a bounded generation probe. */
+    if (g->primary_pins) deadline = monotonic_millis() + 600000;
+#endif
     int crashed = 0, ready = 0, shutting_down = 0;
     while (monotonic_millis() < deadline) {
         /* Checked first, not just left to the pid<=0 fallthrough below: if
@@ -25721,6 +25984,10 @@ static int load_config(Gateway *g) {
     g->summary_process.write_fd = -1;
     g->summary_process.read_fd = -1;
     pthread_mutex_init(&g->mu, NULL);
+#ifdef SAMOSA_PRIMARY_HOST
+    g->primary_pins = getenv("SAMOSA_PRIMARY_PINS");
+    if (g->primary_pins && pthread_mutex_init(&g->primary_mu,NULL)) return 0;
+#endif
     pthread_mutex_init(&g->job_pid_mu, NULL);
     if (!samosa_summary_process_init(&g->summary_process)) return 0;
     pthread_mutex_init(&g->install_mu, NULL);

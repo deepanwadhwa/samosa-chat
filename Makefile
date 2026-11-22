@@ -59,11 +59,19 @@ CHUTNI_DIR ?= vendor/chutni
 CHUTNI_BUILD := $(abspath $(BUILD_DIR)/chutni)
 CHUTNI_MCP := $(BUILD_DIR)/chutni-mcp
 SAMOSA_INFERENCE_DIR ?= components/samosa-inference
+ifeq ($(UNAME_S),Darwin)
+INFERENCE_SPECIALIST_LIBRARY := $(SAMOSA_INFERENCE_DIR)/build/libsamosa-inference-primary.a
+INFERENCE_ARCHIVE_TARGET := primary-host
+PRIMARY_GATEWAY_FLAGS := -DSAMOSA_PRIMARY_HOST
+DL_LDFLAGS += -lsqlite3
+else
 INFERENCE_SPECIALIST_LIBRARY := $(SAMOSA_INFERENCE_DIR)/build/libsamosa-inference-specialist.a
+INFERENCE_ARCHIVE_TARGET := specialist
+endif
 MULTIMODAL_SRCS := $(INFERENCE_SPECIALIST_LIBRARY)
 .PHONY: inference-specialist
 inference-specialist:
-	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) specialist
+	$(MAKE) -C $(SAMOSA_INFERENCE_DIR) $(INFERENCE_ARCHIVE_TARGET)
 $(INFERENCE_SPECIALIST_LIBRARY): inference-specialist
 
 EVIDENCE_SRCS := src/samosa_evidence.c
@@ -126,7 +134,7 @@ else
 endif
 
 # Consume only the published Inference header and archive.
-CWARN += -I$(abspath $(SAMOSA_INFERENCE_DIR)/include)
+CWARN += -I$(abspath $(SAMOSA_INFERENCE_DIR)/include) $(PRIMARY_GATEWAY_FLAGS)
 
 # The generic service is pinned as a submodule and shipped as an application
 # runtime component. Samosa calls its public JSON tool surface; it does not

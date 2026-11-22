@@ -150,6 +150,9 @@ INSTALL_FILES="$INSTALL_FILES engine/inference/src/whisper_process.c engine/infe
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/vision_budget.c engine/inference/include/samosa_inference/vision_budget.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/turn_control.c engine/inference/include/samosa_inference/turn_control.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_json.c engine/inference/include/samosa_inference/backend_json.h"
+if [ "$(uname -s)" = "Darwin" ]; then
+  INSTALL_FILES="$INSTALL_FILES engine/inference/src/primary_host.c engine/inference/src/activation.c engine/inference/src/activation.h engine/inference/src/artifact.c engine/inference/src/artifact.h engine/inference/src/engine_runtime.c engine/inference/src/engine_runtime.h engine/inference/src/library_runtime.c engine/inference/src/library_runtime.h engine/inference/src/sha256.h engine/inference/include/samosa_inference/primary_host.h"
+fi
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
 CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
@@ -500,17 +503,31 @@ ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
   "$STAGE/engine/inference/backend_json.o" "$STAGE/engine/inference/whisper_process.o" "$STAGE/engine/inference/vision_budget.o" "$STAGE/engine/inference/turn_control.o" ||
   fail "staged Inference archive failed; live release was not changed"
 
+PRIMARY_GATEWAY_FLAGS=""
+PRIMARY_GATEWAY_LIBS=""
+if [ "$(uname -s)" = "Darwin" ]; then
+  PRIMARY_GATEWAY_FLAGS="-DSAMOSA_PRIMARY_HOST"
+  PRIMARY_GATEWAY_LIBS="-lsqlite3"
+  for source in primary_host activation artifact engine_runtime library_runtime; do
+    $COMPILER -O2 -Wall -Wextra -std=c11 -pthread -I"$STAGE/engine/inference/include" \
+      -c "$STAGE/engine/inference/src/$source.c" -o "$STAGE/engine/inference/$source.o" ||
+      fail "staged Inference primary compilation failed; live release was not changed"
+    ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/inference/$source.o" ||
+      fail "staged Inference primary archive failed; live release was not changed"
+  done
+fi
+
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
 # T1.0), so it is always compiled -- there is no raw-Qwen-only release path.
-$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS ||
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS $PRIMARY_GATEWAY_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-gateway" $DL_FLAGS $PRIMARY_GATEWAY_LIBS ||
   fail "staged gateway compilation failed; live release was not changed"
 # samosa-jobsd is the same source under a launchd-friendly name (invoked as
 # `samosa-jobsd jobsd-once`, it polls armed schedules and exits). The launchd
 # plist the gateway installs points at current/bin/samosa-jobsd, so the
 # scheduler is broken on a clean install unless this binary exists.
-$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
-  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS ||
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS $PRIMARY_GATEWAY_FLAGS -Wno-unused-function -std=c11 -pthread -I"$STAGE/engine" -I"$STAGE/engine/inference/include" \
+  "$STAGE/engine/samosa_gateway.c" "$STAGE/engine/inference/libsamosa-inference-specialist.a" "$STAGE/engine/samosa_evidence.c" "$STAGE/engine/samosa_html.c" -o "$STAGE/bin/samosa-jobsd" $DL_FLAGS $PRIMARY_GATEWAY_LIBS ||
   fail "staged jobs daemon compilation failed; live release was not changed"
 $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 \
   "$STAGE/engine/samosa_fs.c" -o "$STAGE/bin/samosa-fs" ||
