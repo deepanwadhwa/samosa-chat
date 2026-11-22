@@ -1,6 +1,12 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07w and LIFE-07x, 2026-11-22. Versioned Mac releases can bundle the reviewed
+LIFE-07y, 2026-11-22. The existing Inference primary owner qualifies real
+Maple and Bonsai in explicitly pinned native runs. Maple reuses its template
+control with a bounded 64-token request. Bonsai serves text and an image through
+its pinned projector. Ordinary release provisioning for both profiles remains open.
+[Native Maple and Bonsai evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07y-real-maple-and-bonsai).
+
+Previous LIFE-07w and LIFE-07x, 2026-11-22. Versioned Mac releases can bundle the reviewed
 Ornith engine, notices and pins. The installed launcher qualified actual Ornith
 and Qwen through the existing primary owner. The original model manager suite
 passes under the Python-free guard. Remaining primary profiles and common

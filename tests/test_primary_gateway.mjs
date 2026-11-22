@@ -16,9 +16,17 @@ const installedRelease=process.argv[2]==='--installed-release';
 const installedOrnith=process.argv[2]==='--installed-ornith';
 const installedFixture=process.argv[2]==='--installed';
 const installed=installedRelease||installedFixture||installedOrnith;
-const actualOrnith=process.argv[2]==='--actual-ornith'||installedOrnith;
-const actual=process.argv[2]==='--actual'||installedRelease||actualOrnith;
-const selectedBackend=actualOrnith?'ornith':'qwen';
+const pinnedBackend=new Map([['--actual-ornith','ornith'],['--actual-maple','maple'],
+  ['--actual-bonsai','bonsai']]).get(process.argv[2]);
+const actual=process.argv[2]==='--actual'||installedRelease||installedOrnith||Boolean(pinnedBackend);
+const selectedBackend=installedOrnith?'ornith':pinnedBackend??'qwen';
+const nativeEnv=`SAMOSA_TEST_REAL_${selectedBackend.toUpperCase()}`;
+const nativeEngine=pinnedBackend?fs.realpathSync(process.env[`${nativeEnv}_ENGINE`]):fixture;
+const nativeModel=pinnedBackend||installedOrnith?fs.realpathSync(process.env[`${nativeEnv}_MODEL`]):null;
+const nativeAliases={ornith:'ornith-1.0-9b',bonsai:'bonsai-27b-1bit',maple:'deepgrove-maple-preview'};
+const nativeArtifacts=pinnedBackend?JSON.parse(fs.readFileSync('assets/models.json','utf8')).models
+  .find(model=>model.id===pinnedBackend).artifacts:[];
+const nativeArtifactPath=artifact=>pinnedBackend==='ornith'?nativeModel:path.join(nativeModel,artifact.name);
 const realModel=process.env.SAMOSA_TEST_REAL_QWEN_MODEL??'/private/tmp/samosa-life07h-real.2wwUok/model';
 const visualModel=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_MODEL;
 const visualEngine=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_ENGINE;
@@ -30,8 +38,6 @@ const names=['manifest.json','config.json','experts.bin','resident.safetensors',
 const tokenizer=path.join(model,names[4]);
 const goodGguf=path.join(test,'bonsai.gguf');
 const badGguf=path.join(test,'ornith.gguf');
-const ornithEngine=actualOrnith&&!installedOrnith?fs.realpathSync(process.env.SAMOSA_TEST_REAL_ORNITH_ENGINE):fixture;
-const ornithModel=actualOrnith?fs.realpathSync(process.env.SAMOSA_TEST_REAL_ORNITH_MODEL):badGguf;
 const port=await freePort();
 const backendPort=await freePort();
 const log=path.join(test,'gateway.log');
@@ -86,7 +92,7 @@ async function select(backend,state) {
 function startGateway() {
   const env={...process.env,SAMOSA_HOME:test,SAMOSA_BIND:'127.0.0.1',
     SAMOSA_PORT:String(port),SAMOSA_BACKEND_PORT:String(backendPort),
-    SAMOSA_BONSAI_SERVER:ornithEngine,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:ornithModel,
+    SAMOSA_BONSAI_SERVER:fixture,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:badGguf,
     SAMOSA_BONSAI_MMPROJ:path.join(test,'missing-mmproj'),SAMOSA_CONTEXT_TOKENS:'512',OMP_NUM_THREADS:'2'};
   if(!actual) env.SAMOSA_PRIMARY_GATEWAY_FIXTURE='1';
   if(installedOrnith) {
@@ -94,9 +100,16 @@ function startGateway() {
     delete env.SAMOSA_ORNITH_MODEL;
     delete env.SAMOSA_LLAMA_CTX;
     delete env.SAMOSA_LLAMA_THREADS;
-  } else if(actualOrnith) {
-    env.SAMOSA_LLAMA_CTX='1024';
+  } else if(pinnedBackend) {
+    env.SAMOSA_LLAMA_CTX=pinnedBackend==='ornith'?'1024':'2048';
     env.SAMOSA_LLAMA_THREADS='2';
+    env.SAMOSA_MODELS_CATALOG=path.join(root,'assets','models.json');
+    if(pinnedBackend==='maple') Object.assign(env,{SAMOSA_MAPLE_ENGINE:nativeEngine,SAMOSA_MAPLE_MODEL:nativeModel});
+    if(pinnedBackend==='ornith') Object.assign(env,{SAMOSA_BONSAI_SERVER:nativeEngine,SAMOSA_ORNITH_MODEL:nativeModel});
+    if(pinnedBackend==='bonsai') {
+      const [weights,projector]=nativeArtifacts.map(nativeArtifactPath);
+      Object.assign(env,{SAMOSA_BONSAI_SERVER:nativeEngine,SAMOSA_BONSAI_MODEL:weights,SAMOSA_BONSAI_MMPROJ:projector});
+    }
   }
   if(visualModel||visualEngine) {
     assert.ok(visualModel&&visualEngine,'Set both native Molmo2 test paths');
@@ -123,10 +136,7 @@ async function controlPlane() {
   token=fs.readFileSync(path.join(test,'run','ui-token'),'utf8').trim();
 }
 
-async function qualifyVisualReclaim(previousWorker) {
-  assert.equal((await request('/healthz')).body.vision.molmo2_model_ready,true);
-  const trace=await request('/v1/developer/trace','PUT',{enabled:true});
-  assert.equal(trace.code,200,JSON.stringify(trace.body));
+async function uploadLogo() {
   const upload=await fetch(base+'/v1/attachments',{
     method:'POST',
     headers:{'X-Samosa-Token':token,'Content-Type':'image/png','X-Filename':'logo.png'},
@@ -136,9 +146,16 @@ async function qualifyVisualReclaim(previousWorker) {
   assert.equal(upload.status,201);
   const attachment=await upload.json();
   assert.match(attachment.id,/^[a-f0-9]{64}$/);
+  return attachment.id;
+}
+
+async function qualifyVisualReclaim(previousWorker) {
+  assert.equal((await request('/healthz')).body.vision.molmo2_model_ready,true);
+  const trace=await request('/v1/developer/trace','PUT',{enabled:true});
+  assert.equal(trace.code,200,JSON.stringify(trace.body));
   const result=await request('/v1/chat/completions','POST',{
     messages:[{role:'user',content:'Describe the subject and main colors shown in this image.'}],
-    attachment_ids:[attachment.id],analysis_depth:'fast',max_tokens:12,thinking:false,stream:false
+    attachment_ids:[await uploadLogo()],analysis_depth:'fast',max_tokens:12,thinking:false,stream:false
   },660000);
   assert.equal(result.code,200,JSON.stringify(result.body));
   assert.ok(result.body.choices[0].message.content.trim());
@@ -157,6 +174,19 @@ async function qualifyVisualReclaim(previousWorker) {
   console.log('PASS real Molmo2 image evidence, specialist cleanup and fresh Qwen qualification');
 }
 
+async function checkBonsaiProjector() {
+  assert.equal((await request('/healthz')).body.supports_images,true);
+  const result=await request('/v1/chat/completions','POST',{
+    model:nativeAliases.bonsai,messages:[{role:'user',content:'Name the main colors in the image.'}],
+    attachment_ids:[await uploadLogo()],analysis_depth:'fast',max_tokens:32,thinking:'off',
+    chat_template_kwargs:{enable_thinking:false},temperature:0,stream:false
+  },240000);
+  assert.equal(result.code,200,JSON.stringify(result.body));
+  assert.ok(result.body.choices[0].message.content.trim());
+  assert.match(fs.readFileSync(path.join(test,'backend.log'),'utf8'),/image processed in \d+ ms/);
+  console.log('PASS real Bonsai image request used the pinned projector');
+}
+
 function record(asset,name=asset) {
   return [quote(asset),fs.statSync(asset).size,name].join('\t')+'\n';
 }
@@ -171,7 +201,7 @@ try {
   if(installedOrnith){
     const modelDir=path.join(test,'models','ornith-9b');
     fs.mkdirSync(modelDir,{recursive:true});
-    execFileSync('cp',['-c','-p',ornithModel,path.join(modelDir,'Ornith-1.0-9B-Q4_K_M.gguf')]);
+    execFileSync('cp',['-c','-p',nativeModel,path.join(modelDir,'Ornith-1.0-9B-Q4_K_M.gguf')]);
   } else if(installedRelease){
     fs.mkdirSync(model,{recursive:true});
     for(const name of names)execFileSync('cp',['-c','-p',path.join(realModel,name),model]);
@@ -198,11 +228,10 @@ try {
     }
     fs.writeFileSync(catalogPath,JSON.stringify(catalog),{mode:0o600});
     fs.writeFileSync(receipt,record(catalogPath,'models.json')+record(engine,'bin/qwen36b'),{mode:0o600});
-  } else if(actualOrnith&&!installed){
-    const catalog=JSON.parse(fs.readFileSync('assets/models.json','utf8'));
-    const [artifact]=catalog.models.find(model=>model.id==='ornith').artifacts;
-    const modelPin=[artifact.sha256,artifact.bytes,ornithModel].join('\t')+'\n';
-    fs.writeFileSync(pinsFile,record(ornithEngine)+modelPin,{mode:0o600});
+  } else if(pinnedBackend){
+    const modelPins=nativeArtifacts.map(artifact=>[artifact.sha256,artifact.bytes,nativeArtifactPath(artifact)].join('\t'));
+    const library=pinnedBackend==='maple'?record(path.join(path.dirname(nativeEngine),'mlx.metallib')):'';
+    fs.writeFileSync(pinsFile,record(nativeEngine)+library+modelPins.join('\n')+'\n',{mode:0o600});
   } else if(!installed){
     const assets=[engine,...names.map(name=>path.join(model,name))];
     if(actual) assets.push('/opt/homebrew/opt/libomp/lib/libomp.dylib');
@@ -219,7 +248,7 @@ try {
   assert(first>1);
   assert.ok(fs.existsSync(path.join(test,'run','primary-activation','activation.sqlite3')));
   if(visualModel) await qualifyVisualReclaim(first);
-  if(actualOrnith){
+  if(installedOrnith||pinnedBackend){
     if(installedOrnith){
       const command=execFileSync('ps',['-p',String(first),'-o','command='],{encoding:'utf8'}).trim();
       assert.ok(command.startsWith(path.join(release,'bin','samosa-ornith-llama-server')+' '));
@@ -227,11 +256,13 @@ try {
       assert.equal(catalog.code,200,JSON.stringify(catalog.body));
       assert.equal(catalog.body.models.find(model=>model.id==='ornith').install_state,'ready');
     }
-    const result=await request('/v1/chat/completions','POST',{model:'ornith-1.0-9b',
-      messages:[{role:'user',content:'Say hello.'}],max_tokens:4,thinking:'off',
+    const maxTokens={ornith:4,bonsai:32,maple:64}[selectedBackend];
+    const result=await request('/v1/chat/completions','POST',{model:nativeAliases[selectedBackend],
+      messages:[{role:'user',content:'Say hello.'}],max_tokens:maxTokens,thinking:'off',
       chat_template_kwargs:{enable_thinking:false},temperature:0,stream:false},120000);
     assert.equal(result.code,200,JSON.stringify(result.body));
     assert.ok(result.body.choices[0].message.content.trim());
+    if(pinnedBackend==='bonsai') await checkBonsaiProjector();
   } else if(installedRelease){
     const result=await request('/v1/chat/completions','POST',{messages:[{role:'user',content:'Say hello.'}],
       max_tokens:4,thinking:false,stream:false},120000);
@@ -278,7 +309,7 @@ try {
     }
   }
   console.log(installedOrnith?'PASS installed Ornith runtime, automatic pins, catalog readiness, public answer and cleanup':
-    actualOrnith?'PASS real Ornith qualification, public answer and cleanup':
+    pinnedBackend?`PASS real ${pinnedBackend} qualification, public answer and cleanup`:
     installedRelease?'PASS installed launcher qualified real Qwen and reaped its worker':installedFixture?
     'PASS installed Qwen pins, legacy selection, Qwen reselection and refusal of changed or missing release metadata':actual?
     'PASS Gateway completed real Qwen qualification and reaped its primary worker':
@@ -286,6 +317,8 @@ try {
 } catch(err) {
   await stop();
   if(fs.existsSync(log)) process.stderr.write(fs.readFileSync(log,'utf8'));
+  const backendLog=path.join(test,'backend.log');
+  if(pinnedBackend&&fs.existsSync(backendLog)) process.stderr.write(fs.readFileSync(backendLog,'utf8').slice(-12000));
   throw err;
 } finally {
   fs.rmSync(test,{recursive:true,force:true});

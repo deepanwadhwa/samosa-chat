@@ -438,7 +438,13 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07w and LIFE-07x, 2026-11-22. Native Mac installation and upgrade pass with
+LIFE-07y, 2026-11-22. Native Gateway runs qualify Maple and Bonsai using catalog
+pins and existing model assets. Maple proves visible generation under its new
+64-token readiness bound. Bonsai proves text and native projector chat. The
+original Inference primary suites pass in-tree and from an independent source copy.
+[Native Maple and Bonsai evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07y-real-maple-and-bonsai).
+
+Previous LIFE-07w and LIFE-07x, 2026-11-22. Native Mac installation and upgrade pass with
 the bundled Ornith runtime and its verified catalog and engine pins. The upgraded
 launcher serves real Qwen and Ornith chats and reaps both workers in separate
 runs. The original model manager test target passes with shell and Node drivers.

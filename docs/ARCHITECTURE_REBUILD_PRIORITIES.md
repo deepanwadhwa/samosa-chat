@@ -311,15 +311,22 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
    Use the installer and catalog pin inputs from LIFE-07t as the pattern for
-   remaining primary profiles. Qualify real Maple and Bonsai. Extend native
-   visual coverage beyond the installed Qwen and Molmo2 standard image path.
+   remaining primary profiles. Provision the qualified Maple and Bonsai
+   profiles in normal Mac installs. Extend native visual coverage beyond the
+   installed Qwen and Molmo2 standard image path.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07w and LIFE-07x, 2026-11-22. The native release installer now provisions
+LIFE-07y, 2026-11-22. Real Maple and Bonsai now qualify through the Inference
+primary owner with explicit pins on this Mac. The existing Maple HTTP path
+needs a 64-token readiness budget for a visible answer. Bonsai passes both
+real text and projector-backed image chat. Both workers were reaped.
+[Native Maple and Bonsai evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07y-real-maple-and-bonsai).
+
+Previous LIFE-07w and LIFE-07x, 2026-11-22. The native release installer provisions
 the qualified Ornith engine and automatic pins on this Mac. Real Qwen and
 Ornith pass normal launcher chat and worker cleanup after a clean install and
 upgrade. The full model manager test target now passes under the Python-free guard.

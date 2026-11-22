@@ -208,6 +208,38 @@ exercised the original catalog and UI fixtures, native model install success and
 failure, verified replacement, pause, cancel and resume, selection and its
 rollback cases, and onboarding recovery across a Gateway restart.
 
+## LIFE-07y real Maple and Bonsai
+
+The existing catalog URLs and digests supplied all 11 Maple files and both
+Bonsai files. Acquisition used `curl` and independent SHA-256 and size checks in
+temporary directories. The Maple engine was rebuilt through the original
+delegated native target. Bonsai used the exact static LIFE-07v engine.
+[Maple source and runtime evidence](../components/samosa-inference/docs/qualification/life07i-maple-sources/README.md#life-07y-real-catalog-model-through-the-inference-primary-owner).
+[Bonsai native engine evidence](../components/samosa-inference/docs/static-engine-package.md#life-07y-bonsai-text-and-vision-through-the-inference-primary-owner).
+
+```sh
+./tools/without_python.sh make samosa-maple samosa-gateway
+./tools/without_python.sh make -C components/samosa-inference test-primary-host sanitize-primary-host
+model_root=/private/tmp/samosa-life07y-models.4BZk12
+SAMOSA_TEST_REAL_MAPLE_ENGINE="$model_root/runtime/samosa-maple" \
+SAMOSA_TEST_REAL_MAPLE_MODEL="$model_root/maple" \
+MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
+  ./tools/without_python.sh bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --actual-maple
+SAMOSA_TEST_REAL_BONSAI_ENGINE=/private/tmp/samosa-life07v-ornith.Db9hec/build/bin/llama-server \
+SAMOSA_TEST_REAL_BONSAI_MODEL="$model_root/bonsai" \
+MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
+  ./tools/without_python.sh bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --actual-bonsai
+```
+
+The four-token Maple probe returned empty visible content, including with the
+original template control disabled. The legacy Gateway request and extracted
+primary probe both produced final text with 64 tokens. Maple and Bonsai passed
+public chat, worker cleanup and marker removal. Bonsai also processed the app
+logo through its pinned projector and returned an image answer. Peak process-tree
+RSS was 756 MB for Maple and 5,021 MB for Bonsai, with zero swap growth. These
+runs use explicit model and runtime pins. Native automatic provisioning is the
+next release step.
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).
