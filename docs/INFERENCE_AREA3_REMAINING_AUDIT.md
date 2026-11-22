@@ -1,6 +1,24 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
+visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page
+retry now belong to Inference turn_control.c/public API. Gateway retains trusted
+host/selection/evidence adapters. A reproduced direct-visual close reset race is
+fixed by withdrawing only its own generating contribution. Native normal/SAN,
+fresh31-file standalone builds, original visual/voice/selection/LAN/App workflows,
+all15 ported prompt-budget scenarios, exact packaging/native install and retained
+actual-model parity qualify the recorded scope. Original2048 heading quality
+remains unqualified; no model algorithm was changed. The stale raw-PID budget
+fixture is repaired through backend_process, preserving its domain assertions;
+its Python driver/caller are retired for Node. Evidence and limits: Inference
+qualification/life07n-turn-control/README.md. No Python/model fetch/Docker/VM/Linux
+work. Common controls/Activation/observed identity/capability readiness, stale
+rejection/last-good, guardian-death/pre-admission recovery and full area3 remain
+open. This preserves exclusion; global reservations/fairness remain area4.
+Later Inference areas, Python removal, Agent/App, pinned assembly and qualified
+retirement remain. Sources stays closed; Inkling stays after the full refactor.
+
+Historical LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
 reuses the existing EngineProcess guardian. Original model/protocol implementations,
 VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
 600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
@@ -97,9 +115,11 @@ User direction remains extraction/reuse, no Python and native Mac first.
 
 The new Mac visual policy API owns the original probes, thresholds, reserve and
 bounded reclaim wait. It observes resources; it does not reserve memory or prove
-global fairness. The original turn-wide generation gate, backend pause/resume
-and lower-side retry still reside in Gateway. Global reservations, bounds and
-fair scheduling remain the full separate area4 acceptance responsibility.
+global fairness. LIFE-07n moves the original turn-wide generation gate, backend pause/resume
+and lower-side retry into turn_control.c with explicit host callbacks. The
+reproduced direct-visual reset race now withdraws only its own count. This
+preserves existing exclusion/counting. Global reservations, bounds and fair
+scheduling remain the full separate area4 acceptance responsibility.
 
 ## Concrete ownership work, in order
 
@@ -139,9 +159,9 @@ fair scheduling remain the full separate area4 acceptance responsibility.
    existing owner boundary where required instead of truncating inputs. Specify
    nonresident start/readiness/stop semantics before implementing public controls;
    successful configuration/metadata is insufficient readiness.
-4. **Finish shared lifecycle/admission wiring and qualify area3 in full.** Move
-   the existing turn gate/reclaim/pause/resume coordination into its owner,
-   retaining traces and resource retry behavior. Keep actual generation probes,
+4. **Finish common lifecycle controls and qualify area3 in full.** LIFE-07n
+   moves the existing turn gate/reclaim/pause/resume/retry into its owner, retaining
+   traces and original policy. Reuse it for remaining controls. Keep actual generation probes,
    identity/mutation and last-good/cleanup checks for every declared profile.
    Port required Python drivers before executing them; preserve assertions.
    Recheck all four area3 requirements and supported native Mac paths before

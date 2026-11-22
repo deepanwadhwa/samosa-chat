@@ -438,7 +438,25 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
+visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page
+retry now belong to Inference turn_control.c/public API. Gateway retains trusted
+host/selection/evidence adapters. A reproduced direct-visual close reset race is
+fixed by withdrawing only its own generating contribution. Native normal/SAN,
+fresh31-file standalone builds, original visual/voice/selection/LAN/App workflows,
+all15 ported prompt-budget scenarios, exact packaging/native install and retained
+actual-model parity qualify the recorded scope. Original2048 heading quality
+remains unqualified; no model algorithm was changed. The stale raw-PID budget
+fixture is repaired through backend_process, preserving its domain assertions;
+its Python driver/caller are retired for Node. Evidence and limits: Inference
+qualification/life07n-turn-control/README.md. No Python/model fetch/Docker/VM/Linux
+work. Common controls/Activation/observed identity/capability readiness, stale
+rejection/last-good, guardian-death/pre-admission recovery and full area3 remain
+open. This preserves exclusion; global reservations/fairness remain area4.
+Later Inference areas, Python removal, Agent/App, pinned assembly and qualified
+retirement remain. Sources stays closed; Inkling stays after the full refactor.
+
+Historical LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
 reuses the existing EngineProcess guardian. Original model/protocol implementations,
 VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
 600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
@@ -494,7 +512,7 @@ are incomplete. Later Inference areas, Python removal, Agent/App, pinned assembl
 and qualified retirement remain. Sources stays closed; defer Inkling until after
 the full refactor. Native Mac only; no Python/model fetch/Docker/VM/Linux work.
 
-Current qualified Inference revision/pin:be6df7c, committed and backed up on
+Current qualified Inference revision/pin:dbb680a, committed and backed up on
 origin/refactor/extract-working-modules. Earlier pins below are historical.
 
 Previous LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing

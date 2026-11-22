@@ -1,12 +1,30 @@
 # Remaining legacy-to-guardian integration
 
-2026-11-21, after LIFE-07m primary/Whisper/visual guardian integration. Remaining
+2026-11-21, after LIFE-07n guardian/shared-turn integration. Remaining
 common lifecycle work follows this preserved-contract mapping; it is not a new
 runtime design. Reuse the working EngineProcess/Activation and host adapters.
 Preserve the original Qwen/Maple/llama, Whisper and visual implementations.
 Native Mac first; no Python or Docker/VM work.
 
-LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
+visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page
+retry now belong to Inference turn_control.c/public API. Gateway retains trusted
+host/selection/evidence adapters. A reproduced direct-visual close reset race is
+fixed by withdrawing only its own generating contribution. Native normal/SAN,
+fresh31-file standalone builds, original visual/voice/selection/LAN/App workflows,
+all15 ported prompt-budget scenarios, exact packaging/native install and retained
+actual-model parity qualify the recorded scope. Original2048 heading quality
+remains unqualified; no model algorithm was changed. The stale raw-PID budget
+fixture is repaired through backend_process, preserving its domain assertions;
+its Python driver/caller are retired for Node. Evidence and limits: Inference
+qualification/life07n-turn-control/README.md. No Python/model fetch/Docker/VM/Linux
+work. Common controls/Activation/observed identity/capability readiness, stale
+rejection/last-good, guardian-death/pre-admission recovery and full area3 remain
+open. This preserves exclusion; global reservations/fairness remain area4.
+Later Inference areas, Python removal, Agent/App, pinned assembly and qualified
+retirement remain. Sources stays closed; Inkling stays after the full refactor.
+
+Historical LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
 reuses the existing EngineProcess guardian. Original model/protocol implementations,
 VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
 600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
@@ -91,7 +109,8 @@ LIFE-07m reproduces the specialist stubborn-descendant leak in both original
 profiles and qualifies cleanup through the existing guardian. Its evidence is
 profile-scoped; do not treat it as full common lifecycle/guardian-death coverage.
 
-Shared turn/admission/pause/resume/retry coordination remains its next ownership
-step. Global reservations/fairness are still full area4 work. Remaining Inference
+LIFE-07n now owns the original shared turn gate/pause/resume/retry coordination
+through explicit host callbacks; the direct visual count-reset defect is fixed.
+Global reservations/fairness remain full area4 work. Remaining Inference
 areas, project-wide Python removal, Agent/App, pinned assembly and qualified
 monolith retirement remain open. Inkling-2-Mini stays after the refactor.

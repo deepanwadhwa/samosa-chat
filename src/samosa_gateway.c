@@ -51,6 +51,7 @@
 #include <samosa_inference/backend_process.h>
 #include <samosa_inference/whisper_process.h>
 #include <samosa_inference/vision_budget.h>
+#include <samosa_inference/turn_control.h>
 
 typedef struct {
     SamosaHttpServer *server;
@@ -60,7 +61,6 @@ typedef struct {
     pid_t job_pids[16];
     pthread_mutex_t job_pid_mu;
     int upstream_fd;
-    atomic_int generating;
     atomic_int interactive_active;
     atomic_llong last_interactive_mono_ms;
     atomic_llong last_interactive_wall_ms;
@@ -105,9 +105,7 @@ typedef struct {
     char molmo2_engine[PATH_MAX];
     char molmo2_model[PATH_MAX];
     SamosaMmSupervisor multimodal_supervisor;
-    pthread_mutex_t generation_gate_mu;
-    int specialist_generation_active;
-    int specialist_provider; /* 1 = VisionPsy, 2 = Molmo2 */
+    SamosaTurnGate turn_gate;
     char tokenizer[PATH_MAX];
     char llama_server[PATH_MAX];
     char summarizer_engine[PATH_MAX];
@@ -3545,16 +3543,12 @@ static char *backend_json_with_timeout(Gateway *g, const char *payload, int time
                               "\"code\":\"backend_connect_failed\"");
         return NULL;
     }
-    pthread_mutex_lock(&g->generation_gate_mu);
-    if (g->specialist_generation_active) {
-        pthread_mutex_unlock(&g->generation_gate_mu);
+    if (!samosa_turn_primary_begin(&g->turn_gate)) {
         close(fd);
         developer_trace_event(g, "internal_model_error",
                               "\"code\":\"multimodal_specialist_active\"");
         return NULL;
     }
-    atomic_fetch_add(&g->generating, 1);
-    pthread_mutex_unlock(&g->generation_gate_mu);
     /* Planner/ranker/sufficiency calls are internal control turns. They must
        fail closed after a bounded wait instead of holding a web request until
        a broken local backend eventually notices a dead socket. */
@@ -3569,7 +3563,7 @@ static char *backend_json_with_timeout(Gateway *g, const char *payload, int time
         !samosa_send_all(fd, header, (size_t)n) ||
         !samosa_send_all(fd, payload, strlen(payload))) {
         pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-        atomic_fetch_sub(&g->generating, 1); close(fd);
+        samosa_turn_primary_end(&g->turn_gate); close(fd);
         developer_trace_event(g, "internal_model_error",
                               "\"code\":\"request_write_failed\"");
         return NULL;
@@ -3586,7 +3580,7 @@ static char *backend_json_with_timeout(Gateway *g, const char *payload, int time
         if (!text_add_n(&response, chunk, (size_t)got)) break;
     }
     pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-    atomic_fetch_sub(&g->generating, 1); close(fd);
+    samosa_turn_primary_end(&g->turn_gate); close(fd);
     if (response.data)
         developer_trace_payload(g, "internal_model_response", "chat_backend_http",
                                 response.data, response.len);
@@ -8027,7 +8021,7 @@ static int backend_supports_images(Gateway *g, const char *name) {
 static const char *backend_state_string(Gateway *g, int ready, pid_t pid,
                                         int specialist_active) {
     if (specialist_active) return "specialist";
-    if (atomic_load(&g->generating)) return "generating";
+    if (samosa_turn_generating(&g->turn_gate)) return "generating";
     if (ready) return "ready";
     if (pid > 0) return "loading";
     if (!backend_available(g, g->backend)) return "none";
@@ -8306,9 +8300,7 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
         free(bounded_body);
         return result;
     }
-    pthread_mutex_lock(&g->generation_gate_mu);
-    if (g->specialist_generation_active) {
-        pthread_mutex_unlock(&g->generation_gate_mu);
+    if (!samosa_turn_primary_begin(&g->turn_gate)) {
         close(upstream);
         int result = client_stream_started
             ? proxy_stream_error(client, "The on-demand visual specialist is active.",
@@ -8318,8 +8310,6 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
         free(bounded_body);
         return result;
     }
-    atomic_fetch_add(&g->generating, 1);
-    pthread_mutex_unlock(&g->generation_gate_mu);
     /* Document prefill is materially slower on the native Qwen build than a
        normal short turn. The gateway's ordinary 120-second ceiling was
        measured cutting off a 1.4K-token retrieved PDF prompt at ~135 seconds,
@@ -8441,7 +8431,7 @@ static int proxy_request_ex(Gateway *g, int client, const SamosaHttpRequest *req
     if (g->upstream_fd == upstream) g->upstream_fd = -1;
     pthread_mutex_unlock(&g->mu);
     close(upstream);
-    atomic_fetch_sub(&g->generating, 1);
+    samosa_turn_primary_end(&g->turn_gate);
     if (interactive) interactive_finish(g);
     if (request->voice_turn_id[0]) {
         char fields[320];
@@ -8625,7 +8615,7 @@ static int runtime_settings_handler(Gateway *g, int fd,
                   before.auto_compact != next.auto_compact ||
                   before.compact_threshold_percent != next.compact_threshold_percent;
     if (!changed) return runtime_settings_response(g, fd, 200, 0, 0);
-    if (atomic_load(&g->generating))
+    if (samosa_turn_generating(&g->turn_gate))
         return samosa_http_json_error(fd, 409, "generation_active",
                                       "Stop the current response before applying Advanced settings.");
     pthread_mutex_lock(&g->selection_mu);
@@ -10815,39 +10805,55 @@ typedef struct {
     char *document_previous_context;
     int (*document_progress)(void *, const char *, const char *, const char *);
     void *document_progress_context;
-    VisionResourceBudget budget;
-    VisionPsySession session;
-    int provider; /* 1 = VisionPsy, 2 = Molmo2 */
+    SamosaVisualTurn runtime;
     int visual_evidence_emitted;
-    int generation_gate_held;
-    int backend_paused;
     int partial_notice_emitted;
     int incomplete_visual_notice_emitted;
     int joint_images_processed;
 } VisionTurnContext;
 
+static int turn_available(void *context, int provider) {
+    return provider == 2 ? molmo2_available(context) : visionpsy_available(context);
+}
+static double turn_molmo_required(void *context) { return molmo2_required_available_gb(context); }
+static long long turn_total_memory(void *context) { (void)context; return vision_total_memory_bytes(); }
+static int turn_primary_running(void *context) {
+    SamosaBackendOwner owner = backend_owner(context);
+    return samosa_backend_process_pid(&owner) > 0;
+}
+static void turn_primary_stop(void *context) { backend_stop(context); }
+static int turn_primary_start(void *context) { return backend_start(context); }
+static int turn_primary_probe(void *context) { return backend_probe(context); }
+static int turn_stopping(void *context) { return atomic_load(&((Gateway *)context)->stopping); }
+static long long turn_now(void *context) { (void)context; return monotonic_millis(); }
+static void turn_sleep(void *context, long ms) { (void)context; sleep_millis(ms); }
+static VisionResourceBudget turn_budget(void *context, int detail) { return vision_resource_budget(context, detail); }
+static VisionResourceBudget turn_wait(void *context, int detail, double required, VisionResourceBudget initial) {
+    return vision_wait_for_molmo_memory(context, detail, required, initial);
+}
+static int turn_session_start(void *context, int provider, VisionPsySession *session) {
+    return provider == 2 ? molmo2_session_start(context, session) : visionpsy_session_start(context, session);
+}
+static void turn_session_close(void *context, VisionPsySession *session) { visionpsy_session_close(context, session); }
+static int turn_inspect(void *context, VisionPsySession *session, const char *image, const char *prompt,
+    int side, int tokens, char *observation, size_t capacity, int *prompt_tokens, int *generated_tokens, char *error, size_t error_capacity) {
+    return visionpsy_session_inspect(context, session, image, prompt, side, tokens, observation, capacity, prompt_tokens, generated_tokens, error, error_capacity);
+}
+static int turn_analyze_image(void *context, VisionPsySession *session, const char *image, const char *prompt,
+    int tokens, char *observation, size_t capacity, int *prompt_tokens, int *generated_tokens, char *error, size_t error_capacity) {
+    return molmo2_session_analyze(context, session, image, "image", prompt, tokens, 0.0, 0.0, 1, observation, capacity, prompt_tokens, generated_tokens, NULL, NULL, error, error_capacity);
+}
+static SamosaVisualTurnControl visual_turn_control(Gateway *g) {
+    return (SamosaVisualTurnControl){&g->turn_gate, turn_available, turn_molmo_required, turn_total_memory,
+        turn_primary_running, turn_primary_stop, turn_primary_start, turn_primary_probe, turn_stopping,
+        turn_now, turn_sleep, turn_budget, turn_wait, turn_session_start, turn_session_close,
+        turn_inspect, turn_analyze_image, g};
+}
 static void vision_turn_release_runtime(Gateway *g, VisionTurnContext *turn) {
     if (!turn) return;
-    visionpsy_session_close(g, &turn->session);
-    if (turn->backend_paused && !atomic_load(&g->stopping)) {
-        if (backend_start(g)) {
-            long long deadline = monotonic_millis() + 60000;
-            while (!atomic_load(&g->stopping) && monotonic_millis() < deadline) {
-                if (backend_probe(g)) break;
-                sleep_millis(100);
-            }
-        }
-        turn->backend_paused = 0;
-    }
-    if (turn->generation_gate_held) {
-        pthread_mutex_lock(&g->generation_gate_mu);
-        g->specialist_generation_active = 0;
-        g->specialist_provider = 0;
-        pthread_mutex_unlock(&g->generation_gate_mu);
-        turn->generation_gate_held = 0;
-    }
+    SamosaVisualTurnControl control = visual_turn_control(g);
+    samosa_visual_turn_release(&control, &turn->runtime);
 }
-
 static void vision_turn_close(Gateway *g, VisionTurnContext *turn) {
     if (!turn) return;
     vision_turn_release_runtime(g, turn);
@@ -10860,130 +10866,22 @@ static void vision_turn_close(Gateway *g, VisionTurnContext *turn) {
 
 static int vision_turn_start(Gateway *g, VisionTurnContext *turn,
                              char *out_code, size_t code_cap) {
-    if (turn->session.active) return 1;
-    int requested_provider = turn->provider;
-    if (!turn->provider && turn->plan.extended_visual) {
-        requested_provider = 2;
-        turn->provider = molmo2_available(g) ? 2 : 0;
-    } else if (!turn->provider) {
-        /* Molmo is the primary on-demand visual intelligence runtime once its
-           verified Q4 package is installed. VisionPsy remains a smaller
-           fallback for hosts without Molmo; it must not silently win merely
-           because both packages happen to be present. */
-        turn->provider = molmo2_available(g) ? 2 : visionpsy_available(g) ? 1 : 0;
-    }
-    else if ((turn->provider == 2 && !molmo2_available(g)) ||
-             (turn->provider == 1 && !visionpsy_available(g)))
-        turn->provider = 0;
-    if (!turn->provider) {
-        path_copy(out_code, code_cap, requested_provider == 2
-                                   ? "molmo2_model_required"
-                                   : "vision_model_required");
-        return 0;
-    }
-    pthread_mutex_lock(&g->generation_gate_mu);
-    if (g->specialist_generation_active || atomic_load(&g->generating)) {
-        pthread_mutex_unlock(&g->generation_gate_mu);
-        path_copy(out_code, code_cap, "vision_specialist_busy");
-        return 0;
-    }
-    g->specialist_generation_active = 1;
-    g->specialist_provider = turn->provider;
-    turn->generation_gate_held = 1;
-    pthread_mutex_unlock(&g->generation_gate_mu);
-
-    double molmo_required_gb = turn->provider == 2
-        ? molmo2_required_available_gb(g) : 0.0;
-
-    /* On the reference 16-GiB machine, reclaim the primary model before the
-       4B specialist. This is a reversible stop/start, preserves the selected
-       model, and prevents two Metal decoders from being resident together. */
-    if (turn->provider == 2 && vision_total_memory_bytes() > 0 &&
-        vision_total_memory_bytes() <= 18LL * 1024 * 1024 * 1024) {
-        SamosaBackendOwner primary_owner = backend_owner(g);
-        int running = samosa_backend_process_pid(&primary_owner) > 0;
-        if (running) { backend_stop(g); turn->backend_paused = 1; }
-        turn->budget = vision_resource_budget(g, turn->plan.detail_needed);
-        /* waitpid() proves the primary process is gone, but macOS releases its
-           Metal/wired pages asynchronously. On the qualified 16-GiB machine
-           the safe manifest estimate plus adaptive 3-GiB reserve appears
-           shortly after exit. Poll only while pressure remains non-critical;
-           larger-memory hosts retain the 4-GiB reserve. */
-        turn->budget = vision_wait_for_molmo_memory(
-            g, turn->plan.detail_needed, molmo_required_gb, turn->budget);
-    }
-    if (!turn->budget.admitted ||
-        (turn->provider == 2 && turn->budget.available_gb > 0.0 &&
-         turn->budget.available_gb < molmo_required_gb)) {
-        path_copy(out_code, code_cap, turn->provider == 2
-                                   ? "molmo2_resource_pressure"
-                                   : "vision_resource_pressure");
-        vision_turn_release_runtime(g, turn);
-        return 0;
-    }
-    if (!(turn->provider == 2 ? molmo2_session_start(g, &turn->session)
-                              : visionpsy_session_start(g, &turn->session))) {
-        path_copy(out_code, code_cap, "vision_session_failed");
-        vision_turn_release_runtime(g, turn);
-        return 0;
-    }
-    return 1;
+    SamosaVisualTurnControl control = visual_turn_control(g);
+    turn->runtime.detail_needed = turn->plan.detail_needed;
+    turn->runtime.extended_visual = turn->plan.extended_visual;
+    return samosa_visual_turn_start(&control, &turn->runtime, out_code, code_cap);
 }
-
-static int vision_lower_side(int side) {
-    if (side > 1536) return 1536;
-    if (side > 1024) return 1024;
-    if (side > 512) return 512;
-    return 0;
-}
-
 static int vision_turn_inspect(Gateway *g, VisionTurnContext *turn,
                                const char *image_path, int prepared_owned, const char *prompt,
                                int max_tokens, char *out_obs, size_t out_cap,
                                int *out_prompt_tokens, int *out_gen_tokens,
                                char *out_code, size_t code_cap) {
-    if (!vision_turn_start(g, turn, out_code, code_cap)) return 0;
-    char owned_image[PATH_MAX];const char *runtime_image=image_path;
-    if(prepared_owned){
-        if(!samosa_mm_session_take_temporary_image(&turn->session,image_path,owned_image,sizeof(owned_image))){path_copy(out_code,code_cap,"vision_temp_image_handoff_failed");return 0;}
-        runtime_image=owned_image;
-    }
-    if (turn->provider == 2)
-        return molmo2_session_analyze(g, &turn->session, runtime_image, "image", prompt,
-                                      max_tokens, 0.0, 0.0, 1, out_obs, out_cap,
-                                      out_prompt_tokens, out_gen_tokens,
-                                      NULL, NULL,
-                                      out_code, code_cap);
-    int side = turn->budget.max_side_len;
-    if (visionpsy_session_inspect(g, &turn->session, runtime_image, prompt, side,
-                                  max_tokens, out_obs, out_cap,
-                                  out_prompt_tokens, out_gen_tokens,
-                                  out_code, code_cap)) return 1;
-
-    /* A failed request may have left the helper or its MLX command stream in
-       an unusable state. Recreate it once at the next safe tile budget. This
-       is a resource retry, not a fixed product page/image limit. */
-    int lower = vision_lower_side(side);
-    /* Release the turn-wide generation gate along with the failed helper
-       session. Otherwise the bounded retry below cannot reacquire the
-       specialist lease and is rejected as "busy" by vision_turn_start(). */
-    if(prepared_owned&&!samosa_mm_session_return_temporary_image(&turn->session,image_path)){
-        vision_turn_release_runtime(g,turn);path_copy(out_code,code_cap,"vision_temp_image_return_failed");return 0;
-    }
-    vision_turn_release_runtime(g, turn);
-    if (!lower) return 0;
-    turn->budget.max_side_len = lower;
-    if (!vision_turn_start(g, turn, out_code, code_cap)) return 0;
-    if(prepared_owned){
-        if(!samosa_mm_session_take_temporary_image(&turn->session,image_path,owned_image,sizeof(owned_image))){path_copy(out_code,code_cap,"vision_temp_image_handoff_failed");return 0;}
-        runtime_image=owned_image;
-    }
-    return visionpsy_session_inspect(g, &turn->session, runtime_image, prompt, lower,
-                                     max_tokens, out_obs, out_cap,
-                                     out_prompt_tokens, out_gen_tokens,
-                                     out_code, code_cap);
+    SamosaVisualTurnControl control = visual_turn_control(g);
+    turn->runtime.detail_needed = turn->plan.detail_needed;
+    turn->runtime.extended_visual = turn->plan.extended_visual;
+    return samosa_visual_turn_inspect(&control, &turn->runtime, image_path, prepared_owned,
+        prompt, max_tokens, out_obs, out_cap, out_prompt_tokens, out_gen_tokens, out_code, code_cap);
 }
-
 static int vision_read_ocr(Gateway *g, const char *image_path,
                            char *out_text, size_t out_cap,
                            int *out_reader_completed) {
@@ -11204,9 +11102,9 @@ static int vision_inspect_joint_images(
                   "The joint Molmo2 image set could not be resolved safely.");
         return 0;
     }
-    if (turn->session.active && turn->provider != 2)
+    if (turn->runtime.session.active && turn->runtime.provider != 2)
         vision_turn_release_runtime(g, turn);
-    turn->provider = 2;
+    turn->runtime.provider = 2;
     char error_code[64] = {0};
     if (!vision_turn_start(g, turn, error_code, sizeof(error_code))) {
         *out_status = 422;
@@ -11234,7 +11132,7 @@ static int vision_inspect_joint_images(
     char observation[65536] = {0};
     int prompt_tokens = 0, generated_tokens = 0;
     int inspected = prompt.data && molmo2_session_analyze_images(
-        g, &turn->session, path_refs, image_count, prompt.data, 384,
+        g, &turn->runtime.session, path_refs, image_count, prompt.data, 384,
         observation, sizeof(observation), &prompt_tokens, &generated_tokens,
         error_code, sizeof(error_code));
     free(prompt.data);
@@ -11254,7 +11152,7 @@ static int vision_inspect_joint_images(
     developer_trace_payload(g, "vision_evidence_observation", "molmo2_4b",
                             observation, strlen(observation));
     vision_append_joint_image_observation(evidence, images, image_count,
-                                          turn->budget.reason, observation);
+                                          turn->runtime.budget.reason, observation);
     turn->visual_evidence_emitted = 1;
     turn->joint_images_processed = 1;
     return 1;
@@ -12844,7 +12742,7 @@ static char *document_task_json(Gateway *g, const AttachmentMeta *meta,
     if (turn) {
         /* An earlier image in a mixed turn may still hold the specialist
            lease. Release it so the selected chat model can plan this source. */
-        if (turn->generation_gate_held || turn->backend_paused)
+        if (turn->runtime.generation_gate_held || turn->runtime.backend_paused)
             vision_turn_release_runtime(g, turn);
         atomic_store(&g->document_cancel_requested, 0);
         atomic_store(&g->document_processing, 1);
@@ -13410,9 +13308,9 @@ static int attachment_augment(Gateway *g, const char *id,
             path_copy(out_message, msg_cap, "Video analysis requires an active user turn.");
             return 0;
         }
-        if (vision_turn->session.active && vision_turn->provider != 2)
+        if (vision_turn->runtime.session.active && vision_turn->runtime.provider != 2)
             vision_turn_release_runtime(g, vision_turn);
-        vision_turn->provider = 2;
+        vision_turn->runtime.provider = 2;
         char start_code[64] = {0};
         if (!vision_turn_start(g, vision_turn, start_code, sizeof(start_code))) {
             if (video_audio_ready) {
@@ -13444,7 +13342,7 @@ static int attachment_augment(Gateway *g, const char *id,
         char observation[65536] = {0}, error_code[64] = {0};
         int prompt_tokens = 0, generated_tokens = 0, frames = 0;
         double duration = 0;
-        int analyzed = molmo2_session_analyze(g, &vision_turn->session,
+        int analyzed = molmo2_session_analyze(g, &vision_turn->runtime.session,
             blob_path, "video", prompt.data, 256, 0, 0,
             MOLMO2_MAX_FRAMES_PER_REQUEST,
             observation, sizeof(observation), &prompt_tokens, &generated_tokens,
@@ -13497,7 +13395,7 @@ static int attachment_augment(Gateway *g, const char *id,
                 observation[0] = 0; error_code[0] = 0;
                 prompt_tokens = generated_tokens = frames = 0;
                 double reported_duration = 0;
-                analyzed = molmo2_session_analyze(g, &vision_turn->session,
+                analyzed = molmo2_session_analyze(g, &vision_turn->runtime.session,
                     blob_path, "video", temporal_prompt.data, 192, start, end,
                     MOLMO2_MAX_FRAMES_PER_REQUEST,
                     observation, sizeof(observation), &prompt_tokens, &generated_tokens,
@@ -13553,7 +13451,7 @@ static int attachment_augment(Gateway *g, const char *id,
                 observation[0] = 0; error_code[0] = 0;
                 prompt_tokens = generated_tokens = frames = 0;
                 double reported_duration = 0;
-                analyzed = molmo2_session_analyze(g, &vision_turn->session,
+                analyzed = molmo2_session_analyze(g, &vision_turn->runtime.session,
                     blob_path, "video", window_prompt.data, 192, cursor, end,
                     MOLMO2_MAX_FRAMES_PER_REQUEST,
                     observation, sizeof(observation), &prompt_tokens, &generated_tokens,
@@ -13707,23 +13605,23 @@ static int attachment_augment(Gateway *g, const char *id,
             return 0;
         }
         developer_trace_event(g, "attachment_evidence_provider",
-                              vision_turn->provider == 2 && vision_turn->plan.extended_visual
+                              vision_turn->runtime.provider == 2 && vision_turn->plan.extended_visual
                                   ? "\"provider\":\"molmo2_4b\",\"capability\":\"extended_image\""
-                                  : vision_turn->provider == 2
+                                  : vision_turn->runtime.provider == 2
                                       ? "\"provider\":\"molmo2_4b\",\"capability\":\"standard_image\""
                                   : "\"provider\":\"visionpsy_nano_460m\",\"capability\":\"standard_image\"");
         if (vision_turn->plan.read_text)
             vision_append_ocr(doc_evidence, &m, ocr_text, ocr_completed, 0);
-        const char *evidence_provider = vision_turn->provider == 2
+        const char *evidence_provider = vision_turn->runtime.provider == 2
             ? "molmo2_4b" : "visionpsy_nano_460m";
-        const char *evidence_label = vision_turn->provider == 2
+        const char *evidence_label = vision_turn->runtime.provider == 2
             ? "Molmo2 4B" : "VisionPsy-Nano 460M";
         developer_trace_payload(g, "vision_evidence_observation", evidence_provider,
                                 obs, strlen(obs));
         vision_append_observation(doc_evidence, &m, evidence_label, 0,
-                                  vision_turn->provider == 2 ? 378
-                                                             : vision_turn->budget.max_side_len,
-                                  vision_turn->budget.reason, obs);
+                                  vision_turn->runtime.provider == 2 ? 378
+                                                             : vision_turn->runtime.budget.max_side_len,
+                                  vision_turn->runtime.budget.reason, obs);
         vision_turn->visual_evidence_emitted = 1;
         if (out_tokens) *out_tokens = (unsigned long)(prompt_tokens + generated_tokens);
         return 1;
@@ -13872,12 +13770,12 @@ static int attachment_augment(Gateway *g, const char *id,
                 VisionResourceBudget current = vision_resource_budget(
                     g, vision_turn->plan.detail_needed);
                 if (!current.admitted) {
-                    vision_turn->budget = current;
+                    vision_turn->runtime.budget = current;
                     path_copy(visual_code, sizeof(visual_code), "vision_resource_pressure");
                     visual_failed = 1; break;
                 }
-                if (current.max_side_len < vision_turn->budget.max_side_len)
-                    vision_turn->budget = current;
+                if (current.max_side_len < vision_turn->runtime.budget.max_side_len)
+                    vision_turn->runtime.budget = current;
                 char tmp_path[PATH_MAX];
                 if ((size_t)snprintf(tmp_path, sizeof(tmp_path), "%s/vision-page-XXXXXX", g->home) >= sizeof(tmp_path)) {
                     path_copy(visual_code, sizeof(visual_code), "vision_temp_path_failed");
@@ -13909,10 +13807,10 @@ static int attachment_augment(Gateway *g, const char *id,
                 free(page_prompt.data); unlink(tmp_path);
                 if (!inspected) { visual_failed = 1; break; }
                 vision_append_observation(doc_evidence, &m,
-                    vision_turn->provider == 2 ? "Molmo2 4B" : "VisionPsy-Nano 460M",
-                    pages[i], vision_turn->provider == 2 ? 378
-                                                         : vision_turn->budget.max_side_len,
-                    vision_turn->budget.reason, obs);
+                    vision_turn->runtime.provider == 2 ? "Molmo2 4B" : "VisionPsy-Nano 460M",
+                    pages[i], vision_turn->runtime.provider == 2 ? 378
+                                                         : vision_turn->runtime.budget.max_side_len,
+                    vision_turn->runtime.budget.reason, obs);
                 vision_turn->visual_evidence_emitted = 1;
                 visual_completed++;
             }
@@ -16424,7 +16322,7 @@ static int chat_completions_forward(Gateway *g, int fd, const SamosaHttpRequest 
     }
     vision_route_plan(g, original_text, attach_ids, &bound_documents,
                       attachment_analysis_depth, &vision_turn.plan);
-    vision_turn.budget = vision_resource_budget(g, vision_turn.plan.detail_needed);
+    vision_turn.runtime.budget = vision_resource_budget(g, vision_turn.plan.detail_needed);
     if (visual_progress && vision_turn.plan.inspect_visual) {
         char message[320];
         const char *visual_object = !strcmp(visual_kind, "images")
@@ -17395,10 +17293,10 @@ static int molmo2_direct_chat(Gateway *g, int fd, jval *body) {
     }
 
     VisionTurnContext turn = {0};
-    turn.provider = 2;
+    turn.runtime.provider = 2;
     turn.plan.extended_visual = 1;
     turn.plan.detail_needed = 1;
-    turn.budget = vision_resource_budget(g, 1);
+    turn.runtime.budget = vision_resource_budget(g, 1);
     char error_code[64] = {0};
     if (!vision_turn_start(g, &turn, error_code, sizeof(error_code))) {
         free(prompt.data);
@@ -17411,7 +17309,7 @@ static int molmo2_direct_chat(Gateway *g, int fd, jval *body) {
         return molmo2_direct_error(fd, streaming, 503, code, message);
     }
 
-    atomic_store(&g->generating, 1);
+    samosa_turn_direct_generating(&g->turn_gate, 1);
     atomic_store(&g->interactive_active, 1);
     atomic_store(&g->last_interactive_mono_ms, monotonic_millis());
     atomic_store(&g->last_interactive_wall_ms, wall_millis());
@@ -17420,18 +17318,18 @@ static int molmo2_direct_chat(Gateway *g, int fd, jval *body) {
     double media_duration = 0;
     int analyzed = joint_images
         ? molmo2_session_analyze_images(
-              g, &turn.session, path_refs, image_count, prompt.data, max_tokens,
+              g, &turn.runtime.session, path_refs, image_count, prompt.data, max_tokens,
               observation, sizeof(observation), &prompt_tokens, &generated_tokens,
               error_code, sizeof(error_code))
         : molmo2_session_analyze(
-              g, &turn.session, blob_paths[0], meta->video_cap ? "video" : "image",
+              g, &turn.runtime.session, blob_paths[0], meta->video_cap ? "video" : "image",
               prompt.data, max_tokens, 0.0, 0.0,
               meta->video_cap ? MOLMO2_MAX_FRAMES_PER_REQUEST : 1,
               observation, sizeof(observation), &prompt_tokens, &generated_tokens,
               &media_duration, &frames, error_code, sizeof(error_code));
     free(prompt.data);
     vision_turn_close(g, &turn);
-    atomic_store(&g->generating, 0);
+    samosa_turn_direct_generating(&g->turn_gate, 0);
     atomic_store(&g->interactive_active, 0);
     if (!analyzed) {
         const char *code = error_code[0] ? error_code : "molmo2_inference_failed";
@@ -25464,14 +25362,13 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         int molmo2_ready = molmo2_available(g);
         int auxiliary_vision_runtime = visionpsy_runtime || molmo2_runtime;
         int direct_molmo = !strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID);
-        pthread_mutex_lock(&g->generation_gate_mu);
-        int specialist_active = g->specialist_generation_active;
-        int specialist_provider = g->specialist_provider;
-        pthread_mutex_unlock(&g->generation_gate_mu);
+        SamosaTurnStatus turn_status = samosa_turn_status(&g->turn_gate);
+        int specialist_active = turn_status.specialist_active;
+        int specialist_provider = turn_status.specialist_provider;
         const char *specialist_label = specialist_provider == 2
             ? "Molmo2 4B" : specialist_provider == 1
                 ? "VisionPsy-Nano 460M" : "Local vision model";
-        int inference_active = atomic_load(&g->generating) || specialist_active;
+        int inference_active = samosa_turn_generating(&g->turn_gate) || specialist_active;
         int supports_image_attachments = direct_molmo
             ? molmo2_ready
             : backend_supports_images(g, g->backend) || auxiliary_vision_runtime;
@@ -25539,7 +25436,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             "{\"inference_busy\":%s,\"interactive_active\":%s,"
             "\"last_interactive_ts\":%s,\"last_interactive_age_seconds\":%s,"
             "\"interactive_cooldown_seconds\":%.3f}",
-            atomic_load(&g->generating) ? "true" : "false",
+            samosa_turn_generating(&g->turn_gate) ? "true" : "false",
             atomic_load(&g->interactive_active) ? "true" : "false",
             last, age, interactive_cooldown_ms() / 1000.0);
         return samosa_http_response(fd, 200, "application/json", body, NULL);
@@ -25591,7 +25488,7 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
            whether the switch below is a no-op or a real fork+watchdog --
            see the T2.4 comment on profile_set_selection() itself. */
         profile_set_selection(g, name, model_version);
-        if (atomic_load(&g->generating))
+        if (samosa_turn_generating(&g->turn_gate))
             return samosa_http_json_error(fd, 409, "generation_active", "Stop the current response before switching models.");
 
         /* Molmo is selectable but intentionally has no resident server to
@@ -25882,9 +25779,8 @@ static int load_config(Gateway *g) {
     pthread_mutex_init(&g->developer_trace_mu, NULL);
     pthread_mutex_init(&g->chutni_mu, NULL);
     pthread_mutex_init(&g->app_clients_mu, NULL);
-    pthread_mutex_init(&g->generation_gate_mu, NULL);
+    if (!samosa_turn_gate_init(&g->turn_gate)) return 0;
     if (!samosa_mm_supervisor_init(&g->multimodal_supervisor)) return 0;
-    atomic_init(&g->generating, 0);
     atomic_init(&g->audio_cancel_requested, 0);
     atomic_init(&g->document_processing, 0);
     atomic_init(&g->document_cancel_requested, 0);
@@ -26048,7 +25944,7 @@ int main(int argc, char **argv) {
         samosa_summary_process_destroy(&gateway.summary_process);
         pthread_mutex_destroy(&gateway.developer_trace_mu);
         pthread_mutex_destroy(&gateway.app_clients_mu);
-        pthread_mutex_destroy(&gateway.generation_gate_mu);
+        samosa_turn_gate_destroy(&gateway.turn_gate);
         return ok ? 0 : 1;
     }
     /* T1.1 (docs/TASKS_UI_CHUTNI.md): the control plane must serve setup,
@@ -26181,7 +26077,7 @@ int main(int argc, char **argv) {
     pthread_mutex_destroy(&gateway.developer_trace_mu);
     pthread_mutex_destroy(&gateway.chutni_mu);
     pthread_mutex_destroy(&gateway.app_clients_mu);
-    pthread_mutex_destroy(&gateway.generation_gate_mu);
+    samosa_turn_gate_destroy(&gateway.turn_gate);
     gateway_lifecycle_mark_exited(&gateway);
     signal_gateway = NULL;
     return ok ? 0 : 2;

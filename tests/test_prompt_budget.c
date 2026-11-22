@@ -7,7 +7,7 @@
 static void *cancel_review(void *opaque) {
     Gateway *g = opaque;
     for (int i = 0; i < 5000; i++) {
-        if (atomic_load(&g->generating)) {
+        if (samosa_turn_generating(&g->turn_gate)) {
             atomic_store(&g->document_cancel_requested, 1);
             pthread_mutex_lock(&g->mu);
             if (g->upstream_fd >= 0) shutdown(g->upstream_fd, SHUT_RDWR);
@@ -20,24 +20,28 @@ static void *cancel_review(void *opaque) {
 }
 
 int main(int argc, char **argv) {
+    int dispatch = samosa_backend_process_dispatch(argc, argv);
+    if (dispatch >= 0) return dispatch;
+    /* Private liveness fixture; HTTP/token behavior is provided by the Node
+       driver. Use the real owner instead of adopting an unrelated raw PID. */
+    if (argc > 1 && !strcmp(argv[1], "--model-dir")) { for (;;) pause(); }
     assert(argc == 4);
     Gateway *g = calloc(1, sizeof(*g)); assert(g);
     path_copy(g->backend, sizeof(g->backend), "ornith");
     path_copy(g->home, sizeof(g->home), argv[2]); g->backend_port = atoi(argv[1]);
-    int lifetime[2]; assert(!pipe(lifetime));
-    pid_t child = fork(); assert(child >= 0);
-    if (!child) {
-        close(lifetime[1]);
-        char byte;
-        ssize_t received;
-        do { received = read(lifetime[0], &byte, 1); }
-        while (received < 0 && errno == EINTR);
-        close(lifetime[0]);
-        _exit(received < 0 ? 1 : 0);
-    }
-    close(lifetime[0]);
-    g->backend_pid = child; g->upstream_fd = -1;
-    pthread_mutex_init(&g->mu, NULL); pthread_mutex_init(&g->generation_gate_mu, NULL);
+    g->upstream_fd = -1;
+    pthread_mutex_init(&g->mu, NULL); assert(samosa_turn_gate_init(&g->turn_gate));
+    char executable[PATH_MAX]; assert(realpath(argv[0], executable));
+    assert(path_join(g->backend_pid_file, sizeof(g->backend_pid_file), g->home, "budget-backend.pid"));
+    SamosaBackendOwner owner = backend_owner(g);
+    SamosaBackendLaunch launch = {.backend="maple", .engine=executable,
+        .model=g->home, .tokenizer="fixture", .chats=g->home, .log="/dev/null", .port=g->backend_port};
+    assert(samosa_backend_process_start(&owner, &launch));
+    const char *notice = getenv("SAMOSA_PROMPT_FIXTURE_START_NOTICE"); assert(notice);
+    int ready = open(notice, O_CREAT|O_EXCL|O_WRONLY, 0600); assert(ready >= 0); close(ready);
+    int reachable = 0;
+    for (int i=0; i<500; i++) { if (backend_probe(g)) { reachable=1; break; } sleep_millis(10); }
+    assert(reachable);
     pthread_mutex_init(&g->developer_trace_mu, NULL);
     TextBuffer evidence = {0}, payload = {0}, question = {0};
     text_add(&question, "Describe the categories represented in these generated records.");
@@ -85,8 +89,8 @@ int main(int argc, char **argv) {
         json_free(root); free(arena);
     }
     free(evidence.data); free(payload.data); free(question.data); free(user.data); free(progress.buffered.data);
-    close(lifetime[1]); waitpid(child, NULL, 0);
+    samosa_backend_process_stop(&owner, NULL);
     pthread_mutex_destroy(&g->developer_trace_mu);
-    pthread_mutex_destroy(&g->mu); pthread_mutex_destroy(&g->generation_gate_mu); free(g);
+    pthread_mutex_destroy(&g->mu); samosa_turn_gate_destroy(&g->turn_gate); free(g);
     return 0;
 }

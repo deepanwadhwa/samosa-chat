@@ -866,10 +866,10 @@ test_attn_parity:
 	$(call maple_owner_build,build/test_attn_parity,test_attn_parity,test_attn_parity)
 
 .PHONY: test-prompt-budget
-test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.py src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
+test-prompt-budget: tests/test_prompt_budget.c tests/test_prompt_budget.mjs src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(GATEWAY_SUPPORT_SRCS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -O1 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc tests/test_prompt_budget.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/test_prompt_budget $(DL_LDFLAGS)
-	BUILD_DIR="$(BUILD_DIR)" python3 tests/test_prompt_budget.py
+	BUILD_DIR="$(BUILD_DIR)" node tests/test_prompt_budget.mjs
 
 .PHONY: test-folder-prompt-e2e
 test-folder-prompt-e2e: samosa-gateway samosa-fs samosa-extract tests/test_folder_prompt_e2e.py
