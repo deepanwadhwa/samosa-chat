@@ -66,6 +66,8 @@ typedef struct {
 #ifdef SAMOSA_PRIMARY_HOST
     const char *primary_pins;
     char primary_release[PATH_MAX];
+    int primary_release_qwen;
+    char primary_ornith_engine[PATH_MAX];
     pthread_mutex_t primary_mu;
     GatewayPrimary *primary;
 #endif
@@ -7932,6 +7934,15 @@ static int jobs_stop_action(Gateway *g, int fd, const SamosaHttpRequest *request
     return samosa_http_response(fd, 202, "application/json", "{\"ok\":true,\"stopping\":true}", NULL);
 }
 
+static const char *llama_engine_for(Gateway *g, const char *backend) {
+#ifdef SAMOSA_PRIMARY_HOST
+    if (!strcmp(backend,"ornith") && g->primary_ornith_engine[0]) return g->primary_ornith_engine;
+#else
+    (void)backend;
+#endif
+    return g->llama_server;
+}
+
 static int backend_available(Gateway *g, const char *name) {
     if (!strcmp(name, MOLMO2_CHAT_BACKEND_ID)) return molmo2_available(g);
     if (!strcmp(name, "qwen")) {
@@ -7942,7 +7953,7 @@ static int backend_available(Gateway *g, const char *name) {
     if (!strcmp(name, "bonsai"))
         return regular_file(g->llama_server, 1) && regular_file(g->bonsai_model, 0);
     if (!strcmp(name, "ornith"))
-        return regular_file(g->llama_server, 1) && regular_file(g->ornith_model, 0);
+        return regular_file(llama_engine_for(g,name), 1) && regular_file(g->ornith_model, 0);
     if (!strcmp(name, "maple")) {
         /* The original MLX adapter materializes every routed expert and used
            roughly 10 GB on the 16 GB reference Mac.  Do not advertise or
@@ -8080,7 +8091,8 @@ static int primary_append_pin(TextBuffer *body, const SamosaPrimaryInput *pin) {
 }
 
 /* Use the same installer-verified catalog inputs as the model download flow. */
-static int primary_append_qwen_model_pins(Gateway *g, TextBuffer *body, const SamosaPrimaryInput *catalog) {
+static int primary_append_model_pins(Gateway *g, TextBuffer *body, const char *backend,
+                                     const SamosaPrimaryInput *catalog) {
     char path[PATH_MAX], digest[65], reason[128];
     size_t length;
     if (!path_join(path,sizeof(path),g->primary_release,catalog->path)) return 0;
@@ -8094,20 +8106,24 @@ static int primary_append_qwen_model_pins(Gateway *g, TextBuffer *body, const Sa
     jval *root = length == catalog->size && !strcmp(digest,catalog->sha256) ? json_parse(raw,&arena) : NULL;
     free(raw);
     int ok = catalog_validate(root,reason,sizeof(reason));
-    jval *model = ok ? catalog_find_model(root,"qwen",NULL) : NULL;
+    jval *model = ok ? catalog_find_model(root,backend,NULL) : NULL;
     jval *artifacts = model ? json_get(model,"artifacts") : NULL;
-    const char *required[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
-                              "generation_config.json", "tokenizer_qwen36.json"};
+    const char *qwen[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
+                          "generation_config.json", "tokenizer_qwen36.json"};
+    const char *ornith[] = {"ornith-1.0-9b-Q4_K_M.gguf"};
+    int is_qwen = !strcmp(backend,"qwen");
+    const char **required = is_qwen ? qwen : ornith;
+    size_t count = is_qwen ? sizeof(qwen)/sizeof(qwen[0]) : sizeof(ornith)/sizeof(ornith[0]);
     unsigned seen = 0;
     for (int i = 0; ok && artifacts && i < artifacts->len; ++i) {
         jval *entry = artifacts->kids[i];
         jval *name = json_get(entry,"name");
         if (!name || name->t != J_STR) { ok = 0; break; }
-        for (size_t j = 0; j < sizeof(required)/sizeof(required[0]); ++j) {
+        for (size_t j = 0; j < count; ++j) {
             if (strcmp(name->str,required[j])) continue;
             double size = json_get(entry,"bytes")->num;
             if ((seen & (1u << j)) || !(size >= 1 && size < 0x1p63) || size != (uint64_t)size ||
-                !resolve_installed_artifact(g,"qwen",required[j],path,sizeof(path))) {
+                !resolve_installed_artifact(g,backend,required[j],path,sizeof(path))) {
                 ok = 0;
                 break;
             }
@@ -8119,12 +8135,15 @@ static int primary_append_qwen_model_pins(Gateway *g, TextBuffer *body, const Sa
     }
     json_free(root);
     free(arena);
-    return ok && seen == (1u << (sizeof(required)/sizeof(required[0]))) - 1;
+    return ok && seen == (1u << count) - 1;
 }
 
-static char *primary_installed_pins(Gateway *g) {
+static char *primary_installed_pins(Gateway *g, const char *backend) {
+    int qwen = !strcmp(backend,"qwen");
+    const char *receipt_name = qwen ? "primary-qwen-pins.tsv" : "primary-ornith-pins.tsv";
+    const char *engine_name = qwen ? "bin/qwen36b" : "bin/samosa-ornith-llama-server";
     char path[PATH_MAX];
-    if (!path_join(path,sizeof(path),g->primary_release,"primary-qwen-pins.tsv")) return NULL;
+    if (!path_join(path,sizeof(path),g->primary_release,receipt_name)) return NULL;
     char *receipt = primary_read_pin_file(path,65536,NULL);
     if (!receipt) return NULL;
     TextBuffer body = {0};
@@ -8132,11 +8151,11 @@ static char *primary_installed_pins(Gateway *g) {
     char *line = strtok_r(receipt,"\n",&rest);
     SamosaPrimaryInput pin;
     int ok = line && primary_parse_pin(line,&pin) && !strcmp(pin.path,"models.json") &&
-        primary_append_qwen_model_pins(g,&body,&pin);
+        primary_append_model_pins(g,&body,backend,&pin);
     for (line = strtok_r(NULL,"\n",&rest); ok && line; line = strtok_r(NULL,"\n",&rest)) {
         if (!primary_parse_pin(line,&pin)) { ok = 0; break; }
-        if (!strcmp(pin.path,"bin/qwen36b")) pin.path = g->qwen_engine;
-        else if (pin.path[0] != '/') { ok = 0; break; }
+        if (!strcmp(pin.path,engine_name)) pin.path = qwen ? g->qwen_engine : g->primary_ornith_engine;
+        else if (!qwen || pin.path[0] != '/') { ok = 0; break; }
         ok = primary_append_pin(&body,&pin);
     }
     free(receipt);
@@ -8145,11 +8164,28 @@ static char *primary_installed_pins(Gateway *g) {
 }
 
 static int primary_enabled(Gateway *g) {
-    return g->primary_pins || g->primary_release[0];
+    return g->primary_pins || g->primary_release_qwen || g->primary_ornith_engine[0];
 }
 
 static int primary_selected(Gateway *g, const char *backend) {
-    return g->primary_pins || (g->primary_release[0] && !strcmp(backend,"qwen"));
+    return g->primary_pins || (g->primary_release_qwen && !strcmp(backend,"qwen")) ||
+        (g->primary_ornith_engine[0] && !strcmp(backend,"ornith"));
+}
+
+static void primary_find_ornith(Gateway *g, const char *release) {
+    if (getenv("SAMOSA_BONSAI_SERVER")) return;
+    char product_version[64] = {0};
+    size_t version_size = sizeof(product_version);
+    if (sysctlbyname("kern.osproductversion",product_version,&version_size,NULL,0) ||
+        strtol(product_version,NULL,10) < 26) return;
+    char engine[PATH_MAX], receipt[PATH_MAX];
+    if (!path_join(engine,sizeof(engine),release,"bin/samosa-ornith-llama-server") ||
+        !path_join(receipt,sizeof(receipt),release,"primary-ornith-pins.tsv")) return;
+    struct stat st;
+    /* Either release artifact establishes the intended owner. If its peer
+       is missing, activation must fail instead of using the legacy binary. */
+    if (!lstat(engine,&st) || !lstat(receipt,&st))
+        path_copy(g->primary_ornith_engine,sizeof(g->primary_ornith_engine),engine);
 }
 
 static void primary_find_release(Gateway *g) {
@@ -8165,11 +8201,14 @@ static void primary_find_release(Gateway *g) {
     if (!id || strlen(id + 1) != 16 || strspn(id + 1,"0123456789abcdef") != 16 ||
         length - (sizeof(suffix) - 1) < sizeof(prefix) - 1 + 16 ||
         strncmp(id + 1 - (sizeof(prefix) - 1),prefix,sizeof(prefix) - 1)) return;
-    char engine[PATH_MAX];
-    if (!path_join(engine,sizeof(engine),release,"bin/qwen36b")) return;
-    if (getenv("SAMOSA_QWEN_ENGINE") && strcmp(engine,g->qwen_engine)) return;
-    path_copy(g->qwen_engine,sizeof(g->qwen_engine),engine);
     path_copy(g->primary_release,sizeof(g->primary_release),release);
+    char engine[PATH_MAX];
+    if (path_join(engine,sizeof(engine),release,"bin/qwen36b") &&
+        (!getenv("SAMOSA_QWEN_ENGINE") || !strcmp(engine,g->qwen_engine))) {
+        path_copy(g->qwen_engine,sizeof(g->qwen_engine),engine);
+        g->primary_release_qwen = 1;
+    }
+    primary_find_ornith(g,release);
 }
 
 static int primary_pin_matches(const SamosaPrimaryInput *pin, const char *path) {
@@ -8196,7 +8235,7 @@ static int primary_bind_pins(GatewayPrimary *p) {
     }
     size_t model_length = directory ? strlen(c->launch.model) : 0;
     p->pins = p->gateway->primary_pins ? primary_read_pin_file(p->gateway->primary_pins,65536,NULL) :
-        primary_installed_pins(p->gateway);
+        primary_installed_pins(p->gateway,p->backend);
     if (!p->pins) return 0;
     char *rest = NULL;
     for (char *line = strtok_r(p->pins,"\n",&rest); line; line = strtok_r(NULL,"\n",&rest)) {
@@ -8430,7 +8469,7 @@ static int backend_start_with_wait(Gateway *g, int wait) {
         char *model = is_ornith ? g->ornith_model : g->bonsai_model;
         char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
         SamosaLlamaLaunch launch = {
-            .engine = g->llama_server, .model = model, .alias = alias,
+            .engine = llama_engine_for(g,g->backend), .model = model, .alias = alias,
             .projector = !is_ornith && backend_supports_images(g, "bonsai") ? g->bonsai_mmproj : NULL,
             .port = g->backend_port, .context_tokens = effective.context_effective,
             .threads = effective.cpu_effective,
@@ -18364,10 +18403,10 @@ static int artifact_is_present(Gateway *g, const char *model_id, jval *artifact)
 
 /* Runtime dependencies are bundled executables, checked through the same
    configured paths backend_start() uses. Unknown package ids fail closed. */
-static int runtime_dependency_is_present(Gateway *g, jval *dep) {
+static int runtime_dependency_is_present(Gateway *g, const char *model, jval *dep) {
     jval *pkg = json_get(dep, "package_id");
     if (!pkg || pkg->t != J_STR) return 0;
-    if (!strcmp(pkg->str, "llama-server")) return regular_file(g->llama_server, 1);
+    if (!strcmp(pkg->str, "llama-server")) return regular_file(llama_engine_for(g,model), 1);
     if (!strcmp(pkg->str, "samosa-maple")) return regular_file(g->maple_engine, 1);
     if (!strcmp(pkg->str, "samosa-visionpsy")) return regular_file(g->visionpsy_engine, 1);
     if (!strcmp(pkg->str, "samosa-molmo2")) return regular_file(g->molmo2_engine, 1);
@@ -18432,7 +18471,7 @@ static int emit_catalog_entry(TextBuffer *out, Gateway *g, jval *entry) {
         else if (!required || required->t != J_BOOL || required->boolean) all_required_present = 0;
     }
     for (int i = 0; runtime_deps && i < runtime_deps->len; ++i)
-        if (!runtime_dependency_is_present(g, runtime_deps->kids[i])) all_required_present = 0;
+        if (!runtime_dependency_is_present(g, id->str, runtime_deps->kids[i])) all_required_present = 0;
     jval *provisioning = json_get(entry, "provisioning");
     if (provisioning && provisioning->t == J_STR &&
         !strcmp(provisioning->str, "native_pack"))

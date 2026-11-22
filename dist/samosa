@@ -334,6 +334,7 @@ is_samosa_backend_pid() {
     "$ENGINE"|"$ENGINE"*|"$llama_server"|"$llama_server"*|"$maple_engine"|"$maple_engine"*|\
     "$HOME_DIR"/bin/qwen36b*|"$HOME_DIR"/current/bin/qwen36b*|"$HOME_DIR"/releases/*/bin/qwen36b*|\
     "$HOME_DIR"/backends/*/llama-server*|"$HOME_DIR"/current/bin/samosa-maple*|\
+    "$RELEASE_DIR"/bin/samosa-ornith-llama-server*|"$HOME_DIR"/releases/*/bin/samosa-ornith-llama-server*|\
     "$HOME_DIR"/releases/*/bin/samosa-maple*|*qwen36b*" --serve "*|*qwen36b*" --serve") return 0 ;;
     *) return 1 ;;
   esac

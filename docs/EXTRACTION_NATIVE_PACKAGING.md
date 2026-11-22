@@ -170,6 +170,44 @@ Both Gateway fixture modes passed. This run covers explicit pins for the
 native Ornith profile. Automatic release metadata, actual Maple and Bonsai,
 and the optional Bonsai projector still need native qualification.
 
+## LIFE-07w bundled Ornith on macOS 26
+
+The existing release packager accepts the reviewed LIFE-07v executable via
+`--ornith-runtime` and takes its notices from the pinned checkout supplied via
+`--prism-source`. The release manifest covers the executable, source provenance,
+minimum OS, and the Prism, jsonhpp and cpp-httplib notices. The installer uses its
+existing checksum-verified staging path and publishes the catalog and executable
+pins together with the versioned release. Ornith uses that executable on macOS 26
+and later. Its GGUF still comes from the existing catalog. Bonsai and explicit
+llama-server overrides keep their existing routing.
+
+```sh
+ornith_root=/private/tmp/samosa-life07v-ornith.Db9hec
+SAMOSA_TEST_REAL_ORNITH_ENGINE="$ornith_root/build/bin/llama-server" \
+SAMOSA_TEST_REAL_ORNITH_MODEL="$ornith_root/model/Ornith-1.0-9B-Q4_K_M.gguf" \
+SAMOSA_TEST_PRISM_SOURCE="$HOME/.samosa/backends/prism-llama.cpp" \
+SAMOSA_TEST_REAL_QWEN_MODEL=/private/tmp/samosa-life07h-real.2wwUok/model \
+  ./tools/without_python.sh sh tests/test_runtime_only_release.sh
+```
+
+The clean install and upgrade checked the installed executable and pins against
+the packaged bytes, installed the notices, and made zero optional chat-model
+requests. The upgraded launcher qualified real Qwen and Ornith in separate runs
+using APFS-cloned model data and isolated app state. Ornith used the normal
+8,192-token auto context and reported ready in the catalog, returned a public
+chat answer and reaped its worker. Peak process-tree RSS was 3,553 MB for Qwen
+and 5,781 MB for Ornith, with zero swap growth in both runs. The profile was
+tested on arm64 macOS 26.5.1.
+
+## LIFE-07x Python-free model manager checks
+
+The existing install and setup drivers generate the same deterministic bytes
+with shell `awk` and read JSON with the Node helper already used by selection.
+`./tools/without_python.sh make test-model-manager` passed on this Mac. It
+exercised the original catalog and UI fixtures, native model install success and
+failure, verified replacement, pause, cancel and resume, selection and its
+rollback cases, and onboarding recovery across a Gateway restart.
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).

@@ -19,6 +19,8 @@ AUDIO_DECODE_RUNTIME="$ROOT/build/samosa-audio-decode"
 SUMMARIZER_MODEL="$ROOT/build/samosa-text-summarization-Q8_0.gguf"
 SUMMARIZER_RUNTIME="$ROOT/build/native-summarizer-runtime"
 OCR_RUNTIME=""
+ORNITH_RUNTIME=""
+PRISM_SOURCE=""
 RUNTIME_ONLY=0
 
 usage() {
@@ -37,6 +39,8 @@ Usage: sh tools/package_hf.sh --out DIRECTORY [options]
   --summarizer-model FILE        pinned T5 GGUF
   --summarizer-runtime-dir DIR   staged T5 runtime
   --ocr-runtime-dir DIRECTORY    staged native Tesseract runtime
+  --ornith-runtime FILE          qualified static Ornith llama-server for macOS 26 ARM64
+  --prism-source DIRECTORY       pinned Prism checkout supplying the runtime notices
   --runtime-only                omit optional chat-model weights
 EOF
 }
@@ -65,6 +69,8 @@ while [ "$#" -gt 0 ]; do
     --summarizer-model) SUMMARIZER_MODEL=$value ;;
     --summarizer-runtime-dir) SUMMARIZER_RUNTIME=$value ;;
     --ocr-runtime-dir) OCR_RUNTIME=$value ;;
+    --ornith-runtime) ORNITH_RUNTIME=$value ;;
+    --prism-source) PRISM_SOURCE=$value ;;
     *) fail "unknown option: $option" ;;
   esac
 done
@@ -154,6 +160,39 @@ stage_ocr() {
     done <"$WORK/ocr-files"
   done
 }
+
+stage_ornith() {
+  revision=9fcaed763ccda38ea81068ad9d7f991aaddca451
+  digest=544e0df94e43167ef33c2918675dafb0e2a863e070d64dc918c854e014e5dce2
+  [ -x "$ORNITH_RUNTIME" ] && [ "$(file_size "$ORNITH_RUNTIME")" = 11692896 ] &&
+    [ "$(sha256_file "$ORNITH_RUNTIME")" = "$digest" ] ||
+    fail 'Ornith runtime failed the LIFE-07v executable pin'
+  [ -n "$PRISM_SOURCE" ] && [ "$(git -C "$PRISM_SOURCE" rev-parse HEAD)" = "$revision" ] ||
+    fail 'Ornith runtime requires the pinned Prism source checkout for notices'
+  prefix=runtime/macos26-arm64/ornith
+  place "$ORNITH_RUNTIME" "$prefix/samosa-ornith-llama-server" copy
+  for notice in LICENSE licenses/LICENSE-jsonhpp vendor/cpp-httplib/LICENSE; do
+    case "$notice" in
+      LICENSE) name=LICENSE-Prism ;;
+      licenses/*) name=LICENSE-jsonhpp ;;
+      vendor/*) name=LICENSE-cpp-httplib ;;
+    esac
+    git -C "$PRISM_SOURCE" show "$revision:$notice" >"$WORK/$name" || fail "missing Prism notice $notice"
+    place "$WORK/$name" "$prefix/$name" copy
+  done
+  cat >"$WORK/ornith-provenance.txt" <<EOF
+Source https://github.com/PrismML-Eng/llama.cpp at $revision
+Profile arm64 macOS 26.0, system runtime with embedded Metal shaders
+LIFE-07v static recipe with OpenSSL, OpenMP and the embedded UI disabled
+Executable 11692896 bytes, SHA-256 $digest
+EOF
+  place "$WORK/ornith-provenance.txt" "$prefix/provenance.txt" copy
+}
+
+if [ -n "$ORNITH_RUNTIME" ] || [ -n "$PRISM_SOURCE" ]; then
+  [ "$(uname -s):$(uname -m)" = Darwin:arm64 ] || fail 'Ornith runtime packaging requires Apple Silicon macOS'
+  stage_ornith
+fi
 
 if [ "$(uname -s):$(uname -m)" = Darwin:arm64 ]; then
   native_runtime "$MAPLE_RUNTIME" samosa-maple

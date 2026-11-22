@@ -1,10 +1,16 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07v, 2026-11-22. The common primary owner qualifies actual Ornith and
+LIFE-07w and LIFE-07x, 2026-11-22. Versioned Mac releases can bundle the reviewed
+Ornith engine, notices and pins. The installed launcher qualified actual Ornith
+and Qwen through the existing primary owner. The original model manager suite
+passes under the Python-free guard. Remaining primary profiles and common
+provider controls stay open.
+[Native installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07w-bundled-ornith-on-macos-26).
+
+Previous LIFE-07v, 2026-11-22. The common primary owner qualifies actual Ornith and
 reaps its worker using explicit model and static native engine pins. The
 four-token probe now reuses llama-server's existing non-thinking template
-setting. Trusted release provisioning, actual Bonsai and Maple, and the
-Bonsai projector remain open.
+setting.
 [Native Ornith evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07v-native-ornith-readiness).
 
 Previous LIFE-07u, 2026-11-22. Real Molmo2 produced standard image evidence through

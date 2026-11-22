@@ -311,8 +311,7 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
    Use the installer and catalog pin inputs from LIFE-07t as the pattern for
-   remaining primary profiles. Finish Ornith release provisioning and qualify
-   real Maple and Bonsai. Extend native
+   remaining primary profiles. Qualify real Maple and Bonsai. Extend native
    visual coverage beyond the installed Qwen and Molmo2 standard image path.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
@@ -320,11 +319,16 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07v, 2026-11-22. The retained real Ornith model passes primary
+LIFE-07w and LIFE-07x, 2026-11-22. The native release installer now provisions
+the qualified Ornith engine and automatic pins on this Mac. Real Qwen and
+Ornith pass normal launcher chat and worker cleanup after a clean install and
+upgrade. The full model manager test target now passes under the Python-free guard.
+[Native release evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07w-bundled-ornith-on-macos-26).
+
+Previous LIFE-07v, 2026-11-22. The retained real Ornith model passes primary
 qualification and public chat on this Mac with a native static-system
 llama-server and explicit pins. Inference uses the existing llama template
-setting to disable thinking during its bounded probe. Ordinary provisioning
-for the llama profiles remains open.
+setting to disable thinking during its bounded probe.
 [Native Ornith evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07v-native-ornith-readiness).
 
 Previous LIFE-07u, 2026-11-22. An installed Gateway on this Mac completed a native

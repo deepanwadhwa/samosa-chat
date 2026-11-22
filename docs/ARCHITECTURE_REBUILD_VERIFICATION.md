@@ -438,7 +438,13 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07v, 2026-11-22. The Inference primary readiness probe uses llama-server's
+LIFE-07w and LIFE-07x, 2026-11-22. Native Mac installation and upgrade pass with
+the bundled Ornith runtime and its verified catalog and engine pins. The upgraded
+launcher serves real Qwen and Ornith chats and reaps both workers in separate
+runs. The original model manager test target passes with shell and Node drivers.
+[Native installation and regression evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07w-bundled-ornith-on-macos-26).
+
+Previous LIFE-07v, 2026-11-22. The Inference primary readiness probe uses llama-server's
 existing non-thinking template setting. It qualifies real Ornith with explicit
 pins and still rejects reasoning-only output in the fixture. The native public
 answer and worker cleanup pass. The module passes 174 normal and sanitizer

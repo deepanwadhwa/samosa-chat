@@ -38,6 +38,14 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    sha256sum "$1" | awk '{print $1}'
+  fi
+}
+
 make samosa-gateway fake_model_download_server test_fake_openai_backend >/dev/null 2>&1 || true
 
 mkdir -p "$HOME_DIR"
@@ -48,25 +56,17 @@ printf 'png\n' >"$TMP/logo.png"
 # entry -- this is the one model_id in this test that resolve_installed_artifact()
 # actually knows how to find (via SAMOSA_BONSAI_MODEL), so it is the only id
 # that can ever report "verified" through the real catalog path.
-python3 -c "
-import hashlib
-data = bytes((i * 13 + 7) % 256 for i in range(2000000))
-open('$TMP/bonsai.bin', 'wb').write(data)
-open('$TMP/bonsai.meta', 'w').write(hashlib.sha256(data).hexdigest() + ' ' + str(len(data)) + '\n')
-"
-read BONSAI_SHA BONSAI_SIZE < "$TMP/bonsai.meta"
+LC_ALL=C awk 'BEGIN {for (i=0; i<2000000; i++) printf "%c", (i * 13 + 7) % 256}' >"$TMP/bonsai.bin"
+BONSAI_SHA=$(sha256_file "$TMP/bonsai.bin")
+BONSAI_SIZE=$(wc -c <"$TMP/bonsai.bin" | tr -d ' ')
 
 # An arbitrary, non-backend model_id -- fine for exercising install-job
 # state transitions (queued/downloading/failed), but artifact_is_present()
 # can never report it "verified" (resolve_installed_artifact only knows
 # qwen/bonsai/ornith), which is by design and not under test here.
-python3 -c "
-import hashlib
-data = bytes((i * 41 + 3) % 256 for i in range(3000000))
-open('$TMP/testmodel.bin', 'wb').write(data)
-open('$TMP/testmodel.meta', 'w').write(hashlib.sha256(data).hexdigest() + ' ' + str(len(data)) + '\n')
-"
-read TESTMODEL_SHA TESTMODEL_SIZE < "$TMP/testmodel.meta"
+LC_ALL=C awk 'BEGIN {for (i=0; i<3000000; i++) printf "%c", (i * 41 + 3) % 256}' >"$TMP/testmodel.bin"
+TESTMODEL_SHA=$(sha256_file "$TMP/testmodel.bin")
+TESTMODEL_SIZE=$(wc -c <"$TMP/testmodel.bin" | tr -d ' ')
 
 cat > "$TMP/catalog.json" <<EOF
 {
@@ -163,9 +163,9 @@ fresh_home() {
   mkdir -p "$HOME_DIR"
 }
 
-field() { printf '%s' "$1" | python3 -c "import json,sys; v=json.load(sys.stdin).get('$2'); print('' if v is None else v)"; }
+field() { printf '%s' "$1" | node tests/model_selection_checks.mjs field "$2"; }
 # GET /v1/profile nests onboarding fields; setup/status reports them flat.
-profile_field() { printf '%s' "$1" | python3 -c "import json,sys; v=json.load(sys.stdin).get('onboarding',{}).get('$2'); print('' if v is None else v)"; }
+profile_field() { printf '%s' "$1" | node tests/model_selection_checks.mjs field onboarding "$2"; }
 setup_status() { curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/setup/status"; }
 profile() { curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/profile"; }
 complete_name_and_welcome() {

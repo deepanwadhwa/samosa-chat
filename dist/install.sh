@@ -122,6 +122,8 @@ destination() { # destination <remote-path>
     runtime/common/molmo2-processor.json) printf '%s/share/molmo2/processor.json\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
+    runtime/macos26-arm64/ornith/samosa-ornith-llama-server) printf '%s/bin/%s\n' "$STAGE" "${1##*/}" ;;
+    runtime/macos26-arm64/ornith/*) printf '%s/share/licenses/ornith/%s\n' "$STAGE" "${1##*/}" ;;
     runtime/macos-arm64/ocr/*) printf '%s/%s\n' "$STAGE" "${1#runtime/macos-arm64/ocr/}" ;;
     runtime/macos-arm64/lib/*) printf '%s/lib/%s\n' "$STAGE" "${1##*/}" ;;
     runtime/common/samosa-text-summarization-Q8_0.gguf)
@@ -161,6 +163,7 @@ INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 # The native Maple executable and its colocated MLX Metal library are a paired
 # Apple-Silicon capability.  Never install one without the other.
 OCR_PREBUILT=0
+ORNITH_RUNTIME=0
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   for relative in bin/samosa-ocr lib/ocr/libtesseract.5.dylib share/tessdata/eng.traineddata; do
     manifest_field "runtime/macos-arm64/ocr/$relative" 1 >/dev/null 2>&1 ||
@@ -169,6 +172,17 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   ocr_files=$(awk -F '\t' '$3 ~ /^runtime\/macos-arm64\/ocr\// {print $3}' "$MANIFEST_NEXT")
   INSTALL_FILES="$INSTALL_FILES $ocr_files"
   OCR_PREBUILT=1
+  ornith_prefix=runtime/macos26-arm64/ornith
+  ornith_exe="$ornith_prefix/samosa-ornith-llama-server"
+  if awk -F '\t' -v prefix="$ornith_prefix/" 'index($3,prefix)==1 {found=1} END {exit !found}' "$MANIFEST_NEXT"; then
+    ornith_files=""
+    for relative in samosa-ornith-llama-server LICENSE-Prism LICENSE-jsonhpp LICENSE-cpp-httplib provenance.txt; do
+      manifest_field "$ornith_prefix/$relative" 1 >/dev/null 2>&1 || fail "incomplete Ornith runtime: $relative"
+      ornith_files="$ornith_files $ornith_prefix/$relative"
+    done
+    INSTALL_FILES="$INSTALL_FILES $ornith_files"
+    ORNITH_RUNTIME=1
+  fi
   maple_exe=runtime/macos-arm64/samosa-maple
   visionpsy_exe=runtime/macos-arm64/samosa-visionpsy
   molmo2_exe=runtime/macos-arm64/samosa-molmo2
@@ -405,6 +419,16 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
   ) >"$STAGE/primary-qwen-pins.tsv.tmp"
   mv -f "$STAGE/primary-qwen-pins.tsv.tmp" "$STAGE/primary-qwen-pins.tsv"
+  if [ "$ORNITH_RUNTIME" = 1 ]; then
+    chmod 755 "$STAGE/bin/samosa-ornith-llama-server"
+    (
+      umask 077
+      printf '%s\t%s\tmodels.json\n' "$catalog_sha" "$catalog_size"
+      printf '%s\t%s\tbin/samosa-ornith-llama-server\n' \
+        "$(manifest_field "$ornith_exe" 1)" "$(manifest_field "$ornith_exe" 2)"
+    ) >"$STAGE/primary-ornith-pins.tsv.tmp"
+    mv -f "$STAGE/primary-ornith-pins.tsv.tmp" "$STAGE/primary-ornith-pins.tsv"
+  fi
 fi
 
 # Chutni's own Makefile compiles its release version in from VERSION, and that

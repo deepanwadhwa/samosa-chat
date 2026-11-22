@@ -46,13 +46,9 @@ printf 'png\n' >"$TMP/logo.png"
 # A real, non-trivial fixture artifact with a real, independently-computed
 # SHA-256 -- exercises the same read_cache_key_file() verification path a
 # real Qwen/Bonsai/Ornith artifact would.
-python3 -c "
-import hashlib
-data = bytes((i * 37 + 11) % 256 for i in range(3000000))
-open('$TMP/artifact.bin', 'wb').write(data)
-open('$TMP/meta.txt', 'w').write(hashlib.sha256(data).hexdigest() + ' ' + str(len(data)) + '\n')
-"
-read FIXTURE_SHA FIXTURE_SIZE < "$TMP/meta.txt"
+LC_ALL=C awk 'BEGIN {for (i=0; i<3000000; i++) printf "%c", (i * 37 + 11) % 256}' >"$TMP/artifact.bin"
+FIXTURE_SHA=$(sha256_file "$TMP/artifact.bin")
+FIXTURE_SIZE=$(wc -c <"$TMP/artifact.bin" | tr -d ' ')
 
 cat > "$TMP/catalog.json" <<EOF
 {
@@ -141,19 +137,22 @@ install_request() { # install_request <model_id> <version> [client_request_id]
   fi
 }
 
+job_field() { # job_field <json> <key> [nested key...]
+  json=$1; shift
+  printf '%s' "$json" | node tests/model_selection_checks.mjs field "$@"
+}
+
 wait_terminal() { # wait_terminal <job_id> -> prints final status JSON
   job="$1"
   j=0
   while [ "$j" -lt 100 ]; do
     status_json=$(curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/models/installs/$job")
-    state=$(printf '%s' "$status_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('state','?'))" 2>/dev/null || echo "?")
+    state=$(job_field "$status_json" state 2>/dev/null || echo "?")
     case "$state" in installed|failed|canceled) break ;; esac
     sleep 0.1; j=$((j + 1))
   done
   printf '%s' "$status_json"
 }
-
-job_field() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$2'))"; } # job_field <json> <key>
 
 # --- 1. Auth: no token on any new route ---
 start_server normal "$TMP/artifact.bin"
@@ -256,10 +255,7 @@ stop_server
 echo "redirect to untrusted target -> rejected, not activated: PASS"
 
 # --- 7. Oversize: declared bytes smaller than what the server actually sent -> size_mismatch ---
-python3 -c "
-data = bytes((i * 11 + 3) % 256 for i in range(3500000))
-open('$TMP/bigger.bin', 'wb').write(data)
-"
+LC_ALL=C awk 'BEGIN {for (i=0; i<3500000; i++) printf "%c", (i * 11 + 3) % 256}' >"$TMP/bigger.bin"
 start_server oversize "$TMP/bigger.bin"
 start_gateway
 RESP=$(install_request testmodel v1)
@@ -329,7 +325,7 @@ JOB_ID=$(job_field "$RESP" job_id)
 FINAL=$(wait_terminal "$JOB_ID")
 [ "$(job_field "$FINAL" state)" = "failed" ] || { echo "FAIL: huge fixture should fail preflight"; echo "$FINAL"; exit 1; }
 printf '%s' "$FINAL" | grep -q '"code":"insufficient_space"' || { echo "FAIL: expected insufficient_space"; echo "$FINAL"; exit 1; }
-ERROR_MSG=$(printf '%s' "$FINAL" | python3 -c "import json,sys; print(json.load(sys.stdin)['error']['message'])")
+ERROR_MSG=$(job_field "$FINAL" error message)
 printf '%s' "$ERROR_MSG" | grep -qE '[0-9]+ bytes.*[0-9]+ available' || { echo "FAIL: insufficient_space error should report required vs available bytes, got: $ERROR_MSG"; exit 1; }
 stop_gateway
 stop_server
