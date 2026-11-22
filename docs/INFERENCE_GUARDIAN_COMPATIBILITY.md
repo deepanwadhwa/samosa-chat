@@ -1,12 +1,30 @@
 # Remaining legacy-to-guardian integration
 
-2026-11-21, after LIFE-07n guardian/shared-turn integration. Remaining
+2026-11-22, after LIFE-07o structured Whisper common lifecycle integration. Remaining
 common lifecycle work follows this preserved-contract mapping; it is not a new
 runtime design. Reuse the working EngineProcess/Activation and host adapters.
 Preserve the original Qwen/Maple/llama, Whisper and visual implementations.
 Native Mac first; no Python or Docker/VM work.
 
-LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
+LIFE-07o checkpoint, 2026-11-22: the existing structured on-demand Whisper
+request now supports common start/status/stop through Activation. Actual pinned
+speech must qualify before last-good; idle status means qualified unchanged
+assets with no resident engine. Managed requests retain ownership through pending
+guardian cleanup; unknown cleanup retains the live host's fence. A reproduced
+SIGXFSZ during native Metal-cache writes is fixed by an explicit guardian opt-in
+without a process-wide file cap, preserving original transcript/log/deadline checks.
+Final native/independent normal/SAN lifecycle 469/469, Activation 158/168,
+original guardian 525/525 and Whisper 508/511 pass. Installed-engine normal/SAN
+qualification/transcription/requalification passes with zero swap growth. See
+[scope, commands, failures and limits](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
+The legacy long-window txt/SRT CLI remains unchanged and still needs common
+controls. Default primary/visual controls, complete identity/readiness/last-good,
+unknown-group and pre-admission recovery remain open. The original structured
+profile is not a replacement for these contracts. Area3, later Inference areas,
+Python removal, Agent/App, assembly and qualified retirement remain required.
+Sources stays closed; Inkling stays deferred until the entire refactor finishes.
+
+Historical LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
 visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page
 retry now belong to Inference turn_control.c/public API. Gateway retains trusted
 host/selection/evidence adapters. A reproduced direct-visual close reset race is
