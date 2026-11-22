@@ -17,6 +17,8 @@ const installedFixture=process.argv[2]==='--installed';
 const installed=installedRelease||installedFixture;
 const actual=process.argv[2]==='--actual'||installedRelease;
 const realModel=process.env.SAMOSA_TEST_REAL_QWEN_MODEL??'/private/tmp/samosa-life07h-real.2wwUok/model';
+const visualModel=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_MODEL;
+const visualEngine=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_ENGINE;
 const model=installed?path.join(test,'models','qwen'):actual?realModel:path.join(test,'model');
 const release=installedRelease?fs.realpathSync(process.argv[3]):path.join(test,'releases','1a2b3c4d5e6a7b8c');
 const engine=installed?path.join(release,'bin','qwen36b'):actual?path.join(path.dirname(model),'qwen36b'):fixture;
@@ -82,6 +84,12 @@ function startGateway() {
     SAMOSA_BONSAI_SERVER:fixture,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:badGguf,
     SAMOSA_BONSAI_MMPROJ:path.join(test,'missing-mmproj'),SAMOSA_CONTEXT_TOKENS:'512',OMP_NUM_THREADS:'2'};
   if(!actual) env.SAMOSA_PRIMARY_GATEWAY_FIXTURE='1';
+  if(visualModel||visualEngine) {
+    assert.ok(visualModel&&visualEngine,'Set both native Molmo2 test paths');
+    env.SAMOSA_MOLMO2_MODEL=visualModel;
+    env.SAMOSA_MOLMO2_ENGINE=visualEngine;
+    env.SAMOSA_CONTEXT_TOKENS='2048';
+  }
   if(installed) {
     delete env.SAMOSA_RELEASE_DIR;
     delete env.SAMOSA_PRIMARY_PINS;
@@ -99,6 +107,40 @@ function startGateway() {
 async function controlPlane() {
   await poll(async()=>((await request('/healthz')).code===200),5000,'control plane startup');
   token=fs.readFileSync(path.join(test,'run','ui-token'),'utf8').trim();
+}
+
+async function qualifyVisualReclaim(previousWorker) {
+  assert.equal((await request('/healthz')).body.vision.molmo2_model_ready,true);
+  const trace=await request('/v1/developer/trace','PUT',{enabled:true});
+  assert.equal(trace.code,200,JSON.stringify(trace.body));
+  const upload=await fetch(base+'/v1/attachments',{
+    method:'POST',
+    headers:{'X-Samosa-Token':token,'Content-Type':'image/png','X-Filename':'logo.png'},
+    body:fs.readFileSync('assets/samosa-chat.png'),
+    signal:AbortSignal.timeout(20000)
+  });
+  assert.equal(upload.status,201);
+  const attachment=await upload.json();
+  assert.match(attachment.id,/^[a-f0-9]{64}$/);
+  const result=await request('/v1/chat/completions','POST',{
+    messages:[{role:'user',content:'Describe the subject and main colors shown in this image.'}],
+    attachment_ids:[attachment.id],analysis_depth:'fast',max_tokens:12,thinking:false,stream:false
+  },660000);
+  assert.equal(result.code,200,JSON.stringify(result.body));
+  assert.ok(result.body.choices[0].message.content.trim());
+  await ready('qwen');
+  const resumed=Number(fs.readFileSync(marker,'utf8'));
+  assert.ok(resumed>1&&resumed!==previousWorker);
+  assert.throws(()=>process.kill(previousWorker,0),{code:'ESRCH'});
+  assert.equal(fs.readFileSync(path.join(test,'model-backend'),'utf8').trim(),'qwen');
+
+  const events=fs.readFileSync(trace.body.path,'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(events.some(({event,fields})=>event==='vision_evidence_observation'&&
+    fields?.component==='molmo2_4b'&&fields.bytes>0),'Missing native Molmo2 evidence');
+  const specialist=events.find(({event})=>event==='molmo2_ready')?.fields?.pid;
+  assert.ok(specialist>1);
+  assert.throws(()=>process.kill(specialist,0),{code:'ESRCH'});
+  console.log('PASS real Molmo2 image evidence, specialist cleanup and fresh Qwen qualification');
 }
 
 function record(asset,name=asset) {
@@ -153,6 +195,7 @@ try {
   const first=Number(fs.readFileSync(marker,'utf8'));
   assert(first>1);
   assert.ok(fs.existsSync(path.join(test,'run','primary-activation','activation.sqlite3')));
+  if(visualModel) await qualifyVisualReclaim(first);
   if(installedRelease){
     const result=await request('/v1/chat/completions','POST',{messages:[{role:'user',content:'Say hello.'}],
       max_tokens:4,thinking:false,stream:false},120000);

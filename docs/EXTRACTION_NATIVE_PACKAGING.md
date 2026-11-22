@@ -99,6 +99,49 @@ four-token public chat request and reaped its worker. The memory guard measured
 3,632 MB peak process-tree RSS and zero swap growth. The run used isolated
 state and APFS clones of the retained model weights.
 
+The original catalog acceptance driver also passed after its JSON assertions
+were moved to Node. `./tools/without_python.sh sh tests/test_model_catalog.sh`
+checks bundled model facts, optional companion artifacts, platform compatibility,
+installed bytes, shared-runtime availability and malformed catalog refusal.
+
+## LIFE-07u native image reclaim
+
+The 16 GiB arm64 Mac ran the upgraded LIFE-07t release built from the parent
+source at `60a34f20464a6af1d2f520254e983d701c810daa`. The fixture uses the original
+400×400 `assets/samosa-chat.png`, catalog Qwen and the retained native Molmo2 Q4
+engine and model. The App state and artifacts were isolated in temporary
+directories. Qwen ran with a 2,048-token context and two OpenMP threads.
+
+```sh
+visual_root=/private/tmp/samosa-life07u-visual.U6agAX
+SAMOSA_TEST_REAL_MOLMO2_ENGINE="$visual_root/runtime/samosa-molmo2" \
+SAMOSA_TEST_REAL_MOLMO2_MODEL="$visual_root/molmo2-4b-mlx-q4-v1" \
+MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
+  ./tools/without_python.sh bash tools/run_memory_guarded.sh \
+  node tests/test_primary_gateway.mjs --installed-release "$(cat "$visual_root/release-path")"
+```
+
+The attachment API accepted the PNG. The developer trace recorded Molmo2 ready,
+image evidence and specialist shutdown. The chat API returned Qwen's completion.
+The test checked the original Qwen PID and the Molmo2 PID had exited, Qwen
+remained selected, and a different qualified Qwen PID handled the next request
+and was reaped on Gateway shutdown. The process tree peaked at 4,240 MB RSS
+with zero swap growth. Both existing Gateway fixture modes also passed.
+
+The first probe used a 210-second test client deadline and verified Molmo2
+evidence and Qwen resume before the client stopped waiting for the answer. The
+passing run uses a longer test deadline and the original app prefill and read
+limits. This result covers the standard image handoff on this host. Wider image
+and video routes, VisionPsy fallback and common visual control qualification
+remain open.
+
+| Visual input | SHA-256 |
+| --- | --- |
+| `samosa-molmo2` | `4ebfbb7d38f0955deb2b17dd70361ee4e46ee2b56ab2b1943ca5ff9ccd30bd50` |
+| `mlx.metallib` | `846add228d562bb224b11f18c4655b75a05f3336e543654ce49943577e26cd5a` |
+| Molmo2 `manifest.json` | `a07230dd952e97969921223328e7812020bb58711728450cdfb2205e3a15b770` |
+| `assets/samosa-chat.png` | `5afc7cbbf619e614110507fb06b4d38f62b3ab70103c861d6145653c498da6b1` |
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).

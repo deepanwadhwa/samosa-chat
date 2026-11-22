@@ -311,19 +311,25 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
    Use the installer and catalog pin inputs from LIFE-07t as the pattern for
-   remaining primary profiles. Qualify real Maple and llama and exercise visual
-   reclaim through the installed Gateway with the native visual providers.
+   remaining primary profiles. Qualify real Maple and llama. Extend native
+   visual coverage beyond the installed Qwen and Molmo2 standard image path.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07t, 2026-11-22. Versioned Mac releases now pass the installer-verified
+LIFE-07u, 2026-11-22. An installed Gateway on this Mac completed a native
+Molmo2 image request, reaped the specialist and delivered Qwen's answer after
+requalifying a fresh primary worker. The original catalog regression now runs
+with Node assertions under the Python-free guard.
+[Mac visual handoff evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07u-native-image-reclaim).
+
+Previous LIFE-07t, 2026-11-22. Versioned Mac releases pass the installer-verified
 catalog and local Qwen runtime pins to the extracted Inference primary owner
 automatically. Existing model selection and manual pins still work. Real
-Maple and llama, installed visual reclaim, long-window Whisper and recovery
-remain part of area 3.
+Maple and llama, the rest of visual lifecycle qualification, long-window Whisper
+and recovery remain part of area 3.
 [Mac installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07t-native-qwen-activation).
 
 Previous LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim

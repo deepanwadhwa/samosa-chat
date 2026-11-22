@@ -1,6 +1,13 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07t, 2026-11-22. Inference now verifies and qualifies catalog Qwen by
+LIFE-07u, 2026-11-22. Real Molmo2 produced standard image evidence through
+the installed Gateway while Qwen was paused. The original Molmo2 and Qwen
+workers were reaped, and a fresh Qwen answered the image request. Native wider
+image/video, VisionPsy fallback, public visual controls and recovery remain
+separate qualification work.
+[Mac visual handoff evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07u-native-image-reclaim).
+
+Previous LIFE-07t, 2026-11-22. Inference verifies and qualifies catalog Qwen by
 default in versioned Mac installs. The installer records the already verified
 catalog digest and pins the compiled engine and linked local OpenMP library.
 Profiles outside this release qualification still require real-engine evidence.

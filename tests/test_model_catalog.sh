@@ -76,110 +76,112 @@ STATUS=$(curl -sS -o "$TMP/r1.json" -w '%{http_code}' "http://127.0.0.1:$PORT/v1
 STATUS=$(curl -sS -o "$TMP/r2.json" -w '%{http_code}' -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/models/catalog")
 [ "$STATUS" = "200" ] || { echo "FAIL: real catalog should serve 200, got $STATUS"; cat "$TMP/r2.json"; exit 1; }
 
-python3 -c "
-import json
-d = json.load(open('$TMP/r2.json'))
-assert d['schema_version'] == 1
-assert d['runtime_abi'] == 'samosa-model-runtime-v1'
-ids = sorted(m['id'] for m in d['models'])
-assert ids == ['bonsai', 'maple', 'molmo2-4b-mlx-q4-v1', 'ornith', 'qwen', 'visionpsy-nano-460m-mlx-bf16', 'voice-stt-whisper-base-en', 'voice-stt-whisper-tiny-en', 'voice-tts-browser', 'voice-tts-kitten-nano', 'voice-tts-kokoro', 'voice-tts-moss-nano', 'voice-tts-pocket'], ids
-by_id = {m['id']: m for m in d['models']}
-# Nothing is installed in this sandboxed \$HOME_DIR -- every model must
-# report not_installed, never a false 'ready'.
-for mid, m in by_id.items():
-    assert m['compatible'] is True, (mid, m['compatible'])  # reference machine is macOS arm64
-    if mid == 'voice-tts-browser':
-        assert m['install_state'] == 'ready'
-        assert m['download_bytes'] == 0
-        continue
-    assert m['install_state'] == 'not_installed', (mid, m['install_state'])
-    assert m['installed_bytes'] == 0, (mid, m['installed_bytes'])
-    if m.get('provisioning') != 'native_pack' and m['backend_kind'] not in ('pocket_tts', 'kokoro_tts', 'moss_tts', 'kitten_tts'):
-        assert m['download_bytes'] > 0, (mid, m['download_bytes'])
-# 'qwen' is the gateway's default selected backend even with nothing
-# installed (matches /healthz's own \"backend\":\"qwen\" in this state,
-# see test_zero_model_startup.sh) -- 'active' reflects current selection,
-# not readiness, matching the existing /v1/backends semantics.
-assert by_id['qwen']['active'] is True
-assert by_id['bonsai']['active'] is False
-assert by_id['maple']['active'] is False
-assert by_id['ornith']['active'] is False
-visionpsy = by_id['visionpsy-nano-460m-mlx-bf16']
-assert visionpsy['family'] == 'vision'
-assert visionpsy['category'] == 'vision'
-assert visionpsy['role'] == 'auxiliary'
-assert visionpsy['backend_kind'] == 'mlx_vision_native'
-assert visionpsy['active'] is False
-assert visionpsy['routing'] == 'automatic'
-assert visionpsy['load_policy'] == 'on_demand_per_turn'
-assert visionpsy['download_bytes'] == 1014772920 + 7364 + 2622 + 142 + 3535344 + 4207 + 196
-molmo = by_id['molmo2-4b-mlx-q4-v1']
-assert molmo['family'] == 'chat'
-assert molmo['category'] == 'chat'
-assert molmo['role'] == 'primary'
-assert molmo['provisioning'] == 'native_pack'
-assert molmo['upstream_revision'] == '042abfa7a38879a376cec03d949eff0aefaa0600'
-assert molmo['routing'] == 'direct_or_automatic'
-assert molmo['input_policy'] == 'visual_required'
-assert molmo['output_modalities'] == ['text', 'grounding_coordinates']
-assert molmo['download_bytes'] == 0
-assert molmo['install_state'] == 'not_installed'
-assert 'video_understanding' in molmo['capabilities']
-voice = by_id['voice-stt-whisper-base-en']
-assert voice['family'] == 'voice'
-assert voice['backend_kind'] == 'whisper_cpp'
-assert voice['active'] is False
-assert voice['install_state'] == 'not_installed'
-assert voice['download_bytes'] == 147964211
-assert voice['artifacts'][0]['sha256'] == 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002'
-tiny = by_id['voice-stt-whisper-tiny-en']
-assert tiny['backend_kind'] == 'whisper_cpp'
-assert tiny['artifacts'][0]['bytes'] == 77704715
-assert tiny['artifacts'][0]['sha256'] == '921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f'
-assert by_id['voice-tts-pocket']['pros'] and by_id['voice-tts-pocket']['cons']
-assert by_id['voice-tts-kokoro']['voice_role'] == 'tts'
-assert by_id['voice-tts-moss-nano']['backend_kind'] == 'moss_tts'
-assert by_id['voice-tts-moss-nano']['pros'] and by_id['voice-tts-moss-nano']['cons']
-assert by_id['voice-tts-kitten-nano']['backend_kind'] == 'kitten_tts'
-assert by_id['voice-tts-kitten-nano']['pros'] and by_id['voice-tts-kitten-nano']['cons']
-assert by_id['voice-tts-browser']['install_state'] == 'ready'
-# Spot-check the real, independently-verified Qwen artifact facts (bytes
-# and sha256 cross-checked against the actual hard-linked model and a
-# prior real release manifest -- see docs/regressions/ui-chutni/t2.1-evidence.md).
-qwen_artifacts = {a['name']: a for a in by_id['qwen']['artifacts']}
-assert qwen_artifacts['experts.bin']['bytes'] == 20942159872
-assert qwen_artifacts['experts.bin']['sha256'] == '00d64d44c39496e5ab5691f4cb27b67e27f3a10efd1f7c54024a9b43b130dbba'
-assert qwen_artifacts['resident.safetensors']['bytes'] == 3015056192
-assert by_id['qwen']['download_bytes'] == 20942159872 + 3015056192 + 1908179 + 3686 + 202 + 28142621
-# Maple ships the native SSD-streaming pack, never the incompatible raw MLX
-# shards. Downloads persist outside the versioned runtime release.
-maple_artifacts = {a['name']: a for a in by_id['maple']['artifacts']}
-assert set(maple_artifacts) == {
-    'maple-experts.bin', 'maple-resident.safetensors', 'maple-manifest.json',
-    'config.json', 'tokenizer.json', 'tokenizer_config.json',
-    'special_tokens_map.json', 'added_tokens.json', 'merges.txt', 'vocab.json',
-    'chat_template.jinja'
-}, set(maple_artifacts)
-for artifact in maple_artifacts.values():
-    assert artifact['install_path'].startswith('models/maple/'), artifact
-    assert '/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/' in artifact['url'], artifact
-assert by_id['maple']['download_bytes'] < 6_000_000_000
-# Ornith has exactly one artifact with a real, HF-verified hash.
-ornith_artifacts = {a['name']: a for a in by_id['ornith']['artifacts']}
-assert ornith_artifacts['ornith-1.0-9b-Q4_K_M.gguf']['sha256'] == '5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106'
-# Bonsai's mmproj vision artifact is optional -- required text weights only.
-bonsai_artifacts = {a['name']: a for a in by_id['bonsai']['artifacts']}
-assert bonsai_artifacts['Bonsai-27B-Q1_0.gguf']['required'] is True
-assert bonsai_artifacts['Bonsai-27B-mmproj-Q8_0.gguf']['required'] is False
-# Live capability degradation: the mmproj file isn't installed in this
-# sandboxed \$HOME_DIR, so 'image' must be dropped even though the catalog
-# declares Bonsai image-capable -- 'text' must remain.
-assert by_id['bonsai']['capabilities'] == ['text'], by_id['bonsai']['capabilities']
-# Qwen's vision tower is built into its engine (no separate artifact) --
-# its declared 'image' capability is never live-degraded.
-assert by_id['qwen']['capabilities'] == ['text', 'image'], by_id['qwen']['capabilities']
-print('real catalog: OK')
-"
+node --input-type=module - "$TMP/r2.json" <<'JS'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const catalog = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+assert.equal(catalog.schema_version, 1);
+assert.equal(catalog.runtime_abi, 'samosa-model-runtime-v1');
+assert.deepEqual(catalog.models.map(model => model.id).sort(), [
+  'bonsai', 'maple', 'molmo2-4b-mlx-q4-v1', 'ornith', 'qwen', 'visionpsy-nano-460m-mlx-bf16',
+  'voice-stt-whisper-base-en', 'voice-stt-whisper-tiny-en', 'voice-tts-browser',
+  'voice-tts-kitten-nano', 'voice-tts-kokoro', 'voice-tts-moss-nano', 'voice-tts-pocket'
+]);
+const models = Object.fromEntries(catalog.models.map(model => [model.id, model]));
+const localTts = ['pocket_tts', 'kokoro_tts', 'moss_tts', 'kitten_tts'];
+for (const model of catalog.models) {
+  assert.equal(model.compatible, true, model.id);
+  if (model.id === 'voice-tts-browser') {
+    assert.equal(model.install_state, 'ready');
+    assert.equal(model.download_bytes, 0);
+    continue;
+  }
+  assert.equal(model.install_state, 'not_installed', model.id);
+  assert.equal(model.installed_bytes, 0, model.id);
+  if (model.provisioning !== 'native_pack' && !localTts.includes(model.backend_kind))
+    assert.ok(model.download_bytes > 0, model.id);
+}
+
+// The default selection remains Qwen while the gateway waits for a model.
+assert.equal(models.qwen.active, true);
+assert.equal(models.bonsai.active, false);
+assert.equal(models.maple.active, false);
+assert.equal(models.ornith.active, false);
+
+const visionpsy = models['visionpsy-nano-460m-mlx-bf16'];
+assert.equal(visionpsy.family, 'vision');
+assert.equal(visionpsy.category, 'vision');
+assert.equal(visionpsy.role, 'auxiliary');
+assert.equal(visionpsy.backend_kind, 'mlx_vision_native');
+assert.equal(visionpsy.active, false);
+assert.equal(visionpsy.routing, 'automatic');
+assert.equal(visionpsy.load_policy, 'on_demand_per_turn');
+assert.equal(visionpsy.download_bytes, 1014772920 + 7364 + 2622 + 142 + 3535344 + 4207 + 196);
+
+const molmo = models['molmo2-4b-mlx-q4-v1'];
+assert.equal(molmo.family, 'chat');
+assert.equal(molmo.category, 'chat');
+assert.equal(molmo.role, 'primary');
+assert.equal(molmo.provisioning, 'native_pack');
+assert.equal(molmo.upstream_revision, '042abfa7a38879a376cec03d949eff0aefaa0600');
+assert.equal(molmo.routing, 'direct_or_automatic');
+assert.equal(molmo.input_policy, 'visual_required');
+assert.deepEqual(molmo.output_modalities, ['text', 'grounding_coordinates']);
+assert.equal(molmo.download_bytes, 0);
+assert.equal(molmo.install_state, 'not_installed');
+assert.ok(molmo.capabilities.includes('video_understanding'));
+
+const voice = models['voice-stt-whisper-base-en'];
+assert.equal(voice.family, 'voice');
+assert.equal(voice.backend_kind, 'whisper_cpp');
+assert.equal(voice.active, false);
+assert.equal(voice.install_state, 'not_installed');
+assert.equal(voice.download_bytes, 147964211);
+assert.equal(voice.artifacts[0].sha256, 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002');
+const tiny = models['voice-stt-whisper-tiny-en'];
+assert.equal(tiny.backend_kind, 'whisper_cpp');
+assert.equal(tiny.artifacts[0].bytes, 77704715);
+assert.equal(tiny.artifacts[0].sha256, '921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f');
+for (const id of ['voice-tts-pocket', 'voice-tts-moss-nano', 'voice-tts-kitten-nano']) {
+  assert.ok(models[id].pros?.length, id);
+  assert.ok(models[id].cons?.length, id);
+}
+assert.equal(models['voice-tts-kokoro'].voice_role, 'tts');
+assert.equal(models['voice-tts-moss-nano'].backend_kind, 'moss_tts');
+assert.equal(models['voice-tts-kitten-nano'].backend_kind, 'kitten_tts');
+
+// The Qwen sizes and hash were cross-checked against the release model in T2.1.
+const byName = model => Object.fromEntries(model.artifacts.map(artifact => [artifact.name, artifact]));
+const qwen = byName(models.qwen);
+assert.equal(qwen['experts.bin'].bytes, 20942159872);
+assert.equal(qwen['experts.bin'].sha256, '00d64d44c39496e5ab5691f4cb27b67e27f3a10efd1f7c54024a9b43b130dbba');
+assert.equal(qwen['resident.safetensors'].bytes, 3015056192);
+assert.equal(models.qwen.download_bytes, 20942159872 + 3015056192 + 1908179 + 3686 + 202 + 28142621);
+
+// Maple's SSD-streaming pack stays in the persistent models directory.
+const maple = byName(models.maple);
+assert.deepEqual(Object.keys(maple).sort(), [
+  'maple-experts.bin', 'maple-resident.safetensors', 'maple-manifest.json',
+  'config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json',
+  'added_tokens.json', 'merges.txt', 'vocab.json', 'chat_template.jinja'
+].sort());
+for (const artifact of Object.values(maple)) {
+  assert.ok(artifact.install_path.startsWith('models/maple/'), artifact.name);
+  assert.ok(artifact.url.includes('/deepanwa/Samosa-Chat-Maple-2bit-SSD/resolve/'), artifact.name);
+}
+assert.ok(models.maple.download_bytes < 6_000_000_000);
+const ornith = byName(models.ornith);
+assert.equal(ornith['ornith-1.0-9b-Q4_K_M.gguf'].sha256, '5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106');
+
+// Bonsai's image capability requires the optional projector. Qwen includes its own vision tower.
+const bonsai = byName(models.bonsai);
+assert.equal(bonsai['Bonsai-27B-Q1_0.gguf'].required, true);
+assert.equal(bonsai['Bonsai-27B-mmproj-Q8_0.gguf'].required, false);
+assert.deepEqual(models.bonsai.capabilities, ['text']);
+assert.deepEqual(models.qwen.capabilities, ['text', 'image']);
+console.log('real catalog: OK');
+JS
 
 stop_gateway
 
@@ -349,31 +351,26 @@ done
 TOKEN=$(cat "$HOME_DIR/run/ui-token")
 
 curl -sS -H "X-Samosa-Token: $TOKEN" "http://127.0.0.1:$PORT/v1/models/catalog" -o "$TMP/r3.json"
-python3 -c "
-import json
-d = json.load(open('$TMP/r3.json'))
-by_id = {m['id']: m for m in d['models']}
-present = by_id['qwen']
-assert present['install_state'] == 'ready', present['install_state']
-assert present['installed_bytes'] == 10, present['installed_bytes']
-assert present['compatible'] is True
-missing = by_id['ornith']
-# Wrong-platform entry: unavailable overrides not_installed, and a
-# non-null compatibility_reason must be given.
-assert missing['compatible'] is False
-assert missing['install_state'] == 'unavailable', missing['install_state']
-assert missing['compatibility_reason'], 'compatibility_reason must be non-empty when incompatible'
-# Weights present, shared llama-server dependency absent: must still be
-# not_installed, not a false 'ready' -- a shared dependency being missing
-# must not let an incomplete model appear ready (T2.1 acceptance).
-shared_dep_missing = by_id['bonsai']
-assert shared_dep_missing['installed_bytes'] == 6, shared_dep_missing['installed_bytes']
-assert shared_dep_missing['install_state'] == 'not_installed', shared_dep_missing['install_state']
-maple = by_id['maple']
-assert maple['installed_bytes'] == 3, maple['installed_bytes']
-assert maple['install_state'] == 'ready', maple['install_state']
-print('fixture detection: OK')
-"
+node --input-type=module - "$TMP/r3.json" <<'JS'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const catalog = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const models = Object.fromEntries(catalog.models.map(model => [model.id, model]));
+assert.equal(models.qwen.install_state, 'ready');
+assert.equal(models.qwen.installed_bytes, 10);
+assert.equal(models.qwen.compatible, true);
+// A wrong-platform entry reports its incompatibility before install state.
+assert.equal(models.ornith.compatible, false);
+assert.equal(models.ornith.install_state, 'unavailable');
+assert.ok(models.ornith.compatibility_reason, 'compatibility_reason must be non-empty when incompatible');
+// Bonsai needs llama-server as well as weights before it can run.
+assert.equal(models.bonsai.installed_bytes, 6);
+assert.equal(models.bonsai.install_state, 'not_installed');
+assert.equal(models.maple.installed_bytes, 3);
+assert.equal(models.maple.install_state, 'ready');
+console.log('fixture detection: OK');
+JS
 stop_gateway
 
 # --- 3. Malformed catalogs must be rejected (500 catalog_invalid), never

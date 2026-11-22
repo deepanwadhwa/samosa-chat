@@ -438,11 +438,16 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07t, 2026-11-22. The native installer now publishes Qwen activation inputs
+LIFE-07u, 2026-11-22. The installed launcher passed the real Qwen and Molmo2
+standard image handoff and primary/specialist cleanup on this Mac. Existing
+catalog validation, artifact and detection assertions pass with Node.
+[Mac visual handoff evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07u-native-image-reclaim).
+
+Previous LIFE-07t, 2026-11-22. The native installer publishes Qwen activation inputs
 for the versioned Gateway automatically. The fixture exercises missing/changed
 release metadata and switching from verified Qwen to Bonsai and back. Real
-Maple and llama, installed visual reclaim, long-window Whisper and recovery
-remain open.
+Maple and llama, the rest of visual lifecycle qualification, long-window Whisper
+and recovery remain open.
 [Mac installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07t-native-qwen-activation).
 
 Previous LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
