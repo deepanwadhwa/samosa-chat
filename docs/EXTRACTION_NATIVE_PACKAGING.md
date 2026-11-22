@@ -240,6 +240,75 @@ RSS was 756 MB for Maple and 5,021 MB for Bonsai, with zero swap growth. These
 runs use explicit model and runtime pins. Native automatic provisioning is the
 next release step.
 
+## LIFE-07z bundled Maple and Bonsai
+
+The installer records Maple's catalog, executable and adjacent Metal library
+pins from the verified release manifest. Bonsai and Ornith share the qualified
+static llama-server supplied by the existing `--ornith-runtime` packaging flag.
+Model pins come from the bundled catalog. The Bonsai projector is verified when
+the existing launch configuration includes it. The launcher and `doctor` use
+the installed runtime on the qualified Mac. Explicit runtime overrides keep
+their existing routing.
+
+The clean install and upgrade fetched no optional chat weights. Native Qwen,
+Ornith, Maple, Bonsai text-only and Bonsai with its projector each started via
+the normal launcher with automatic pins, answered chat, and reaped their worker.
+Bonsai reported text-only without the projector. With it present, the native
+engine confirmed it processed the app's image. The catalog, original launcher
+fixtures, package-selection and complete model-manager tests passed. The two
+Bonsai runs also checked `doctor` through the installed launcher.
+
+| Installed profile | Peak process-tree RSS |
+| --- | --- |
+| Qwen | 4,037 MB |
+| Ornith | 5,945 MB |
+| Maple with VisionPsy retry | 1,802 MB |
+| Bonsai text-only | 4,668 MB |
+| Bonsai with projector | 5,515 MB |
+
+Each guarded run reported zero swap growth on arm64 macOS 26.5.1. The release
+staged Inference `5515a10940b72f7c73bce9ed51d72b094cb30d12`.
+
+```sh
+model_root=/private/tmp/samosa-life07y-models.4BZk12
+ornith_root=/private/tmp/samosa-life07v-ornith.Db9hec
+vision_root=/private/tmp/samosa-life08a-native.sICRlv
+SAMOSA_TEST_REAL_ORNITH_ENGINE="$ornith_root/build/bin/llama-server" \
+SAMOSA_TEST_REAL_ORNITH_MODEL="$ornith_root/model/Ornith-1.0-9B-Q4_K_M.gguf" \
+SAMOSA_TEST_PRISM_SOURCE="$HOME/.samosa/backends/prism-llama.cpp" \
+SAMOSA_TEST_REAL_QWEN_MODEL=/private/tmp/samosa-life07h-real.2wwUok/model \
+SAMOSA_TEST_REAL_MAPLE_ENGINE="$model_root/runtime/samosa-maple" \
+SAMOSA_TEST_REAL_MAPLE_MODEL="$model_root/maple" \
+SAMOSA_TEST_REAL_BONSAI_MODEL="$model_root/bonsai" \
+SAMOSA_TEST_REAL_VISIONPSY_ENGINE="$vision_root/vision-runtime/samosa-visionpsy" \
+SAMOSA_TEST_REAL_VISIONPSY_MODEL="$vision_root/visionpsy" \
+  ./tools/without_python.sh sh tests/test_runtime_only_release.sh
+```
+
+## LIFE-08a native visual retry and long-window speech
+
+Native VisionPsy returned an empty observation and zero generation at the
+first tile budget. The low-level protocol retains its wire behavior. The
+turn owner recognizes a blank or missing requested observation and uses the
+existing one-step lower-side retry. The smaller tile budget produced actual
+evidence. The packaged runtime's 1,536-side attempt returned zero characters
+and the 1,024-side retry returned a 93-byte observation. Both specialists were
+reaped and the same Maple worker answered
+using the recovered evidence. A separate fixture verifies a second empty
+attempt returns failure and clears the specialist reservation.
+[Turn owner evidence](../components/samosa-inference/docs/qualification/life07n-turn-control/README.md#life-08a-visionpsy-empty-observation-recovery).
+
+The original Whisper CLI runner transcribed a 33.482-second synthetic
+PCM16 recording with its last phrase beginning at 31.090 seconds. Normal and
+ASan/UBSan tests found the phrase in both text and the SRT segment starting
+at 30 seconds. They preserved the CLI's existing segmentation and cleaned
+both workspaces. Peak process-tree RSS was 356 MB and 375 MB, respectively,
+with zero swap growth. The audio SHA-256 was
+`010926ca7582e7345a90ed3f24864b2d4e3b70b26cdd2fa15b707b79ca15089f`.
+This is a baseline for the long-window owner. The common Whisper and visual
+control APIs and shared recovery still need implementation and qualification.
+[Whisper process evidence](../components/samosa-inference/docs/qualification/life07l-whisper-guardian/README.md#life-08a-actual-audio-beyond-one-30-second-window).
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).

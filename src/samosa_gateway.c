@@ -67,7 +67,8 @@ typedef struct {
     const char *primary_pins;
     char primary_release[PATH_MAX];
     int primary_release_qwen;
-    char primary_ornith_engine[PATH_MAX];
+    int primary_release_maple;
+    char primary_llama_engine[PATH_MAX];
     pthread_mutex_t primary_mu;
     GatewayPrimary *primary;
 #endif
@@ -7934,11 +7935,9 @@ static int jobs_stop_action(Gateway *g, int fd, const SamosaHttpRequest *request
     return samosa_http_response(fd, 202, "application/json", "{\"ok\":true,\"stopping\":true}", NULL);
 }
 
-static const char *llama_engine_for(Gateway *g, const char *backend) {
+static const char *llama_engine(Gateway *g) {
 #ifdef SAMOSA_PRIMARY_HOST
-    if (!strcmp(backend,"ornith") && g->primary_ornith_engine[0]) return g->primary_ornith_engine;
-#else
-    (void)backend;
+    if (g->primary_llama_engine[0]) return g->primary_llama_engine;
 #endif
     return g->llama_server;
 }
@@ -7950,10 +7949,9 @@ static int backend_available(Gateway *g, const char *name) {
         return path_join(experts, sizeof(experts), g->qwen_model, "experts.bin") &&
                regular_file(g->qwen_engine, 1) && regular_file(experts, 0);
     }
-    if (!strcmp(name, "bonsai"))
-        return regular_file(g->llama_server, 1) && regular_file(g->bonsai_model, 0);
-    if (!strcmp(name, "ornith"))
-        return regular_file(llama_engine_for(g,name), 1) && regular_file(g->ornith_model, 0);
+    if (!strcmp(name, "bonsai") || !strcmp(name, "ornith"))
+        return regular_file(llama_engine(g), 1) &&
+               regular_file(!strcmp(name,"bonsai") ? g->bonsai_model : g->ornith_model, 0);
     if (!strcmp(name, "maple")) {
         /* The original MLX adapter materializes every routed expert and used
            roughly 10 GB on the 16 GB reference Mac.  Do not advertise or
@@ -8091,8 +8089,9 @@ static int primary_append_pin(TextBuffer *body, const SamosaPrimaryInput *pin) {
 }
 
 /* Use the same installer-verified catalog inputs as the model download flow. */
-static int primary_append_model_pins(Gateway *g, TextBuffer *body, const char *backend,
-                                     const SamosaPrimaryInput *catalog) {
+static int primary_append_model_pins(GatewayPrimary *p, TextBuffer *body, const SamosaPrimaryInput *catalog) {
+    Gateway *g = p->gateway;
+    const char *backend = p->backend;
     char path[PATH_MAX], digest[65], reason[128];
     size_t length;
     if (!path_join(path,sizeof(path),g->primary_release,catalog->path)) return 0;
@@ -8108,12 +8107,23 @@ static int primary_append_model_pins(Gateway *g, TextBuffer *body, const char *b
     int ok = catalog_validate(root,reason,sizeof(reason));
     jval *model = ok ? catalog_find_model(root,backend,NULL) : NULL;
     jval *artifacts = model ? json_get(model,"artifacts") : NULL;
-    const char *qwen[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
-                          "generation_config.json", "tokenizer_qwen36.json"};
-    const char *ornith[] = {"ornith-1.0-9b-Q4_K_M.gguf"};
-    int is_qwen = !strcmp(backend,"qwen");
-    const char **required = is_qwen ? qwen : ornith;
-    size_t count = is_qwen ? sizeof(qwen)/sizeof(qwen[0]) : sizeof(ornith)/sizeof(ornith[0]);
+    const char *const qwen[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
+                                "generation_config.json", "tokenizer_qwen36.json"};
+    const char *const maple[] = {"maple-manifest.json", "config.json", "maple-experts.bin",
+                                 "maple-resident.safetensors", "tokenizer.json", "tokenizer_config.json",
+                                 "special_tokens_map.json", "added_tokens.json", "merges.txt", "vocab.json",
+                                 "chat_template.jinja"};
+    const char *const ornith[] = {"ornith-1.0-9b-Q4_K_M.gguf"};
+    const char *const bonsai[] = {"Bonsai-27B-Q1_0.gguf", "Bonsai-27B-mmproj-Q8_0.gguf"};
+    const char *const *required = ornith;
+    size_t count = sizeof(ornith)/sizeof(ornith[0]);
+    if (!strcmp(backend,"qwen")) {
+        required = qwen; count = sizeof(qwen)/sizeof(qwen[0]);
+    } else if (!strcmp(backend,"maple")) {
+        required = maple; count = sizeof(maple)/sizeof(maple[0]);
+    } else if (!strcmp(backend,"bonsai")) {
+        required = bonsai; count = p->config.launch.llama.projector ? 2 : 1;
+    }
     unsigned seen = 0;
     for (int i = 0; ok && artifacts && i < artifacts->len; ++i) {
         jval *entry = artifacts->kids[i];
@@ -8138,12 +8148,20 @@ static int primary_append_model_pins(Gateway *g, TextBuffer *body, const char *b
     return ok && seen == (1u << count) - 1;
 }
 
-static char *primary_installed_pins(Gateway *g, const char *backend) {
+static char *primary_installed_pins(GatewayPrimary *p) {
+    Gateway *g = p->gateway;
+    const char *backend = p->backend;
     int qwen = !strcmp(backend,"qwen");
+    int maple = !strcmp(backend,"maple");
     const char *receipt_name = qwen ? "primary-qwen-pins.tsv" : "primary-ornith-pins.tsv";
     const char *engine_name = qwen ? "bin/qwen36b" : "bin/samosa-ornith-llama-server";
-    char path[PATH_MAX];
+    if (maple) {
+        receipt_name = "primary-maple-pins.tsv";
+        engine_name = "bin/samosa-maple";
+    }
+    char path[PATH_MAX], metal[PATH_MAX];
     if (!path_join(path,sizeof(path),g->primary_release,receipt_name)) return NULL;
+    if (maple && !path_join(metal,sizeof(metal),g->primary_release,"bin/mlx.metallib")) return NULL;
     char *receipt = primary_read_pin_file(path,65536,NULL);
     if (!receipt) return NULL;
     TextBuffer body = {0};
@@ -8151,10 +8169,12 @@ static char *primary_installed_pins(Gateway *g, const char *backend) {
     char *line = strtok_r(receipt,"\n",&rest);
     SamosaPrimaryInput pin;
     int ok = line && primary_parse_pin(line,&pin) && !strcmp(pin.path,"models.json") &&
-        primary_append_model_pins(g,&body,backend,&pin);
+        primary_append_model_pins(p,&body,&pin);
     for (line = strtok_r(NULL,"\n",&rest); ok && line; line = strtok_r(NULL,"\n",&rest)) {
         if (!primary_parse_pin(line,&pin)) { ok = 0; break; }
-        if (!strcmp(pin.path,engine_name)) pin.path = qwen ? g->qwen_engine : g->primary_ornith_engine;
+        if (!strcmp(pin.path,engine_name))
+            pin.path = qwen || maple ? p->config.launch.engine : p->config.launch.llama.engine;
+        else if (maple && !strcmp(pin.path,"bin/mlx.metallib")) pin.path = metal;
         else if (!qwen || pin.path[0] != '/') { ok = 0; break; }
         ok = primary_append_pin(&body,&pin);
     }
@@ -8164,28 +8184,31 @@ static char *primary_installed_pins(Gateway *g, const char *backend) {
 }
 
 static int primary_enabled(Gateway *g) {
-    return g->primary_pins || g->primary_release_qwen || g->primary_ornith_engine[0];
+    return g->primary_pins || g->primary_release_qwen || g->primary_release_maple || g->primary_llama_engine[0];
 }
 
 static int primary_selected(Gateway *g, const char *backend) {
     return g->primary_pins || (g->primary_release_qwen && !strcmp(backend,"qwen")) ||
-        (g->primary_ornith_engine[0] && !strcmp(backend,"ornith"));
+        (g->primary_release_maple && !strcmp(backend,"maple")) ||
+        (g->primary_llama_engine[0] && (!strcmp(backend,"ornith") || !strcmp(backend,"bonsai")));
 }
 
-static void primary_find_ornith(Gateway *g, const char *release) {
+static int primary_release_has_file(const char *release, const char *name) {
+    char path[PATH_MAX];
+    struct stat st;
+    return path_join(path,sizeof(path),release,name) && !lstat(path,&st);
+}
+
+static void primary_find_llama(Gateway *g, const char *release, const char *manifest) {
     if (getenv("SAMOSA_BONSAI_SERVER")) return;
     char product_version[64] = {0};
     size_t version_size = sizeof(product_version);
     if (sysctlbyname("kern.osproductversion",product_version,&version_size,NULL,0) ||
         strtol(product_version,NULL,10) < 26) return;
-    char engine[PATH_MAX], receipt[PATH_MAX];
-    if (!path_join(engine,sizeof(engine),release,"bin/samosa-ornith-llama-server") ||
-        !path_join(receipt,sizeof(receipt),release,"primary-ornith-pins.tsv")) return;
-    struct stat st;
-    /* Either release artifact establishes the intended owner. If its peer
-       is missing, activation must fail instead of using the legacy binary. */
-    if (!lstat(engine,&st) || !lstat(receipt,&st))
-        path_copy(g->primary_ornith_engine,sizeof(g->primary_ornith_engine),engine);
+    const char *engine = "bin/samosa-ornith-llama-server";
+    if (primary_release_has_file(release,engine) || primary_release_has_file(release,"primary-ornith-pins.tsv") ||
+        (manifest && strstr(manifest,"\truntime/macos26-arm64/ornith/samosa-ornith-llama-server\n")))
+        path_join(g->primary_llama_engine,sizeof(g->primary_llama_engine),release,engine);
 }
 
 static void primary_find_release(Gateway *g) {
@@ -8208,7 +8231,19 @@ static void primary_find_release(Gateway *g) {
         path_copy(g->qwen_engine,sizeof(g->qwen_engine),engine);
         g->primary_release_qwen = 1;
     }
-    primary_find_ornith(g,release);
+    char manifest_path[PATH_MAX];
+    char *manifest = path_join(manifest_path,sizeof(manifest_path),release,"release-manifest.tsv") ?
+        primary_read_pin_file(manifest_path,1 << 20,NULL) : NULL;
+    if (path_join(engine,sizeof(engine),release,"bin/samosa-maple") &&
+        (!getenv("SAMOSA_MAPLE_ENGINE") || !strcmp(engine,g->maple_engine)) &&
+        (primary_release_has_file(release,"bin/samosa-maple") ||
+         primary_release_has_file(release,"primary-maple-pins.tsv") ||
+         (manifest && strstr(manifest,"\truntime/macos-arm64/samosa-maple\n")))) {
+        path_copy(g->maple_engine,sizeof(g->maple_engine),engine);
+        g->primary_release_maple = 1;
+    }
+    primary_find_llama(g,release,manifest);
+    free(manifest);
 }
 
 static int primary_pin_matches(const SamosaPrimaryInput *pin, const char *path) {
@@ -8235,7 +8270,7 @@ static int primary_bind_pins(GatewayPrimary *p) {
     }
     size_t model_length = directory ? strlen(c->launch.model) : 0;
     p->pins = p->gateway->primary_pins ? primary_read_pin_file(p->gateway->primary_pins,65536,NULL) :
-        primary_installed_pins(p->gateway,p->backend);
+        primary_installed_pins(p);
     if (!p->pins) return 0;
     char *rest = NULL;
     for (char *line = strtok_r(p->pins,"\n",&rest); line; line = strtok_r(NULL,"\n",&rest)) {
@@ -8469,7 +8504,7 @@ static int backend_start_with_wait(Gateway *g, int wait) {
         char *model = is_ornith ? g->ornith_model : g->bonsai_model;
         char *alias = is_ornith ? (char *)"ornith-1.0-9b" : (char *)"bonsai-27b-1bit";
         SamosaLlamaLaunch launch = {
-            .engine = llama_engine_for(g,g->backend), .model = model, .alias = alias,
+            .engine = llama_engine(g), .model = model, .alias = alias,
             .projector = !is_ornith && backend_supports_images(g, "bonsai") ? g->bonsai_mmproj : NULL,
             .port = g->backend_port, .context_tokens = effective.context_effective,
             .threads = effective.cpu_effective,
@@ -18403,10 +18438,10 @@ static int artifact_is_present(Gateway *g, const char *model_id, jval *artifact)
 
 /* Runtime dependencies are bundled executables, checked through the same
    configured paths backend_start() uses. Unknown package ids fail closed. */
-static int runtime_dependency_is_present(Gateway *g, const char *model, jval *dep) {
+static int runtime_dependency_is_present(Gateway *g, jval *dep) {
     jval *pkg = json_get(dep, "package_id");
     if (!pkg || pkg->t != J_STR) return 0;
-    if (!strcmp(pkg->str, "llama-server")) return regular_file(llama_engine_for(g,model), 1);
+    if (!strcmp(pkg->str, "llama-server")) return regular_file(llama_engine(g), 1);
     if (!strcmp(pkg->str, "samosa-maple")) return regular_file(g->maple_engine, 1);
     if (!strcmp(pkg->str, "samosa-visionpsy")) return regular_file(g->visionpsy_engine, 1);
     if (!strcmp(pkg->str, "samosa-molmo2")) return regular_file(g->molmo2_engine, 1);
@@ -18471,7 +18506,7 @@ static int emit_catalog_entry(TextBuffer *out, Gateway *g, jval *entry) {
         else if (!required || required->t != J_BOOL || required->boolean) all_required_present = 0;
     }
     for (int i = 0; runtime_deps && i < runtime_deps->len; ++i)
-        if (!runtime_dependency_is_present(g, id->str, runtime_deps->kids[i])) all_required_present = 0;
+        if (!runtime_dependency_is_present(g, runtime_deps->kids[i])) all_required_present = 0;
     jval *provisioning = json_get(entry, "provisioning");
     if (provisioning && provisioning->t == J_STR &&
         !strcmp(provisioning->str, "native_pack"))

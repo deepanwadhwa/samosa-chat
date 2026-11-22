@@ -13,25 +13,30 @@ const gateway=path.resolve(process.env.SAMOSA_COMPILED_GATEWAY ?? 'build/samosa-
 const fixture=path.join(module,'build/test-primary-host');
 const test=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'primary-gateway-')));
 const installedRelease=process.argv[2]==='--installed-release';
-const installedOrnith=process.argv[2]==='--installed-ornith';
 const installedFixture=process.argv[2]==='--installed';
-const installed=installedRelease||installedFixture||installedOrnith;
+const installedBackend=new Map([['--installed-ornith','ornith'],['--installed-maple','maple'],
+  ['--installed-bonsai','bonsai']]).get(process.argv[2]);
+const installed=installedRelease||installedFixture||Boolean(installedBackend);
 const pinnedBackend=new Map([['--actual-ornith','ornith'],['--actual-maple','maple'],
   ['--actual-bonsai','bonsai']]).get(process.argv[2]);
-const actual=process.argv[2]==='--actual'||installedRelease||installedOrnith||Boolean(pinnedBackend);
-const selectedBackend=installedOrnith?'ornith':pinnedBackend??'qwen';
+const nativeBackend=installedBackend??pinnedBackend;
+const actual=process.argv[2]==='--actual'||installedRelease||Boolean(nativeBackend);
+const selectedBackend=nativeBackend??'qwen';
 const nativeEnv=`SAMOSA_TEST_REAL_${selectedBackend.toUpperCase()}`;
 const nativeEngine=pinnedBackend?fs.realpathSync(process.env[`${nativeEnv}_ENGINE`]):fixture;
-const nativeModel=pinnedBackend||installedOrnith?fs.realpathSync(process.env[`${nativeEnv}_MODEL`]):null;
+const nativeModel=nativeBackend?fs.realpathSync(process.env[`${nativeEnv}_MODEL`]):null;
 const nativeAliases={ornith:'ornith-1.0-9b',bonsai:'bonsai-27b-1bit',maple:'deepgrove-maple-preview'};
-const nativeArtifacts=pinnedBackend?JSON.parse(fs.readFileSync('assets/models.json','utf8')).models
-  .find(model=>model.id===pinnedBackend).artifacts:[];
-const nativeArtifactPath=artifact=>pinnedBackend==='ornith'?nativeModel:path.join(nativeModel,artifact.name);
+const nativeArtifacts=nativeBackend?JSON.parse(fs.readFileSync('assets/models.json','utf8')).models
+  .find(model=>model.id===nativeBackend).artifacts:[];
+const nativeArtifactPath=artifact=>nativeBackend==='ornith'?nativeModel:path.join(nativeModel,artifact.name);
+const bonsaiTextOnly=installedBackend==='bonsai'&&process.env.SAMOSA_TEST_BONSAI_TEXT_ONLY==='1';
 const realModel=process.env.SAMOSA_TEST_REAL_QWEN_MODEL??'/private/tmp/samosa-life07h-real.2wwUok/model';
 const visualModel=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_MODEL;
 const visualEngine=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_ENGINE;
+const visionpsyModel=installedBackend==='maple'&&process.env.SAMOSA_TEST_REAL_VISIONPSY_MODEL;
+const visionpsyEngine=installedBackend==='maple'&&process.env.SAMOSA_TEST_REAL_VISIONPSY_ENGINE;
 const model=installed?path.join(test,'models','qwen'):actual?realModel:path.join(test,'model');
-const release=installedRelease||installedOrnith?fs.realpathSync(process.argv[3]):path.join(test,'releases','1a2b3c4d5e6a7b8c');
+const release=installedRelease||installedBackend?fs.realpathSync(process.argv[3]):path.join(test,'releases','1a2b3c4d5e6a7b8c');
 const engine=installed?path.join(release,'bin','qwen36b'):actual?path.join(path.dirname(model),'qwen36b'):fixture;
 const pinsFile=path.join(test,'primary.tsv');
 const names=['manifest.json','config.json','experts.bin','resident.safetensors','tokenizer_qwen36.json','generation_config.json'];
@@ -95,11 +100,10 @@ function startGateway() {
     SAMOSA_BONSAI_SERVER:fixture,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:badGguf,
     SAMOSA_BONSAI_MMPROJ:path.join(test,'missing-mmproj'),SAMOSA_CONTEXT_TOKENS:'512',OMP_NUM_THREADS:'2'};
   if(!actual) env.SAMOSA_PRIMARY_GATEWAY_FIXTURE='1';
-  if(installedOrnith) {
-    delete env.SAMOSA_BONSAI_SERVER;
-    delete env.SAMOSA_ORNITH_MODEL;
-    delete env.SAMOSA_LLAMA_CTX;
-    delete env.SAMOSA_LLAMA_THREADS;
+  if(installedBackend) {
+    for(const name of ['SAMOSA_BONSAI_SERVER','SAMOSA_BONSAI_MODEL','SAMOSA_BONSAI_MMPROJ',
+      'SAMOSA_ORNITH_MODEL','SAMOSA_MAPLE_ENGINE','SAMOSA_MAPLE_MODEL','SAMOSA_LLAMA_CTX','SAMOSA_LLAMA_THREADS'])
+      delete env[name];
   } else if(pinnedBackend) {
     env.SAMOSA_LLAMA_CTX=pinnedBackend==='ornith'?'1024':'2048';
     env.SAMOSA_LLAMA_THREADS='2';
@@ -116,6 +120,12 @@ function startGateway() {
     env.SAMOSA_MOLMO2_MODEL=visualModel;
     env.SAMOSA_MOLMO2_ENGINE=visualEngine;
     env.SAMOSA_CONTEXT_TOKENS='2048';
+  }
+  if(visionpsyModel||visionpsyEngine) {
+    assert.ok(visionpsyModel,'Set the native VisionPsy model path');
+    delete env.SAMOSA_VISIONPSY_MODEL;
+    delete env.SAMOSA_VISIONPSY_ENGINE;
+    if(visionpsyEngine) env.SAMOSA_VISIONPSY_ENGINE=visionpsyEngine;
   }
   if(installed) {
     delete env.SAMOSA_RELEASE_DIR;
@@ -149,29 +159,48 @@ async function uploadLogo() {
   return attachment.id;
 }
 
-async function qualifyVisualReclaim(previousWorker) {
-  assert.equal((await request('/healthz')).body.vision.molmo2_model_ready,true);
+async function qualifySpecialist(previousWorker, molmo) {
+  const health=(await request('/healthz')).body;
+  assert.equal(health.vision.molmo2_model_ready,molmo);
   const trace=await request('/v1/developer/trace','PUT',{enabled:true});
   assert.equal(trace.code,200,JSON.stringify(trace.body));
   const result=await request('/v1/chat/completions','POST',{
     messages:[{role:'user',content:'Describe the subject and main colors shown in this image.'}],
-    attachment_ids:[await uploadLogo()],analysis_depth:'fast',max_tokens:12,thinking:false,stream:false
+    attachment_ids:[await uploadLogo()],analysis_depth:'fast',max_tokens:molmo?12:512,
+    thinking:false,stream:false
   },660000);
   assert.equal(result.code,200,JSON.stringify(result.body));
-  assert.ok(result.body.choices[0].message.content.trim());
-  await ready('qwen');
+  await ready(selectedBackend);
   const resumed=Number(fs.readFileSync(marker,'utf8'));
-  assert.ok(resumed>1&&resumed!==previousWorker);
-  assert.throws(()=>process.kill(previousWorker,0),{code:'ESRCH'});
-  assert.equal(fs.readFileSync(path.join(test,'model-backend'),'utf8').trim(),'qwen');
+  if(molmo) {
+    assert.ok(resumed>1&&resumed!==previousWorker);
+    assert.throws(()=>process.kill(previousWorker,0),{code:'ESRCH'});
+  } else assert.equal(resumed,previousWorker);
+  assert.equal(fs.readFileSync(path.join(test,'model-backend'),'utf8').trim(),selectedBackend);
 
   const events=fs.readFileSync(trace.body.path,'utf8').trim().split('\n').map(JSON.parse);
-  assert.ok(events.some(({event,fields})=>event==='vision_evidence_observation'&&
-    fields?.component==='molmo2_4b'&&fields.bytes>0),'Missing native Molmo2 evidence');
-  const specialist=events.find(({event})=>event==='molmo2_ready')?.fields?.pid;
-  assert.ok(specialist>1);
-  assert.throws(()=>process.kill(specialist,0),{code:'ESRCH'});
-  console.log('PASS real Molmo2 image evidence, specialist cleanup and fresh Qwen qualification');
+  const observations=events.filter(({event})=>event==='vision_evidence_observation');
+  if(molmo) assert.ok(observations.some(({fields})=>fields?.component==='molmo2_4b'&&fields.bytes>0));
+  else {
+    const attempts=events.filter(({event})=>event==='visionpsy_complete');
+    assert.equal(attempts.length,2);
+    assert.equal(attempts[0].fields.observation_chars,0);
+    assert.ok(attempts[1].fields.observation_chars>0);
+    assert.ok(attempts[1].fields.max_side_len<attempts[0].fields.max_side_len);
+    assert.equal(observations.length,1);
+    assert.equal(observations[0].fields.component,'visionpsy_nano_460m');
+    assert.ok(observations[0].fields.bytes>0);
+  }
+  const started=molmo?'molmo2_ready':'visionpsy_process_started';
+  const workers=events.filter(({event})=>event===started).map(({fields})=>fields.pid);
+  assert.equal(workers.length,molmo?1:2);
+  for(const pid of workers) {
+    assert.ok(pid>1);
+    assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+  }
+  assert.ok(result.body.choices[0].message.content.trim(),JSON.stringify(result.body));
+  console.log(molmo?'PASS real Molmo2 image evidence, specialist cleanup and fresh Qwen qualification':
+    'PASS real VisionPsy recovered an empty observation, reaped both specialists and retained Maple');
 }
 
 async function checkBonsaiProjector() {
@@ -198,10 +227,14 @@ async function stop() {
 process.on('SIGTERM',()=>{void stop().then(()=>process.exit(143));});
 
 try {
-  if(installedOrnith){
-    const modelDir=path.join(test,'models','ornith-9b');
-    fs.mkdirSync(modelDir,{recursive:true});
-    execFileSync('cp',['-c','-p',nativeModel,path.join(modelDir,'Ornith-1.0-9B-Q4_K_M.gguf')]);
+  if(installedBackend){
+    for(const artifact of nativeArtifacts) {
+      if(bonsaiTextOnly&&artifact.role==='vision_projector') continue;
+      const destination=path.join(test,artifact.install_path);
+      fs.mkdirSync(path.dirname(destination),{recursive:true});
+      execFileSync('cp',['-c','-p',nativeArtifactPath(artifact),destination]);
+    }
+    if(visionpsyModel) execFileSync('cp',['-c','-pR',visionpsyModel,path.join(test,'models','visionpsy')]);
   } else if(installedRelease){
     fs.mkdirSync(model,{recursive:true});
     for(const name of names)execFileSync('cp',['-c','-p',path.join(realModel,name),model]);
@@ -240,6 +273,12 @@ try {
     fs.writeFileSync(pinsFile,assets.map(asset=>[recorded.get(asset)??quote(asset),fs.statSync(asset).size,asset].join('\t')).join('\n')+'\n',{mode:0o600});
   }
   if(installed) fs.symlinkSync(release,path.join(test,'current'),'dir');
+  if(installedBackend==='bonsai') {
+    const launcher=path.join(test,'current','bin','samosa');
+    const report=execFileSync('env',['-u','SAMOSA_RELEASE_DIR','-u','SAMOSA_BONSAI_SERVER',
+      '-u','SAMOSA_BONSAI_MODEL',launcher,'doctor'],{encoding:'utf8',env:{...process.env,SAMOSA_HOME:test}});
+    assert.match(report,/^bonsai:\s+ok \(27B 1-bit\)$/m);
+  }
   fs.writeFileSync(path.join(test,'model-backend'),selectedBackend+'\n');
   startGateway();
   await controlPlane();
@@ -247,14 +286,20 @@ try {
   const first=Number(fs.readFileSync(marker,'utf8'));
   assert(first>1);
   assert.ok(fs.existsSync(path.join(test,'run','primary-activation','activation.sqlite3')));
-  if(visualModel) await qualifyVisualReclaim(first);
-  if(installedOrnith||pinnedBackend){
-    if(installedOrnith){
+  if(visualModel||visionpsyModel) await qualifySpecialist(first,Boolean(visualModel));
+  if(nativeBackend){
+    if(installedBackend){
       const command=execFileSync('ps',['-p',String(first),'-o','command='],{encoding:'utf8'}).trim();
-      assert.ok(command.startsWith(path.join(release,'bin','samosa-ornith-llama-server')+' '));
+      const runtime=installedBackend==='maple'?'samosa-maple':'samosa-ornith-llama-server';
+      assert.ok(command.startsWith(path.join(release,'bin',runtime)+' '));
       const catalog=await request('/v1/models/catalog');
       assert.equal(catalog.code,200,JSON.stringify(catalog.body));
-      assert.equal(catalog.body.models.find(model=>model.id==='ornith').install_state,'ready');
+      const entry=catalog.body.models.find(model=>model.id===installedBackend);
+      assert.equal(entry.install_state,'ready');
+      if(bonsaiTextOnly) {
+        assert.deepEqual(entry.capabilities,['text']);
+        assert.equal((await request('/healthz')).body.supports_images,false);
+      }
     }
     const maxTokens={ornith:4,bonsai:32,maple:64}[selectedBackend];
     const result=await request('/v1/chat/completions','POST',{model:nativeAliases[selectedBackend],
@@ -262,7 +307,7 @@ try {
       chat_template_kwargs:{enable_thinking:false},temperature:0,stream:false},120000);
     assert.equal(result.code,200,JSON.stringify(result.body));
     assert.ok(result.body.choices[0].message.content.trim());
-    if(pinnedBackend==='bonsai') await checkBonsaiProjector();
+    if(nativeBackend==='bonsai'&&!bonsaiTextOnly) await checkBonsaiProjector();
   } else if(installedRelease){
     const result=await request('/v1/chat/completions','POST',{messages:[{role:'user',content:'Say hello.'}],
       max_tokens:4,thinking:false,stream:false},120000);
@@ -308,7 +353,7 @@ try {
       await stop();
     }
   }
-  console.log(installedOrnith?'PASS installed Ornith runtime, automatic pins, catalog readiness, public answer and cleanup':
+  console.log(installedBackend?`PASS installed ${installedBackend} runtime, automatic pins, catalog readiness, public answer and cleanup${bonsaiTextOnly?' (text-only)':''}`:
     pinnedBackend?`PASS real ${pinnedBackend} qualification, public answer and cleanup`:
     installedRelease?'PASS installed launcher qualified real Qwen and reaped its worker':installedFixture?
     'PASS installed Qwen pins, legacy selection, Qwen reselection and refusal of changed or missing release metadata':actual?
@@ -318,7 +363,7 @@ try {
   await stop();
   if(fs.existsSync(log)) process.stderr.write(fs.readFileSync(log,'utf8'));
   const backendLog=path.join(test,'backend.log');
-  if(pinnedBackend&&fs.existsSync(backendLog)) process.stderr.write(fs.readFileSync(backendLog,'utf8').slice(-12000));
+  if(nativeBackend&&fs.existsSync(backendLog)) process.stderr.write(fs.readFileSync(backendLog,'utf8').slice(-12000));
   throw err;
 } finally {
   fs.rmSync(test,{recursive:true,force:true});

@@ -164,6 +164,7 @@ INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 # Apple-Silicon capability.  Never install one without the other.
 OCR_PREBUILT=0
 ORNITH_RUNTIME=0
+MAPLE_RUNTIME=0
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   for relative in bin/samosa-ocr lib/ocr/libtesseract.5.dylib share/tessdata/eng.traineddata; do
     manifest_field "runtime/macos-arm64/ocr/$relative" 1 >/dev/null 2>&1 ||
@@ -204,6 +205,7 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
       manifest_field "$maple_lib" 1 >/dev/null 2>&1 ||
       fail "release contains an incomplete Apple-Silicon MLX runtime"
     INSTALL_FILES="$INSTALL_FILES $maple_exe $visionpsy_exe $molmo2_exe $molmo2_pack $molmo2_processor $maple_lib"
+    MAPLE_RUNTIME=1
   fi
 
   # AVFoundation supplies the codecs, but the reviewed bounded sidecar is a
@@ -400,7 +402,7 @@ $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
 if [ "$(uname -s)" = "Darwin" ]; then
   # Pin the catalog already verified by fetch(), the local build output, and
   # any host OpenMP runtime actually linked by this build.
-  chmod go-w "$STAGE/models.json" "$STAGE/bin/qwen36b"
+  chmod go-w "$STAGE/models.json" "$STAGE/release-manifest.tsv" "$STAGE/bin/qwen36b"
   catalog_sha=$(manifest_field models.json 1)
   catalog_size=$(manifest_field models.json 2)
   engine_sha=$(sha256_file "$STAGE/bin/qwen36b")
@@ -419,6 +421,16 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
   ) >"$STAGE/primary-qwen-pins.tsv.tmp"
   mv -f "$STAGE/primary-qwen-pins.tsv.tmp" "$STAGE/primary-qwen-pins.tsv"
+  if [ "$MAPLE_RUNTIME" = 1 ]; then
+    chmod go-w "$STAGE/bin/mlx.metallib"
+    (
+      umask 077
+      printf '%s\t%s\tmodels.json\n' "$catalog_sha" "$catalog_size"
+      printf '%s\t%s\tbin/samosa-maple\n' "$(manifest_field "$maple_exe" 1)" "$(manifest_field "$maple_exe" 2)"
+      printf '%s\t%s\tbin/mlx.metallib\n' "$(manifest_field "$maple_lib" 1)" "$(manifest_field "$maple_lib" 2)"
+    ) >"$STAGE/primary-maple-pins.tsv.tmp"
+    mv -f "$STAGE/primary-maple-pins.tsv.tmp" "$STAGE/primary-maple-pins.tsv"
+  fi
   if [ "$ORNITH_RUNTIME" = 1 ]; then
     chmod 755 "$STAGE/bin/samosa-ornith-llama-server"
     (

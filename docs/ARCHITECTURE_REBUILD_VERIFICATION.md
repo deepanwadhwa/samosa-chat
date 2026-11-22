@@ -438,7 +438,15 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07y, 2026-11-22. Native Gateway runs qualify Maple and Bonsai using catalog
+LIFE-07z and LIFE-08a, 2026-11-22. Native install and upgrade qualify real
+Qwen, Ornith, Maple and Bonsai through the installed launcher. Bonsai qualifies
+both text-only and projector-backed image chat. A real VisionPsy empty reply
+now triggers the existing retry and yields an observation while the same Maple
+worker stays resident. Actual normal and sanitizer runs of the original Whisper
+owner preserve the phrase spoken after 30 seconds in text and SRT.
+[Mac release and lifecycle evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07z-bundled-maple-and-bonsai).
+
+Previous LIFE-07y, 2026-11-22. Native Gateway runs qualify Maple and Bonsai using catalog
 pins and existing model assets. Maple proves visible generation under its new
 64-token readiness bound. Bonsai proves text and native projector chat. The
 original Inference primary suites pass in-tree and from an independent source copy.

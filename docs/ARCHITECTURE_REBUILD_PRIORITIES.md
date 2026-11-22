@@ -310,17 +310,26 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    through common activation/readiness/observed identity/stale rejection,
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
-   Use the installer and catalog pin inputs from LIFE-07t as the pattern for
-   remaining primary profiles. Provision the qualified Maple and Bonsai
-   profiles in normal Mac installs. Extend native visual coverage beyond the
-   installed Qwen and Molmo2 standard image path.
+   Keep the installer and catalog pins for all four primary profiles. Complete
+   common visual and Whisper controls around the extracted owners. Preserve the
+   native VisionPsy retry, Molmo image/video paths and Whisper text/SRT output
+   beyond 30 seconds. Exercise stale input, interrupted requests and recovery
+   through the installed callers before retiring each old path.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07y, 2026-11-22. Real Maple and Bonsai now qualify through the Inference
+LIFE-07z and LIFE-08a, 2026-11-22. The installed launcher qualifies real Qwen,
+Ornith, Maple and Bonsai using release and catalog pins. Bonsai passes with and
+without the optional projector. The visual turn owner recovers a real empty
+VisionPsy observation with its existing lower-resolution retry. Native Whisper
+text and SRT preserve speech after the 30-second boundary. Common visual and
+long-window Whisper controls and recovery remain open.
+[Mac installation and lifecycle evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07z-bundled-maple-and-bonsai).
+
+Previous LIFE-07y, 2026-11-22. Real Maple and Bonsai qualify through the Inference
 primary owner with explicit pins on this Mac. The existing Maple HTTP path
 needs a 64-token readiness budget for a visible answer. Bonsai passes both
 real text and projector-backed image chat. Both workers were reaped.

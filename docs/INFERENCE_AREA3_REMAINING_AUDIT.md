@@ -1,6 +1,15 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07y, 2026-11-22. The existing Inference primary owner qualifies real
+LIFE-07z and LIFE-08a, 2026-11-22. All four primary chat profiles pass through
+the normal Mac launcher with release-derived pins. Bonsai's optional projector
+stays conditional. Actual VisionPsy returns useful evidence after the existing
+lower-side retry instead of publishing an empty observation. A real 33-second
+Whisper recording preserves text and SRT past the 30-second boundary. Complete
+common visual and long-window Whisper controls plus shared recovery before
+claiming area 3 complete.
+[Mac release and native evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07z-bundled-maple-and-bonsai).
+
+Previous LIFE-07y, 2026-11-22. The existing Inference primary owner qualifies real
 Maple and Bonsai in explicitly pinned native runs. Maple reuses its template
 control with a bounded 64-token request. Bonsai serves text and an image through
 its pinned projector. Ordinary release provisioning for both profiles remains open.

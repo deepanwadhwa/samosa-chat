@@ -723,8 +723,14 @@ doctor() {
   echo "version:   $SAMOSA_VERSION"
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release:   $(basename "$RELEASE_DIR")"
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
-  if [ -x "$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server" ] &&
-     [ -f "$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf" ]; then
+  llama_server="${SAMOSA_BONSAI_SERVER-$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server}"
+  bundled_llama="$RELEASE_DIR/bin/samosa-ornith-llama-server"
+  if [ "${SAMOSA_BONSAI_SERVER+x}" != x ] && [ -x "$bundled_llama" ] && [ "$(uname -s)" = Darwin ]; then
+    product_version=$(sw_vers -productVersion)
+    if [ "${product_version%%.*}" -ge 26 ]; then llama_server="$bundled_llama"; fi
+  fi
+  if [ -x "$llama_server" ] &&
+     [ -f "${SAMOSA_BONSAI_MODEL-$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf}" ]; then
     echo "bonsai:    ok (27B 1-bit)"
   else
     echo "bonsai:    not installed (optional)"

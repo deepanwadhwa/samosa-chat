@@ -51,6 +51,15 @@ assert_primary_release_pins() {
     ' "$receipt" || fail "native runtime library pin mismatch"
   done <"$TMP/linked-libomp"
 
+  for artifact in models.json bin/samosa-maple bin/mlx.metallib; do
+    digest=$(sha256_file "$release/$artifact")
+    bytes=$(wc -c <"$release/$artifact" | tr -d ' ')
+    awk -F '\t' -v name="$artifact" -v sha="$digest" -v size="$bytes" '
+      $1 == sha && $2 == size && $3 == name { matched++ }
+      END { exit matched != 1 }
+    ' "$release/primary-maple-pins.tsv" || fail "native Maple pin mismatch for $artifact"
+  done
+
   if [ -n "${SAMOSA_TEST_REAL_ORNITH_ENGINE:-}" ]; then
     bundled="$release/bin/samosa-ornith-llama-server"
     pins="$release/primary-ornith-pins.tsv"
@@ -66,7 +75,7 @@ assert_primary_release_pins() {
   fi
 }
 
-MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json ornith-1.0-9b-Q4_K_M.gguf'
+MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json ornith-1.0-9b-Q4_K_M.gguf Bonsai-27B-Q1_0.gguf Bonsai-27B-mmproj-Q8_0.gguf'
 
 make -C "$ROOT" fake_model_download_server >/dev/null
 
@@ -106,9 +115,9 @@ if [ -n "${SAMOSA_TEST_REAL_ORNITH_ENGINE:-}" ]; then
 fi
 SAMOSA_PACKAGE_TEST=1 sh "$ROOT/tools/package_hf.sh" --out "$REMOTE" --runtime-only \
   --repo-id test/samosa \
-  --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-  --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
-  --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --maple-runtime "${SAMOSA_TEST_REAL_MAPLE_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}" \
+  --maple-metallib "$(dirname "${SAMOSA_TEST_REAL_MAPLE_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}")/mlx.metallib" \
+  --visionpsy-runtime "${SAMOSA_TEST_REAL_VISIONPSY_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}" \
   --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
@@ -340,6 +349,17 @@ fi
 if [ -n "${SAMOSA_TEST_REAL_ORNITH_MODEL:-}" ]; then
   (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
     bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-ornith "$HOME_DIR/current")
+fi
+if [ -n "${SAMOSA_TEST_REAL_MAPLE_MODEL:-}" ]; then
+  (cd "$ROOT" && MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
+    bash tools/run_memory_guarded.sh env -u SAMOSA_TEST_REAL_VISIONPSY_ENGINE \
+      node tests/test_primary_gateway.mjs --installed-maple "$HOME_DIR/current")
+fi
+if [ -n "${SAMOSA_TEST_REAL_BONSAI_MODEL:-}" ]; then
+  (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 SAMOSA_TEST_BONSAI_TEXT_ONLY=1 \
+    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-bonsai "$HOME_DIR/current")
+  (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
+    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-bonsai "$HOME_DIR/current")
 fi
 
 echo "runtime-only release: PASS"

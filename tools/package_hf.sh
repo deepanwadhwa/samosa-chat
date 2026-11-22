@@ -39,7 +39,7 @@ Usage: sh tools/package_hf.sh --out DIRECTORY [options]
   --summarizer-model FILE        pinned T5 GGUF
   --summarizer-runtime-dir DIR   staged T5 runtime
   --ocr-runtime-dir DIRECTORY    staged native Tesseract runtime
-  --ornith-runtime FILE          qualified static Ornith llama-server for macOS 26 ARM64
+  --ornith-runtime FILE          qualified static llama-server for Ornith and Bonsai on macOS 26 ARM64
   --prism-source DIRECTORY       pinned Prism checkout supplying the runtime notices
   --runtime-only                omit optional chat-model weights
 EOF
