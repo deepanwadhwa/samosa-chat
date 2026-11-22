@@ -1,22 +1,26 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07o checkpoint, 2026-11-22: the existing structured on-demand Whisper
-request now supports common start/status/stop through Activation. Actual pinned
-speech must qualify before last-good; idle status means qualified unchanged
-assets with no resident engine. Managed requests retain ownership through pending
-guardian cleanup; unknown cleanup retains the live host's fence. A reproduced
-SIGXFSZ during native Metal-cache writes is fixed by an explicit guardian opt-in
-without a process-wide file cap, preserving original transcript/log/deadline checks.
-Final native/independent normal/SAN lifecycle 469/469, Activation 158/168,
-original guardian 525/525 and Whisper 508/511 pass. Installed-engine normal/SAN
-qualification/transcription/requalification passes with zero swap growth. See
-[scope, commands, failures and limits](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
-The legacy long-window txt/SRT CLI remains unchanged and still needs common
-controls. Default primary/visual controls, complete identity/readiness/last-good,
-unknown-group and pre-admission recovery remain open. The original structured
-profile is not a replacement for these contracts. Area3, later Inference areas,
-Python removal, Agent/App, assembly and qualified retirement remain required.
-Sources stays closed; Inkling stays deferred until the entire refactor finishes.
+LIFE-07p checkpoint, 2026-11-22: Gateway's original primary JSON request
+transport now belongs to Inference backend_json.c/public API; Gateway passes
+borrowed gate/mutex/cancellation and trace/probe adapters. The complete original
+transport/helpers and Gateway outside that wrapper compare byte-for-byte.
+Native/standalone normal/SAN195 checks, all15 original budget scenarios, original
+web/selection suites and exact package/native install/upgrade/boot pass. Three
+web-test JSON validators now use Node, preserving all original assertions.
+Retained Qwen normal/SAN clients return the original15 prompt/4 generated tokens
+and exact text/usage with zero swap growth. Evidence:
+[commands, hashes, scope and limits](../components/samosa-inference/docs/qualification/life07p-backend-json/README.md).
+This is a reusable original transport for upcoming primary qualification, not
+common activation/readiness closure. Next reuse backend_process, this transport
+and Activation for original Qwen/Maple/llama controls, identity, actual generation
+and last-good handling. Long-window Whisper/default visual controls, unknown-group
+and pre-admission recovery, area3, later Inference areas, Python removal,
+Agent/App, assembly and qualified retirement remain required. Sources stays
+closed; Inkling stays deferred until the entire refactor finishes.
+
+Previous LIFE-07o qualified the separate structured on-demand Whisper lifecycle;
+see [its evidence](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
+It does not replace the original long-window txt/SRT contract.
 
 Historical LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
 visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page
@@ -127,7 +131,7 @@ User direction remains extraction/reuse, no Python and native Mac first.
 | Area3 requirement | Current implementation evidence | What is still unproven/incomplete |
 | --- | --- | --- |
 | Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c now reuses EngineProcess in LIFE-07k, preserving its original primary-server contracts and parent-death cleanup. Common Activation/readiness is still open. LIFE-07l also guards the legacy Whisper CLI and explicitly handed-off prepared audio, preserving long-window/txt/SRT/16-MiB behavior. LIFE-07m now guards both default visual profiles and prepared PDF pages without narrowing wide/native-video contracts. Common controls/identity/readiness remain open. |
-| Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision and visual lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | Whisper entries in registry_host.c configure only WhisperConfig, without the common lifecycle profile. Nonresident CLI behavior must be represented honestly; do not invent a persistent Whisper server. Default App paths still use legacy health/handshake checks and trusted process state outside the common lifecycle qualification controls. Configuration or saved activation alone cannot prove current readiness. |
+| Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision, visual and structured on-demand Whisper lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | LIFE-07o qualifies structured Whisper as explicitly nonresident. The separate long-window CLI still requires common controls under its original contract; do not substitute the structured short-clip profile. Default App paths still use legacy health/handshake checks and trusted process state outside the common lifecycle qualification controls. Configuration or saved activation alone cannot prove current readiness. |
 | Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary descendant cleanup with WNOWAIT; LIFE-07k adds actual primary owner-death/group/marker cleanup, PID reservation, pending-stop ownership and unrelated-process survival. | These are profile-scoped results, not proof for every default/legacy launch path. LIFE-07l qualifies legacy Whisper owner-death/group/workspace/prepared-audio cleanup; LIFE-07m also qualifies default visual owner-death/group/workspace/prepared-page cleanup. Common guardian-death/pre-admission recovery remain open. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
 | Retain last-good configuration and refuse ambiguous interrupted generation | Activation owns revision/last-good semantics for the managed/resident profiles; existing transports invalidate interrupted framing and retain cleanup ownership. | Original App-selected backend/configuration and legacy on-demand execution have not fully moved behind the common owner. Their persistent selection/caching/error semantics must be preserved when consolidating, not silently replaced by a new global configuration model. |
 
@@ -159,7 +163,10 @@ scheduling remain the full separate area4 acceptance responsibility.
    passes trusted inputs and retains original selection/settings/fingerprint/
    rollback policy and shared coordination callbacks. LIFE-07k reuses EngineProcess
    for primary parent-death/group/marker ownership while preserving unlimited
-   lifetime, actual PID and log/termination behavior. Next complete common
+   lifetime, actual PID and log/termination behavior. LIFE-07p extracts the
+   original backend_json transport with public borrowed owner/gate/cancellation
+   inputs; reuse it for successful-generation probes instead of another client.
+   Next complete common
    readiness/identity controls and other default paths using existing owners,
    extending only required
    boundaries per INFERENCE_GUARDIAN_COMPATIBILITY.md. Model selection and App

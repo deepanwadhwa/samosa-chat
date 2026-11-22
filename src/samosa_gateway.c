@@ -49,6 +49,7 @@
 #include "samosa_multimodal.h"
 #include <samosa_inference/summary_process.h>
 #include <samosa_inference/backend_process.h>
+#include <samosa_inference/backend_json.h>
 #include <samosa_inference/whisper_process.h>
 #include <samosa_inference/vision_budget.h>
 #include <samosa_inference/turn_control.h>
@@ -3528,74 +3529,24 @@ static void backend_receive_timeout(int fd, int seconds) {
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 }
 
+static int backend_json_probe(void *context) { return backend_probe(context); }
+static void backend_json_trace_payload(void *context, const char *event,
+                                        const char *source, const char *data, size_t bytes) {
+    developer_trace_payload(context, event, source, data, bytes);
+}
+static void backend_json_trace_event(void *context, const char *event, const char *fields) {
+    developer_trace_event(context, event, fields);
+}
+_Static_assert(SAMOSA_BACKEND_JSON_MAX_BODY == SAMOSA_HTTP_MAX_BODY, "backend body contract");
+_Static_assert(SAMOSA_BACKEND_JSON_MAX_HEADER == SAMOSA_HTTP_MAX_HEADER, "backend header contract");
 static char *backend_json_with_timeout(Gateway *g, const char *payload, int timeout_seconds) {
-    long long started = monotonic_millis();
-    developer_trace_payload(g, "internal_model_request", "chat_backend",
-                            payload ? payload : "", payload ? strlen(payload) : 0);
-    if (!backend_probe(g)) {
-        developer_trace_event(g, "internal_model_error",
-                              "\"code\":\"backend_loading\"");
-        return NULL;
-    }
-    int fd = tcp_connect(g->backend_port);
-    if (fd < 0) {
-        developer_trace_event(g, "internal_model_error",
-                              "\"code\":\"backend_connect_failed\"");
-        return NULL;
-    }
-    if (!samosa_turn_primary_begin(&g->turn_gate)) {
-        close(fd);
-        developer_trace_event(g, "internal_model_error",
-                              "\"code\":\"multimodal_specialist_active\"");
-        return NULL;
-    }
-    /* Planner/ranker/sufficiency calls are internal control turns. They must
-       fail closed after a bounded wait instead of holding a web request until
-       a broken local backend eventually notices a dead socket. */
-    backend_receive_timeout(fd, timeout_seconds);
-    pthread_mutex_lock(&g->mu); g->upstream_fd = fd; pthread_mutex_unlock(&g->mu);
-    char header[512];
-    int n = snprintf(header, sizeof(header),
-        "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:%d\r\n"
-        "Content-Type: application/json\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
-        g->backend_port, strlen(payload));
-    if (n <= 0 || (size_t)n >= sizeof(header) ||
-        !samosa_send_all(fd, header, (size_t)n) ||
-        !samosa_send_all(fd, payload, strlen(payload))) {
-        pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-        samosa_turn_primary_end(&g->turn_gate); close(fd);
-        developer_trace_event(g, "internal_model_error",
-                              "\"code\":\"request_write_failed\"");
-        return NULL;
-    }
-    TextBuffer response = {0}; char chunk[65536];
-    long long deadline = started + timeout_seconds * 1000LL;
-    while (response.len < SAMOSA_HTTP_MAX_BODY + SAMOSA_HTTP_MAX_HEADER) {
-        long long remaining = deadline - monotonic_millis();
-        if (remaining <= 0) { free(response.data); memset(&response, 0, sizeof(response)); break; }
-        backend_receive_timeout(fd, (int)((remaining + 999) / 1000));
-        ssize_t got = recv(fd, chunk, sizeof(chunk), 0);
-        if (got < 0 && errno == EINTR) continue;
-        if (got <= 0) break;
-        if (!text_add_n(&response, chunk, (size_t)got)) break;
-    }
-    pthread_mutex_lock(&g->mu); if (g->upstream_fd == fd) g->upstream_fd = -1; pthread_mutex_unlock(&g->mu);
-    samosa_turn_primary_end(&g->turn_gate); close(fd);
-    if (response.data)
-        developer_trace_payload(g, "internal_model_response", "chat_backend_http",
-                                response.data, response.len);
-    if (!response.data || !strstr(response.data, " 200 ")) {
-        char fields[128];
-        snprintf(fields, sizeof(fields), "\"code\":\"non_200_response\",\"duration_ms\":%lld",
-                 monotonic_millis() - started);
-        developer_trace_event(g, "internal_model_error", fields);
-        free(response.data); return NULL;
-    }
-    char *body = strstr(response.data, "\r\n\r\n");
-    if (!body) { free(response.data); return NULL; }
-    body += 4;
-    char *copy = strdup(body);
-    free(response.data); return copy;
+    SamosaBackendJson request = {
+        .port=g->backend_port, .timeout_seconds=timeout_seconds, .gate=&g->turn_gate,
+        .mutex=&g->mu, .upstream_fd=&g->upstream_fd, .probe=backend_json_probe,
+        .trace_payload=backend_json_trace_payload, .trace_event=backend_json_trace_event,
+        .context=g
+    };
+    return samosa_backend_json(&request,payload);
 }
 
 static char *backend_json(Gateway *g, const char *payload) {

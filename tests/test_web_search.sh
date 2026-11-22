@@ -242,7 +242,7 @@ auth -X POST "http://127.0.0.1:$PORT/v1/web/consent" -H 'Content-Type: applicati
 grep -q '"consent":"denied"' "$HOME_DIR/config.json" || fail "a denial was not persisted"
 grep -q "$SECRET_KEY" "$HOME_DIR/config.json" || fail "recording consent destroyed the user's API key"
 grep -q '"offline":false' "$HOME_DIR/config.json" || fail "recording consent dropped an unrelated top-level key"
-python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$HOME_DIR/config.json" \
+node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "$HOME_DIR/config.json" \
   || fail "recording consent produced malformed JSON"
 [ "$(status_of -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: application/json' \
      --data '{"query":"x"}')" = "403" ] || fail "a denied install must refuse search"
@@ -301,7 +301,7 @@ F=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/fetch" -H 'Content-Type: applica
      --data '{"url":"http://example.com/jobs"}')
 printf '%s' "$F" | grep -q '"title":"Careers"' || fail "fetch did not extract the page title"
 printf '%s' "$F" | grep -q 'Engineer & Designer' || fail "fetch did not decode entities"
-python3 -c 'import json,sys; json.loads(sys.stdin.read())' <<EOF
+node -e 'JSON.parse(require("node:fs").readFileSync(0,"utf8"))' <<EOF
 $F
 EOF
 printf '%s' "$F" | grep -q '�' || fail "fetch did not replace malformed UTF-8"
@@ -380,7 +380,7 @@ S=$(auth -X POST "http://127.0.0.1:$PORT/v1/web/search" -H 'Content-Type: applic
 printf '%s' "$S" | grep -q 'non-standard URL ports are blocked' || fail "a non-standard provider port was not blocked"
 # That error quotes a config key, so it also proves the error body stayed
 # valid JSON once quotes entered the message (samosa_http.h escaping).
-printf '%s' "$S" | python3 -c 'import json,sys; json.load(sys.stdin)' \
+printf '%s' "$S" | node -e 'JSON.parse(require("node:fs").readFileSync(0,"utf8"))' \
   || fail "an error message containing quotes produced malformed JSON"
 
 cat >"$HOME_DIR/config.json" <<'JSON'

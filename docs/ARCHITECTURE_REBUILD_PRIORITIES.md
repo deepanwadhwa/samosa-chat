@@ -300,7 +300,8 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 1. LIFE-07k primary, LIFE-07l Whisper, LIFE-07m visual guardian and LIFE-07n shared
    turn coordination extraction are qualified for their recorded profiles. LIFE-07o
    qualifies the separate structured on-demand Whisper lifecycle; legacy long-window
-   common controls remain open. Preserve the
+   common controls remain open. LIFE-07p extracts the original primary JSON
+   request transport for reuse by qualification. Preserve the
    [original contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md); reuse existing
    owners and tests. Do not rebuild the models, guardian or server.
 2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
@@ -314,23 +315,27 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07o checkpoint, 2026-11-22: the existing structured on-demand Whisper
-request now supports common start/status/stop through Activation. Actual pinned
-speech must qualify before last-good; idle status means qualified unchanged
-assets with no resident engine. Managed requests retain ownership through pending
-guardian cleanup; unknown cleanup retains the live host's fence. A reproduced
-SIGXFSZ during native Metal-cache writes is fixed by an explicit guardian opt-in
-without a process-wide file cap, preserving original transcript/log/deadline checks.
-Final native/independent normal/SAN lifecycle 469/469, Activation 158/168,
-original guardian 525/525 and Whisper 508/511 pass. Installed-engine normal/SAN
-qualification/transcription/requalification passes with zero swap growth. See
-[scope, commands, failures and limits](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
-The legacy long-window txt/SRT CLI remains unchanged and still needs common
-controls. Default primary/visual controls, complete identity/readiness/last-good,
-unknown-group and pre-admission recovery remain open. The original structured
-profile is not a replacement for these contracts. Area3, later Inference areas,
-Python removal, Agent/App, assembly and qualified retirement remain required.
-Sources stays closed; Inkling stays deferred until the entire refactor finishes.
+LIFE-07p checkpoint, 2026-11-22: Gateway's original primary JSON request
+transport now belongs to Inference backend_json.c/public API; Gateway passes
+borrowed gate/mutex/cancellation and trace/probe adapters. The complete original
+transport/helpers and Gateway outside that wrapper compare byte-for-byte.
+Native/standalone normal/SAN195 checks, all15 original budget scenarios, original
+web/selection suites and exact package/native install/upgrade/boot pass. Three
+web-test JSON validators now use Node, preserving all original assertions.
+Retained Qwen normal/SAN clients return the original15 prompt/4 generated tokens
+and exact text/usage with zero swap growth. Evidence:
+[commands, hashes, scope and limits](../components/samosa-inference/docs/qualification/life07p-backend-json/README.md).
+This is a reusable original transport for upcoming primary qualification, not
+common activation/readiness closure. Next reuse backend_process, this transport
+and Activation for original Qwen/Maple/llama controls, identity, actual generation
+and last-good handling. Long-window Whisper/default visual controls, unknown-group
+and pre-admission recovery, area3, later Inference areas, Python removal,
+Agent/App, assembly and qualified retirement remain required. Sources stays
+closed; Inkling stays deferred until the entire refactor finishes.
+
+Previous LIFE-07o qualified the separate structured on-demand Whisper lifecycle;
+see [its evidence](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
+It does not replace the original long-window txt/SRT contract.
 
 Historical LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
 visual selection/reclaim/pause/resume/60-second wait and lower-side/owned-page

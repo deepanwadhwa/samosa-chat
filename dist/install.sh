@@ -149,6 +149,7 @@ INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_process.c engine/infe
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/whisper_process.c engine/inference/include/samosa_inference/whisper_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/vision_budget.c engine/inference/include/samosa_inference/vision_budget.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/turn_control.c engine/inference/include/samosa_inference/turn_control.h"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_json.c engine/inference/include/samosa_inference/backend_json.h"
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
 CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
@@ -488,10 +489,15 @@ $COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
   -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/turn_control.c" \
   -o "$STAGE/engine/inference/turn_control.o" ||
   fail "staged Inference turn control compilation failed; live release was not changed"
+$COMPILER -O2 -Wall -Wextra $LINUX_WARNING_FLAGS -std=c11 -pthread \
+  -I"$STAGE/engine/inference/include" -c "$STAGE/engine/inference/src/backend_json.c" \
+  -o "$STAGE/engine/inference/backend_json.o" ||
+  fail "Could not compile the extracted backend JSON transport."
+
 ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
   "$STAGE/engine/inference/specialist_supervisor.o" "$STAGE/engine/inference/specialist_protocol.o" \
   "$STAGE/engine/inference/summary_process.o" "$STAGE/engine/inference/llama_launch.o" "$STAGE/engine/inference/backend_process.o" "$STAGE/engine/inference/engine_process.o" \
-  "$STAGE/engine/inference/whisper_process.o" "$STAGE/engine/inference/vision_budget.o" "$STAGE/engine/inference/turn_control.o" ||
+  "$STAGE/engine/inference/backend_json.o" "$STAGE/engine/inference/whisper_process.o" "$STAGE/engine/inference/vision_budget.o" "$STAGE/engine/inference/turn_control.o" ||
   fail "staged Inference archive failed; live release was not changed"
 
 # The gateway is the mandatory browser control plane (docs/TASKS_UI_CHUTNI.md
