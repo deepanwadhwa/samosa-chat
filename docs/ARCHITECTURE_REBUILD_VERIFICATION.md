@@ -438,14 +438,18 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
+LIFE-07t, 2026-11-22. The native installer now publishes Qwen activation inputs
+for the versioned Gateway automatically. The fixture exercises missing/changed
+release metadata and switching from verified Qwen to Bonsai and back. Real
+Maple and llama, installed visual reclaim, long-window Whisper and recovery
+remain open.
+[Mac installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07t-native-qwen-activation).
+
+Previous LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
 use the Inference primary owner for pinned deployments. Native Qwen passes
 Gateway startup and the separate visual reservation reclaim test on this Mac.
 Resume rechecks retained identity and qualifies the fresh worker at the same
-revision. Visual startup refuses pending primary cleanup. Ordinary installs
-still need pins from trusted installation metadata before default cutover.
-Actual Maple and llama, end-to-end actual visual reclaim, long-window Whisper
-and recovery remain open.
+revision. Visual startup refuses pending primary cleanup.
 [Native evidence and deployment contract](../components/samosa-inference/docs/qualification/life07s-primary-reclaim/README.md).
 
 Previous LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original

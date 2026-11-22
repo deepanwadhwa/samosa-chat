@@ -28,6 +28,30 @@ sha256_file() {
   fi
 }
 
+assert_primary_release_pins() {
+  [ "$(uname -s)" = Darwin ] || return 0
+  release="$HOME_DIR/current"
+  receipt="$release/primary-qwen-pins.tsv"
+  [ -f "$receipt" ] || fail "native primary pins missing"
+  for artifact in models.json bin/qwen36b; do
+    digest=$(sha256_file "$release/$artifact")
+    bytes=$(wc -c <"$release/$artifact" | tr -d ' ')
+    awk -F '\t' -v name="$artifact" -v sha="$digest" -v size="$bytes" '
+      $1 == sha && $2 == size && $3 == name { matched++ }
+      END { exit matched != 1 }
+    ' "$receipt" || fail "native primary pin mismatch for $artifact"
+  done
+  otool -L "$release/bin/qwen36b" | awk 'NR > 1 && $1 ~ /^\/.*\/libomp\.dylib$/ {print $1}' >"$TMP/linked-libomp"
+  while IFS= read -r library; do
+    digest=$(sha256_file "$library")
+    bytes=$(wc -c <"$library" | tr -d ' ')
+    awk -F '\t' -v path="$library" -v sha="$digest" -v size="$bytes" '
+      $1 == sha && $2 == size && $3 == path { matched++ }
+      END { exit matched != 1 }
+    ' "$receipt" || fail "native runtime library pin mismatch"
+  done <"$TMP/linked-libomp"
+}
+
 MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json'
 
 make -C "$ROOT" fake_model_download_server >/dev/null
@@ -232,6 +256,7 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
 fi
 
 assert_no_model_requests
+assert_primary_release_pins
 stop_remote
 
 # --- Legacy model must be completely untouched by the clean install ---------
@@ -274,6 +299,7 @@ SAMOSA_IGNORE_RAM_CHECK=1 SAMOSA_SKIP_PATH_SETUP=1 SAMOSA_MIN_FREE_AFTER_GB=0 \
   { sed -n '1,200p' "$TMP/install-2.log" >&2; fail "runtime-only upgrade install failed"; }
 
 assert_no_model_requests
+assert_primary_release_pins
 stop_remote
 
 [ "$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' | wc -l | tr -d ' ')" = 2 ] ||
@@ -288,5 +314,10 @@ stop_remote
   fail "legacy model mtime changed after upgrade"
 LEGACY_SHA_AFTER=$(sha256_file "$LEGACY_MODEL_DIR/experts.bin")
 [ "$LEGACY_SHA_AFTER" = "$LEGACY_SHA_BEFORE" ] || fail "legacy model bytes changed after upgrade"
+
+if [ -n "${SAMOSA_TEST_REAL_QWEN_MODEL:-}" ]; then
+  (cd "$ROOT" && MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
+    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-release "$HOME_DIR/current")
+fi
 
 echo "runtime-only release: PASS"

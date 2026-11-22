@@ -1,13 +1,16 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
+LIFE-07t, 2026-11-22. Inference now verifies and qualifies catalog Qwen by
+default in versioned Mac installs. The installer records the already verified
+catalog digest and pins the compiled engine and linked local OpenMP library.
+Profiles outside this release qualification still require real-engine evidence.
+[Mac installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07t-native-qwen-activation).
+
+Previous LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
 use the Inference primary owner for pinned deployments. Native Qwen passes
 Gateway startup and the separate visual reservation reclaim test on this Mac.
 Resume rechecks retained identity and qualifies the fresh worker at the same
-revision. Visual startup refuses pending primary cleanup. Ordinary installs
-still need pins from trusted installation metadata before default cutover.
-Actual Maple and llama, end-to-end actual visual reclaim, long-window Whisper
-and recovery remain open.
+revision. Visual startup refuses pending primary cleanup.
 [Native evidence and deployment contract](../components/samosa-inference/docs/qualification/life07s-primary-reclaim/README.md).
 
 Previous LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original

@@ -317,7 +317,10 @@ for relative in $INSTALL_FILES; do
     fetch "$relative" "$download_target"
     verified "$relative" "$download_target" ||
       fail "checksum mismatch for $relative in inactive staging; live release was not changed"
-    [ "$download_target" = "$final_target" ] || mv -f "$download_target" "$final_target"
+    if [ "$download_target" != "$final_target" ]; then
+      chmod go-w "$download_target"
+      mv -f "$download_target" "$final_target"
+    fi
   fi
 done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
@@ -379,6 +382,30 @@ $COMPILER -O3 -pthread $OMP_FLAGS -Wno-unused-function \
   "$STAGE/engine/qwen36b.c" "$STAGE/engine/expert_cache.c" "$STAGE/engine/vision.c" \
   -o "$STAGE/bin/qwen36b" -lm ||
   fail "staged engine compilation failed; live release was not changed"
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  # Pin the catalog already verified by fetch(), the local build output, and
+  # any host OpenMP runtime actually linked by this build.
+  chmod go-w "$STAGE/models.json" "$STAGE/bin/qwen36b"
+  catalog_sha=$(manifest_field models.json 1)
+  catalog_size=$(manifest_field models.json 2)
+  engine_sha=$(sha256_file "$STAGE/bin/qwen36b")
+  engine_size=$(wc -c <"$STAGE/bin/qwen36b" | tr -d ' ')
+  dependencies=$(otool -L "$STAGE/bin/qwen36b") || fail "could not inspect staged Qwen engine"
+  libomp=$(printf '%s\n' "$dependencies" | awk 'NR > 1 && $1 ~ /^\/.*\/libomp\.dylib$/ {print $1}')
+  (
+    umask 077
+    printf '%s\t%s\tmodels.json\n' "$catalog_sha" "$catalog_size"
+    printf '%s\t%s\tbin/qwen36b\n' "$engine_sha" "$engine_size"
+    if [ -n "$libomp" ]; then
+      [ -f "$libomp" ] || fail "linked Qwen OpenMP library is missing"
+      libomp_sha=$(sha256_file "$libomp")
+      libomp_size=$(wc -c <"$libomp" | tr -d ' ')
+      printf '%s\t%s\t%s\n' "$libomp_sha" "$libomp_size" "$libomp"
+    fi
+  ) >"$STAGE/primary-qwen-pins.tsv.tmp"
+  mv -f "$STAGE/primary-qwen-pins.tsv.tmp" "$STAGE/primary-qwen-pins.tsv"
+fi
 
 # Chutni's own Makefile compiles its release version in from VERSION, and that
 # string lands in the producer record of every artifact the service writes

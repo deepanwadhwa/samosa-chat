@@ -35,7 +35,7 @@ elif [ -x "$SELF_DIR/qwen36b" ] && [ -x "$SELF_DIR/samosa-gateway" ]; then
   # A model directory is no longer a reliable signal here: a runtime-only
   # release (docs/TASKS_UI_CHUTNI.md T1.0) has none by design. Detect a real
   # release/bin directory by its two mandatory runtime binaries instead.
-  RELEASE_DIR=$(CDPATH= cd -- "$SELF_DIR/.." && pwd)
+  RELEASE_DIR=$(CDPATH= cd -P -- "$SELF_DIR/.." && pwd)
 else
   RELEASE_DIR=$HOME_DIR
 fi

@@ -74,6 +74,13 @@ static void rc_sha_final(RcSha *c, unsigned char out[32]) {
     for (i=0;i<8;i++){ out[i*4]=c->h[i]>>24; out[i*4+1]=c->h[i]>>16; out[i*4+2]=c->h[i]>>8; out[i*4+3]=(unsigned char)c->h[i]; }
 }
 
+static void rc_sha_hex(RcSha *c, char hex[65]) {
+    unsigned char dig[32]; rc_sha_final(c, dig);
+    static const char *hx = "0123456789abcdef";
+    for (int i = 0; i < 32; i++) { hex[i*2]=hx[dig[i]>>4]; hex[i*2+1]=hx[dig[i]&15]; }
+    hex[64]=0;
+}
+
 /* SHA-256 of the file bytes -> lowercase hex[65]. Returns 0 on success. */
 static int read_cache_key_file(const char *path, char hex[65]) {
     FILE *f = fopen(path, "rb"); if (!f) return -1;
@@ -81,10 +88,7 @@ static int read_cache_key_file(const char *path, char hex[65]) {
     unsigned char buf[65536]; size_t n;
     while ((n = fread(buf, 1, sizeof buf, f)) > 0) rc_sha_update(&c, buf, n);
     fclose(f);
-    unsigned char dig[32]; rc_sha_final(&c, dig);
-    static const char *hx = "0123456789abcdef";
-    for (int i = 0; i < 32; i++) { hex[i*2]=hx[dig[i]>>4]; hex[i*2+1]=hx[dig[i]&15]; }
-    hex[64]=0; return 0;
+    rc_sha_hex(&c, hex); return 0;
 }
 
 static void read_cache_default_root(char *out, size_t n) {

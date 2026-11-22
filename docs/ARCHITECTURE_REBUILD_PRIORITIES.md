@@ -310,22 +310,27 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
    through common activation/readiness/observed identity/stale rejection,
    last-good/guardian-death qualification using the extracted turn/pause/resume/
    retry owner. Keep primary selection/settings/rollback explicit caller policy.
-   Reuse existing release and installer verification to supply pins for ordinary
-   deployments. Qualify the default path with real models and visual reclaim.
+   Use the installer and catalog pin inputs from LIFE-07t as the pattern for
+   remaining primary profiles. Qualify real Maple and llama and exercise visual
+   reclaim through the installed Gateway with the native visual providers.
 3. Verify affected behavior on this Mac, preserve an exact passing revision and
    retire each old lifecycle path only after its public replacement passes.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
+LIFE-07t, 2026-11-22. Versioned Mac releases now pass the installer-verified
+catalog and local Qwen runtime pins to the extracted Inference primary owner
+automatically. Existing model selection and manual pins still work. Real
+Maple and llama, installed visual reclaim, long-window Whisper and recovery
+remain part of area 3.
+[Mac installation evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07t-native-qwen-activation).
+
+Previous LIFE-07s, 2026-11-22. Gateway startup, selection, rollback and visual reclaim
 use the Inference primary owner for pinned deployments. Native Qwen passes
 Gateway startup and the separate visual reservation reclaim test on this Mac.
 Resume rechecks retained identity and qualifies the fresh worker at the same
-revision. Visual startup refuses pending primary cleanup. Ordinary installs
-still need pins from trusted installation metadata before default cutover.
-Actual Maple and llama, end-to-end actual visual reclaim, long-window Whisper
-and recovery remain open.
+revision. Visual startup refuses pending primary cleanup.
 [Native evidence and deployment contract](../components/samosa-inference/docs/qualification/life07s-primary-reclaim/README.md).
 
 Previous LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original

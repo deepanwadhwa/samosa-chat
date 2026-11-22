@@ -51,6 +51,7 @@
 #include <samosa_inference/backend_process.h>
 #include <samosa_inference/backend_json.h>
 #ifdef SAMOSA_PRIMARY_HOST
+#include <mach-o/dyld.h>
 #include <samosa_inference/primary_host.h>
 typedef struct GatewayPrimary GatewayPrimary;
 #endif
@@ -64,6 +65,7 @@ typedef struct {
     SamosaBackendProcess primary_process;
 #ifdef SAMOSA_PRIMARY_HOST
     const char *primary_pins;
+    char primary_release[PATH_MAX];
     pthread_mutex_t primary_mu;
     GatewayPrimary *primary;
 #endif
@@ -8027,29 +8029,154 @@ struct GatewayPrimary {
     const char *error;
 };
 
-static char *primary_read_pins(const char *path) {
+static char *primary_read_pin_file(const char *path, size_t limit, size_t *length) {
     int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0) return NULL;
     struct stat st;
     char *body = NULL;
     if (!fstat(fd,&st) && S_ISREG(st.st_mode) && st.st_uid == geteuid() &&
-        !(st.st_mode & 022) && st.st_size > 0 && st.st_size <= 65536) {
+        st.st_nlink == 1 && !(st.st_mode & 022) && st.st_size > 0 && (uint64_t)st.st_size <= limit) {
         size_t size = (size_t)st.st_size;
         body = malloc(size + 1);
         if (body && (pread(fd,body,size,0) != (ssize_t)size || memchr(body,0,size))) {
             free(body); body = NULL;
         }
-        if (body) body[size] = 0;
+        if (body) {
+            body[size] = 0;
+            if (length) *length = size;
+        }
     }
     close(fd);
     return body;
+}
+
+static int primary_parse_pin(char *line, SamosaPrimaryInput *pin) {
+    char *bytes = strchr(line,'\t');
+    if (!bytes) return 0;
+    *bytes++ = 0;
+    char *name = strchr(bytes,'\t');
+    if (!name) return 0;
+    *name++ = 0;
+    if (strlen(line) != 64 || strspn(line,"0123456789abcdef") != 64 ||
+        !*bytes || strspn(bytes,"0123456789") != strlen(bytes) || !*name ||
+        strchr(name,'\t') || strchr(name,'\r')) return 0;
+    errno = 0;
+    unsigned long long size = strtoull(bytes,NULL,10);
+    if (errno || !size || size > INT64_MAX) return 0;
+    *pin = (SamosaPrimaryInput){name,line,size};
+    return 1;
+}
+
+static int catalog_validate(jval *root, char *reason, size_t reason_cap);
+static jval *catalog_find_model(jval *root, const char *model_id, const char *version);
+static int resolve_installed_artifact(Gateway *g, const char *model_id,
+                                      const char *artifact_name, char *out, size_t cap);
+
+static int primary_append_pin(TextBuffer *body, const SamosaPrimaryInput *pin) {
+    char row[PATH_MAX + 96];
+    int length = snprintf(row,sizeof(row),"%s\t%llu\t%s\n",pin->sha256,
+                          (unsigned long long)pin->size,pin->path);
+    return length > 0 && length < (int)sizeof(row) && text_add_n(body,row,(size_t)length);
+}
+
+/* Use the same installer-verified catalog inputs as the model download flow. */
+static int primary_append_qwen_model_pins(Gateway *g, TextBuffer *body, const SamosaPrimaryInput *catalog) {
+    char path[PATH_MAX], digest[65], reason[128];
+    size_t length;
+    if (!path_join(path,sizeof(path),g->primary_release,catalog->path)) return 0;
+    char *raw = primary_read_pin_file(path,8 << 20,&length);
+    if (!raw) return 0;
+    RcSha hash;
+    rc_sha_init(&hash);
+    rc_sha_update(&hash,raw,length);
+    rc_sha_hex(&hash,digest);
+    char *arena = NULL;
+    jval *root = length == catalog->size && !strcmp(digest,catalog->sha256) ? json_parse(raw,&arena) : NULL;
+    free(raw);
+    int ok = catalog_validate(root,reason,sizeof(reason));
+    jval *model = ok ? catalog_find_model(root,"qwen",NULL) : NULL;
+    jval *artifacts = model ? json_get(model,"artifacts") : NULL;
+    const char *required[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
+                              "generation_config.json", "tokenizer_qwen36.json"};
+    unsigned seen = 0;
+    for (int i = 0; ok && artifacts && i < artifacts->len; ++i) {
+        jval *entry = artifacts->kids[i];
+        jval *name = json_get(entry,"name");
+        if (!name || name->t != J_STR) { ok = 0; break; }
+        for (size_t j = 0; j < sizeof(required)/sizeof(required[0]); ++j) {
+            if (strcmp(name->str,required[j])) continue;
+            double size = json_get(entry,"bytes")->num;
+            if ((seen & (1u << j)) || !(size >= 1 && size < 0x1p63) || size != (uint64_t)size ||
+                !resolve_installed_artifact(g,"qwen",required[j],path,sizeof(path))) {
+                ok = 0;
+                break;
+            }
+            SamosaPrimaryInput pin = {path,json_get(entry,"sha256")->str,(uint64_t)size};
+            ok = primary_append_pin(body,&pin);
+            seen |= 1u << j;
+            break;
+        }
+    }
+    json_free(root);
+    free(arena);
+    return ok && seen == (1u << (sizeof(required)/sizeof(required[0]))) - 1;
+}
+
+static char *primary_installed_pins(Gateway *g) {
+    char path[PATH_MAX];
+    if (!path_join(path,sizeof(path),g->primary_release,"primary-qwen-pins.tsv")) return NULL;
+    char *receipt = primary_read_pin_file(path,65536,NULL);
+    if (!receipt) return NULL;
+    TextBuffer body = {0};
+    char *rest = NULL;
+    char *line = strtok_r(receipt,"\n",&rest);
+    SamosaPrimaryInput pin;
+    int ok = line && primary_parse_pin(line,&pin) && !strcmp(pin.path,"models.json") &&
+        primary_append_qwen_model_pins(g,&body,&pin);
+    for (line = strtok_r(NULL,"\n",&rest); ok && line; line = strtok_r(NULL,"\n",&rest)) {
+        if (!primary_parse_pin(line,&pin)) { ok = 0; break; }
+        if (!strcmp(pin.path,"bin/qwen36b")) pin.path = g->qwen_engine;
+        else if (pin.path[0] != '/') { ok = 0; break; }
+        ok = primary_append_pin(&body,&pin);
+    }
+    free(receipt);
+    if (!ok) { free(body.data); return NULL; }
+    return body.data;
+}
+
+static int primary_enabled(Gateway *g) {
+    return g->primary_pins || g->primary_release[0];
+}
+
+static int primary_selected(Gateway *g, const char *backend) {
+    return g->primary_pins || (g->primary_release[0] && !strcmp(backend,"qwen"));
+}
+
+static void primary_find_release(Gateway *g) {
+    char executable[PATH_MAX], release[PATH_MAX];
+    uint32_t cap = sizeof(executable);
+    if (g->primary_pins || _NSGetExecutablePath(executable,&cap) || !realpath(executable,release)) return;
+    const char suffix[] = "/bin/samosa-gateway";
+    size_t length = strlen(release);
+    if (length <= sizeof(suffix) - 1 || strcmp(release + length - (sizeof(suffix) - 1),suffix)) return;
+    release[length - (sizeof(suffix) - 1)] = 0;
+    const char *id = strrchr(release,'/');
+    const char prefix[] = "/releases/";
+    if (!id || strlen(id + 1) != 16 || strspn(id + 1,"0123456789abcdef") != 16 ||
+        length - (sizeof(suffix) - 1) < sizeof(prefix) - 1 + 16 ||
+        strncmp(id + 1 - (sizeof(prefix) - 1),prefix,sizeof(prefix) - 1)) return;
+    char engine[PATH_MAX];
+    if (!path_join(engine,sizeof(engine),release,"bin/qwen36b")) return;
+    if (getenv("SAMOSA_QWEN_ENGINE") && strcmp(engine,g->qwen_engine)) return;
+    path_copy(g->qwen_engine,sizeof(g->qwen_engine),engine);
+    path_copy(g->primary_release,sizeof(g->primary_release),release);
 }
 
 static int primary_pin_matches(const SamosaPrimaryInput *pin, const char *path) {
     return path && !strcmp(pin->path,path);
 }
 
-static int primary_bind_pins(GatewayPrimary *p, const char *path) {
+static int primary_bind_pins(GatewayPrimary *p) {
     SamosaPrimaryConfig *c = &p->config;
     const int qwen = !strcmp(p->backend,"qwen");
     const int maple = !strcmp(p->backend,"maple");
@@ -8068,23 +8195,14 @@ static int primary_bind_pins(GatewayPrimary *p, const char *path) {
         if (!path_join(metal,sizeof(metal),engine_dir,"mlx.metallib")) return 0;
     }
     size_t model_length = directory ? strlen(c->launch.model) : 0;
-    p->pins = primary_read_pins(path);
+    p->pins = p->gateway->primary_pins ? primary_read_pin_file(p->gateway->primary_pins,65536,NULL) :
+        primary_installed_pins(p->gateway);
     if (!p->pins) return 0;
     char *rest = NULL;
     for (char *line = strtok_r(p->pins,"\n",&rest); line; line = strtok_r(NULL,"\n",&rest)) {
-        char *bytes = strchr(line,'\t');
-        if (!bytes) return 0;
-        *bytes++ = 0;
-        char *name = strchr(bytes,'\t');
-        if (!name) return 0;
-        *name++ = 0;
-        if (strlen(line) != 64 || strspn(line,"0123456789abcdef") != 64 ||
-            !*bytes || strspn(bytes,"0123456789") != strlen(bytes) || name[0] != '/' ||
-            strchr(name,'\t') || strchr(name,'\r')) return 0;
-        errno = 0;
-        unsigned long long size = strtoull(bytes,NULL,10);
-        if (errno || !size || size > INT64_MAX) return 0;
-        SamosaPrimaryInput pin = {name,line,size};
+        SamosaPrimaryInput pin;
+        if (!primary_parse_pin(line,&pin) || pin.path[0] != '/') return 0;
+        const char *name = pin.path;
         if (primary_pin_matches(&pin,engine)) {
             if (c->engine.path) return 0;
             c->engine = pin;
@@ -8157,7 +8275,10 @@ static int primary_activate(Gateway *g, SamosaBackendOwner owner, SamosaBackendL
     p->config = (SamosaPrimaryConfig){.owner=owner,.launch=launch,.state=p->state,
         .inputs=p->inputs,.libraries=p->libraries,.gate=&g->turn_gate,.upstream_fd=&g->upstream_fd,
         .startup_seconds=20,.generation_seconds=120,.cancelled=primary_cancelled,.cancellation=p};
-    if (valid) valid = primary_bind_pins(p,g->primary_pins);
+    if (valid && !primary_bind_pins(p)) {
+        fprintf(stderr,"[samosa] primary %s activation: invalid or missing artifact pins\n",p->backend);
+        valid = 0;
+    }
     if (valid) {
         g->primary = p;
         if (wait) primary_activate_thread(p);
@@ -8195,7 +8316,7 @@ static int primary_status(Gateway *g, int loading_counts) {
 
 static int backend_child_running(Gateway *g) {
 #ifdef SAMOSA_PRIMARY_HOST
-    if (g->primary_pins) return primary_status(g,1);
+    if (primary_selected(g,g->backend)) return primary_status(g,1);
 #endif
     SamosaBackendOwner owner = backend_owner(g);
     return samosa_backend_process_running(&owner);
@@ -8206,7 +8327,7 @@ static int backend_probe(Gateway *g) {
        the visual turn. Primary HTTP availability belongs to Inference. */
     if (!strcmp(g->backend, MOLMO2_CHAT_BACKEND_ID)) return molmo2_available(g);
 #ifdef SAMOSA_PRIMARY_HOST
-    if (g->primary_pins) return primary_status(g,0);
+    if (primary_selected(g,g->backend)) return primary_status(g,0);
 #endif
     SamosaBackendOwner owner = backend_owner(g);
     return samosa_backend_process_probe(&owner, g->backend, g->backend_port);
@@ -8229,9 +8350,10 @@ static int backend_stop_with_reclaim(Gateway *g, int reclaim) {
     GatewayBackendStop context = {g, -1};
     SamosaBackendStopControl control = {backend_stop_detach, backend_stop_interrupted, &context};
 #ifdef SAMOSA_PRIMARY_HOST
-    if (g->primary_pins) {
+    if (primary_enabled(g)) {
         pthread_mutex_lock(&g->primary_mu);
         GatewayPrimary *p = g->primary;
+        int handled = p != NULL;
         const char *error = NULL;
         if (p) {
             if (p->joinable) {
@@ -8255,8 +8377,10 @@ static int backend_stop_with_reclaim(Gateway *g, int reclaim) {
             }
         }
         pthread_mutex_unlock(&g->primary_mu);
-        if (error) fprintf(stderr,"[samosa] primary cleanup: %s\n",error);
-        return !error;
+        if (handled) {
+            if (error) fprintf(stderr,"[samosa] primary cleanup: %s\n",error);
+            return !error;
+        }
     }
 #endif
     return !samosa_backend_process_stop_owned(&owner, &control);
@@ -8319,7 +8443,7 @@ static int backend_start_with_wait(Gateway *g, int wait) {
     }
     SamosaBackendOwner owner = backend_owner(g);
 #ifdef SAMOSA_PRIMARY_HOST
-    if (g->primary_pins) return primary_activate(g,owner,config,wait);
+    if (primary_selected(g,g->backend)) return primary_activate(g,owner,config,wait);
 #endif
     return samosa_backend_process_start(&owner, &config);
 }
@@ -11006,11 +11130,11 @@ static long long turn_total_memory(void *context) { (void)context; return vision
 static int turn_primary_running(void *context) {
     Gateway *g = context;
 #ifdef SAMOSA_PRIMARY_HOST
-    if (g->primary_pins) {
+    if (primary_enabled(g)) {
         pthread_mutex_lock(&g->primary_mu);
         int active = g->primary && (atomic_load(&g->primary->running) || g->primary->host);
         pthread_mutex_unlock(&g->primary_mu);
-        return active;
+        if (active) return 1;
     }
 #endif
     pthread_mutex_lock(&g->mu);
@@ -11022,13 +11146,15 @@ static int turn_primary_stop(void *context) { return backend_stop_with_reclaim(c
 static int turn_primary_start(void *context) {
 #ifdef SAMOSA_PRIMARY_HOST
     Gateway *g = context;
-    if (g->primary_pins) {
+    if (primary_enabled(g)) {
         pthread_mutex_lock(&g->primary_mu);
         GatewayPrimary *p = g->primary;
         const char *error = p && !strcmp(p->backend,g->backend) ? samosa_primary_resume(p->host) : "provider_unavailable";
         pthread_mutex_unlock(&g->primary_mu);
-        if (error) fprintf(stderr,"[samosa] primary resume: %s\n",error);
-        return !error;
+        if (p) {
+            if (error) fprintf(stderr,"[samosa] primary resume: %s\n",error);
+            return !error;
+        }
     }
 #endif
     return backend_start(context);
@@ -22146,7 +22272,7 @@ static void *selection_watchdog(void *arg_) {
     long long deadline = monotonic_millis() + selection_ready_timeout_ms();
 #ifdef SAMOSA_PRIMARY_HOST
     /* Verified startup includes file hashing and a bounded generation probe. */
-    if (g->primary_pins) deadline = monotonic_millis() + 600000;
+    if (primary_selected(g,job.requested_backend)) deadline = monotonic_millis() + 600000;
 #endif
     int crashed = 0, ready = 0, shutting_down = 0;
     while (monotonic_millis() < deadline) {
@@ -25986,7 +26112,6 @@ static int load_config(Gateway *g) {
     pthread_mutex_init(&g->mu, NULL);
 #ifdef SAMOSA_PRIMARY_HOST
     g->primary_pins = getenv("SAMOSA_PRIMARY_PINS");
-    if (g->primary_pins && pthread_mutex_init(&g->primary_mu,NULL)) return 0;
 #endif
     pthread_mutex_init(&g->job_pid_mu, NULL);
     if (!samosa_summary_process_init(&g->summary_process)) return 0;
@@ -26052,6 +26177,10 @@ static int load_config(Gateway *g) {
     ENV_PATH(molmo2_engine, "SAMOSA_MOLMO2_ENGINE", "current/bin/samosa-molmo2");
     ENV_PATH(molmo2_model, "SAMOSA_MOLMO2_MODEL", "models/molmo2-4b-mlx-q4-v1");
     ENV_PATH(tokenizer, "SAMOSA_TOKENIZER", "models/qwen/tokenizer_qwen36.json");
+#ifdef SAMOSA_PRIMARY_HOST
+    primary_find_release(g);
+    if (primary_enabled(g) && pthread_mutex_init(&g->primary_mu,NULL)) return 0;
+#endif
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(summarizer_engine, "SAMOSA_SUMMARIZER_ENGINE", "current/bin/samosa-summarizer");
     ENV_PATH(summarizer_model, "SAMOSA_SUMMARIZER_MODEL", "current/models/native-summarizer/samosa-text-summarization-Q8_0.gguf");
