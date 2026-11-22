@@ -317,7 +317,16 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07q checkpoint, 2026-11-22: the original primary owner now exposes typed
+LIFE-07r, 2026-11-22. The Inference primary C adapter now uses the original
+backend owner, JSON transport, loader inspector and Activation transaction to
+qualify a pinned engine and model before reporting readiness. The retained
+native Qwen model passed on this Mac. Maple and llama passed protocol fixtures.
+Next connect the adapter to Gateway selection, rollback and visual pause/resume.
+Reuse verified inputs on an intentional resume. Actual Maple and llama,
+long-window Whisper, default visual controls and crash recovery remain open.
+[Native evidence and remaining scope](../components/samosa-inference/docs/qualification/life07r-primary-readiness/README.md).
+
+Previous LIFE-07q checkpoint, 2026-11-22: the original primary owner now exposes typed
 start/physical-status/stop and can use Activation's one canonical process record.
 A real native reproduction found lost-guardian cleanup releasing the marker fence
 while a resistant descendant remained alive. The owner now retains its host lease
