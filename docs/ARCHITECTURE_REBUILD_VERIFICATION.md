@@ -438,26 +438,30 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07p checkpoint, 2026-11-22: Gateway's original primary JSON request
-transport now belongs to Inference backend_json.c/public API; Gateway passes
-borrowed gate/mutex/cancellation and trace/probe adapters. The complete original
-transport/helpers and Gateway outside that wrapper compare byte-for-byte.
-Native/standalone normal/SAN195 checks, all15 original budget scenarios, original
-web/selection suites and exact package/native install/upgrade/boot pass. Three
-web-test JSON validators now use Node, preserving all original assertions.
-Retained Qwen normal/SAN clients return the original15 prompt/4 generated tokens
-and exact text/usage with zero swap growth. Evidence:
-[commands, hashes, scope and limits](../components/samosa-inference/docs/qualification/life07p-backend-json/README.md).
-This is a reusable original transport for upcoming primary qualification, not
-common activation/readiness closure. Next reuse backend_process, this transport
-and Activation for original Qwen/Maple/llama controls, identity, actual generation
-and last-good handling. Long-window Whisper/default visual controls, unknown-group
-and pre-admission recovery, area3, later Inference areas, Python removal,
-Agent/App, assembly and qualified retirement remain required. Sources stays
-closed; Inkling stays deferred until the entire refactor finishes.
+LIFE-07q checkpoint, 2026-11-22: the original primary owner now exposes typed
+start/physical-status/stop and can use Activation's one canonical process record.
+A real native reproduction found lost-guardian cleanup releasing the marker fence
+while a resistant descendant remained alive. The owner now retains its host lease
+and record on pending/unknown cleanup, withdraws readiness and refuses replacement.
+Native/independent normal/SAN163 checks exercise the Activation transaction,
+failed-qualification last-good preservation, same process identity and pending/
+unknown ownership. All original primary676 checks pass in normal/SAN; Gateway
+stop/SIGKILL, original budget/selection, exact package/native install/upgrade/boot
+and retained Qwen compatibility pass. Evidence and limits:
+[boundary, commands and provenance](../components/samosa-inference/docs/qualification/life07q-primary-lifecycle/README.md).
+This does not establish full primary capability readiness or general recovery
+after terminating an unknown owner. Next connect these proven owners with the
+existing JSON transport and Activation verification for original model bundles,
+native dependencies and actual successful generation; preserve caller selection/
+settings/rollback. Long-window/default visual controls, generic unknown-group/
+pre-admission recovery, area3, later Inference areas, Python removal, Agent/App,
+pinned assembly and qualified retirement remain required. Sources stays closed;
+Inkling stays deferred until the entire refactor finishes.
 
-Previous LIFE-07o qualified the separate structured on-demand Whisper lifecycle;
-see [its evidence](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
+LIFE-07p extracted the original primary JSON transport; see
+[its evidence](../components/samosa-inference/docs/qualification/life07p-backend-json/README.md).
+LIFE-07o qualified the separate structured on-demand Whisper lifecycle; see
+[its evidence](../components/samosa-inference/docs/qualification/life07o-whisper-lifecycle/README.md).
 It does not replace the original long-window txt/SRT contract.
 
 Historical LIFE-07n checkpoint, 2026-11-21: the original shared text/visual generation gate,
