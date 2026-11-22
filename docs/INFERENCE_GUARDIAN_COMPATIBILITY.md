@@ -1,11 +1,37 @@
 # Remaining legacy-to-guardian integration
 
-2026-11-21, after LIFE-07l primary/Whisper guardian integration. This is the next implementation boundary, not a new
+2026-11-21, after LIFE-07m primary/Whisper/visual guardian integration. Remaining
+common lifecycle work follows this preserved-contract mapping; it is not a new
 runtime design. Reuse the working EngineProcess/Activation and host adapters.
 Preserve the original Qwen/Maple/llama, Whisper and visual implementations.
 Native Mac first; no Python or Docker/VM work.
 
-LIFE-07l reuses EngineProcess for the original long-window txt/SRT Whisper CLI,
+LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+reuses the existing EngineProcess guardian. Original model/protocol implementations,
+VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
+600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
+Actual PID/group remains reserved until cleanup acknowledgement; resistant helpers,
+parent death and pending shutdown are qualified. Explicit handoff owns only prepared
+PDF pages; durable image/video/PDF/model files stay borrowed. Existing lower-side
+retry gives the page back before unload and retakes it after restart. One reproduced
+Mac write-pipe HUP timeout is fixed without changing production deadlines.
+Final native/SAN276 and independent source276 pass, original supervisor/launch/
+protocol assertions remain, and existing guardian525/primary676/Whisper522 pass.
+Both actual compiled Gateway PDF SIGKILL checks clean processes and prepared pages,
+while preserving durable inputs and an unrelated peer. Original VisionPsy/Molmo
+workflows and exact package/native install/upgrade pass. Actual-model parity and
+compatibility results are in Inference qualification/life07m-visual-guardian/README.md.
+Original VisionPsy2048 heading quality fails this fixture and stays explicitly
+unqualified;1536 heading recognition passes. Do not change model algorithms for
+an ownership extraction. No Python, model fetch/conversion, Docker/VM or Linux work.
+Next complete common controls/activation/observed identity/capability readiness,
+stale rejection/last-good and guardian-death policy, then move the existing shared
+turn gate/pause/resume/retry coordination into its owner. Pre-admission crash
+recovery stays open. Area3/full refactor remain incomplete. Later Inference areas,
+Python removal, Agent/App, pinned assembly and qualified retirement remain;
+Sources stays closed absent a demonstrated defect. Inkling stays after refactor.
+
+Historical LIFE-07l reuses EngineProcess for the original long-window txt/SRT Whisper CLI,
 keeping English/-nt,16-MiB output/UTF-8/error semantics and on-demand execution.
 It reserves actual PID/workspace through result validation/tracking withdrawal;
 parent death/cancel finish helpers and workspace. Explicit handoff includes only
@@ -61,10 +87,9 @@ all descendants gone and unrelated processes alive. Audit default paths as well
 as modern component profiles. Retain useful original assertions, port required
 Python drivers before invoking them and record exact native results.
 
-The existing specialist cleanup also deserves the stubborn-descendant case:
-its early waitpid-return shape was observed in source, but LIFE-07j's dynamic
-defect proof and fix cover the primary owner only. Qualify that supported path
-with evidence rather than treating another owner's passing test as coverage.
+LIFE-07m reproduces the specialist stubborn-descendant leak in both original
+profiles and qualifies cleanup through the existing guardian. Its evidence is
+profile-scoped; do not treat it as full common lifecycle/guardian-death coverage.
 
 Shared turn/admission/pause/resume/retry coordination remains its next ownership
 step. Global reservations/fairness are still full area4 work. Remaining Inference

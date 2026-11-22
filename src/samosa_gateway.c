@@ -10938,19 +10938,24 @@ static int vision_lower_side(int side) {
 }
 
 static int vision_turn_inspect(Gateway *g, VisionTurnContext *turn,
-                               const char *image_path, const char *prompt,
+                               const char *image_path, int prepared_owned, const char *prompt,
                                int max_tokens, char *out_obs, size_t out_cap,
                                int *out_prompt_tokens, int *out_gen_tokens,
                                char *out_code, size_t code_cap) {
     if (!vision_turn_start(g, turn, out_code, code_cap)) return 0;
+    char owned_image[PATH_MAX];const char *runtime_image=image_path;
+    if(prepared_owned){
+        if(!samosa_mm_session_take_temporary_image(&turn->session,image_path,owned_image,sizeof(owned_image))){path_copy(out_code,code_cap,"vision_temp_image_handoff_failed");return 0;}
+        runtime_image=owned_image;
+    }
     if (turn->provider == 2)
-        return molmo2_session_analyze(g, &turn->session, image_path, "image", prompt,
+        return molmo2_session_analyze(g, &turn->session, runtime_image, "image", prompt,
                                       max_tokens, 0.0, 0.0, 1, out_obs, out_cap,
                                       out_prompt_tokens, out_gen_tokens,
                                       NULL, NULL,
                                       out_code, code_cap);
     int side = turn->budget.max_side_len;
-    if (visionpsy_session_inspect(g, &turn->session, image_path, prompt, side,
+    if (visionpsy_session_inspect(g, &turn->session, runtime_image, prompt, side,
                                   max_tokens, out_obs, out_cap,
                                   out_prompt_tokens, out_gen_tokens,
                                   out_code, code_cap)) return 1;
@@ -10962,11 +10967,18 @@ static int vision_turn_inspect(Gateway *g, VisionTurnContext *turn,
     /* Release the turn-wide generation gate along with the failed helper
        session. Otherwise the bounded retry below cannot reacquire the
        specialist lease and is rejected as "busy" by vision_turn_start(). */
+    if(prepared_owned&&!samosa_mm_session_return_temporary_image(&turn->session,image_path)){
+        vision_turn_release_runtime(g,turn);path_copy(out_code,code_cap,"vision_temp_image_return_failed");return 0;
+    }
     vision_turn_release_runtime(g, turn);
     if (!lower) return 0;
     turn->budget.max_side_len = lower;
     if (!vision_turn_start(g, turn, out_code, code_cap)) return 0;
-    return visionpsy_session_inspect(g, &turn->session, image_path, prompt, lower,
+    if(prepared_owned){
+        if(!samosa_mm_session_take_temporary_image(&turn->session,image_path,owned_image,sizeof(owned_image))){path_copy(out_code,code_cap,"vision_temp_image_handoff_failed");return 0;}
+        runtime_image=owned_image;
+    }
+    return visionpsy_session_inspect(g, &turn->session, runtime_image, prompt, lower,
                                      max_tokens, out_obs, out_cap,
                                      out_prompt_tokens, out_gen_tokens,
                                      out_code, code_cap);
@@ -13659,7 +13671,7 @@ static int attachment_augment(Gateway *g, const char *id,
         text_add(&visual_prompt, question ? question : "Describe the image.");
         int vision_max_tokens = vision_turn->plan.detail_needed ? 512 : 320;
         int inspected = visual_prompt.data &&
-                        vision_turn_inspect(g, vision_turn, blob_path,
+                        vision_turn_inspect(g, vision_turn, blob_path, 0,
                             visual_prompt.data, vision_max_tokens, obs, sizeof(obs),
                             &prompt_tokens, &generated_tokens, err_code, sizeof(err_code));
         free(visual_prompt.data);
@@ -13891,7 +13903,7 @@ static int attachment_augment(Gateway *g, const char *id,
                 snprintf(page_intro, sizeof(page_intro), "Inspect PDF page %d for this task: ", pages[i]);
                 text_add(&page_prompt, page_intro); text_add(&page_prompt, question ? question : "");
                 char obs[65536] = {0}; int prompt_tokens = 0, generated_tokens = 0;
-                int inspected = vision_turn_inspect(g, vision_turn, tmp_path,
+                int inspected = vision_turn_inspect(g, vision_turn, tmp_path, 1,
                     page_prompt.data, 192, obs, sizeof(obs), &prompt_tokens,
                     &generated_tokens, visual_code, sizeof(visual_code));
                 free(page_prompt.data); unlink(tmp_path);

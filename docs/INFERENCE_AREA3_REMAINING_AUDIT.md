@@ -1,6 +1,31 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07l progress, 2026-11-21: legacy Whisper now reuses EngineProcess with
+LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+reuses the existing EngineProcess guardian. Original model/protocol implementations,
+VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
+600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
+Actual PID/group remains reserved until cleanup acknowledgement; resistant helpers,
+parent death and pending shutdown are qualified. Explicit handoff owns only prepared
+PDF pages; durable image/video/PDF/model files stay borrowed. Existing lower-side
+retry gives the page back before unload and retakes it after restart. One reproduced
+Mac write-pipe HUP timeout is fixed without changing production deadlines.
+Final native/SAN276 and independent source276 pass, original supervisor/launch/
+protocol assertions remain, and existing guardian525/primary676/Whisper522 pass.
+Both actual compiled Gateway PDF SIGKILL checks clean processes and prepared pages,
+while preserving durable inputs and an unrelated peer. Original VisionPsy/Molmo
+workflows and exact package/native install/upgrade pass. Actual-model parity and
+compatibility results are in Inference qualification/life07m-visual-guardian/README.md.
+Original VisionPsy2048 heading quality fails this fixture and stays explicitly
+unqualified;1536 heading recognition passes. Do not change model algorithms for
+an ownership extraction. No Python, model fetch/conversion, Docker/VM or Linux work.
+Next complete common controls/activation/observed identity/capability readiness,
+stale rejection/last-good and guardian-death policy, then move the existing shared
+turn gate/pause/resume/retry coordination into its owner. Pre-admission crash
+recovery stays open. Area3/full refactor remain incomplete. Later Inference areas,
+Python removal, Agent/App, pinned assembly and qualified retirement remain;
+Sources stays closed absent a demonstrated defect. Inkling stays after refactor.
+
+Historical LIFE-07l progress, 2026-11-21: legacy Whisper now reuses EngineProcess with
 actual PID/workspace reservation, parent-death/group cleanup and explicit
 handoff for caller-prepared audio. Original long txt/SRT/16-MiB/UTF-8/return/CLI
 semantics remain; borrowed durable inputs stay borrowed. Final native/SAN and
@@ -65,9 +90,9 @@ User direction remains extraction/reuse, no Python and native Mac first.
 
 | Area3 requirement | Current implementation evidence | What is still unproven/incomplete |
 | --- | --- | --- |
-| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c now reuses EngineProcess in LIFE-07k, preserving its original primary-server contracts and parent-death cleanup. Common Activation/readiness is still open. LIFE-07l also guards the legacy Whisper CLI and explicitly handed-off prepared audio, preserving long-window/txt/SRT/16-MiB behavior. Default visual profiles still need guardian integration; retain their wider/native-video contracts. |
+| Extend guardian/activation ownership to the supported provider set | managed_host/managed_provider, summary_host, speech_host, decision_host and visual_host reuse Activation/EngineProcess and existing engine loops. Verified whisper.c owns a per-request guardian. | Default backend_process.c now reuses EngineProcess in LIFE-07k, preserving its original primary-server contracts and parent-death cleanup. Common Activation/readiness is still open. LIFE-07l also guards the legacy Whisper CLI and explicitly handed-off prepared audio, preserving long-window/txt/SRT/16-MiB behavior. LIFE-07m now guards both default visual profiles and prepared PDF pages without narrowing wide/native-video contracts. Common controls/identity/readiness remain open. |
 | Start/verify/load/unload/stop through public controls, with observed identity, health and successful qualification | Registry has managed text/embedding, summary, speech, text/image decision and visual lifecycle profiles. Their start hooks run actual bounded capability probes before qualified state; owned status rechecks retained identity. | Whisper entries in registry_host.c configure only WhisperConfig, without the common lifecycle profile. Nonresident CLI behavior must be represented honestly; do not invent a persistent Whisper server. Default App paths still use legacy health/handshake checks and trusted process state outside the common lifecycle qualification controls. Configuration or saved activation alone cannot prove current readiness. |
-| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary descendant cleanup with WNOWAIT; LIFE-07k adds actual primary owner-death/group/marker cleanup, PID reservation, pending-stop ownership and unrelated-process survival. | These are profile-scoped results, not proof for every default/legacy launch path. LIFE-07l qualifies legacy Whisper owner-death/group/workspace/prepared-audio cleanup; default visual and common guardian-death/pre-admission recovery remain open. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
+| Crash recovery, failed replacement, engine/owner death, stale readiness, mutation and unrelated-process survival | Existing owner/activation tests cover these within their qualified profiles. LIFE-07c covers resident visual control/parent death; LIFE-07d fixes the reproduced invalidated-session close leak; LIFE-07e preserves legacy Whisper control while retaining verified short-clip regressions; LIFE-07j fixes reproduced primary descendant cleanup with WNOWAIT; LIFE-07k adds actual primary owner-death/group/marker cleanup, PID reservation, pending-stop ownership and unrelated-process survival. | These are profile-scoped results, not proof for every default/legacy launch path. LIFE-07l qualifies legacy Whisper owner-death/group/workspace/prepared-audio cleanup; LIFE-07m also qualifies default visual owner-death/group/workspace/prepared-page cleanup. Common guardian-death/pre-admission recovery remain open. Replacing its long-window/text/SRT contract with the30-second structured API would lose behavior. Full supported-path native qualification remains required. |
 | Retain last-good configuration and refuse ambiguous interrupted generation | Activation owns revision/last-good semantics for the managed/resident profiles; existing transports invalidate interrupted framing and retain cleanup ownership. | Original App-selected backend/configuration and legacy on-demand execution have not fully moved behind the common owner. Their persistent selection/caching/error semantics must be preserved when consolidating, not silently replaced by a new global configuration model. |
 
 The new Mac visual policy API owns the original probes, thresholds, reserve and
@@ -106,7 +131,8 @@ fair scheduling remain the full separate area4 acceptance responsibility.
    extracted in LIFE-07i with declared native dependencies and preserved inputs.
    Source/build and legacy launch ownership are now extracted; common guarded
    controls/identity and successful-generation readiness are still required.
-3. **Consolidate the extracted legacy Whisper execution with guarded ownership.**
+3. **Complete common controls for the guarded legacy Whisper/visual paths.**
+   LIFE-07l/m finish guardian ownership under the original contracts.
    Reuse whisper.c and EngineProcess rather than making a second worker/server.
    Preserve text/SRT, selected model fingerprint, long windows, output limits,
    exact-child cancellation and existing durable audio assertions. Adapt the

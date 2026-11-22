@@ -438,7 +438,32 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07l checkpoint, 2026-11-21: legacy Whisper CLI now reuses existing
+LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+reuses the existing EngineProcess guardian. Original model/protocol implementations,
+VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
+600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
+Actual PID/group remains reserved until cleanup acknowledgement; resistant helpers,
+parent death and pending shutdown are qualified. Explicit handoff owns only prepared
+PDF pages; durable image/video/PDF/model files stay borrowed. Existing lower-side
+retry gives the page back before unload and retakes it after restart. One reproduced
+Mac write-pipe HUP timeout is fixed without changing production deadlines.
+Final native/SAN276 and independent source276 pass, original supervisor/launch/
+protocol assertions remain, and existing guardian525/primary676/Whisper522 pass.
+Both actual compiled Gateway PDF SIGKILL checks clean processes and prepared pages,
+while preserving durable inputs and an unrelated peer. Original VisionPsy/Molmo
+workflows and exact package/native install/upgrade pass. Actual-model parity and
+compatibility results are in Inference qualification/life07m-visual-guardian/README.md.
+Original VisionPsy2048 heading quality fails this fixture and stays explicitly
+unqualified;1536 heading recognition passes. Do not change model algorithms for
+an ownership extraction. No Python, model fetch/conversion, Docker/VM or Linux work.
+Next complete common controls/activation/observed identity/capability readiness,
+stale rejection/last-good and guardian-death policy, then move the existing shared
+turn gate/pause/resume/retry coordination into its owner. Pre-admission crash
+recovery stays open. Area3/full refactor remain incomplete. Later Inference areas,
+Python removal, Agent/App, pinned assembly and qualified retirement remain;
+Sources stays closed absent a demonstrated defect. Inkling stays after refactor.
+
+Historical LIFE-07l checkpoint, 2026-11-21: legacy Whisper CLI now reuses existing
 EngineProcess group/lifeline/retained-workspace ownership. Original English/-nt,
 txt/SRT, long-window inputs,16-MiB UTF-8/result validation and return codes stay.
 The command profile reserves actual PID/workspace until output validation and
@@ -469,7 +494,7 @@ are incomplete. Later Inference areas, Python removal, Agent/App, pinned assembl
 and qualified retirement remain. Sources stays closed; defer Inkling until after
 the full refactor. Native Mac only; no Python/model fetch/Docker/VM/Linux work.
 
-Current qualified Inference revision/pin:f06d5c1, committed and backed up on
+Current qualified Inference revision/pin:be6df7c, committed and backed up on
 origin/refactor/extract-working-modules. Earlier pins below are historical.
 
 Previous LIFE-07k checkpoint, 2026-11-21: primary backend_process now reuses existing

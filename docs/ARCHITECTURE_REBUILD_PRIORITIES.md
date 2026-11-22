@@ -297,13 +297,10 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07k primary and LIFE-07l legacy Whisper guardian integration are
-   qualified. Next reuse the existing guardian for default visual helpers under
-   the [preserved-contract mapping](INFERENCE_GUARDIAN_COMPATIBILITY.md).
-   Preserve VisionPsy sides through2048/64-KiB/120-second and Molmo image/joint/
-   native-video1-MiB/600-second profiles, trace/retry and grace. Prove/fix its
-   stubborn-helper cleanup on that actual supported path. Narrow prepared-pixel/
-   frame profiles are not substitutes; do not build another guardian/server/model.
+1. LIFE-07k primary, LIFE-07l legacy Whisper and LIFE-07m default visual guardian
+   integration are qualified for their recorded profiles. Preserve the
+   [original contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md); reuse existing
+   owners and tests. Do not rebuild the models, guardian or server.
 2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
    through common activation/readiness/observed identity/stale rejection,
    last-good/guardian-death qualification and shared turn/pause/resume/retry
@@ -315,7 +312,32 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07l checkpoint, 2026-11-21: legacy Whisper CLI now reuses existing
+LIFE-07m checkpoint, 2026-11-21: default VisionPsy/Molmo launch ownership now
+reuses the existing EngineProcess guardian. Original model/protocol implementations,
+VisionPsy512–2048/64-KiB/120-second and Molmo image/joint/native-video1-MiB/
+600-second profiles, inherited diagnostics and grace/retry behavior are preserved.
+Actual PID/group remains reserved until cleanup acknowledgement; resistant helpers,
+parent death and pending shutdown are qualified. Explicit handoff owns only prepared
+PDF pages; durable image/video/PDF/model files stay borrowed. Existing lower-side
+retry gives the page back before unload and retakes it after restart. One reproduced
+Mac write-pipe HUP timeout is fixed without changing production deadlines.
+Final native/SAN276 and independent source276 pass, original supervisor/launch/
+protocol assertions remain, and existing guardian525/primary676/Whisper522 pass.
+Both actual compiled Gateway PDF SIGKILL checks clean processes and prepared pages,
+while preserving durable inputs and an unrelated peer. Original VisionPsy/Molmo
+workflows and exact package/native install/upgrade pass. Actual-model parity and
+compatibility results are in Inference qualification/life07m-visual-guardian/README.md.
+Original VisionPsy2048 heading quality fails this fixture and stays explicitly
+unqualified;1536 heading recognition passes. Do not change model algorithms for
+an ownership extraction. No Python, model fetch/conversion, Docker/VM or Linux work.
+Next complete common controls/activation/observed identity/capability readiness,
+stale rejection/last-good and guardian-death policy, then move the existing shared
+turn gate/pause/resume/retry coordination into its owner. Pre-admission crash
+recovery stays open. Area3/full refactor remain incomplete. Later Inference areas,
+Python removal, Agent/App, pinned assembly and qualified retirement remain;
+Sources stays closed absent a demonstrated defect. Inkling stays after refactor.
+
+Historical LIFE-07l checkpoint, 2026-11-21: legacy Whisper CLI now reuses existing
 EngineProcess group/lifeline/retained-workspace ownership. Original English/-nt,
 txt/SRT, long-window inputs,16-MiB UTF-8/result validation and return codes stay.
 The command profile reserves actual PID/workspace until output validation and
