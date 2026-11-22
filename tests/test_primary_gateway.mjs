@@ -15,7 +15,9 @@ const test=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'primary-gateway
 const installedRelease=process.argv[2]==='--installed-release';
 const installedFixture=process.argv[2]==='--installed';
 const installed=installedRelease||installedFixture;
-const actual=process.argv[2]==='--actual'||installedRelease;
+const actualOrnith=process.argv[2]==='--actual-ornith';
+const actual=process.argv[2]==='--actual'||installedRelease||actualOrnith;
+const selectedBackend=actualOrnith?'ornith':'qwen';
 const realModel=process.env.SAMOSA_TEST_REAL_QWEN_MODEL??'/private/tmp/samosa-life07h-real.2wwUok/model';
 const visualModel=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_MODEL;
 const visualEngine=installedRelease&&process.env.SAMOSA_TEST_REAL_MOLMO2_ENGINE;
@@ -27,6 +29,8 @@ const names=['manifest.json','config.json','experts.bin','resident.safetensors',
 const tokenizer=path.join(model,names[4]);
 const goodGguf=path.join(test,'bonsai.gguf');
 const badGguf=path.join(test,'ornith.gguf');
+const ornithEngine=actualOrnith?fs.realpathSync(process.env.SAMOSA_TEST_REAL_ORNITH_ENGINE):fixture;
+const ornithModel=actualOrnith?fs.realpathSync(process.env.SAMOSA_TEST_REAL_ORNITH_MODEL):badGguf;
 const port=await freePort();
 const backendPort=await freePort();
 const log=path.join(test,'gateway.log');
@@ -81,9 +85,13 @@ async function select(backend,state) {
 function startGateway() {
   const env={...process.env,SAMOSA_HOME:test,SAMOSA_BIND:'127.0.0.1',
     SAMOSA_PORT:String(port),SAMOSA_BACKEND_PORT:String(backendPort),
-    SAMOSA_BONSAI_SERVER:fixture,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:badGguf,
+    SAMOSA_BONSAI_SERVER:ornithEngine,SAMOSA_BONSAI_MODEL:goodGguf,SAMOSA_ORNITH_MODEL:ornithModel,
     SAMOSA_BONSAI_MMPROJ:path.join(test,'missing-mmproj'),SAMOSA_CONTEXT_TOKENS:'512',OMP_NUM_THREADS:'2'};
   if(!actual) env.SAMOSA_PRIMARY_GATEWAY_FIXTURE='1';
+  if(actualOrnith) {
+    env.SAMOSA_LLAMA_CTX='1024';
+    env.SAMOSA_LLAMA_THREADS='2';
+  }
   if(visualModel||visualEngine) {
     assert.ok(visualModel&&visualEngine,'Set both native Molmo2 test paths');
     env.SAMOSA_MOLMO2_MODEL=visualModel;
@@ -180,6 +188,11 @@ try {
     }
     fs.writeFileSync(catalogPath,JSON.stringify(catalog),{mode:0o600});
     fs.writeFileSync(receipt,record(catalogPath,'models.json')+record(engine,'bin/qwen36b'),{mode:0o600});
+  } else if(actualOrnith){
+    const catalog=JSON.parse(fs.readFileSync('assets/models.json','utf8'));
+    const [artifact]=catalog.models.find(model=>model.id==='ornith').artifacts;
+    const modelPin=[artifact.sha256,artifact.bytes,ornithModel].join('\t')+'\n';
+    fs.writeFileSync(pinsFile,record(ornithEngine)+modelPin,{mode:0o600});
   } else if(!installedRelease){
     const assets=[engine,...names.map(name=>path.join(model,name))];
     if(actual) assets.push('/opt/homebrew/opt/libomp/lib/libomp.dylib');
@@ -188,15 +201,21 @@ try {
     fs.writeFileSync(pinsFile,assets.map(asset=>[recorded.get(asset)??quote(asset),fs.statSync(asset).size,asset].join('\t')).join('\n')+'\n',{mode:0o600});
   }
   if(installed) fs.symlinkSync(release,path.join(test,'current'),'dir');
-  fs.writeFileSync(path.join(test,'model-backend'),'qwen\n');
+  fs.writeFileSync(path.join(test,'model-backend'),selectedBackend+'\n');
   startGateway();
   await controlPlane();
-  await ready('qwen');
+  await ready(selectedBackend);
   const first=Number(fs.readFileSync(marker,'utf8'));
   assert(first>1);
   assert.ok(fs.existsSync(path.join(test,'run','primary-activation','activation.sqlite3')));
   if(visualModel) await qualifyVisualReclaim(first);
-  if(installedRelease){
+  if(actualOrnith){
+    const result=await request('/v1/chat/completions','POST',{model:'ornith-1.0-9b',
+      messages:[{role:'user',content:'Say hello.'}],max_tokens:4,thinking:'off',
+      chat_template_kwargs:{enable_thinking:false},temperature:0,stream:false},120000);
+    assert.equal(result.code,200,JSON.stringify(result.body));
+    assert.ok(result.body.choices[0].message.content.trim());
+  } else if(installedRelease){
     const result=await request('/v1/chat/completions','POST',{messages:[{role:'user',content:'Say hello.'}],
       max_tokens:4,thinking:false,stream:false},120000);
     assert.equal(result.code,200,JSON.stringify(result.body));
@@ -241,7 +260,8 @@ try {
       await stop();
     }
   }
-  console.log(installedRelease?'PASS installed launcher qualified real Qwen and reaped its worker':installedFixture?
+  console.log(actualOrnith?'PASS real Ornith qualification, public answer and cleanup':
+    installedRelease?'PASS installed launcher qualified real Qwen and reaped its worker':installedFixture?
     'PASS installed Qwen pins, legacy selection, Qwen reselection and refusal of changed or missing release metadata':actual?
     'PASS Gateway completed real Qwen qualification and reaped its primary worker':
     'PASS Gateway qualification, Bonsai selection, failed generation rollback, stale input refusal and cleanup');

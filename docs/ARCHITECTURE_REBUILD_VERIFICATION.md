@@ -438,7 +438,14 @@ no Python anywhere in project runtime/tooling/tests/CI; native Mac is the requir
 target and Docker/Linux work is deferred. Ordered work and the deferred post-refactor
 Inkling-2-Mini catalogue request are in ARCHITECTURE_REBUILD_PRIORITIES.md.
 
-LIFE-07u, 2026-11-22. The installed launcher passed the real Qwen and Molmo2
+LIFE-07v, 2026-11-22. The Inference primary readiness probe uses llama-server's
+existing non-thinking template setting. It qualifies real Ornith with explicit
+pins and still rejects reasoning-only output in the fixture. The native public
+answer and worker cleanup pass. The module passes 174 normal and sanitizer
+assertions in-tree and from an independent source copy.
+[Native Ornith evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07v-native-ornith-readiness).
+
+Previous LIFE-07u, 2026-11-22. The installed launcher passed the real Qwen and Molmo2
 standard image handoff and primary/specialist cleanup on this Mac. Existing
 catalog validation, artifact and detection assertions pass with Node.
 [Mac visual handoff evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07u-native-image-reclaim).

@@ -1,6 +1,13 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07u, 2026-11-22. Real Molmo2 produced standard image evidence through
+LIFE-07v, 2026-11-22. The common primary owner qualifies actual Ornith and
+reaps its worker using explicit model and static native engine pins. The
+four-token probe now reuses llama-server's existing non-thinking template
+setting. Trusted release provisioning, actual Bonsai and Maple, and the
+Bonsai projector remain open.
+[Native Ornith evidence](EXTRACTION_NATIVE_PACKAGING.md#life-07v-native-ornith-readiness).
+
+Previous LIFE-07u, 2026-11-22. Real Molmo2 produced standard image evidence through
 the installed Gateway while Qwen was paused. The original Molmo2 and Qwen
 workers were reaped, and a fresh Qwen answered the image request. Native wider
 image/video, VisionPsy fallback, public visual controls and recovery remain

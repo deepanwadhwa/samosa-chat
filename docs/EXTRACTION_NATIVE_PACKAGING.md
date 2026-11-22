@@ -142,6 +142,34 @@ remain open.
 | Molmo2 `manifest.json` | `a07230dd952e97969921223328e7812020bb58711728450cdfb2205e3a15b770` |
 | `assets/samosa-chat.png` | `5afc7cbbf619e614110507fb06b4d38f62b3ab70103c861d6145653c498da6b1` |
 
+## LIFE-07v native Ornith readiness
+
+The real Ornith backend originally used all four readiness tokens on
+`reasoning_content`, leaving the final `content` empty. The same native engine
+and model answered the existing Gateway request when it supplied
+`chat_template_kwargs.enable_thinking=false`. The Inference probe now reuses
+that control for llama-server, and the failure fixture checks that a
+reasoning-only response still triggers rollback. The engine and model pins
+and exact loader profile are recorded in the component evidence.
+[Static engine qualification](../components/samosa-inference/docs/static-engine-package.md#life-07v-gateway-primary-qualification-on-macos).
+
+```sh
+./tools/without_python.sh make -C components/samosa-inference test-primary-host sanitize-primary-host
+./tools/without_python.sh make samosa-gateway
+ornith_root=/private/tmp/samosa-life07v-ornith.Db9hec
+SAMOSA_TEST_REAL_ORNITH_ENGINE="$ornith_root/build/bin/llama-server" \
+SAMOSA_TEST_REAL_ORNITH_MODEL="$ornith_root/model/Ornith-1.0-9B-Q4_K_M.gguf" \
+MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
+  ./tools/without_python.sh bash tools/run_memory_guarded.sh \
+  node tests/test_primary_gateway.mjs --actual-ornith
+```
+
+The real worker qualified, answered a public chat request and was reaped with
+its PID marker. The process tree peaked at 5,721 MB RSS with zero swap growth.
+Both Gateway fixture modes passed. This run covers explicit pins for the
+native Ornith profile. Automatic release metadata, actual Maple and Bonsai,
+and the optional Bonsai projector still need native qualification.
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).
