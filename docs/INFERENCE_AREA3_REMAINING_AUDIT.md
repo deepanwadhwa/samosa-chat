@@ -1,6 +1,15 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08b, 2026-11-22. Gateway carries the selected engine and model identity
+LIFE-08c, 2026-11-22. The standalone long-window Whisper owner uses the common
+Activation transaction, verifies speech through the existing CLI, and
+cancels and collects active work before stop succeeds. Real Base and Tiny
+English pass with original text and SRT beyond 30 seconds. Gateway's runtime
+provisioning, selection and default request routing are open, followed by
+visual controls and shared recovery. A lost guardian after a completion
+notice now reports unknown cleanup.
+[Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
+
+Previous LIFE-08b, 2026-11-22. Gateway carries the selected engine and model identity
 through the existing Inference Whisper runner. Replacement and cancellation
 observed during the request withhold the transcript. The native voice endpoint
 and both text and SRT runner checks pass with real speech beyond 30 seconds.
@@ -258,10 +267,12 @@ scheduling remain the full separate area4 acceptance responsibility.
    exact-child cancellation and existing durable audio assertions. LIFE-08b
    carries live input identity from Gateway through the long-window run and
    verifies it before returning new transcripts. The existing durable cache key
-   stays compatible. Add nonresident start that runs a bounded speech
-   qualification using the existing executor, readiness tied to that successful
-   probe and the retained identity, and stop that cancels and collects active
-   work. Use the original long-window runner for customer audio.
+   stays compatible. LIFE-08c adds probe-backed nonresident start and
+   stop over the original long-window runner. The documented owner keeps
+   the lease in the guardian through physical cleanup. Next provision the
+   short probe and runtime identity on this Mac, wire Gateway preparation,
+   status and selection, and verify both catalog Whisper profiles through
+   the assembled voice and attachment routes.
 4. **Finish common lifecycle controls and qualify area3 in full.** LIFE-07n
    moves the existing turn gate/reclaim/pause/resume/retry into its owner, retaining
    traces and original policy. Reuse it for remaining controls. Keep actual generation probes,

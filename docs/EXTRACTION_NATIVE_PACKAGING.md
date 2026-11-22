@@ -327,6 +327,23 @@ pass under the Python-free guard, as do the exact package source hash checks
 and a native runtime-only clean install and upgrade.
 [Whisper process evidence](../components/samosa-inference/docs/qualification/life07l-whisper-guardian/README.md#life-08b-input-identity-through-transcript-publication).
 
+#### LIFE-08c shared Whisper lifecycle
+
+Inference's long-window owner now reuses the structured adapter's pinned
+speech qualification and Activation transaction. Both catalog English models
+pass on this Mac. The new owner verifies readiness using the 2.533-second
+probe, preserves the original text and SRT beyond 30 seconds, and cancels and
+collects active requests before releasing ownership. The guardian fixture
+reproduces and rejects a completion notice followed by guardian death before
+the cleanup acknowledgement.
+
+The runtime-only Mac package stages the exact shared owner sources and builds
+them into the Inference archive. Native clean install and upgrade, voice and
+attachment fixtures and standalone Inference checks passed. Gateway's public
+voice and attachment routes still use the checked runner. Cutover needs packaged probe and runtime pins,
+selection and readiness wiring, and native assembled checks on both models.
+[Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
+
 #### Earlier packaging qualification
 
 Exact commands, terminal logs, source hashes and the related visual ownership

@@ -148,12 +148,12 @@ INSTALL_FILES="$INSTALL_FILES engine/inference/src/specialist_protocol.c engine/
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/summary_process.c engine/inference/src/controlled_pipe.h engine/inference/src/json.h engine/inference/include/samosa_inference/summary_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/llama_launch.c engine/inference/include/samosa_inference/llama_launch.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_process.c engine/inference/src/backend_process_internal.h engine/inference/src/engine_process.c engine/inference/src/engine_process.h engine/inference/include/samosa_inference/backend_process.h"
-INSTALL_FILES="$INSTALL_FILES engine/inference/src/whisper_process.c engine/inference/src/input_identity.h engine/inference/include/samosa_inference/whisper_process.h"
+INSTALL_FILES="$INSTALL_FILES engine/inference/src/whisper_process.c engine/inference/src/whisper_process_internal.h engine/inference/src/input_identity.h engine/inference/include/samosa_inference/whisper_process.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/vision_budget.c engine/inference/include/samosa_inference/vision_budget.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/turn_control.c engine/inference/include/samosa_inference/turn_control.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_json.c engine/inference/include/samosa_inference/backend_json.h"
 if [ "$(uname -s)" = "Darwin" ]; then
-  INSTALL_FILES="$INSTALL_FILES engine/inference/src/primary_host.c engine/inference/src/activation.c engine/inference/src/activation.h engine/inference/src/artifact.c engine/inference/src/artifact.h engine/inference/src/engine_runtime.c engine/inference/src/engine_runtime.h engine/inference/src/library_runtime.c engine/inference/src/library_runtime.h engine/inference/src/sha256.h engine/inference/include/samosa_inference/primary_host.h"
+  INSTALL_FILES="$INSTALL_FILES engine/inference/src/primary_host.c engine/inference/src/whisper_activation.c engine/inference/src/whisper_activation.h engine/inference/src/whisper_audio.h engine/inference/src/whisper_lifecycle.c engine/inference/include/samosa_inference/whisper_lifecycle.h engine/inference/src/activation.c engine/inference/src/activation.h engine/inference/src/artifact.c engine/inference/src/artifact.h engine/inference/src/engine_runtime.c engine/inference/src/engine_runtime.h engine/inference/src/library_runtime.c engine/inference/src/library_runtime.h engine/inference/src/sha256.h engine/inference/include/samosa_inference/primary_host.h"
 fi
 # These pinned sources build the same generic service Samosa uses locally and
 # MCP-capable applications can launch directly.
@@ -571,7 +571,7 @@ PRIMARY_GATEWAY_LIBS=""
 if [ "$(uname -s)" = "Darwin" ]; then
   PRIMARY_GATEWAY_FLAGS="-DSAMOSA_PRIMARY_HOST"
   PRIMARY_GATEWAY_LIBS="-lsqlite3"
-  for source in primary_host activation artifact engine_runtime library_runtime; do
+  for source in primary_host whisper_activation whisper_lifecycle activation artifact engine_runtime library_runtime; do
     $COMPILER -O2 -Wall -Wextra -std=c11 -pthread -I"$STAGE/engine/inference/include" \
       -c "$STAGE/engine/inference/src/$source.c" -o "$STAGE/engine/inference/$source.o" ||
       fail "staged Inference primary compilation failed; live release was not changed"

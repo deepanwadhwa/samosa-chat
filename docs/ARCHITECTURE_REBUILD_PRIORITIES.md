@@ -321,7 +321,15 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-08b, 2026-11-22. The extracted Inference Whisper runner checks the engine
+LIFE-08c, 2026-11-22. Inference's long-window Whisper owner now reuses the
+structured adapter's verification and Activation transaction. Native Base and
+Tiny English qualify with a short speech probe, preserve long-window text and
+SRT, and release ownership after stopping an active request. The native
+installer builds the owner. Next route Gateway's preparation, selection,
+and voice and attachment requests through it with verified provisioning.
+[Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
+
+Previous LIFE-08b, 2026-11-22. The extracted Inference Whisper runner checks the engine
 and model through transcript publication for Gateway voice and attachment
 requests. The native tests verify refusal on mutation and a successful retry.
 Actual Whisper preserves speech after 30 seconds through Gateway and the text
