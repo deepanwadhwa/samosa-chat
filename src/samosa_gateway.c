@@ -255,7 +255,8 @@ typedef struct {
    voice handlers' implementation block, so keep these small cross-section
    queries forward-declared here. */
 static int voice_catalog_artifact_present(Gateway *g, const char *model_id);
-static int voice_selected_stt_path(Gateway *g, char *out, size_t cap, char *model_id, size_t model_cap);
+static int voice_selected_stt_path(Gateway *g, char *out, size_t cap,
+                                   char *model_id, size_t model_cap, long long *expected_bytes);
 static void voice_selected_tts_id(Gateway *g, char *out, size_t cap);
 
 enum {
@@ -20192,13 +20193,13 @@ static int voice_stt_model_path(Gateway *g, const char *model_id,
 }
 
 static int voice_selected_stt_path(Gateway *g, char *out, size_t cap,
-                                   char *model_id, size_t model_cap) {
+                                   char *model_id, size_t model_cap, long long *expected_bytes) {
     char selected[80] = {0};
     if (!read_small_file(g->voice_stt_selection_file, selected, sizeof(selected)) ||
         (strcmp(selected, VOICE_STT_MODEL_ID) && strcmp(selected, VOICE_STT_TINY_MODEL_ID)))
         path_copy(selected, sizeof(selected), VOICE_STT_MODEL_ID);
     if (model_id) path_copy(model_id, model_cap, selected);
-    return voice_stt_model_path(g, selected, out, cap, NULL);
+    return voice_stt_model_path(g, selected, out, cap, expected_bytes);
 }
 
 static int voice_stt_model_present(Gateway *g, const char *model_id) {
@@ -20208,27 +20209,34 @@ static int voice_stt_model_present(Gateway *g, const char *model_id) {
     return !stat(path, &st) && S_ISREG(st.st_mode) && (long long)st.st_size == expected;
 }
 
+static int voice_stt_inspect(Gateway *g, char *model_id, size_t model_cap,
+                             char *model_path, size_t path_cap,
+                             SamosaWhisperProcessIdentity *identity) {
+    long long expected = 0;
+    if (!voice_selected_stt_path(g, model_path, path_cap, model_id, model_cap, &expected))
+        return 0;
+    SamosaWhisperProcessConfig config = {g->whisper_cli, model_path, NULL};
+    return !access(config.engine, X_OK) &&
+           samosa_whisper_process_inspect(&config, (off_t)expected, identity);
+}
+
 static int voice_stt_ready(Gateway *g) {
-    char path[PATH_MAX], model_id[80];
-    return regular_file(g->whisper_cli, 1) &&
-           voice_selected_stt_path(g, path, sizeof(path), model_id, sizeof(model_id)) &&
-           voice_stt_model_present(g, model_id);
+    char path[PATH_MAX];
+    SamosaWhisperProcessIdentity identity;
+    return voice_stt_inspect(g, NULL, 0, path, sizeof(path), &identity);
 }
 
 static int voice_stt_fingerprint(Gateway *g, char *model_id, size_t model_cap,
                                  char *model_path, size_t path_cap,
-                                 char *fingerprint, size_t fingerprint_cap) {
-    if (!regular_file(g->whisper_cli, 1) ||
-        !voice_selected_stt_path(g, model_path, path_cap, model_id, model_cap) ||
-        !voice_stt_model_present(g, model_id)) return 0;
-    struct stat cli_stat, model_stat;
-    if (stat(g->whisper_cli, &cli_stat) || stat(model_path, &model_stat) ||
-        !S_ISREG(cli_stat.st_mode) || !S_ISREG(model_stat.st_mode)) return 0;
+                                 char *fingerprint, size_t fingerprint_cap,
+                                 SamosaWhisperProcessIdentity *identity) {
+    if (!voice_stt_inspect(g, model_id, model_cap, model_path, path_cap, identity))
+        return 0;
     return snprintf(fingerprint, fingerprint_cap,
                     "whisper.cpp-v1:model=%s:cli=%lld:%lld:model_file=%lld:%lld",
-                    model_id, (long long)cli_stat.st_size,
-                    (long long)cli_stat.st_mtime, (long long)model_stat.st_size,
-                    (long long)model_stat.st_mtime) < (int)fingerprint_cap;
+                    model_id, (long long)identity->engine.st_size,
+                    (long long)identity->engine.st_mtime, (long long)identity->model.st_size,
+                    (long long)identity->model.st_mtime) < (int)fingerprint_cap;
 }
 
 /* Keep the existing shared voice/audio coordination explicit while the native
@@ -20276,21 +20284,22 @@ static int whisper_transcribe_path(Gateway *g, const char *wav_path,
                                    int timestamped, char **output,
                                    char *model_id, size_t model_cap,
                                    char *fingerprint, size_t fingerprint_cap,
+                                   const SamosaWhisperProcessIdentity *expected,
                                    int preserve_cancel, int prepared_owned) {
     *output = NULL;
     char model_path[PATH_MAX], temporary[PATH_MAX];
+    SamosaWhisperProcessIdentity identity;
     if (!voice_stt_fingerprint(g, model_id, model_cap, model_path,
                                sizeof(model_path), fingerprint,
-                               fingerprint_cap))
+                               fingerprint_cap, &identity))
         return SAMOSA_WHISPER_NOT_READY;
     const char *directory = path_join(temporary, sizeof(temporary), g->home, "voice/tmp") ? temporary : NULL;
     SamosaWhisperProcessConfig config = {g->whisper_cli, model_path, directory};
     SamosaWhisperProcessControl control = {whisper_process_acquire,
         whisper_process_started, whisper_process_reaped, whisper_process_release,
         whisper_process_cancelled, g};
-    return prepared_owned
-        ? samosa_whisper_process_run_owned(&config, &control, wav_path, timestamped, preserve_cancel, output)
-        : samosa_whisper_process_run(&config, &control, wav_path, timestamped, preserve_cancel, output);
+    return samosa_whisper_process_run_checked(&config, expected ? expected : &identity,
+        &control, wav_path, timestamped, preserve_cancel, prepared_owned, output);
 }
 
 static int audio_wav_info_path(const char *path, AttachmentWavInfo *info) {
@@ -21083,9 +21092,10 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
         path_copy(source_audio.codec, sizeof(source_audio.codec), "pcm_s16le");
     }
     char model_id[80], model_path[PATH_MAX], whisper_fingerprint[192];
+    SamosaWhisperProcessIdentity whisper_identity;
     if (!voice_stt_fingerprint(g, model_id, sizeof(model_id), model_path,
                                sizeof(model_path), whisper_fingerprint,
-                               sizeof(whisper_fingerprint))) {
+                               sizeof(whisper_fingerprint), &whisper_identity)) {
         *out_status = 409; path_copy(out_code, code_cap, "audio_stt_model_required");
         path_copy(out_message, message_cap,
                   "Download and select a local Whisper speech-to-text model to ask questions about this audio file.");
@@ -21153,7 +21163,8 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
         if (transcribed == SAMOSA_WHISPER_OK)
             transcribed = whisper_transcribe_path(
                 g, whisper_path, 1, &srt, used_model, sizeof(used_model),
-                used_fingerprint, sizeof(used_fingerprint), 1, compressed && decoded_path[0]);
+                used_fingerprint, sizeof(used_fingerprint), &whisper_identity,
+                1, compressed && decoded_path[0]);
         if (decoded_path[0]) unlink(decoded_path);
         if (transcribed == SAMOSA_WHISPER_OK &&
             (strcmp(used_model, model_id) ||
@@ -21206,7 +21217,7 @@ static int attachment_audio_augment(Gateway *g, const AttachmentMeta *meta,
                 transcribed = whisper_transcribe_path(
                     g, window_path, 1, &window_srt, used_model,
                     sizeof(used_model), used_fingerprint,
-                    sizeof(used_fingerprint), 1, 1);
+                    sizeof(used_fingerprint), &whisper_identity, 1, 1);
                 unlink(window_path);
                 if (transcribed != SAMOSA_WHISPER_OK) {
                     free(window_srt); window_srt = NULL;
@@ -21385,7 +21396,7 @@ static int voice_status_handler(Gateway *g, int fd) {
     int system_tts = 0;
 #endif
     char stt_model_id[80], stt_path[PATH_MAX], tts_model_id[80];
-    voice_selected_stt_path(g, stt_path, sizeof(stt_path), stt_model_id, sizeof(stt_model_id));
+    voice_selected_stt_path(g, stt_path, sizeof(stt_path), stt_model_id, sizeof(stt_model_id), NULL);
     voice_selected_tts_id(g, tts_model_id, sizeof(tts_model_id));
     TextBuffer body = {0};
     int ok = text_add(&body, "{\"stt_model_id\":") && text_json_string(&body, stt_model_id) &&
@@ -22055,7 +22066,7 @@ static int voice_transcription_handler(Gateway *g, int fd, const SamosaHttpReque
     char *text = NULL, stt_model_id[80], fingerprint[192];
     int transcribed = whisper_transcribe_path(
         g, wav_path, 0, &text, stt_model_id, sizeof(stt_model_id),
-        fingerprint, sizeof(fingerprint), 0, 1);
+        fingerprint, sizeof(fingerprint), NULL, 0, 1);
     if (transcribed != SAMOSA_WHISPER_OK) {
         if (transcribed == SAMOSA_WHISPER_BUSY) {
             sent = samosa_http_json_error(fd, 409, "voice_busy",

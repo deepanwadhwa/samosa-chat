@@ -41,14 +41,19 @@ cat >"$TMP/whisper-cli" <<'EOF'
 #!/bin/sh
 set -eu
 out=""
+model=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    -m) model=$2; shift 2 ;;
     -of) out=$2; shift 2 ;;
     *) shift ;;
   esac
 done
 [ -n "$out" ]
 printf 'hello from local whisper\n' >"$out.txt"
+if [ -f "$SAMOSA_TEST_WHISPER_MODEL_CHANGE" ]; then
+  touch -t 200001010000 "$model"
+fi
 EOF
 chmod 700 "$TMP/whisper-cli"
 
@@ -63,6 +68,7 @@ SAMOSA_VOICE_BROWSER_ROOT="$ROOT/assets/voice/browser" \
 SAMOSA_WHISPER_CLI="$TMP/whisper-cli" \
 SAMOSA_WHISPER_MODEL="$TMP/ggml-base.en.bin" \
 SAMOSA_WHISPER_TINY_MODEL="$TMP/ggml-tiny.en.bin" \
+SAMOSA_TEST_WHISPER_MODEL_CHANGE="$TMP/change-model" \
   "$GATEWAY" >"$TMP/stdout.log" 2>"$TMP/stderr.log" &
 PID=$!
 i=0
@@ -113,6 +119,16 @@ STATUS=$(curl -sS -o "$TMP/bad.json" -w '%{http_code}' -X POST -H "X-Samosa-Toke
 STATUS=$(curl -sS -o "$TMP/transcript.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: audio/wav' --data-binary @"$TMP/voice.wav" "http://127.0.0.1:$PORT/v1/voice/transcriptions")
 [ "$STATUS" = 200 ] || { cat "$TMP/transcript.json"; exit 1; }
 checks transcript "$TMP/transcript.json"
+
+touch "$TMP/change-model"
+STATUS=$(curl -sS -o "$TMP/changed.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: audio/wav' --data-binary @"$TMP/voice.wav" "http://127.0.0.1:$PORT/v1/voice/transcriptions")
+[ "$STATUS" = 409 ] || { cat "$TMP/changed.json"; exit 1; }
+checks changed "$TMP/changed.json"
+rm "$TMP/change-model"
+
+STATUS=$(curl -sS -o "$TMP/retry.json" -w '%{http_code}' -X POST -H "X-Samosa-Token: $TOKEN" -H 'Content-Type: audio/wav' --data-binary @"$TMP/voice.wav" "http://127.0.0.1:$PORT/v1/voice/transcriptions")
+[ "$STATUS" = 200 ] || { cat "$TMP/retry.json"; exit 1; }
+checks transcript "$TMP/retry.json"
 
 [ ! -d "$HOME_DIR/voice/tmp" ] || [ -z "$(find "$HOME_DIR/voice/tmp" -type f -print -quit)" ] || {
   echo 'FAIL: local voice recording was not removed' >&2

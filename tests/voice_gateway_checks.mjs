@@ -28,6 +28,7 @@ if (mode === 'fixtures') {
       assert.equal(d.tts_model_id, 'voice-tts-moss-nano'); assert.equal(d.tts_neural_ready, true); assert.equal(d.tts_engine, 'moss_browser'); break;
     case 'browser-speech': assert.equal(d.error.code, 'browser_tts_only'); break;
     case 'transcript': assert.deepEqual(d, { text: 'hello from local whisper', duration_seconds: 0.1, engine: 'whisper.cpp' }); break;
+    case 'changed': assert.equal(d.error.code, 'voice_not_ready'); assert.equal(d.text, undefined); break;
     default: throw new Error(`Unknown voice assertion: ${mode}`);
   }
 }

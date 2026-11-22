@@ -1,6 +1,14 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-07z and LIFE-08a, 2026-11-22. All four primary chat profiles pass through
+LIFE-08b, 2026-11-22. Gateway carries the selected engine and model identity
+through the existing Inference Whisper runner. Replacement and cancellation
+observed during the request withhold the transcript. The native voice endpoint
+and both text and SRT runner checks pass with real speech beyond 30 seconds.
+Continue with the common long-window qualification and lifecycle controls,
+the remaining visual controls and shared recovery.
+[Native Whisper identity evidence](EXTRACTION_NATIVE_PACKAGING.md#life-08b-whisper-request-identity).
+
+Previous LIFE-07z and LIFE-08a, 2026-11-22. All four primary chat profiles pass through
 the normal Mac launcher with release-derived pins. Bonsai's optional projector
 stays conditional. Actual VisionPsy returns useful evidence after the existing
 lower-side retry instead of publishing an empty observation. A real 33-second
@@ -247,10 +255,13 @@ scheduling remain the full separate area4 acceptance responsibility.
    long-window contract. Reuse whisper_process.c and EngineProcess rather than
    making a second worker/server.
    Preserve text/SRT, selected model fingerprint, long windows, output limits,
-   exact-child cancellation and existing durable audio assertions. Adapt the
-   existing owner boundary where required instead of truncating inputs. Specify
-   nonresident start/readiness/stop semantics before implementing public controls;
-   successful configuration/metadata is insufficient readiness.
+   exact-child cancellation and existing durable audio assertions. LIFE-08b
+   carries live input identity from Gateway through the long-window run and
+   verifies it before returning new transcripts. The existing durable cache key
+   stays compatible. Add nonresident start that runs a bounded speech
+   qualification using the existing executor, readiness tied to that successful
+   probe and the retained identity, and stop that cancels and collects active
+   work. Use the original long-window runner for customer audio.
 4. **Finish common lifecycle controls and qualify area3 in full.** LIFE-07n
    moves the existing turn gate/reclaim/pause/resume/retry into its owner, retaining
    traces and original policy. Reuse it for remaining controls. Keep actual generation probes,

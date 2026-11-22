@@ -321,7 +321,16 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-07z and LIFE-08a, 2026-11-22. The installed launcher qualifies real Qwen,
+LIFE-08b, 2026-11-22. The extracted Inference Whisper runner checks the engine
+and model through transcript publication for Gateway voice and attachment
+requests. The native tests verify refusal on mutation and a successful retry.
+Actual Whisper preserves speech after 30 seconds through Gateway and the text
+and SRT runner. The remaining lifecycle work begins with probe-backed
+long-window readiness and start and stop controls, then the remaining visual
+controls and shared recovery.
+[Native Whisper identity evidence](EXTRACTION_NATIVE_PACKAGING.md#life-08b-whisper-request-identity).
+
+Previous LIFE-07z and LIFE-08a, 2026-11-22. The installed launcher qualifies real Qwen,
 Ornith, Maple and Bonsai using release and catalog pins. Bonsai passes with and
 without the optional projector. The visual turn owner recovers a real empty
 VisionPsy observation with its existing lower-resolution retry. Native Whisper

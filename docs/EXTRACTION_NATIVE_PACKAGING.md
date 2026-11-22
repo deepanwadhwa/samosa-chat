@@ -309,6 +309,26 @@ This is a baseline for the long-window owner. The common Whisper and visual
 control APIs and shared recovery still need implementation and qualification.
 [Whisper process evidence](../components/samosa-inference/docs/qualification/life07l-whisper-guardian/README.md#life-08a-actual-audio-beyond-one-30-second-window).
 
+#### LIFE-08b Whisper request identity
+
+The existing Gateway voice endpoint and audio attachment paths pass the
+selected engine and model identity into Inference. Its long-window runner
+reuses Activation's file-version comparison to refuse changes detected
+before launch or after the guardian has finished. A voice fixture changes
+the selected model during execution, receives the existing `voice_not_ready`
+error and succeeds on retry. Voice and audio attachment regression tests pass,
+including the existing persistent transcript cache assertions.
+
+The authenticated Gateway voice endpoint and the normal and ASan/UBSan
+Inference text and SRT drivers transcribed the original 33.482-second WAV
+through the checked runner. All runs retained the final phrase and cleaned
+their workspaces. The fresh standalone Inference runner and Activation tests
+pass under the Python-free guard, as do the exact package source hash checks
+and a native runtime-only clean install and upgrade.
+[Whisper process evidence](../components/samosa-inference/docs/qualification/life07l-whisper-guardian/README.md#life-08b-input-identity-through-transcript-publication).
+
+#### Earlier packaging qualification
+
 Exact commands, terminal logs, source hashes and the related visual ownership
 move are recorded in
 [LIFE-07b qualification](../components/samosa-inference/docs/qualification/life07b-specialist-protocol/README.md).
