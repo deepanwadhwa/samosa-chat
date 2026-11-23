@@ -1,6 +1,14 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08d, 2026-11-22. The normal Mac Gateway qualifies its selected Whisper
+LIFE-08e, 2026-11-22. The standalone default visual owner verifies pinned
+native inputs and qualifies the original guarded VisionPsy and Molmo
+sessions. Both real models pass through the existing turn driver, including
+wide images, prepared PDF ownership, joint images and native video.
+The release and model pin cutover for Gateway and shared crash recovery
+remain open.
+[Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
+
+Previous LIFE-08d, 2026-11-22. The normal Mac Gateway qualifies its selected Whisper
 model using the packaged speech sample. It routes recordings and newly
 transcribed attachment windows through the shared Inference lifecycle.
 Both English models pass. The native Gateway rejects same-size runtime

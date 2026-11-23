@@ -372,6 +372,26 @@ install, upgrade and authenticated native route checks.
 [Packaged probe provenance](../components/samosa-inference/assets/whisper/README.md)
 [Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
 
+#### LIFE-08e default visual owner
+
+The Mac installer stages the default visual owner and the existing
+temporal manifest verifier in the Inference archive. The native clean
+install and upgrade passed with the existing Gateway visual compatibility
+path. The standalone real-model gate exercises the new owner on the
+original turn and request paths, including VisionPsy prepared-page
+handoff and Molmo single images, joint images and native video.
+
+Only verified image evidence commits last-good. A wrong expected excerpt
+preserves the previous revision, mutation withdraws request eligibility,
+and stop reaps the original worker and releases the specialist reservation.
+The fresh-archive ASan/UBSan replay passed both real profiles and reached
+3,431 MB process-tree RSS with zero swap growth. The original supervisor,
+protocol, structured visual lifecycle and Molmo Gateway regression tests
+passed under the Python-free guard.
+Gateway's default visual cutover and shared crash recovery are the next
+lifecycle work.
+[Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
+
 #### Earlier packaging qualification
 
 Exact commands, terminal logs, source hashes and the related visual ownership

@@ -321,7 +321,15 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-08d, 2026-11-22. The normal Mac Gateway now uses the Inference Whisper
+LIFE-08e, 2026-11-22. Both default visual protocols can start through
+Inference Activation using their original guardian and request paths.
+The retained model tests verify startup evidence, stale input refusal,
+unchanged last good after a failed qualification, and worker cleanup.
+Next connect the Mac Gateway's default visual starts to these controls
+with release and model pins, then complete shared crash recovery.
+[Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
+
+Previous LIFE-08d, 2026-11-22. The normal Mac Gateway now uses the Inference Whisper
 owner for runtime preparation, speech readiness, model selection, recordings
 and uncached attachment windows. Base and Tiny English pass the native
 Gateway checks. Continue with the default visual lifecycle controls and the
