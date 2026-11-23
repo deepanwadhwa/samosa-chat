@@ -29,6 +29,8 @@ SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
 SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
 SUMMARIZER_LIBS="libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib"
 BROWSER_VOICE_ASSETS="$ROOT/assets/voice/browser"
+WHISPER_RUNTIME="$ROOT/components/samosa-inference/tools/samosa_voice_runtime.sh"
+WHISPER_PROBE="$ROOT/components/samosa-inference/assets/whisper/qualification.wav"
 
 # The installer stages binaries; it must never silently copy a stale jobsd or
 # gateway after source changes. Rebuild both from this checkout before taking
@@ -43,7 +45,7 @@ fi
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
 for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
-  "$ROOT/assets/models.json" "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
+  "$ROOT/assets/models.json" "$WHISPER_RUNTIME" "$WHISPER_PROBE" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
 done
@@ -111,7 +113,7 @@ esac
 
 set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" \
   "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
-  "$ROOT/tools/samosa_voice_runtime.sh" "$ROOT/tools/samosa_kokoro_runtime.sh" \
+  "$WHISPER_RUNTIME" "$WHISPER_PROBE" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/tools/stage_tesseract_runtime.sh" \
   "$ROOT/dist/samosa"
 if [ "$(uname -s)" = "Darwin" ]; then set -- "$@" "$AUDIO_DECODE"; fi
@@ -174,7 +176,9 @@ if [ -f "$BUILD_DIR/samosa-visionpsy" ]; then
   cp "$BUILD_DIR/samosa-visionpsy" "$stage/bin/samosa-visionpsy"
   chmod +x "$stage/bin/samosa-visionpsy"
 fi
-cp "$ROOT/tools/samosa_voice_runtime.sh" "$stage/bin/samosa-voice-runtime"
+cp "$WHISPER_RUNTIME" "$stage/bin/samosa-voice-runtime"
+mkdir -p "$stage/voice/whisper"
+cp "$WHISPER_PROBE" "$stage/voice/whisper/qualification.wav"
 cp "$ROOT/tools/samosa_kokoro_runtime.sh" "$stage/bin/samosa-kokoro-runtime"
 cp "$ROOT/tools/samosa_decision.py" "$stage/bin/samosa-decision.py"
 printf '%s\n' "$DECISION_PYTHON" >"$stage/bin/samosa-decision-python.txt"

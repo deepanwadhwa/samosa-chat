@@ -53,7 +53,14 @@
 #ifdef SAMOSA_PRIMARY_HOST
 #include <mach-o/dyld.h>
 #include <samosa_inference/primary_host.h>
+#include <samosa_inference/whisper_lifecycle.h>
 typedef struct GatewayPrimary GatewayPrimary;
+typedef struct {
+    SamosaWhisperLifecycle *owner;
+    SamosaWhisperRuntimePin runtime;
+    char state[PATH_MAX], model_path[PATH_MAX], model_sha[65];
+    unsigned users;
+} GatewayWhisper;
 #endif
 #include <samosa_inference/whisper_process.h>
 #include <samosa_inference/vision_budget.h>
@@ -134,6 +141,12 @@ typedef struct {
     char whisper_cli[PATH_MAX];
     char whisper_model[PATH_MAX];
     char whisper_tiny_model[PATH_MAX];
+#ifdef SAMOSA_PRIMARY_HOST
+    int whisper_managed;
+    pthread_mutex_t whisper_mu;
+    GatewayWhisper whisper_profiles[2];
+    char whisper_pin[PATH_MAX], whisper_probe[PATH_MAX], whisper_workspace[PATH_MAX];
+#endif
     char kokoro_runtime_script[PATH_MAX];
     char kokoro_library[PATH_MAX];
     char kokoro_model[PATH_MAX];
@@ -20220,12 +20233,6 @@ static int voice_stt_inspect(Gateway *g, char *model_id, size_t model_cap,
            samosa_whisper_process_inspect(&config, (off_t)expected, identity);
 }
 
-static int voice_stt_ready(Gateway *g) {
-    char path[PATH_MAX];
-    SamosaWhisperProcessIdentity identity;
-    return voice_stt_inspect(g, NULL, 0, path, sizeof(path), &identity);
-}
-
 static int voice_stt_fingerprint(Gateway *g, char *model_id, size_t model_cap,
                                  char *model_path, size_t path_cap,
                                  char *fingerprint, size_t fingerprint_cap,
@@ -20244,7 +20251,7 @@ static int voice_stt_fingerprint(Gateway *g, char *model_id, size_t model_cap,
 static int whisper_process_acquire(void *context, int preserve_cancel) {
     Gateway *g = context;
     pthread_mutex_lock(&g->voice_mu);
-    if (g->voice_runtime_installing || g->voice_transcribing ||
+    if (atomic_load(&g->stopping) || g->voice_runtime_installing || g->voice_transcribing ||
         (!preserve_cancel && g->audio_attachment_processing)) {
         pthread_mutex_unlock(&g->voice_mu);
         return 0;
@@ -20255,7 +20262,8 @@ static int whisper_process_acquire(void *context, int preserve_cancel) {
     return 1;
 }
 static int whisper_process_cancelled(void *context) {
-    return atomic_load(&((Gateway *)context)->audio_cancel_requested);
+    Gateway *g = context;
+    return atomic_load(&g->audio_cancel_requested) || atomic_load(&g->stopping);
 }
 static void whisper_process_started(void *context, pid_t pid) {
     Gateway *g = context;
@@ -20280,6 +20288,154 @@ static void whisper_process_release(void *context) {
     pthread_mutex_unlock(&g->voice_mu);
 }
 
+#ifdef SAMOSA_PRIMARY_HOST
+static int whisper_model_pin(Gateway *g, const char *model_id, size_t size, char sha[65]) {
+    jval *root = NULL;
+    char *arena = NULL, reason[128];
+    int ok = 0;
+    if (catalog_load_and_validate(g, &root, &arena, reason, sizeof(reason))) {
+        jval *entry = catalog_find_model(root, model_id, NULL);
+        jval *artifacts = entry ? json_get(entry, "artifacts") : NULL;
+        for (int i = 0; artifacts && i < artifacts->len; ++i) {
+            jval *artifact = artifacts->kids[i];
+            jval *role = json_get(artifact, "role"), *bytes = json_get(artifact, "bytes");
+            jval *digest = json_get(artifact, "sha256");
+            if (role && role->t == J_STR && !strcmp(role->str, "speech_to_text_weights") &&
+                bytes && bytes->num == (double)size && digest && digest->t == J_STR) {
+                ok = path_copy(sha, 65, digest->str);
+                break;
+            }
+        }
+    }
+    json_free(root);
+    free(arena);
+    return ok;
+}
+
+/* Qualification runs inside the voice reservation held by the caller.
+ * Track the exact probe child using the original Gateway callbacks. */
+static int whisper_probe_reserved(void *context, int preserve_cancel) {
+    (void)context;
+    (void)preserve_cancel;
+    return 1;
+}
+static void whisper_probe_release(void *context) { (void)context; }
+
+static const char *voice_whisper_start_locked(Gateway *g, GatewayWhisper *profile,
+        const char *model_id, int preserve_cancel) {
+    if (!whisper_process_acquire(g, preserve_cancel)) return "busy";
+    const char *error = samosa_whisper_lifecycle_destroy(profile->owner);
+    if (error) goto done;
+    profile->owner = NULL;
+    int tiny = !strcmp(model_id, VOICE_STT_TINY_MODEL_ID);
+    long long model_size = 0;
+    if (!voice_stt_model_path(g, model_id, profile->model_path, sizeof(profile->model_path), &model_size)) {
+        error = "whisper_model_unavailable";
+        goto done;
+    }
+    if (!samosa_whisper_runtime_pin_read(g->whisper_pin, &profile->runtime)) {
+        struct stat pin;
+        if (!lstat(g->whisper_pin, &pin) || errno != ENOENT ||
+            !regular_file(g->voice_runtime_script, 1)) {
+            error = "whisper_runtime_unavailable";
+            goto done;
+        }
+        int status = 0;
+        char *argv[] = {g->voice_runtime_script, "--pin-existing", NULL};
+        char *output = run_capture_both(g, g->voice_runtime_script, argv, 4096, &status);
+        free(output);
+        if (!WIFEXITED(status) || WEXITSTATUS(status) ||
+            !samosa_whisper_runtime_pin_read(g->whisper_pin, &profile->runtime)) {
+            error = "whisper_runtime_unavailable";
+            goto done;
+        }
+    }
+    if (!whisper_model_pin(g, model_id, (size_t)model_size, profile->model_sha)) {
+        error = "whisper_model_unavailable";
+        goto done;
+    }
+    if (!path_join(profile->state, sizeof(profile->state), g->home,
+                   tiny ? "voice/whisper-tiny-activation" : "voice/whisper-base-activation")) {
+        error = "whisper_state_unavailable";
+        goto done;
+    }
+    SamosaWhisperLifecycleConfig config = {
+        .process = {g->whisper_cli, profile->model_path, g->whisper_workspace},
+        .state = profile->state, .engine_sha256 = profile->runtime.sha256, .engine_size = profile->runtime.size,
+        .model_sha256 = profile->model_sha, .model_size = (size_t)model_size,
+        .qualification_wav = g->whisper_probe, .qualification_sha256 = SAMOSA_WHISPER_QUALIFICATION_SHA256,
+        .qualification_size = SAMOSA_WHISPER_QUALIFICATION_SIZE, .expected_text = SAMOSA_WHISPER_QUALIFICATION_TEXT
+    };
+    error = samosa_whisper_lifecycle_create(&config, &profile->owner);
+    if (!error) {
+        SamosaWhisperProcessControl control = {whisper_probe_reserved, whisper_process_started,
+            whisper_process_reaped, whisper_probe_release, whisper_process_cancelled, g};
+        error = samosa_whisper_lifecycle_start_controlled(profile->owner, &control, 1);
+    }
+done:
+    whisper_process_release(g);
+    return error;
+}
+
+static const char *voice_whisper_get(Gateway *g, const char *model_id, int preserve_cancel,
+                                     GatewayWhisper **borrowed) {
+    if (borrowed) *borrowed = NULL;
+    if (pthread_mutex_trylock(&g->whisper_mu)) return "busy";
+    GatewayWhisper *profile = &g->whisper_profiles[!strcmp(model_id, VOICE_STT_TINY_MODEL_ID)];
+    const char *error = samosa_whisper_lifecycle_status(profile->owner);
+    if (!error) {
+        SamosaWhisperRuntimePin current;
+        if (!samosa_whisper_runtime_pin_read(g->whisper_pin, &current) ||
+            current.size != profile->runtime.size || strcmp(current.sha256, profile->runtime.sha256))
+            error = "whisper_runtime_changed";
+    }
+    if (error && strcmp(error, "engine_guardian_failed")) {
+        int busy = g->whisper_profiles[0].users || g->whisper_profiles[1].users;
+        error = busy ? "busy" : voice_whisper_start_locked(g, profile, model_id, preserve_cancel);
+    }
+    if (!error && borrowed) {
+        ++profile->users;
+        *borrowed = profile;
+    }
+    pthread_mutex_unlock(&g->whisper_mu);
+    return error;
+}
+
+static void voice_whisper_return(Gateway *g, GatewayWhisper *profile) {
+    pthread_mutex_lock(&g->whisper_mu);
+    --profile->users;
+    pthread_mutex_unlock(&g->whisper_mu);
+}
+#endif
+
+static int voice_stt_runtime_ready(Gateway *g) {
+    if (!regular_file(g->whisper_cli, 1)) return 0;
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->whisper_managed) {
+        SamosaWhisperRuntimePin pin;
+        struct stat st;
+        return samosa_whisper_runtime_pin_read(g->whisper_pin, &pin) && !stat(g->whisper_cli, &st) &&
+               (off_t)pin.size == st.st_size;
+    }
+#endif
+    return 1;
+}
+
+static const char *voice_stt_ready_for(Gateway *g, const char *model_id) {
+    if (!regular_file(g->whisper_cli, 1) || !voice_stt_model_present(g, model_id))
+        return "provider_unavailable";
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->whisper_managed) return voice_whisper_get(g, model_id, 0, NULL);
+#endif
+    return NULL;
+}
+
+static int voice_stt_ready(Gateway *g) {
+    char model[80], path[PATH_MAX];
+    return voice_selected_stt_path(g, path, sizeof(path), model, sizeof(model), NULL) &&
+           !voice_stt_ready_for(g, model);
+}
+
 static int whisper_transcribe_path(Gateway *g, const char *wav_path,
                                    int timestamped, char **output,
                                    char *model_id, size_t model_cap,
@@ -20298,6 +20454,22 @@ static int whisper_transcribe_path(Gateway *g, const char *wav_path,
     SamosaWhisperProcessControl control = {whisper_process_acquire,
         whisper_process_started, whisper_process_reaped, whisper_process_release,
         whisper_process_cancelled, g};
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->whisper_managed) {
+        GatewayWhisper *profile = NULL;
+        const char *error = voice_whisper_get(g, model_id, preserve_cancel, &profile);
+        if (error) {
+            if (!strcmp(error, "busy")) return SAMOSA_WHISPER_BUSY;
+            if (!strcmp(error, "cancelled")) return SAMOSA_WHISPER_CANCELLED;
+            if (!strcmp(error, "engine_guardian_failed")) return SAMOSA_WHISPER_GUARDIAN_FAILED;
+            return SAMOSA_WHISPER_NOT_READY;
+        }
+        int result = samosa_whisper_lifecycle_run(profile->owner, expected ? expected : &identity,
+            &control, wav_path, timestamped, preserve_cancel, prepared_owned, output);
+        voice_whisper_return(g, profile);
+        return result;
+    }
+#endif
     return samosa_whisper_process_run_checked(&config, expected ? expected : &identity,
         &control, wav_path, timestamped, preserve_cancel, prepared_owned, output);
 }
@@ -21039,7 +21211,7 @@ static char *audio_window_evidence_load(Gateway *g, const AttachmentMeta *meta,
 
 static int audio_attachment_processing_begin(Gateway *g) {
     pthread_mutex_lock(&g->voice_mu);
-    if (g->audio_attachment_processing) {
+    if (g->audio_attachment_processing || g->voice_transcribing || g->voice_runtime_installing) {
         pthread_mutex_unlock(&g->voice_mu);
         return 0;
     }
@@ -21397,12 +21569,13 @@ static int voice_status_handler(Gateway *g, int fd) {
 #endif
     char stt_model_id[80], stt_path[PATH_MAX], tts_model_id[80];
     voice_selected_stt_path(g, stt_path, sizeof(stt_path), stt_model_id, sizeof(stt_model_id), NULL);
+    int stt_ready = !voice_stt_ready_for(g, stt_model_id);
     voice_selected_tts_id(g, tts_model_id, sizeof(tts_model_id));
     TextBuffer body = {0};
     int ok = text_add(&body, "{\"stt_model_id\":") && text_json_string(&body, stt_model_id) &&
         text_add(&body, ",\"stt_model_downloaded\":") && text_add(&body, voice_stt_model_present(g, stt_model_id) ? "true" : "false") &&
-        text_add(&body, ",\"stt_runtime_ready\":") && text_add(&body, regular_file(g->whisper_cli, 1) ? "true" : "false") &&
-        text_add(&body, ",\"stt_ready\":") && text_add(&body, voice_stt_ready(g) ? "true" : "false") &&
+        text_add(&body, ",\"stt_runtime_ready\":") && text_add(&body, voice_stt_runtime_ready(g) ? "true" : "false") &&
+        text_add(&body, ",\"stt_ready\":") && text_add(&body, stt_ready ? "true" : "false") &&
         text_add(&body, ",\"runtime_preparing\":") && text_add(&body, preparing ? "true" : "false") &&
         text_add(&body, ",\"transcribing\":") && text_add(&body, transcribing ? "true" : "false") &&
         text_add(&body, ",\"tts_model_id\":") && text_json_string(&body, tts_model_id) &&
@@ -21417,14 +21590,18 @@ static int voice_status_handler(Gateway *g, int fd) {
 }
 
 static int voice_runtime_install_handler(Gateway *g, int fd) {
+#ifdef SAMOSA_PRIMARY_HOST
+    if (!g->whisper_managed && regular_file(g->whisper_cli, 1))
+#else
     if (regular_file(g->whisper_cli, 1))
+#endif
         return voice_status_handler(g, fd);
     if (!regular_file(g->voice_runtime_script, 1))
         return samosa_http_json_error(fd, 503, "voice_runtime_missing",
             "This Samosa release does not include the local speech runtime builder.");
 
     pthread_mutex_lock(&g->voice_mu);
-    if (g->voice_runtime_installing || g->voice_transcribing) {
+    if (g->voice_runtime_installing || g->voice_transcribing || g->audio_attachment_processing) {
         pthread_mutex_unlock(&g->voice_mu);
         return samosa_http_json_error(fd, 409, "voice_busy",
             "Local speech setup is already in progress.");
@@ -21439,7 +21616,7 @@ static int voice_runtime_install_handler(Gateway *g, int fd) {
     pthread_mutex_lock(&g->voice_mu);
     g->voice_runtime_installing = 0;
     pthread_mutex_unlock(&g->voice_mu);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) || !regular_file(g->whisper_cli, 1)) {
+    if (!WIFEXITED(status) || WEXITSTATUS(status) || !voice_stt_runtime_ready(g)) {
         const char *message = "Samosa couldn't set up local voice recognition. Try Download again.";
         if (output && strstr(output, "CMake is required"))
             message = "Samosa couldn't find CMake. Install it with: brew install cmake";
@@ -21559,9 +21736,13 @@ static int voice_selection_handler(Gateway *g, int fd, const SamosaHttpRequest *
             json_free(body); free(arena);
             return samosa_http_json_error(fd, 404, "voice_model_not_found", "That speech-recognition model is not in the catalog.");
         }
-        if (!regular_file(g->whisper_cli, 1) || !voice_stt_model_present(g, model->str)) {
+        const char *error = voice_stt_ready_for(g, model->str);
+        if (error) {
             json_free(body); free(arena);
-            return samosa_http_json_error(fd, 409, "voice_model_not_ready", "Download and prepare that speech-recognition model first.");
+            if (!strcmp(error, "busy"))
+                return samosa_http_json_error(fd, 409, "voice_busy", "Another local voice operation is in progress.");
+            return samosa_http_json_error(fd, 409, "voice_model_not_ready",
+                "Prepare local speech recognition and verify the selected model before using it.");
         }
         selection_file = g->voice_stt_selection_file;
     } else if (!strcmp(kind->str, "tts")) {
@@ -26197,6 +26378,7 @@ static int load_config(Gateway *g) {
     pthread_mutex_init(&g->mu, NULL);
 #ifdef SAMOSA_PRIMARY_HOST
     g->primary_pins = getenv("SAMOSA_PRIMARY_PINS");
+    if (pthread_mutex_init(&g->whisper_mu, NULL)) return 0;
 #endif
     pthread_mutex_init(&g->job_pid_mu, NULL);
     if (!samosa_summary_process_init(&g->summary_process)) return 0;
@@ -26277,6 +26459,15 @@ static int load_config(Gateway *g) {
     ENV_PATH(whisper_cli, "SAMOSA_WHISPER_CLI", "voice/runtime/whisper-cli");
     ENV_PATH(whisper_model, "SAMOSA_WHISPER_MODEL", "voice/stt-whisper-base-en/ggml-base.en.bin");
     ENV_PATH(whisper_tiny_model, "SAMOSA_WHISPER_TINY_MODEL", "voice/stt-whisper-tiny-en/ggml-tiny.en.bin");
+#ifdef SAMOSA_PRIMARY_HOST
+    g->whisper_managed = !getenv("SAMOSA_WHISPER_CLI");
+    if (!path_join(g->whisper_pin, sizeof(g->whisper_pin), g->home, "voice/runtime/whisper-cli.pin") ||
+        !path_join(g->whisper_workspace, sizeof(g->whisper_workspace), g->home, "voice/tmp") ||
+        !path_join(g->whisper_probe, sizeof(g->whisper_probe),
+                   g->primary_release[0] ? g->primary_release : g->home,
+                   g->primary_release[0] ? "voice/whisper/qualification.wav" : "current/voice/whisper/qualification.wav"))
+        return 0;
+#endif
     ENV_PATH(kokoro_runtime_script, "SAMOSA_KOKORO_RUNTIME", "current/bin/samosa-kokoro-runtime");
     ENV_PATH(kokoro_library, "SAMOSA_KOKORO_LIBRARY", "voice/kokoro/runtime/lib/libsherpa-onnx-c-api.dylib");
     ENV_PATH(kokoro_model, "SAMOSA_KOKORO_MODEL", "voice/kokoro/model/model.int8.onnx");
@@ -26500,6 +26691,13 @@ int main(int argc, char **argv) {
     summarizer_stop(&gateway);
     backend_stop(&gateway);
     samosa_http_server_destroy(&server);
+#ifdef SAMOSA_PRIMARY_HOST
+    for (size_t i = 0; i < sizeof(gateway.whisper_profiles) / sizeof(gateway.whisper_profiles[0]); ++i) {
+        const char *error = samosa_whisper_lifecycle_destroy(gateway.whisper_profiles[i].owner);
+        if (error) fprintf(stderr, "samosa-gateway: Whisper shutdown: %s\n", error);
+    }
+    pthread_mutex_destroy(&gateway.whisper_mu);
+#endif
     samosa_mm_supervisor_destroy(&gateway.multimodal_supervisor);
     pthread_mutex_destroy(&gateway.job_pid_mu);
     pthread_mutex_destroy(&gateway.mu);

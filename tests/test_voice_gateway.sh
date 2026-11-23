@@ -11,7 +11,7 @@ BUILD_DIR="${BUILD_DIR:-build}"
 GATEWAY="${SAMOSA_COMPILED_GATEWAY:-./$BUILD_DIR/samosa-gateway}"
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 checks() { node "$ROOT/tests/voice_gateway_checks.mjs" "$@"; }
-RUNTIME_SCRIPT="$ROOT/tools/samosa_voice_runtime.sh"
+RUNTIME_SCRIPT="$ROOT/components/samosa-inference/tools/samosa_voice_runtime.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/voice_gateway_test.XXXXXX")
 HOME_DIR="$TMP/home"
 PORT=18993

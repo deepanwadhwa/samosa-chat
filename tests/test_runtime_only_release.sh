@@ -361,5 +361,10 @@ if [ -n "${SAMOSA_TEST_REAL_BONSAI_MODEL:-}" ]; then
   (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
     bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-bonsai "$HOME_DIR/current")
 fi
+if [ -n "${SAMOSA_TEST_REAL_WHISPER_DIR:-}" ]; then
+  (cd "$ROOT" && make test_fake_openai_backend >/dev/null &&
+    MAX_FOOTPRINT_MB=2048 MAX_SWAP_DELTA_MB=0 bash tools/run_memory_guarded.sh \
+      node tests/test_whisper_gateway_native.mjs "$HOME_DIR/current")
+fi
 
 echo "runtime-only release: PASS"

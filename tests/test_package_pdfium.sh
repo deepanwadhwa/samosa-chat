@@ -47,6 +47,14 @@ prepare "$TMP/complete"
 for name in $ARCHIVES; do printf 'fixture %s\n' "$name" >"$TMP/complete/pdfium/$name"; done
 run_package "$TMP/complete" >"$TMP/complete.log" 2>&1 || { cat "$TMP/complete.log" >&2; fail 'complete package failed'; }
 manifest="$TMP/complete/out/release-manifest.tsv"
+probe="voice/whisper/qualification.wav"
+expected=$(sha256_file "$ROOT/components/samosa-inference/assets/whisper/qualification.wav")
+actual=$(awk -F '\t' -v name="$probe" '$3==name {print $1}' "$manifest")
+[ "$actual" = "$expected" ] || fail 'wrong packaged Whisper qualification hash'
+cmp "$ROOT/components/samosa-inference/assets/whisper/qualification.wav" "$TMP/complete/out/$probe" ||
+  fail 'changed Whisper qualification audio'
+cmp "$ROOT/components/samosa-inference/tools/samosa_voice_runtime.sh" "$TMP/complete/out/engine/samosa_voice_runtime.sh" ||
+  fail 'changed Inference voice runtime builder'
 for name in $ARCHIVES; do
   expected=$(sha256_file "$TMP/complete/pdfium/$name")
   actual=$(awk -F '\t' -v name="pdfium/$name" '$3==name {print $1}' "$manifest")

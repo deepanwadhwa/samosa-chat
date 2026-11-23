@@ -1,6 +1,16 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08c, 2026-11-22. The standalone long-window Whisper owner uses the common
+LIFE-08d, 2026-11-22. The normal Mac Gateway qualifies its selected Whisper
+model using the packaged speech sample. It routes recordings and newly
+transcribed attachment windows through the shared Inference lifecycle.
+Both English models pass. The native Gateway rejects same-size runtime
+mutation and a corrupt model selection, preserves last good state, and
+recovers after verified bytes are restored. Explicit unpinned CLI overrides
+still use the compatibility path. Continue with default visual controls
+and shared crash recovery.
+[Native Gateway Whisper evidence](EXTRACTION_NATIVE_PACKAGING.md#life-08d-whisper-through-the-native-gateway).
+
+Previous LIFE-08c, 2026-11-22. The standalone long-window Whisper owner uses the common
 Activation transaction, verifies speech through the existing CLI, and
 cancels and collects active work before stop succeeds. Real Base and Tiny
 English pass with original text and SRT beyond 30 seconds. Gateway's runtime
@@ -269,10 +279,10 @@ scheduling remain the full separate area4 acceptance responsibility.
    verifies it before returning new transcripts. The existing durable cache key
    stays compatible. LIFE-08c adds probe-backed nonresident start and
    stop over the original long-window runner. The documented owner keeps
-   the lease in the guardian through physical cleanup. Next provision the
-   short probe and runtime identity on this Mac, wire Gateway preparation,
-   status and selection, and verify both catalog Whisper profiles through
-   the assembled voice and attachment routes.
+   the lease in the guardian through physical cleanup. LIFE-08d wires
+   Mac Gateway preparation, status and selection to the owner and verifies
+   both catalog Whisper profiles through the ordinary voice and attachment
+   routes. Keep their behavior while completing default visual controls.
 4. **Finish common lifecycle controls and qualify area3 in full.** LIFE-07n
    moves the existing turn gate/reclaim/pause/resume/retry into its owner, retaining
    traces and original policy. Reuse it for remaining controls. Keep actual generation probes,

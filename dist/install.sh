@@ -153,6 +153,7 @@ INSTALL_FILES="$INSTALL_FILES engine/inference/src/vision_budget.c engine/infere
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/turn_control.c engine/inference/include/samosa_inference/turn_control.h"
 INSTALL_FILES="$INSTALL_FILES engine/inference/src/backend_json.c engine/inference/include/samosa_inference/backend_json.h"
 if [ "$(uname -s)" = "Darwin" ]; then
+  INSTALL_FILES="$INSTALL_FILES voice/whisper/qualification.wav"
   INSTALL_FILES="$INSTALL_FILES engine/inference/src/primary_host.c engine/inference/src/whisper_activation.c engine/inference/src/whisper_activation.h engine/inference/src/whisper_audio.h engine/inference/src/whisper_lifecycle.c engine/inference/include/samosa_inference/whisper_lifecycle.h engine/inference/src/activation.c engine/inference/src/activation.h engine/inference/src/artifact.c engine/inference/src/artifact.h engine/inference/src/engine_runtime.c engine/inference/src/engine_runtime.h engine/inference/src/library_runtime.c engine/inference/src/library_runtime.h engine/inference/src/sha256.h engine/inference/include/samosa_inference/primary_host.h"
 fi
 # These pinned sources build the same generic service Samosa uses locally and

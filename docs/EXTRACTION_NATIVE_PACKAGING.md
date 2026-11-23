@@ -344,6 +344,34 @@ voice and attachment routes still use the checked runner. Cutover needs packaged
 selection and readiness wiring, and native assembled checks on both models.
 [Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
 
+#### LIFE-08d Whisper through the native Gateway
+
+Inference now owns the original GPU-capable voice runtime builder and the
+packaged speech sample. The builder records the installed CLI's SHA-256 and
+size in a private receipt. Legacy local installations can adopt an existing
+owner-controlled executable once. The native owner verifies the pinned
+runtime, catalog model and fixed speech sample before publishing readiness or
+allowing a newly selected model to replace the saved choice.
+
+The native Gateway fixture uses the existing voice status, preparation,
+selection, transcription, upload and chat routes. With real Base and Tiny
+English engines it verifies the final phrase in a 33.482-second recording
+and in the durable attachment transcript. It also covers same-size corrupt
+model refusal, unchanged selection and last-good revision, same-size runtime
+mutation, restoration, restart and workspace cleanup.
+
+The fresh checksum-pinned CLI build, the Mac runtime-only clean install and
+upgrade, the standalone Inference build, and the original voice UI, Gateway
+and audio attachment suites passed under the Python-free guard.
+
+Set `SAMOSA_TEST_REAL_WHISPER_DIR` to a directory with the qualified
+`whisper-cli`, `ggml-base.en.bin` and `long-window.wav`, and
+`SAMOSA_TEST_REAL_WHISPER_TINY` to the verified Tiny English model. Then run
+`tools/without_python.sh sh tests/test_runtime_only_release.sh` to repeat the
+install, upgrade and authenticated native route checks.
+[Packaged probe provenance](../components/samosa-inference/assets/whisper/README.md)
+[Shared Whisper lifecycle contract](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
+
 #### Earlier packaging qualification
 
 Exact commands, terminal logs, source hashes and the related visual ownership

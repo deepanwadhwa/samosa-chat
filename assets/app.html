@@ -5861,6 +5861,9 @@
               } else if (!ready) {
                 status.textContent = voiceStatus.stt_runtime_ready ? "Ready to download · private local recognition." : "Download the model and the local Whisper runtime.";
                 voiceCardButton(actions, "Download", true, () => voiceStatus.stt_runtime_ready ? runModelCardAction("install", model, null, els.voiceModelError) : prepareVoiceRuntimeAndInstall(model), `voice-stt:${model.id}:download`);
+              } else if (!voiceStatus.stt_runtime_ready) {
+                status.textContent = "Model downloaded. Prepare the local Whisper runtime.";
+                voiceCardButton(actions, "Prepare Whisper", true, () => prepareVoiceRuntimeAndInstall(model), `voice-stt:${model.id}:prepare`);
               } else {
                 status.textContent = "Installed — choose this model to use it.";
                 voiceCardButton(actions, "Use this STT", true, () => selectVoiceModel("stt", model), `voice-stt:${model.id}:select`);

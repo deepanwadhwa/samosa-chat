@@ -321,7 +321,14 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-08c, 2026-11-22. Inference's long-window Whisper owner now reuses the
+LIFE-08d, 2026-11-22. The normal Mac Gateway now uses the Inference Whisper
+owner for runtime preparation, speech readiness, model selection, recordings
+and uncached attachment windows. Base and Tiny English pass the native
+Gateway checks. Continue with the default visual lifecycle controls and the
+shared recovery work before closing Inference area 3.
+[Native Gateway Whisper evidence](EXTRACTION_NATIVE_PACKAGING.md#life-08d-whisper-through-the-native-gateway).
+
+Previous LIFE-08c, 2026-11-22. Inference's long-window Whisper owner now reuses the
 structured adapter's verification and Activation transaction. Native Base and
 Tiny English qualify with a short speech probe, preserve long-window text and
 SRT, and release ownership after stopping an active request. The native

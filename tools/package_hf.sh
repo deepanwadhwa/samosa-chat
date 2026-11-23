@@ -238,6 +238,7 @@ for name in src/specialist_supervisor.c src/specialist_protocol.c engines/json.h
   [ -f "$source" ] || fail "missing Inference source: $source"
   place "$source" "engine/inference/$name" copy
 done
+place "$ROOT/components/samosa-inference/assets/whisper/qualification.wav" "voice/whisper/qualification.wav" copy
 for name in LICENSE miniz.c miniz.h miniz_common.h miniz_export.h miniz_tdef.h miniz_tinfl.c miniz_tinfl.h miniz_zip.c miniz_zip.h; do
   [ -f "$ROOT/vendor/miniz/$name" ] || fail "missing miniz source: $ROOT/vendor/miniz/$name"
   place "$ROOT/vendor/miniz/$name" "engine/miniz/$name" copy
@@ -272,7 +273,7 @@ stage_dist() {
 }
 stage_dist dist/install.sh install.sh
 stage_dist dist/samosa samosa
-stage_dist tools/samosa_voice_runtime.sh engine/samosa_voice_runtime.sh
+stage_dist components/samosa-inference/tools/samosa_voice_runtime.sh engine/samosa_voice_runtime.sh
 stage_dist tools/stage_tesseract_runtime.sh engine/stage_tesseract_runtime.sh
 stage_dist tools/samosa_kokoro_runtime.sh engine/samosa_kokoro_runtime.sh
 stage_dist dist/MODEL_CARD.md README.md
