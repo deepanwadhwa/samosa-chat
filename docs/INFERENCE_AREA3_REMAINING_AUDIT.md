@@ -1,6 +1,33 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08h, 2026-11-23. The file-based Whisper owner recovers newly
+LIFE-08i, 2026-11-23. Whisper and the default visual specialist use the
+same workspace recovery in the Inference process owner. A Mac fixture
+kills the visual owner before handoff. The next start reclaims its
+workspace, while live and admitted workspaces retain custody. The
+compiled Gateway PDF crash check still reaps the primary, specialist
+and owned helper and removes the prepared page. The durable PDF,
+model and unrelated peer survive. The standalone archive passes 320
+visual-guardian and 606 Whisper-runner checks in normal and sanitizer
+builds.
+[Default visual lifecycle](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
+
+Two installed test attempts encountered severe system memory pressure.
+The memory guard previously killed the test driver before its child
+Gateway could shut down. It now gives the tracked job a bounded shutdown
+window before a forced stop. Controlled checks exercise cooperative child reaping
+and the hard-stop path for a direct job that ignores termination.
+The clean Mac install and upgrade passed on retry with the existing
+`ECACHE=4` setting for the test. Real Qwen and VisionPsy passed attachment
+generation, lower-resolution retry, mutation refusal and worker reaping.
+Whisper passed voice and durable SRT with Base and Tiny. Both model gates
+reported zero swap growth.
+
+Shared recovery after guardian loss remains open. Independent registry
+paths still create temporary workspaces before handoff in `visual_host.c`,
+`vision.c`, `temporal.c`, `whisper.c`, `summary.c`, `speech.c` and
+`decision.c`. Reuse the shared workspace owner as those contracts qualify.
+
+Previous LIFE-08h, 2026-11-23. The file-based Whisper owner recovers newly
 registered workspaces abandoned before admission. A Mac fixture kills
 the owner during preparation and verifies cleanup on the next request.
 The same fixture preserves a concurrent preparation, an admitted

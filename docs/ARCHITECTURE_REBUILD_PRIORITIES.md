@@ -317,11 +317,12 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 1. Finish shared crash recovery in the existing Inference process owner.
    The guardian now refuses launch when its owner's control pipe has closed
-   and can clean a workspace after handoff. Whisper reclaims its
-   abandoned preparations on the next request. Continue with the reproduced
-   guardian-loss case and remaining providers that prepare work before
-   handoff. Verify that recovery reclaims only the interrupted operation's
-   processes and files and keeps replacements fenced during uncertain cleanup.
+   and can clean a workspace after handoff. Whisper and the default visual
+   specialist share recovery of abandoned preparations on their next launch.
+   Continue with the reproduced guardian-loss case and remaining providers
+   that prepare work before handoff. Verify that recovery reclaims only the
+   interrupted operation's processes and files and keeps replacements fenced
+   during uncertain cleanup.
    [Original process contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md).
 2. Qualify recovery and the remaining area 3 requirements through the native
    installed callers. Reuse the existing Qwen generation and selection,
