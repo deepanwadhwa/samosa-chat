@@ -1,6 +1,21 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08g, 2026-11-22. Native tests reproduced two gaps in the shared process
+LIFE-08h, 2026-11-23. The file-based Whisper owner recovers newly
+registered workspaces abandoned before admission. A Mac fixture kills
+the owner during preparation and verifies cleanup on the next request.
+The same fixture preserves a concurrent preparation, an admitted
+workspace, unrelated entries and borrowed audio. This closes the
+reproduced Whisper preparation gap in the owner-controlled voice directory.
+The standalone archive passes 606 Whisper-runner and 600 engine-process
+checks in normal and sanitizer builds. The clean Mac install and upgrade
+pass real Qwen generation and worker shutdown, Whisper voice and SRT
+with both English sizes, and the existing selection and restart checks.
+Both real-model gates finish with zero swap growth.
+Remaining work includes guardian loss after admission and preparation
+ownership for other supported paths that create workspaces before handoff.
+[Long-window lifecycle](../components/samosa-inference/docs/ON_DEMAND_LIFECYCLE.md#long-window-owner).
+
+Previous LIFE-08g, 2026-11-22. Native tests reproduced two gaps in the shared process
 owner. An overlapping launch could inherit a different guardian's control
 pipe and delay shutdown. A guardian could start a worker after its owner's
 pipe had closed. On macOS the guardian now inherits only the launch's
