@@ -51,28 +51,9 @@ assert_primary_release_pins() {
     ' "$receipt" || fail "native runtime library pin mismatch"
   done <"$TMP/linked-libomp"
 
-  for artifact in models.json bin/samosa-maple bin/mlx.metallib; do
-    digest=$(sha256_file "$release/$artifact")
-    bytes=$(wc -c <"$release/$artifact" | tr -d ' ')
-    awk -F '\t' -v name="$artifact" -v sha="$digest" -v size="$bytes" '
-      $1 == sha && $2 == size && $3 == name { matched++ }
-      END { exit matched != 1 }
-    ' "$release/primary-maple-pins.tsv" || fail "native Maple pin mismatch for $artifact"
+  for artifact in samosa-maple samosa-ornith-llama-server samosa-molmo2 molmo2-pack; do
+    [ ! -e "$release/bin/$artifact" ] || fail "retired chat runtime was installed: $artifact"
   done
-
-  if [ -n "${SAMOSA_TEST_REAL_ORNITH_ENGINE:-}" ]; then
-    bundled="$release/bin/samosa-ornith-llama-server"
-    pins="$release/primary-ornith-pins.tsv"
-    [ -x "$bundled" ] && [ -f "$pins" ] || fail "installed Ornith runtime or pins missing"
-    cmp -s "$SAMOSA_TEST_REAL_ORNITH_ENGINE" "$bundled" || fail "installed Ornith executable changed"
-    digest=$(sha256_file "$bundled")
-    bytes=$(wc -c <"$bundled" | tr -d ' ')
-    printf '%s\t%s\t%s\n' "$digest" "$bytes" bin/samosa-ornith-llama-server >"$TMP/ornith-pin"
-    tail -1 "$pins" | cmp -s - "$TMP/ornith-pin" || fail "installed Ornith pin does not match the executable"
-    for artifact in LICENSE-Prism LICENSE-jsonhpp LICENSE-cpp-httplib provenance.txt; do
-      [ -s "$release/share/licenses/ornith/$artifact" ] || fail "installed Ornith notice is missing: $artifact"
-    done
-  fi
 }
 
 MODEL_ARTIFACT_NAMES='experts.bin resident.safetensors manifest.json config.json generation_config.json tokenizer_qwen36.json ornith-1.0-9b-Q4_K_M.gguf Bonsai-27B-Q1_0.gguf Bonsai-27B-mmproj-Q8_0.gguf'
@@ -109,21 +90,15 @@ assert_no_model_requests() {
 }
 
 # --- Package a runtime-only release: no --snapshot, no --tokenizer -----------
-set --
-if [ -n "${SAMOSA_TEST_REAL_ORNITH_ENGINE:-}" ]; then
-  set -- --ornith-runtime "$SAMOSA_TEST_REAL_ORNITH_ENGINE" --prism-source "${SAMOSA_TEST_PRISM_SOURCE:?}"
-fi
+VISIONPSY_RUNTIME="${SAMOSA_TEST_REAL_VISIONPSY_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}"
 SAMOSA_PACKAGE_TEST=1 sh "$ROOT/tools/package_hf.sh" --out "$REMOTE" --runtime-only \
   --repo-id test/samosa \
-  --maple-runtime "${SAMOSA_TEST_REAL_MAPLE_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}" \
-  --maple-metallib "$(dirname "${SAMOSA_TEST_REAL_MAPLE_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}")/mlx.metallib" \
-  --visionpsy-runtime "${SAMOSA_TEST_REAL_VISIONPSY_ENGINE:-$ROOT/tests/fixtures/maple-runtime/samosa-maple}" \
-  --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-  --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
+  --visionpsy-metallib "$(dirname "$VISIONPSY_RUNTIME")/mlx.metallib" \
+  --visionpsy-runtime "$VISIONPSY_RUNTIME" \
   --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
   --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
   --ocr-runtime-dir "$ROOT/tests/fixtures/native-ocr" \
-  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" "$@" >/dev/null
+  --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" >/dev/null
 grep -q 'engine/samosa_gateway.c' "$REMOTE/release-manifest.tsv" ||
   fail "runtime-only manifest is missing the mandatory gateway source"
 grep -q 'engine/samosa_evidence.c' "$REMOTE/release-manifest.tsv" ||
@@ -158,20 +133,12 @@ for adapter_file in \
     fail "runtime-only manifest shipped forbidden Python-dependent TTS adapter '$adapter_file'"
 done
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
-  grep -q 'runtime/macos-arm64/samosa-maple$' "$REMOTE/release-manifest.tsv" ||
-    fail "Apple-Silicon release manifest is missing samosa-maple"
   grep -q 'runtime/macos-arm64/mlx.metallib$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing mlx.metallib"
   grep -q 'runtime/macos-arm64/samosa-visionpsy$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing samosa-visionpsy"
-  grep -q 'runtime/macos-arm64/samosa-molmo2$' "$REMOTE/release-manifest.tsv" ||
-    fail "Apple-Silicon release manifest is missing samosa-molmo2"
-  grep -q 'runtime/macos-arm64/molmo2-pack$' "$REMOTE/release-manifest.tsv" ||
-    fail "Apple-Silicon release manifest is missing molmo2-pack"
   grep -q 'runtime/macos-arm64/samosa-audio-decode$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing the compressed-audio decoder"
-  grep -q 'runtime/common/molmo2-processor.json$' "$REMOTE/release-manifest.tsv" ||
-    fail "Apple-Silicon release manifest is missing the Molmo2 processor contract"
   grep -q 'runtime/macos-arm64/samosa-summarizer$' "$REMOTE/release-manifest.tsv" ||
     fail "Apple-Silicon release manifest is missing the native summarizer"
   grep -q 'runtime/common/samosa-text-summarization-Q8_0.gguf$' "$REMOTE/release-manifest.tsv" ||
@@ -266,20 +233,14 @@ for adapter_path in \
   [ ! -e "$adapter_path" ] || fail "runtime-only install staged forbidden Python-dependent TTS adapter '$adapter_path'"
 done
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
-  [ -x "$HOME_DIR/current/bin/samosa-maple" ] ||
-    fail "Apple-Silicon install did not stage samosa-maple"
   [ -f "$HOME_DIR/current/bin/mlx.metallib" ] ||
     fail "Apple-Silicon install did not stage mlx.metallib"
   [ -x "$HOME_DIR/current/bin/samosa-visionpsy" ] ||
     fail "Apple-Silicon install did not stage samosa-visionpsy"
-  [ -x "$HOME_DIR/current/bin/samosa-molmo2" ] ||
-    fail "Apple-Silicon install did not stage samosa-molmo2"
-  [ -x "$HOME_DIR/current/bin/molmo2-pack" ] ||
-    fail "Apple-Silicon install did not stage molmo2-pack"
   [ -x "$HOME_DIR/current/bin/samosa-audio-decode" ] ||
     fail "Apple-Silicon install did not stage the compressed-audio decoder"
-  [ -f "$HOME_DIR/current/share/molmo2/processor.json" ] ||
-    fail "Apple-Silicon install did not stage the Molmo2 processor contract"
+  [ ! -e "$HOME_DIR/current/share/molmo2" ] ||
+    fail "Apple-Silicon install staged the retired Molmo2 processor contract"
 fi
 
 assert_no_model_requests
@@ -344,22 +305,8 @@ LEGACY_SHA_AFTER=$(sha256_file "$LEGACY_MODEL_DIR/experts.bin")
 
 if [ -n "${SAMOSA_TEST_REAL_QWEN_MODEL:-}" ]; then
   (cd "$ROOT" && MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
-    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-release "$HOME_DIR/current")
-fi
-if [ -n "${SAMOSA_TEST_REAL_ORNITH_MODEL:-}" ]; then
-  (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
-    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-ornith "$HOME_DIR/current")
-fi
-if [ -n "${SAMOSA_TEST_REAL_MAPLE_MODEL:-}" ]; then
-  (cd "$ROOT" && MAX_FOOTPRINT_MB=6144 MAX_SWAP_DELTA_MB=0 \
     bash tools/run_memory_guarded.sh env -u SAMOSA_TEST_REAL_VISIONPSY_ENGINE \
-      node tests/test_primary_gateway.mjs --installed-maple "$HOME_DIR/current")
-fi
-if [ -n "${SAMOSA_TEST_REAL_BONSAI_MODEL:-}" ]; then
-  (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 SAMOSA_TEST_BONSAI_TEXT_ONLY=1 \
-    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-bonsai "$HOME_DIR/current")
-  (cd "$ROOT" && MAX_FOOTPRINT_MB=7168 MAX_SWAP_DELTA_MB=0 \
-    bash tools/run_memory_guarded.sh node tests/test_primary_gateway.mjs --installed-bonsai "$HOME_DIR/current")
+      node tests/test_primary_gateway.mjs --installed-release "$HOME_DIR/current")
 fi
 if [ -n "${SAMOSA_TEST_REAL_WHISPER_DIR:-}" ]; then
   (cd "$ROOT" && make test_fake_openai_backend >/dev/null &&

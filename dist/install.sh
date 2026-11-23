@@ -114,20 +114,15 @@ destination() { # destination <remote-path>
     engine/samosa_voice_runtime.sh) printf '%s/bin/samosa-voice-runtime\n' "$STAGE" ;;
     engine/samosa_kokoro_runtime.sh) printf '%s/bin/samosa-kokoro-runtime\n' "$STAGE" ;;
     voice/*) printf '%s/%s\n' "$STAGE" "$1" ;;
-    runtime/macos-arm64/samosa-maple) printf '%s/bin/samosa-maple\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-visionpsy) printf '%s/bin/samosa-visionpsy\n' "$STAGE" ;;
-    runtime/macos-arm64/samosa-molmo2) printf '%s/bin/samosa-molmo2\n' "$STAGE" ;;
-    runtime/macos-arm64/molmo2-pack) printf '%s/bin/molmo2-pack\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-audio-decode) printf '%s/bin/samosa-audio-decode\n' "$STAGE" ;;
-    runtime/common/molmo2-processor.json) printf '%s/share/molmo2/processor.json\n' "$STAGE" ;;
     runtime/macos-arm64/mlx.metallib) printf '%s/bin/mlx.metallib\n' "$STAGE" ;;
     runtime/macos-arm64/samosa-summarizer) printf '%s/bin/samosa-summarizer\n' "$STAGE" ;;
-    runtime/macos26-arm64/ornith/samosa-ornith-llama-server) printf '%s/bin/%s\n' "$STAGE" "${1##*/}" ;;
-    runtime/macos26-arm64/ornith/*) printf '%s/share/licenses/ornith/%s\n' "$STAGE" "${1##*/}" ;;
     runtime/macos-arm64/ocr/*) printf '%s/%s\n' "$STAGE" "${1#runtime/macos-arm64/ocr/}" ;;
     runtime/macos-arm64/lib/*) printf '%s/lib/%s\n' "$STAGE" "${1##*/}" ;;
     runtime/common/samosa-text-summarization-Q8_0.gguf)
       printf '%s/models/native-summarizer/samosa-text-summarization-Q8_0.gguf\n' "$STAGE" ;;
+    visual/probes/visionpsy.ppm) printf '%s/%s\n' "$STAGE" "$1" ;;
     engine/*) printf '%s/%s\n' "$STAGE" "$1" ;;
     pdfium/*.tgz) printf '%s/%s\n' "$STAGE" "$1" ;;
     samosa) printf '%s/bin/%s\n' "$STAGE" "$1" ;;
@@ -161,11 +156,7 @@ fi
 CHUTNI_FILES="engine/chutni/LICENSE engine/chutni/NOTICE engine/chutni/VERSION engine/chutni/include/chutni.h engine/chutni/src/chutni.c engine/chutni/src/scan.c engine/chutni/src/cj.c engine/chutni/src/cj.h engine/chutni/src/mcp.c engine/chutni/third_party/blake3/LICENSE_A2 engine/chutni/third_party/blake3/LICENSE_CC0 engine/chutni/third_party/blake3/blake3.c engine/chutni/third_party/blake3/blake3.h engine/chutni/third_party/blake3/blake3_dispatch.c engine/chutni/third_party/blake3/blake3_impl.h engine/chutni/third_party/blake3/blake3_portable.c engine/chutni/third_party/sqlite/sqlite3.c engine/chutni/third_party/sqlite/sqlite3.h"
 INSTALL_FILES="$INSTALL_FILES $CHUTNI_FILES"
 
-# The native Maple executable and its colocated MLX Metal library are a paired
-# Apple-Silicon capability.  Never install one without the other.
 OCR_PREBUILT=0
-ORNITH_RUNTIME=0
-MAPLE_RUNTIME=0
 if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   for relative in bin/samosa-ocr lib/ocr/libtesseract.5.dylib share/tessdata/eng.traineddata; do
     manifest_field "runtime/macos-arm64/ocr/$relative" 1 >/dev/null 2>&1 ||
@@ -174,40 +165,12 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
   ocr_files=$(awk -F '\t' '$3 ~ /^runtime\/macos-arm64\/ocr\// {print $3}' "$MANIFEST_NEXT")
   INSTALL_FILES="$INSTALL_FILES $ocr_files"
   OCR_PREBUILT=1
-  ornith_prefix=runtime/macos26-arm64/ornith
-  ornith_exe="$ornith_prefix/samosa-ornith-llama-server"
-  if awk -F '\t' -v prefix="$ornith_prefix/" 'index($3,prefix)==1 {found=1} END {exit !found}' "$MANIFEST_NEXT"; then
-    ornith_files=""
-    for relative in samosa-ornith-llama-server LICENSE-Prism LICENSE-jsonhpp LICENSE-cpp-httplib provenance.txt; do
-      manifest_field "$ornith_prefix/$relative" 1 >/dev/null 2>&1 || fail "incomplete Ornith runtime: $relative"
-      ornith_files="$ornith_files $ornith_prefix/$relative"
-    done
-    INSTALL_FILES="$INSTALL_FILES $ornith_files"
-    ORNITH_RUNTIME=1
-  fi
-  maple_exe=runtime/macos-arm64/samosa-maple
-  visionpsy_exe=runtime/macos-arm64/samosa-visionpsy
-  molmo2_exe=runtime/macos-arm64/samosa-molmo2
-  molmo2_pack=runtime/macos-arm64/molmo2-pack
+  visual_files="runtime/macos-arm64/samosa-visionpsy runtime/macos-arm64/mlx.metallib visual/probes/visionpsy.ppm"
+  for relative in $visual_files; do
+    manifest_field "$relative" 1 >/dev/null 2>&1 || fail "incomplete VisionPsy runtime: $relative"
+  done
+  INSTALL_FILES="$INSTALL_FILES $visual_files"
   audio_decode_exe=runtime/macos-arm64/samosa-audio-decode
-  molmo2_processor=runtime/common/molmo2-processor.json
-  maple_lib=runtime/macos-arm64/mlx.metallib
-  if manifest_field "$maple_exe" 1 >/dev/null 2>&1 ||
-     manifest_field "$visionpsy_exe" 1 >/dev/null 2>&1 ||
-     manifest_field "$molmo2_exe" 1 >/dev/null 2>&1 ||
-     manifest_field "$molmo2_pack" 1 >/dev/null 2>&1 ||
-     manifest_field "$molmo2_processor" 1 >/dev/null 2>&1 ||
-     manifest_field "$maple_lib" 1 >/dev/null 2>&1; then
-    manifest_field "$maple_exe" 1 >/dev/null 2>&1 &&
-      manifest_field "$visionpsy_exe" 1 >/dev/null 2>&1 &&
-      manifest_field "$molmo2_exe" 1 >/dev/null 2>&1 &&
-      manifest_field "$molmo2_pack" 1 >/dev/null 2>&1 &&
-      manifest_field "$molmo2_processor" 1 >/dev/null 2>&1 &&
-      manifest_field "$maple_lib" 1 >/dev/null 2>&1 ||
-      fail "release contains an incomplete Apple-Silicon MLX runtime"
-    INSTALL_FILES="$INSTALL_FILES $maple_exe $visionpsy_exe $molmo2_exe $molmo2_pack $molmo2_processor $maple_lib"
-    MAPLE_RUNTIME=1
-  fi
 
   # AVFoundation supplies the codecs, but the reviewed bounded sidecar is a
   # release artifact so installed gateways never depend on a host compiler.
@@ -343,17 +306,8 @@ done
 cp "$MANIFEST_NEXT" "$STAGE/release-manifest.tsv"
 # Downloads do not retain source file modes.
 chmod 755 "$STAGE/bin/samosa" "$STAGE/bin/samosa-voice-runtime" "$STAGE/bin/samosa-kokoro-runtime"
-if [ -f "$STAGE/bin/samosa-maple" ]; then
-  chmod 755 "$STAGE/bin/samosa-maple"
-fi
 if [ -f "$STAGE/bin/samosa-visionpsy" ]; then
   chmod 755 "$STAGE/bin/samosa-visionpsy"
-fi
-if [ -f "$STAGE/bin/samosa-molmo2" ]; then
-  chmod 755 "$STAGE/bin/samosa-molmo2"
-fi
-if [ -f "$STAGE/bin/molmo2-pack" ]; then
-  chmod 755 "$STAGE/bin/molmo2-pack"
 fi
 if [ -f "$STAGE/bin/samosa-audio-decode" ]; then
   chmod 755 "$STAGE/bin/samosa-audio-decode"
@@ -422,26 +376,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
   ) >"$STAGE/primary-qwen-pins.tsv.tmp"
   mv -f "$STAGE/primary-qwen-pins.tsv.tmp" "$STAGE/primary-qwen-pins.tsv"
-  if [ "$MAPLE_RUNTIME" = 1 ]; then
-    chmod go-w "$STAGE/bin/mlx.metallib"
-    (
-      umask 077
-      printf '%s\t%s\tmodels.json\n' "$catalog_sha" "$catalog_size"
-      printf '%s\t%s\tbin/samosa-maple\n' "$(manifest_field "$maple_exe" 1)" "$(manifest_field "$maple_exe" 2)"
-      printf '%s\t%s\tbin/mlx.metallib\n' "$(manifest_field "$maple_lib" 1)" "$(manifest_field "$maple_lib" 2)"
-    ) >"$STAGE/primary-maple-pins.tsv.tmp"
-    mv -f "$STAGE/primary-maple-pins.tsv.tmp" "$STAGE/primary-maple-pins.tsv"
-  fi
-  if [ "$ORNITH_RUNTIME" = 1 ]; then
-    chmod 755 "$STAGE/bin/samosa-ornith-llama-server"
-    (
-      umask 077
-      printf '%s\t%s\tmodels.json\n' "$catalog_sha" "$catalog_size"
-      printf '%s\t%s\tbin/samosa-ornith-llama-server\n' \
-        "$(manifest_field "$ornith_exe" 1)" "$(manifest_field "$ornith_exe" 2)"
-    ) >"$STAGE/primary-ornith-pins.tsv.tmp"
-    mv -f "$STAGE/primary-ornith-pins.tsv.tmp" "$STAGE/primary-ornith-pins.tsv"
-  fi
+  [ ! -f "$STAGE/bin/mlx.metallib" ] || chmod go-w "$STAGE/bin/mlx.metallib"
 fi
 
 # Chutni's own Makefile compiles its release version in from VERSION, and that
@@ -567,10 +502,10 @@ ar rcs "$STAGE/engine/inference/libsamosa-inference-specialist.a" \
   "$STAGE/engine/inference/backend_json.o" "$STAGE/engine/inference/whisper_process.o" "$STAGE/engine/inference/vision_budget.o" "$STAGE/engine/inference/turn_control.o" ||
   fail "staged Inference archive failed; live release was not changed"
 
-PRIMARY_GATEWAY_FLAGS=""
+PRIMARY_GATEWAY_FLAGS="-DSAMOSA_QWEN_ONLY"
 PRIMARY_GATEWAY_LIBS=""
 if [ "$(uname -s)" = "Darwin" ]; then
-  PRIMARY_GATEWAY_FLAGS="-DSAMOSA_PRIMARY_HOST"
+  PRIMARY_GATEWAY_FLAGS="$PRIMARY_GATEWAY_FLAGS -DSAMOSA_PRIMARY_HOST"
   PRIMARY_GATEWAY_LIBS="-lsqlite3"
   for source in primary_host visual_lifecycle temporal_package whisper_activation whisper_lifecycle activation artifact engine_runtime library_runtime; do
     $COMPILER -O2 -Wall -Wextra -std=c11 -pthread -I"$STAGE/engine/inference/include" \

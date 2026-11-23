@@ -21,11 +21,8 @@ run_package() {
   SAMOSA_PACKAGE_TEST=1 sh "$ROOT/tools/package_hf.sh" \
     --out "$1/out" --snapshot "$1/snapshot" --tokenizer "$1/tokenizer.json" \
     --pdfium-dir "$1/pdfium" \
-    --maple-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-    --maple-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
+    --visionpsy-metallib "$ROOT/tests/fixtures/maple-runtime/mlx.metallib" \
     --visionpsy-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-    --molmo2-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
-    --molmo2-pack "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
     --audio-decode-runtime "$ROOT/tests/fixtures/maple-runtime/samosa-maple" \
     --summarizer-model "$ROOT/tests/fixtures/native-summarizer/model.gguf" \
     --summarizer-runtime-dir "$ROOT/tests/fixtures/native-summarizer" \
@@ -55,6 +52,25 @@ cmp "$ROOT/components/samosa-inference/assets/whisper/qualification.wav" "$TMP/c
   fail 'changed Whisper qualification audio'
 cmp "$ROOT/components/samosa-inference/tools/samosa_voice_runtime.sh" "$TMP/complete/out/engine/samosa_voice_runtime.sh" ||
   fail 'changed Inference voice runtime builder'
+if [ "$(uname -s):$(uname -m)" = Darwin:arm64 ]; then
+  for artifact in mlx.metallib samosa-visionpsy; do
+    source=$artifact
+    [ "$artifact" = mlx.metallib ] || source=samosa-maple
+    input="$ROOT/tests/fixtures/maple-runtime/$source"
+    staged="$TMP/complete/out/runtime/macos-arm64/$artifact"
+    cmp "$input" "$staged" || fail "changed staged runtime $artifact"
+    [ ! "$input" -ef "$staged" ] || fail "staged runtime shares the input inode: $artifact"
+  done
+  gzip -dc "$ROOT/components/samosa-inference/assets/visual/visionpsy.ppm.gz" |
+    cmp - "$TMP/complete/out/visual/probes/visionpsy.ppm" ||
+    fail 'changed VisionPsy qualification image'
+fi
+node -e '
+  const assert = require("node:assert/strict");
+  const [source, packed] = process.argv.slice(1).map(name => require(name));
+  assert.deepEqual(packed.models.filter(model => model.family === "chat").map(model => model.id), ["qwen"]);
+  assert.deepEqual(packed.models, source.models.filter(model => model.family !== "chat" || model.id === "qwen"));
+' "$ROOT/assets/models.json" "$TMP/complete/out/models.json"
 for name in $ARCHIVES; do
   expected=$(sha256_file "$TMP/complete/pdfium/$name")
   actual=$(awk -F '\t' -v name="pdfium/$name" '$3==name {print $1}' "$manifest")

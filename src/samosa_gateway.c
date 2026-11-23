@@ -53,8 +53,10 @@
 #ifdef SAMOSA_PRIMARY_HOST
 #include <mach-o/dyld.h>
 #include <samosa_inference/primary_host.h>
+#include <samosa_inference/visual_lifecycle.h>
 #include <samosa_inference/whisper_lifecycle.h>
 typedef struct GatewayPrimary GatewayPrimary;
+typedef struct GatewayVisual GatewayVisual;
 typedef struct {
     SamosaWhisperLifecycle *owner;
     SamosaWhisperRuntimePin runtime;
@@ -126,6 +128,11 @@ typedef struct {
     char visionpsy_model[PATH_MAX];
     char molmo2_engine[PATH_MAX];
     char molmo2_model[PATH_MAX];
+#ifdef SAMOSA_PRIMARY_HOST
+    GatewayVisual *visual_profiles[2];
+    int visual_managed[2];
+    atomic_int visual_preparing;
+#endif
     SamosaMmSupervisor multimodal_supervisor;
     SamosaTurnGate turn_gate;
     char tokenizer[PATH_MAX];
@@ -7956,7 +7963,18 @@ static const char *llama_engine(Gateway *g) {
     return g->llama_server;
 }
 
+static int chat_backend_supported(const char *name) {
+    if (!strcmp(name, "qwen")) return 1;
+#ifdef SAMOSA_QWEN_ONLY
+    return 0;
+#else
+    return !strcmp(name, "bonsai") || !strcmp(name, "ornith") ||
+           !strcmp(name, "maple") || !strcmp(name, MOLMO2_CHAT_BACKEND_ID);
+#endif
+}
+
 static int backend_available(Gateway *g, const char *name) {
+    if (!chat_backend_supported(name)) return 0;
     if (!strcmp(name, MOLMO2_CHAT_BACKEND_ID)) return molmo2_available(g);
     if (!strcmp(name, "qwen")) {
         char experts[PATH_MAX];
@@ -8103,22 +8121,32 @@ static int primary_append_pin(TextBuffer *body, const SamosaPrimaryInput *pin) {
 }
 
 /* Use the same installer-verified catalog inputs as the model download flow. */
-static int primary_append_model_pins(GatewayPrimary *p, TextBuffer *body, const SamosaPrimaryInput *catalog) {
-    Gateway *g = p->gateway;
-    const char *backend = p->backend;
+static jval *primary_release_catalog(Gateway *g, const SamosaPrimaryInput *catalog, char **arena) {
+    *arena = NULL;
     char path[PATH_MAX], digest[65], reason[128];
     size_t length;
-    if (!path_join(path,sizeof(path),g->primary_release,catalog->path)) return 0;
+    if (!path_join(path,sizeof(path),g->primary_release,catalog->path)) return NULL;
     char *raw = primary_read_pin_file(path,8 << 20,&length);
-    if (!raw) return 0;
+    if (!raw) return NULL;
     RcSha hash;
     rc_sha_init(&hash);
     rc_sha_update(&hash,raw,length);
     rc_sha_hex(&hash,digest);
-    char *arena = NULL;
-    jval *root = length == catalog->size && !strcmp(digest,catalog->sha256) ? json_parse(raw,&arena) : NULL;
+    jval *root = length == catalog->size && !strcmp(digest,catalog->sha256) ? json_parse(raw,arena) : NULL;
     free(raw);
-    int ok = catalog_validate(root,reason,sizeof(reason));
+    if (catalog_validate(root,reason,sizeof(reason))) return root;
+    json_free(root);
+    free(*arena);
+    *arena = NULL;
+    return NULL;
+}
+
+static int primary_append_model_pins(GatewayPrimary *p, TextBuffer *body, const SamosaPrimaryInput *catalog) {
+    Gateway *g = p->gateway;
+    const char *backend = p->backend;
+    char path[PATH_MAX], *arena = NULL;
+    jval *root = primary_release_catalog(g,catalog,&arena);
+    int ok = root != NULL;
     jval *model = ok ? catalog_find_model(root,backend,NULL) : NULL;
     jval *artifacts = model ? json_get(model,"artifacts") : NULL;
     const char *const qwen[] = {"manifest.json", "config.json", "experts.bin", "resident.safetensors",
@@ -9423,9 +9451,16 @@ static int profile_load(Gateway *g, Profile *out) {
         jval *w = json_get(onboarding, "welcome_completed_at");
         if (w && w->t == J_STR) path_copy(out->welcome_completed_at, sizeof(out->welcome_completed_at), w->str);
         jval *smid = json_get(onboarding, "selected_model_id");
-        if (smid && smid->t == J_STR) path_copy(out->selected_model_id, sizeof(out->selected_model_id), smid->str);
-        jval *smv = json_get(onboarding, "selected_model_version");
-        if (smv && smv->t == J_STR) path_copy(out->selected_model_version, sizeof(out->selected_model_version), smv->str);
+        if (smid && smid->t == J_STR
+#ifdef SAMOSA_QWEN_ONLY
+            && chat_backend_supported(smid->str)
+#endif
+        ) {
+            path_copy(out->selected_model_id, sizeof(out->selected_model_id), smid->str);
+            jval *smv = json_get(onboarding, "selected_model_version");
+            if (smv && smv->t == J_STR)
+                path_copy(out->selected_model_version, sizeof(out->selected_model_version), smv->str);
+        }
     }
     out->exists = 1;
     json_free(root); free(arena); free(raw);
@@ -12606,6 +12641,7 @@ static int molmo2_sha256_text(const char *value) {
 }
 
 static int molmo2_available(Gateway *g) {
+    if (!chat_backend_supported(MOLMO2_CHAT_BACKEND_ID)) return 0;
     if (!regular_file(g->molmo2_engine, 1)) return 0;
     struct stat root_st;
     if (lstat(g->molmo2_model, &root_st) || !S_ISDIR(root_st.st_mode)) return 0;
@@ -12707,23 +12743,19 @@ static double molmo2_required_available_gb(Gateway *g) {
     return required;
 }
 
+static const char *const visionpsy_model_files[] = {
+    "config.json", "model.safetensors", "tokenizer.json", "preprocessor_config.json",
+    "processor_config.json", "tokenizer_config.json", "chat_template.jinja"
+};
+
 static int visionpsy_available(Gateway *g) {
     if (!regular_file(g->visionpsy_engine, 1)) return 0;
-    const char *files[] = {
-        "model.safetensors",
-        "config.json",
-        "preprocessor_config.json",
-        "processor_config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "chat_template.jinja"
-    };
-    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
+    for (size_t i = 0; i < sizeof(visionpsy_model_files) / sizeof(visionpsy_model_files[0]); ++i) {
         char p[PATH_MAX];
-        if (!path_join(p, sizeof(p), g->visionpsy_model, files[i])) return 0;
+        if (!path_join(p, sizeof(p), g->visionpsy_model, visionpsy_model_files[i])) return 0;
         struct stat st;
         if (stat(p, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0) return 0;
-        if (i == 0 && st.st_size != 1014772920LL) return 0;
+        if (i == 1 && st.st_size != 1014772920LL) return 0;
     }
     return 1;
 }
@@ -13053,9 +13085,163 @@ static void visual_protocol_trace_payload(void *context, const char *event, cons
     developer_trace_payload(context, event, provider, bytes, size);
 }
 
+#ifdef SAMOSA_PRIMARY_HOST
+enum { VISUAL_ENGINE, VISUAL_KERNEL, VISUAL_PROBE, VISUAL_ANCHOR, VISUAL_MODEL_FILES };
+struct GatewayVisual {
+    SamosaVisualLifecycle *owner;
+    VisionPsySession *session;
+    char state[PATH_MAX];
+    char paths[VISUAL_MODEL_FILES + 6][PATH_MAX];
+    char sha[VISUAL_MODEL_FILES + 6][65];
+    SamosaVisualInput pins[VISUAL_MODEL_FILES + 6];
+};
+
+static void visual_set_pin(GatewayVisual *p, size_t index, const char *sha, uint64_t size) {
+    memcpy(p->sha[index],sha,65);
+    p->pins[index] = (SamosaVisualInput){p->paths[index],p->sha[index],size};
+}
+
+static int visual_catalog_pins(Gateway *g, GatewayVisual *p, const SamosaPrimaryInput *catalog) {
+    char *arena = NULL;
+    jval *root = primary_release_catalog(g,catalog,&arena);
+    jval *model = root ? catalog_find_model(root,"visionpsy-nano-460m-mlx-bf16",NULL) : NULL;
+    jval *artifacts = model ? json_get(model,"artifacts") : NULL;
+    size_t count = sizeof(visionpsy_model_files) / sizeof(visionpsy_model_files[0]);
+    for (size_t i = 0; i < count; ++i) {
+        for (int j = 0; artifacts && j < artifacts->len; ++j) {
+            jval *entry = artifacts->kids[j];
+            jval *name = json_get(entry,"name");
+            if (!name || name->t != J_STR || strcmp(name->str,visionpsy_model_files[i])) continue;
+            double size = json_get(entry,"bytes")->num;
+            if (size > 0 && size <= 8589934592.0 && size == (uint64_t)size &&
+                path_join(p->paths[VISUAL_ANCHOR+i],sizeof(p->paths[0]),g->visionpsy_model,name->str))
+                visual_set_pin(p,VISUAL_ANCHOR+i,json_get(entry,"sha256")->str,(uint64_t)size);
+            break;
+        }
+    }
+    json_free(root);
+    free(arena);
+    for (size_t i = 0; i < count; ++i)
+        if (!p->pins[VISUAL_ANCHOR+i].path) return 0;
+    return 1;
+}
+
+static int visual_release_pins(Gateway *g, GatewayVisual *p, int molmo) {
+    const char *rows[] = {molmo ? "runtime/macos-arm64/samosa-molmo2" : "runtime/macos-arm64/samosa-visionpsy",
+        "runtime/macos-arm64/mlx.metallib", molmo ? "visual/probes/molmo.ppm" : "visual/probes/visionpsy.ppm",
+        "models.json"};
+    const char *installed[] = {molmo ? "bin/samosa-molmo2" : "bin/samosa-visionpsy",
+        "bin/mlx.metallib", rows[VISUAL_PROBE]};
+    char path[PATH_MAX];
+    if (!path_join(path,sizeof(path),g->primary_release,"release-manifest.tsv")) return 0;
+    char *manifest = primary_read_pin_file(path,1 << 20,NULL);
+    if (!manifest) return 0;
+    SamosaPrimaryInput pins[4] = {0};
+    int ok = 1;
+    char *save = NULL;
+    for (char *line = strtok_r(manifest,"\n",&save); ok && line; line = strtok_r(NULL,"\n",&save)) {
+        SamosaPrimaryInput pin;
+        if (!primary_parse_pin(line,&pin)) continue;
+        for (size_t i = 0; i < sizeof(rows)/sizeof(rows[0]); ++i) {
+            if (strcmp(pin.path,rows[i])) continue;
+            if (pins[i].path) ok = 0;
+            else pins[i] = pin;
+        }
+    }
+    for (size_t i = 0; ok && i < sizeof(installed)/sizeof(installed[0]); ++i) {
+        if (!pins[i].path || !path_join(p->paths[i],sizeof(p->paths[i]),g->primary_release,installed[i]))
+            ok = 0;
+        else
+            visual_set_pin(p,i,pins[i].sha256,pins[i].size);
+    }
+    if (ok && !molmo) ok = pins[3].path && visual_catalog_pins(g,p,&pins[3]);
+    free(manifest);
+    return ok;
+}
+
+/* The native packer's locally installed manifest remains the trusted Molmo
+ * package descriptor. Inference verifies every file it names at admission. */
+static int visual_molmo_anchor(Gateway *g, char path[PATH_MAX], char sha[65], size_t *size) {
+    if (!path_join(path,PATH_MAX,g->molmo2_model,"manifest.json")) return 0;
+    char *manifest = primary_read_pin_file(path,1 << 20,size);
+    if (!manifest) return 0;
+    RcSha hash;
+    rc_sha_init(&hash);
+    rc_sha_update(&hash,manifest,*size);
+    rc_sha_hex(&hash,sha);
+    free(manifest);
+    return 1;
+}
+
+static const char *visual_prepare(Gateway *g, int molmo) {
+    GatewayVisual *p = g->visual_profiles[molmo];
+    char anchor[PATH_MAX], digest[65];
+    size_t size = 0;
+    if (molmo && !visual_molmo_anchor(g,anchor,digest,&size)) return "visual_model_unavailable";
+    if (p) {
+        if (p->session) return "visual_specialist_busy";
+        if (!molmo || (size == p->pins[VISUAL_ANCHOR].size &&
+            !strcmp(digest,p->pins[VISUAL_ANCHOR].sha256))) return NULL;
+        const char *error = samosa_visual_lifecycle_destroy(p->owner);
+        if (error) return error;
+        free(p);
+        g->visual_profiles[molmo] = NULL;
+    }
+    p = calloc(1,sizeof(*p));
+    if (!p) return "resource_limit";
+    if (!visual_release_pins(g,p,molmo) ||
+        !path_join(p->state,sizeof(p->state),g->home,molmo?"molmo2-activation":"visionpsy-activation")) {
+        free(p);
+        return "visual_pins_unavailable";
+    }
+    if (molmo) {
+        path_copy(p->paths[VISUAL_ANCHOR],sizeof(p->paths[0]),anchor);
+        visual_set_pin(p,VISUAL_ANCHOR,digest,size);
+    }
+    SamosaVisualLifecycleConfig config = {
+        .profile = molmo ? SAMOSA_VISUAL_MOLMO : SAMOSA_VISUAL_VISIONPSY,
+        .state = p->state, .model_directory = molmo ? g->molmo2_model : g->visionpsy_model,
+        .engine = p->pins[VISUAL_ENGINE], .kernel = p->pins[VISUAL_KERNEL],
+        .anchor = p->pins[VISUAL_ANCHOR], .probe = p->pins[VISUAL_PROBE],
+        .model_files = molmo ? NULL : &p->pins[VISUAL_MODEL_FILES], .model_file_count = molmo ? 0 : 6,
+        .probe_prompt = molmo ? "Describe the color." : "Read the large heading on this page. Answer briefly.",
+        .probe_expected = molmo ? "red" : "hello"
+    };
+    const char *error = samosa_visual_lifecycle_create(&config,&p->owner);
+    if (error) free(p);
+    else g->visual_profiles[molmo] = p;
+    return error;
+}
+
+static const char *visual_start_cancelled(void *context) {
+    Gateway *g = context;
+    return atomic_load(&g->stopping) || atomic_load(&g->visual_preparing)==2 ? "cancelled" : NULL;
+}
+
+static int visual_start_managed(Gateway *g, int molmo, VisionPsySession *session, const SamosaMmTrace *trace) {
+    atomic_store(&g->visual_preparing,1);
+    const char *error = visual_prepare(g,molmo);
+    if (!error) {
+        GatewayVisual *p = g->visual_profiles[molmo];
+        SamosaMmControl control = {.check=visual_start_cancelled,.context=g};
+        error = samosa_visual_lifecycle_start(p->owner,&g->multimodal_supervisor,session,&control,trace);
+        if (session->supervisor) p->session = session;
+    }
+    if (atomic_exchange(&g->visual_preparing,0)==2 && !error) error = "cancelled";
+    if (error) {
+        fprintf(stderr,"[samosa] %s visual activation: %s\n",molmo?"Molmo2":"VisionPsy",error);
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 static int visionpsy_session_start(Gateway *g, VisionPsySession *s) {
     if (!s) return 0;
     SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->visual_managed[0] && visionpsy_available(g)) return visual_start_managed(g,0,s,&trace);
+#endif
     return samosa_mm_visionpsy_start(&g->multimodal_supervisor, s, &trace,
         g->visionpsy_engine, g->visionpsy_model, visionpsy_available(g));
 }
@@ -13063,12 +13249,28 @@ static int visionpsy_session_start(Gateway *g, VisionPsySession *s) {
 static int molmo2_session_start(Gateway *g, VisionPsySession *s) {
     if (!s) return 0;
     SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+#ifdef SAMOSA_PRIMARY_HOST
+    if (g->visual_managed[1] && molmo2_available(g)) return visual_start_managed(g,1,s,&trace);
+#endif
     return samosa_mm_molmo2_start(&g->multimodal_supervisor, s, &trace,
         g->molmo2_engine, g->molmo2_model, molmo2_available(g));
 }
 
 static void visionpsy_session_close(Gateway *g, VisionPsySession *s) {
     SamosaMmTrace trace = {visual_protocol_trace_event, visual_protocol_trace_payload, g};
+#ifdef SAMOSA_PRIMARY_HOST
+    if (s && s->supervisor) {
+        for (size_t i = 0; i < sizeof(g->visual_profiles)/sizeof(g->visual_profiles[0]); ++i) {
+            GatewayVisual *p = g->visual_profiles[i];
+            if (!p || p->session != s) continue;
+            /* Keep the original scoped wait until actual guardian cleanup. */
+            samosa_mm_visual_close(s,&trace);
+            while (samosa_visual_lifecycle_stop(p->owner)) sleep_millis(20);
+            p->session = NULL;
+            return;
+        }
+    }
+#endif
     samosa_mm_visual_close(s, &trace);
 }
 
@@ -26049,6 +26251,13 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
     }
     if (!strcmp(request->method, "GET") && !strcmp(request->path, "/v1/backends")) {
         char body[2048];
+#ifdef SAMOSA_QWEN_ONLY
+        snprintf(body, sizeof(body),
+            "{\"active\":\"qwen\",\"backends\":["
+            "{\"id\":\"qwen\",\"label\":\"Qwen3.6 35B A3B\",\"model\":\"qwen3.6-35b-a3b\","
+            "\"supports_images\":true,\"available\":%s}]}",
+            backend_available(g, "qwen") ? "true" : "false");
+#else
         snprintf(body, sizeof(body),
             "{\"active\":\"%s\",\"backends\":["
             "{\"id\":\"bonsai\",\"label\":\"Bonsai 27B 1-bit\",\"model\":\"bonsai-27b-1bit\",\"supports_images\":%s,\"available\":%s},"
@@ -26062,16 +26271,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
             backend_available(g, "qwen") ? "true" : "false",
             backend_available(g, "maple") ? "true" : "false",
             molmo2_available(g) ? "true" : "false");
+#endif
         return samosa_http_response(fd, 200, "application/json", body, NULL);
     }
     if (!strcmp(request->method, "POST") && !strcmp(request->path, "/v1/backends/select")) {
         char *arena = NULL;
         jval *root = json_parse(request->body, &arena);
         jval *selected = root && root->t == J_OBJ ? json_get(root, "backend") : NULL;
-        if (!selected || selected->t != J_STR ||
-            (strcmp(selected->str, "qwen") && strcmp(selected->str, "bonsai") &&
-             strcmp(selected->str, "ornith") && strcmp(selected->str, "maple") &&
-             strcmp(selected->str, MOLMO2_CHAT_BACKEND_ID))) {
+        if (!selected || selected->t != J_STR || !chat_backend_supported(selected->str)) {
             json_free(root); free(arena);
             return samosa_http_json_error(fd, 400, "invalid_backend", "Unknown model backend.");
         }
@@ -26229,7 +26436,14 @@ static int gateway_handler(SamosaHttpServer *server, int fd,
         if (audio_active) atomic_store(&g->audio_cancel_requested, 1);
         if (transcription_pid > 0) kill(transcription_pid, SIGTERM);
         pthread_mutex_unlock(&g->voice_mu);
+#ifdef SAMOSA_PRIMARY_HOST
+        int preparing = 1;
+        int preparation_cancelled = atomic_compare_exchange_strong(&g->visual_preparing,&preparing,2);
+#endif
         int specialist_cancelled = samosa_mm_supervisor_cancel(&g->multimodal_supervisor);
+#ifdef SAMOSA_PRIMARY_HOST
+        specialist_cancelled |= preparation_cancelled;
+#endif
         int cancelled = upstream >= 0 || specialist_cancelled || audio_active || document_active;
         return samosa_http_response(fd, 200, "application/json",
                                     cancelled ? "{\"cancelled\":true}" : "{\"cancelled\":false}", NULL);
@@ -26447,6 +26661,16 @@ static int load_config(Gateway *g) {
 #ifdef SAMOSA_PRIMARY_HOST
     primary_find_release(g);
     if (primary_enabled(g) && pthread_mutex_init(&g->primary_mu,NULL)) return 0;
+    atomic_init(&g->visual_preparing,0);
+    if (g->primary_release[0]) {
+        g->visual_managed[0] = !getenv("SAMOSA_VISIONPSY_ENGINE");
+        g->visual_managed[1] = !getenv("SAMOSA_MOLMO2_ENGINE");
+        if ((g->visual_managed[0] &&
+             !path_join(g->visionpsy_engine,sizeof(g->visionpsy_engine),g->primary_release,"bin/samosa-visionpsy")) ||
+            (g->visual_managed[1] &&
+             !path_join(g->molmo2_engine,sizeof(g->molmo2_engine),g->primary_release,"bin/samosa-molmo2")))
+            return 0;
+    }
 #endif
     ENV_PATH(llama_server, "SAMOSA_BONSAI_SERVER", "backends/prism-llama.cpp/build/bin/llama-server");
     ENV_PATH(summarizer_engine, "SAMOSA_SUMMARIZER_ENGINE", "current/bin/samosa-summarizer");
@@ -26692,6 +26916,10 @@ int main(int argc, char **argv) {
     backend_stop(&gateway);
     samosa_http_server_destroy(&server);
 #ifdef SAMOSA_PRIMARY_HOST
+    for (size_t i = 0; i < sizeof(gateway.visual_profiles)/sizeof(gateway.visual_profiles[0]); ++i) {
+        GatewayVisual *profile = gateway.visual_profiles[i];
+        if (profile && !samosa_visual_lifecycle_destroy(profile->owner)) free(profile);
+    }
     for (size_t i = 0; i < sizeof(gateway.whisper_profiles) / sizeof(gateway.whisper_profiles[0]); ++i) {
         const char *error = samosa_whisper_lifecycle_destroy(gateway.whisper_profiles[i].owner);
         if (error) fprintf(stderr, "samosa-gateway: Whisper shutdown: %s\n", error);

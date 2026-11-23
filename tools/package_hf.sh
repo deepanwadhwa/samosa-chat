@@ -1,6 +1,6 @@
 #!/bin/sh
 # Existing Samosa release assembly, ported from package_hf.py without Python.
-# Model/runtime files are hard-linked where possible; source files are copied.
+# Large model artifacts may be hard-linked. Sources and native MLX files are copied.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -10,17 +10,12 @@ SNAPSHOT="$MODEL_ROOT/qwen36_group32_i8"
 TOKENIZER="$MODEL_ROOT/tokenizer_qwen36.json"
 REPO_ID=REPO_ID_PLACEHOLDER
 PDFIUM_DIR=""
-MAPLE_RUNTIME="$ROOT/build/samosa-maple"
-MAPLE_METALLIB="$ROOT/build/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
+VISIONPSY_METALLIB="$ROOT/build/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
 VISIONPSY_RUNTIME="$ROOT/build/samosa-visionpsy"
-MOLMO2_RUNTIME="$ROOT/build/samosa-molmo2"
-MOLMO2_PACK="$ROOT/build/molmo2-pack"
 AUDIO_DECODE_RUNTIME="$ROOT/build/samosa-audio-decode"
 SUMMARIZER_MODEL="$ROOT/build/samosa-text-summarization-Q8_0.gguf"
 SUMMARIZER_RUNTIME="$ROOT/build/native-summarizer-runtime"
 OCR_RUNTIME=""
-ORNITH_RUNTIME=""
-PRISM_SOURCE=""
 RUNTIME_ONLY=0
 
 usage() {
@@ -30,17 +25,12 @@ Usage: sh tools/package_hf.sh --out DIRECTORY [options]
   --tokenizer FILE               existing Qwen tokenizer
   --repo-id OWNER/REPOSITORY      substitute the distribution repository
   --pdfium-dir DIRECTORY         complete reviewed PDFium archive set
-  --maple-runtime FILE           native Maple executable
-  --maple-metallib FILE          paired Metal library
+  --visionpsy-metallib FILE      VisionPsy Metal library
   --visionpsy-runtime FILE       native VisionPsy executable
-  --molmo2-runtime FILE          native Molmo2 executable
-  --molmo2-pack FILE             native Molmo2 package builder
   --audio-decode-runtime FILE    native audio decoder
   --summarizer-model FILE        pinned T5 GGUF
   --summarizer-runtime-dir DIR   staged T5 runtime
   --ocr-runtime-dir DIRECTORY    staged native Tesseract runtime
-  --ornith-runtime FILE          qualified static llama-server for Ornith and Bonsai on macOS 26 ARM64
-  --prism-source DIRECTORY       pinned Prism checkout supplying the runtime notices
   --runtime-only                omit optional chat-model weights
 EOF
 }
@@ -60,17 +50,12 @@ while [ "$#" -gt 0 ]; do
     --tokenizer) TOKENIZER=$value ;;
     --repo-id) REPO_ID=$value ;;
     --pdfium-dir) PDFIUM_DIR=$value ;;
-    --maple-runtime) MAPLE_RUNTIME=$value ;;
-    --maple-metallib) MAPLE_METALLIB=$value ;;
+    --visionpsy-metallib) VISIONPSY_METALLIB=$value ;;
     --visionpsy-runtime) VISIONPSY_RUNTIME=$value ;;
-    --molmo2-runtime) MOLMO2_RUNTIME=$value ;;
-    --molmo2-pack) MOLMO2_PACK=$value ;;
     --audio-decode-runtime) AUDIO_DECODE_RUNTIME=$value ;;
     --summarizer-model) SUMMARIZER_MODEL=$value ;;
     --summarizer-runtime-dir) SUMMARIZER_RUNTIME=$value ;;
     --ocr-runtime-dir) OCR_RUNTIME=$value ;;
-    --ornith-runtime) ORNITH_RUNTIME=$value ;;
-    --prism-source) PRISM_SOURCE=$value ;;
     *) fail "unknown option: $option" ;;
   esac
 done
@@ -120,7 +105,9 @@ native_runtime() {
   if [ "$2" != mlx.metallib ] && [ ! -x "$1" ]; then
     fail "Apple-Silicon native runtime is not executable: $1"
   fi
-  place "$1" "runtime/macos-arm64/$2" link
+  # An installed runtime can be the input. Creating a hard link changes
+  # its identity receipt while Inference is verifying or using it.
+  place "$1" "runtime/macos-arm64/$2" copy
 }
 stage_summarizer() {
   [ -f "$SUMMARIZER_RUNTIME/bin/samosa-summarizer" ] &&
@@ -161,48 +148,13 @@ stage_ocr() {
   done
 }
 
-stage_ornith() {
-  revision=9fcaed763ccda38ea81068ad9d7f991aaddca451
-  digest=544e0df94e43167ef33c2918675dafb0e2a863e070d64dc918c854e014e5dce2
-  [ -x "$ORNITH_RUNTIME" ] && [ "$(file_size "$ORNITH_RUNTIME")" = 11692896 ] &&
-    [ "$(sha256_file "$ORNITH_RUNTIME")" = "$digest" ] ||
-    fail 'Ornith runtime failed the LIFE-07v executable pin'
-  [ -n "$PRISM_SOURCE" ] && [ "$(git -C "$PRISM_SOURCE" rev-parse HEAD)" = "$revision" ] ||
-    fail 'Ornith runtime requires the pinned Prism source checkout for notices'
-  prefix=runtime/macos26-arm64/ornith
-  place "$ORNITH_RUNTIME" "$prefix/samosa-ornith-llama-server" copy
-  for notice in LICENSE licenses/LICENSE-jsonhpp vendor/cpp-httplib/LICENSE; do
-    case "$notice" in
-      LICENSE) name=LICENSE-Prism ;;
-      licenses/*) name=LICENSE-jsonhpp ;;
-      vendor/*) name=LICENSE-cpp-httplib ;;
-    esac
-    git -C "$PRISM_SOURCE" show "$revision:$notice" >"$WORK/$name" || fail "missing Prism notice $notice"
-    place "$WORK/$name" "$prefix/$name" copy
-  done
-  cat >"$WORK/ornith-provenance.txt" <<EOF
-Source https://github.com/PrismML-Eng/llama.cpp at $revision
-Profile arm64 macOS 26.0, system runtime with embedded Metal shaders
-LIFE-07v static recipe with OpenSSL, OpenMP and the embedded UI disabled
-Executable 11692896 bytes, SHA-256 $digest
-EOF
-  place "$WORK/ornith-provenance.txt" "$prefix/provenance.txt" copy
-}
-
-if [ -n "$ORNITH_RUNTIME" ] || [ -n "$PRISM_SOURCE" ]; then
-  [ "$(uname -s):$(uname -m)" = Darwin:arm64 ] || fail 'Ornith runtime packaging requires Apple Silicon macOS'
-  stage_ornith
-fi
-
 if [ "$(uname -s):$(uname -m)" = Darwin:arm64 ]; then
-  native_runtime "$MAPLE_RUNTIME" samosa-maple
   native_runtime "$VISIONPSY_RUNTIME" samosa-visionpsy
-  native_runtime "$MOLMO2_RUNTIME" samosa-molmo2
-  native_runtime "$MOLMO2_PACK" molmo2-pack
   native_runtime "$AUDIO_DECODE_RUNTIME" samosa-audio-decode
-  native_runtime "$MAPLE_METALLIB" mlx.metallib
-  [ -f "$ROOT/assets/molmo2/processor.json" ] || fail "missing Molmo2 processor contract: $ROOT/assets/molmo2/processor.json"
-  place "$ROOT/assets/molmo2/processor.json" runtime/common/molmo2-processor.json copy
+  native_runtime "$VISIONPSY_METALLIB" mlx.metallib
+  gzip -dc "$ROOT/components/samosa-inference/assets/visual/visionpsy.ppm.gz" >"$WORK/visionpsy-probe.ppm" ||
+    fail 'could not expand the VisionPsy qualification image'
+  place "$WORK/visionpsy-probe.ppm" visual/probes/visionpsy.ppm copy
   stage_summarizer
   stage_ocr
 fi
@@ -279,7 +231,9 @@ stage_dist tools/samosa_kokoro_runtime.sh engine/samosa_kokoro_runtime.sh
 stage_dist dist/MODEL_CARD.md README.md
 stage_dist assets/app.html app.html
 stage_dist assets/samosa-chat.png samosa-chat.png
-stage_dist assets/models.json models.json
+command -v node >/dev/null 2>&1 || fail 'Node.js is required to assemble the release catalog'
+node "$ROOT/tools/write_release_model_catalog.mjs" "$ROOT/assets/models.json" >"$WORK/models.json"
+place "$WORK/models.json" models.json copy
 
 BROWSER_ROOT="$ROOT/assets/voice/browser"
 [ -d "$BROWSER_ROOT" ] || fail "missing browser voice assets: $BROWSER_ROOT"

@@ -1,8 +1,7 @@
 <div align="center">
   <img src="assets/samosa-chat_medium.png" alt="Samosa Chat mascot" width="210">
   <h1>Samosa Chat</h1>
-  <p><strong>Private models. One private chat app.</strong></p>
-  <p>Choose from the compatible models in Samosa's catalog.</p>
+  <p><strong>Private chat with Qwen on your Mac.</strong></p>
   <p>No cloud account &nbsp;·&nbsp; No telemetry &nbsp;·&nbsp; Hardware-aware context &nbsp;·&nbsp; Durable compaction</p>
 
   <p>
@@ -12,20 +11,17 @@
   </p>
 </div>
 
-Samosa is a local model application and HTTP gateway. Models can be downloaded, verified, and loaded directly through the app interface or terminal commands.
+Samosa is a local chat app and HTTP gateway. It downloads, verifies and runs Qwen on your Mac.
 
 ## Features
 
 - Uses a local model application and HTTP gateway.
 - Starts with zero installed models.
-- Includes a browser interface for downloading models from a validated catalog.
+- Includes a browser interface for downloading Qwen from a validated catalog.
 - Supports resumable and verified model downloads.
 - Automatically routes chat images and PDFs through local text/OCR and an
   on-demand visual specialist; oversized inputs are bounded from live
   memory/thermal conditions and multi-page work has no arbitrary page cap.
-- Adds optional, on-demand Molmo2 4B intelligence as the preferred installed
-  image/video specialist without a Python runtime or always-resident second
-  model; VisionPsy remains the smaller compatibility fallback.
 - Provides an internet-search feature that does not require an API key.
 - Integrates portable Chutni folder memory through the bundled local `chutni-mcp` service.
 
@@ -34,29 +30,12 @@ Samosa is a local model application and HTTP gateway. Models can be downloaded, 
 | Model | Download | Description | Runtime | License |
 |---|---:|---|---|---|
 | [Qwen3.6 35B A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | 24.0 GB | Expert-streamed local chat with image support | Samosa C engine | Apache-2.0 |
-| [Maple](https://huggingface.co/deepanwa/Samosa-Chat-Maple-2bit-SSD) | 5.4 GB | 2-bit MoE with routed experts streamed from SSD | Samosa Metal engine | MIT |
-| [Bonsai 27B 1-bit](https://huggingface.co/prism-ml/Bonsai-27B-gguf) | 3.8 GB | 1-bit GGUF reasoning model | Prism llama.cpp | Apache-2.0 |
-| [Ornith 1.0 9B](https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF) | 5.6 GB | Q4_K_M GGUF coding and reasoning model | Prism llama.cpp | MIT |
 | [VisionPsy-Nano 460M](https://huggingface.co/KaedeTai/VisionPsy-Nano-460M-MLX) | 1.01 GB | Auxiliary vision specialist for chat attachments (macOS arm64) | Samosa MLX Metal C++ helper | Apache-2.0 |
-| [Molmo2 4B](https://huggingface.co/allenai/Molmo2-4B) | ≤4.0 GiB native package | Preferred on-demand image/video specialist (macOS arm64) | Samosa MLX/AVFoundation C++ helper | Apache-2.0 |
 
-Only one primary chat model is loaded in memory at a time. When the optional
-Molmo2 package is installed it handles admitted visual image and video work;
-VisionPsy-Nano 460M is the standard-image fallback when Molmo is absent. On
-constrained Macs, Samosa stops the primary model, runs one bounded Molmo
-operation, and unloads it. Under any selected text model, Molmo's grounded
-observation is handed back to that selected model for one bounded,
-non-thinking final response. Two attached images are supplied to
-Molmo together as labelled native visual inputs, rather than captioned in
-isolation. Selecting Molmo itself returns Molmo's own text and point
-coordinates directly. Molmo2 is a locally built,
-hash-verified package: the app never
-downloads its 19.4 GB FP32 source checkpoint. Samosa contains zero runtime
-Python dependencies. The real 16 GiB-machine conversion and zero-swap
-image/video qualification are recorded in
-[`docs/regressions/molmo2-4b-q4-2026-08-26.md`](docs/regressions/molmo2-4b-q4-2026-08-26.md).
+Qwen handles all chat responses. VisionPsy can supply image and PDF evidence
+on demand, and the separate speech tools handle recordings and read-aloud.
 
-> **Credits.** The Qwen runtime is based on [colibrì](https://github.com/JustVugg/colibri) by JustVugg and runs the model released by [Qwen](https://huggingface.co/Qwen). Bonsai is released by [PrismML](https://huggingface.co/prism-ml), and Ornith by [DeepReinforce](https://huggingface.co/deepreinforce-ai). GGUF execution uses PrismML's [llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp). Samosa is an independent project.
+> The Qwen runtime is based on [colibrì](https://github.com/JustVugg/colibri) by JustVugg and runs the model released by [Qwen](https://huggingface.co/Qwen).
 
 ## Installation
 
@@ -64,24 +43,24 @@ Building from source does not include pre-packaged model weights.
 
 ### macOS
 
-Install OpenMP:
+Install OpenMP and Node.js for the native build and catalog assembly.
 
 ```sh
-brew install libomp
+brew install libomp node
 git clone --recurse-submodules https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
 make install
 ~/.samosa/bin/samosa app
 ```
 
-Launch the app, open **Settings → Model**, and click **Download** for the desired model. First downloads are activated automatically upon verification.
+Launch the app, open **Settings → Model**, and choose **Download** for Qwen. The app activates the model after verifying its files.
 
 ### Linux (Debian/Ubuntu)
 
 Install build dependencies and OpenMP:
 
 ```sh
-sudo apt-get install build-essential libomp-dev
+sudo apt-get install build-essential libomp-dev nodejs
 git clone --recurse-submodules https://github.com/deepanwadhwa/samosa-chat
 cd samosa-chat
 make install
@@ -95,11 +74,7 @@ For legacy Docker instructions, see [docs/INSTALL.md](docs/INSTALL.md).
 ## Terminal Model Management
 
 ```sh
-samosa models             # Display installation status for all models
-samosa pull bonsai
-samosa pull ornith
-samosa pull qwen
-samosa pull all
+samosa doctor
 ```
 
 Model downloads:

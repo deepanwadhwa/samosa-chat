@@ -723,18 +723,6 @@ doctor() {
   echo "version:   $SAMOSA_VERSION"
   [ "$RELEASE_DIR" = "$HOME_DIR" ] || echo "release:   $(basename "$RELEASE_DIR")"
   [ -x "$ENGINE" ] && echo "engine:    ok ($ENGINE)" || { echo "engine:    MISSING - re-run the installer"; ok=0; }
-  llama_server="${SAMOSA_BONSAI_SERVER-$HOME_DIR/backends/prism-llama.cpp/build/bin/llama-server}"
-  bundled_llama="$RELEASE_DIR/bin/samosa-ornith-llama-server"
-  if [ "${SAMOSA_BONSAI_SERVER+x}" != x ] && [ -x "$bundled_llama" ] && [ "$(uname -s)" = Darwin ]; then
-    product_version=$(sw_vers -productVersion)
-    if [ "${product_version%%.*}" -ge 26 ]; then llama_server="$bundled_llama"; fi
-  fi
-  if [ -x "$llama_server" ] &&
-     [ -f "${SAMOSA_BONSAI_MODEL-$HOME_DIR/models/bonsai-27b-1bit/Bonsai-27B-Q1_0.gguf}" ]; then
-    echo "bonsai:    ok (27B 1-bit)"
-  else
-    echo "bonsai:    not installed (optional)"
-  fi
   # A model-free runtime is a normal, supported state (docs/TASKS_UI_CHUTNI.md
   # T1.0) -- no Qwen weights yet is not an installation failure, so it does
   # not clear `ok`. Format/tokenizer checks only apply once weights exist;
@@ -756,7 +744,7 @@ doctor() {
     fi
     [ -f "$TOKENIZER" ] && echo "tokenizer: ok" || { echo "tokenizer: MISSING"; ok=0; }
   else
-    echo "model:     none installed yet - open the app or run 'samosa pull' to install one"
+    echo "model:     none installed yet - open the app to download Qwen"
   fi
   if [ -d "$HOME_DIR/releases" ]; then
     releases=$(find "$HOME_DIR/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*.partial' 2>/dev/null | wc -l | tr -d ' ')

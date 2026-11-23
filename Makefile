@@ -271,7 +271,7 @@ tier2-test: samosa-gateway samosa-ocr test_fake_openai_backend tests/test_tier2_
 
 samosa-gateway: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h chutni-service
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) $(SAMOSA_GATEWAY_FLAGS) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-gateway $(DL_LDFLAGS)
 
 ifeq ($(UNAME_S),Darwin)
@@ -321,7 +321,7 @@ test-lan-access: samosa-gateway test_fake_openai_backend tests/test_lan_access.s
 # no backend — which is exactly what the installed launchd plist fires.
 samosa-jobsd: src/samosa_gateway.c src/samosa_memory.h src/samosa_prompt_budget.h $(INFERENCE_SPECIALIST_LIBRARY) src/samosa_multimodal.h src/samosa_evidence.c src/samosa_evidence.h src/samosa_html.c src/samosa_html.h src/samosa_http.h src/json.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) -O2 $(CWARN) -Wno-unused-function -std=c11 -pthread -Isrc \
+	$(CC) -O2 $(CWARN) $(SAMOSA_GATEWAY_FLAGS) -Wno-unused-function -std=c11 -pthread -Isrc \
 	  src/samosa_gateway.c $(GATEWAY_SUPPORT_SRCS) -o $(BUILD_DIR)/samosa-jobsd $(DL_LDFLAGS)
 
 test_fake_openai_backend: tests/fake_openai_backend.c src/samosa_http.h
@@ -482,10 +482,10 @@ omp:
 	cp $(SAMOSA_INFERENCE_DIR)/build/qwen36b $(BUILD_DIR)/qwen36b
 
 ifeq ($(UNAME_S),Darwin)
-install: omp samosa-gateway samosa-extract samosa-audio-decode samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service samosa-visionpsy samosa-molmo2 molmo2-pack
+install: omp samosa-extract samosa-audio-decode samosa-fs samosa-ocr chutni-service samosa-visionpsy
 	sh tools/install_local_dev.sh
 else
-install: omp samosa-gateway samosa-extract samosa-maple samosa-jobsd samosa-fs samosa-ocr chutni-service
+install: omp samosa-extract samosa-fs samosa-ocr chutni-service
 	sh tools/install_local_dev.sh
 endif
 

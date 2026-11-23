@@ -392,6 +392,48 @@ Gateway's default visual cutover and shared crash recovery are the next
 lifecycle work.
 [Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
 
+#### LIFE-08f default visual through the native Gateway
+
+The versioned Mac Gateway uses the extracted visual owner for stock
+VisionPsy. The release manifest pins the executable, MLX kernel and
+startup image. The verified catalog supplies the model pins. The worker
+qualifies with an existing synthetic test image before it can process
+a user request. Explicit executable overrides use the legacy launch path.
+[Default visual lifecycle and startup inputs](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
+
+The visual owner reuses verification across lower-resolution attempts while
+the inputs keep their verified file identities. The packager copies the
+native MLX files so staging from an installed release preserves the
+running worker's file identity receipts. During development, the installed
+Molmo route exposed a connection-thread stack overflow in its manifest
+parser. The heap-backed parser passed with the original limits before
+Molmo left the release.
+
+#### Qwen-only Mac release
+
+Both installers generate the same Qwen-only chat catalog from the verified
+model descriptors and build a Gateway that refuses retired chat backends.
+Existing profiles with a retired chat selection follow the original setup
+flow for Qwen, preserving their name and welcome state. Node.js is used
+at package assembly. The native runtime keeps the existing C/C++ processes.
+The local source install also stages the existing PDFium reader and native
+summarizer and passes the launcher's doctor check without Python.
+
+The clean install and upgrade passed on Apple Silicon. A profile with an
+old Ornith selection opened chat with Qwen. Real Qwen answered both text
+and image turns. VisionPsy recovered an empty first observation at a
+lower resolution, stopped both workers, and rejected a same-size model
+mutation before launch while preserving the last-good revision. Peak
+process-tree RSS was 4,372 MB and swap did not grow. A separate check of
+the active local build and its installed Qwen files returned a real
+chat response.
+
+Set `SAMOSA_TEST_REAL_QWEN_MODEL`, `SAMOSA_TEST_REAL_VISIONPSY_ENGINE`
+and `SAMOSA_TEST_REAL_VISIONPSY_MODEL` to the retained inputs. Run
+`tools/without_python.sh sh tests/test_runtime_only_release.sh` to
+exercise the clean install, upgrade, legacy profile migration, Qwen
+generation and VisionPsy last-good behavior in isolated homes.
+
 #### Earlier packaging qualification
 
 Exact commands, terminal logs, source hashes and the related visual ownership

@@ -15,6 +15,13 @@ Preserve the established component order:
 
 **Sources → Inference → Agent → App → assembly and legacy retirement.**
 
+The current Mac release and refactor acceptance use Qwen3.6 35B A3B as
+the sole chat model. The release excludes Maple, Bonsai, Ornith and Molmo2.
+Keep existing attachment and speech functionality through the specialized
+VisionPsy, OCR and voice tools. Retired chat backends no longer gate the
+refactor. Additional chat models, including Inkling-2-Mini, follow after
+the modular release works on this Mac.
+
 Sources is recorded complete. Preserve unfinished Agent/App work while finishing
 Inference. Do not reopen completed Sources areas without a demonstrated defect,
 changed dependency or integration requirement.
@@ -98,7 +105,18 @@ full acceptance scope. The [verification record](ARCHITECTURE_REBUILD_VERIFICATI
 holds execution evidence. This file orders the remaining work; it does not replace
 those contracts or add an independent set of completion gates.
 
-## Review baseline
+## Current checkpoint
+
+| Component | Position |
+| --- | --- |
+| Sources | Separate module with all seven acceptance areas recorded complete. |
+| Inference | Separate module with areas 1–2 complete. The native Gateway routes Qwen, Whisper and the stock VisionPsy path through extracted Inference owners. Area 3 still needs shared crash recovery and final lifecycle qualification. Areas 4–7 follow. |
+| Agent | Existing implementation is preserved in the parent repository under `components/samosa-agent`. Its independent repository, build and release still need qualification. |
+| App | Existing Gateway still serves the product. App extraction follows Inference and Agent in the order below. |
+
+[Remaining Inference lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md).
+
+## Historical review baseline
 
 The latest recorded implementation checkpoint is 2026-10-25. The 2026-11-20 review
 inspected the checkout and saved evidence; it did not rerun builds or test suites.
@@ -297,36 +315,27 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 
 ## Immediate next batch
 
-1. LIFE-07k primary, LIFE-07l Whisper, LIFE-07m visual guardian and LIFE-07n shared
-   turn coordination extraction are qualified for their recorded profiles. LIFE-07o
-   qualifies the separate structured on-demand Whisper lifecycle; legacy long-window
-   common controls remain open. LIFE-07p extracts the original primary JSON
-   request transport for reuse by qualification. LIFE-07q supplies typed owner
-   results, the shared Activation process record and unknown-cleanup exclusion.
-   Preserve the
-   [original contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md); reuse existing
-   owners and tests. Do not rebuild the models, guardian or server.
-2. Follow the [remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md)
-   through common activation/readiness/observed identity/stale rejection,
-   last-good/guardian-death qualification using the extracted turn/pause/resume/
-   retry owner. Keep primary selection/settings/rollback explicit caller policy.
-   Keep the installer and catalog pins for all four primary profiles. Complete
-   common visual and Whisper controls around the extracted owners. Preserve the
-   native VisionPsy retry, Molmo image/video paths and Whisper text/SRT output
-   beyond 30 seconds. Exercise stale input, interrupted requests and recovery
-   through the installed callers before retiring each old path.
-3. Verify affected behavior on this Mac, preserve an exact passing revision and
-   retire each old lifecycle path only after its public replacement passes.
+1. Finish shared crash recovery in the existing Inference process owner.
+   Reproduce guardian loss and interruption before admission. Verify that
+   only processes and temporary files belonging to the interrupted operation
+   are reclaimed and that uncertain cleanup still fences replacements.
+   [Original process contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md).
+2. Qualify recovery and the remaining area 3 requirements through the native
+   installed callers. Reuse the existing Qwen generation and selection,
+   Whisper text/SRT, VisionPsy retry and unrelated-process checks.
+   [Remaining lifecycle audit](INFERENCE_AREA3_REMAINING_AUDIT.md).
+3. Record the exact passing component and parent revisions. Retire a legacy
+   path only after its public replacement passes. Continue to Inference area 4
+   when area 3 meets its acceptance criteria.
 
 Do not expand this batch into new models, unrelated features or a fresh architecture
 redesign. Subsequent work follows the ordered priorities and existing acceptance gates.
 
-LIFE-08e, 2026-11-22. Both default visual protocols can start through
+Previous LIFE-08e, 2026-11-22. Both default visual protocols can start through
 Inference Activation using their original guardian and request paths.
 The retained model tests verify startup evidence, stale input refusal,
 unchanged last good after a failed qualification, and worker cleanup.
-Next connect the Mac Gateway's default visual starts to these controls
-with release and model pins, then complete shared crash recovery.
+The standalone tests exercised the same request and cleanup used by Gateway.
 [Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
 
 Previous LIFE-08d, 2026-11-22. The normal Mac Gateway now uses the Inference Whisper

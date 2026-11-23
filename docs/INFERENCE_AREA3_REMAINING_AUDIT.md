@@ -1,11 +1,17 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08e, 2026-11-22. The standalone default visual owner verifies pinned
+LIFE-08f, 2026-11-22. The versioned Mac Gateway uses Qwen as its only chat
+model. Stock VisionPsy uses the Inference Activation owner with release
+pins, model pins and an image startup probe. The next area 3 work is shared
+recovery for guardian loss and interruption before admission, followed
+by the remaining native lifecycle checks for release-supported providers.
+[Native Gateway visual evidence](EXTRACTION_NATIVE_PACKAGING.md#life-08f-default-visual-through-the-native-gateway).
+
+Previous LIFE-08e, 2026-11-22. The standalone default visual owner verifies pinned
 native inputs and qualifies the original guarded VisionPsy and Molmo
 sessions. Both real models pass through the existing turn driver, including
 wide images, prepared PDF ownership, joint images and native video.
-The release and model pin cutover for Gateway and shared crash recovery
-remain open.
+This qualified the Inference owner before the Gateway cutover.
 [Default visual lifecycle contract](../components/samosa-inference/docs/DEFAULT_VISUAL_LIFECYCLE.md).
 
 Previous LIFE-08d, 2026-11-22. The normal Mac Gateway qualifies its selected Whisper

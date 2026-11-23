@@ -8,22 +8,17 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 MODEL_ROOT=${SAMOSA_MODELS_DIR:-"$(dirname "$ROOT")/samosa-models"}
 SNAPSHOT=${SAMOSA_SNAPSHOT:-"$MODEL_ROOT/qwen36_group32_i8"}
 TOKENIZER=${SAMOSA_TOKENIZER:-"$MODEL_ROOT/tokenizer_qwen36.json"}
-MAPLE_MODEL=${SAMOSA_MAPLE_MODEL_SOURCE:-"$MODEL_ROOT/maple"}
 HOME_DIR=${SAMOSA_HOME:-"$HOME/.samosa"}
 BUILD_DIR=${SAMOSA_BUILD_DIR:-"$ROOT/${BUILD_DIR:-build}"}
 ENGINE="$BUILD_DIR/qwen36b"
-MAPLE_ENGINE="$BUILD_DIR/samosa-maple"
-MOLMO2_ENGINE="$BUILD_DIR/samosa-molmo2"
-MOLMO2_PACK="$BUILD_DIR/molmo2-pack"
-MOLMO2_PROCESSOR="$ROOT/assets/molmo2/processor.json"
-MAPLE_METALLIB="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
+VISIONPSY_ENGINE="$BUILD_DIR/samosa-visionpsy"
+VISIONPSY_METALLIB="$BUILD_DIR/mlx-build/mlx/backend/metal/kernels/mlx.metallib"
 FS_SIDECAR="$BUILD_DIR/samosa-fs"
 GATEWAY="$BUILD_DIR/samosa-gateway"
 AUDIO_DECODE="$BUILD_DIR/samosa-audio-decode"
 JOBSD="$BUILD_DIR/samosa-jobsd"
 CHUTNI_SERVICE="$BUILD_DIR/chutni-mcp"
 OCR="$BUILD_DIR/samosa-ocr"
-DECISION_PYTHON=${SAMOSA_DECISION_PYTHON:-"$(dirname "$ROOT")/projects/OpenDecision/.venv/bin/python"}
 SUMMARIZER_RUNTIME="$BUILD_DIR/native-summarizer-runtime"
 SUMMARIZER="$SUMMARIZER_RUNTIME/bin/samosa-summarizer"
 SUMMARIZER_MODEL="$BUILD_DIR/samosa-text-summarization-Q8_0.gguf"
@@ -37,14 +32,15 @@ WHISPER_PROBE="$ROOT/components/samosa-inference/assets/whisper/qualification.wa
 # any release hash or validating inputs. Set SAMOSA_INSTALL_SKIP_BUILD=1 only
 # for an external packaging workflow that has already built the exact source.
 if [ "${SAMOSA_INSTALL_SKIP_BUILD:-0}" != "1" ]; then
-  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" samosa-gateway samosa-jobsd samosa-fs samosa-ocr
+  make -C "$ROOT" BUILD_DIR="$BUILD_DIR" SAMOSA_GATEWAY_FLAGS=-DSAMOSA_QWEN_ONLY \
+    samosa-gateway samosa-jobsd samosa-fs samosa-ocr
 fi
 
 # The application itself is what this installer must always be able to produce.
 # A model is *content*: the app is expected to start with none installed, show
 # the setup flow, and offer the catalogue for download. Requiring a 24 GB
 # snapshot here made a model-less install impossible, which is backwards.
-for path in "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
+for path in "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/assets/app.html" "$ROOT/assets/samosa-chat.png" \
   "$ROOT/assets/models.json" "$WHISPER_RUNTIME" "$WHISPER_PROBE" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/dist/samosa" "$BROWSER_VOICE_ASSETS/THIRD_PARTY.md"; do
   [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
@@ -53,6 +49,12 @@ if [ "$(uname -s)" = "Darwin" ] && [ ! -x "$AUDIO_DECODE" ]; then
   echo "missing local development input: $AUDIO_DECODE" >&2
   exit 1
 fi
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  for path in "$VISIONPSY_ENGINE" "$VISIONPSY_METALLIB"; do
+    [ -f "$path" ] || { echo "missing local development input: $path" >&2; exit 1; }
+  done
+fi
+command -v node >/dev/null 2>&1 || { echo 'Node.js is required to assemble the release catalog' >&2; exit 1; }
 
 # The native T5 summarizer is part of the Apple-Silicon application runtime,
 # not an optional developer tool. Keep the dev install shaped like a published
@@ -71,13 +73,6 @@ if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
     exit 1
   fi
 fi
-
-MAPLE_MODEL_OK=1
-for path in "$MAPLE_MODEL/config.json" "$MAPLE_MODEL/tokenizer.json" \
-  "$MAPLE_MODEL/maple-experts.bin" "$MAPLE_MODEL/maple-resident.safetensors" \
-  "$MAPLE_MODEL/maple-manifest.json"; do
-  [ -f "$path" ] || MAPLE_MODEL_OK=0
-done
 
 # The Qwen snapshot is staged when it happens to be present, and skipped
 # cleanly when it is not. Partial snapshots are treated as absent rather than
@@ -111,15 +106,17 @@ case "$(uname -s)" in
 esac
 "$ROOT/tools/validate_local_document_runtime.sh" "$EXTRACT_BIN" "$EXTRACT_LIB"
 
-set -- "$ENGINE" "$MAPLE_ENGINE" "$MOLMO2_ENGINE" "$MOLMO2_PACK" "$MOLMO2_PROCESSOR" "$MAPLE_METALLIB" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" "$ROOT/tools/samosa_decision.py" \
-  "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" \
+set -- "$ENGINE" "$FS_SIDECAR" "$GATEWAY" "$JOBSD" "$CHUTNI_SERVICE" "$OCR" \
+  "$ROOT/assets/app.html" "$ROOT/assets/models.json" "$ROOT/tools/install_local_dev.sh" "$ROOT/tools/write_release_model_catalog.mjs" \
   "$WHISPER_RUNTIME" "$WHISPER_PROBE" "$ROOT/tools/samosa_kokoro_runtime.sh" \
   "$ROOT/tools/stage_tesseract_runtime.sh" \
   "$ROOT/dist/samosa"
 if [ "$(uname -s)" = "Darwin" ]; then set -- "$@" "$AUDIO_DECODE"; fi
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  set -- "$@" "$VISIONPSY_ENGINE" "$VISIONPSY_METALLIB"
+fi
 for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do set -- "$@" "$file"; done
 if [ "$SNAPSHOT_OK" = "1" ]; then set -- "$@" "$SNAPSHOT/manifest.json"; fi
-if [ "$MAPLE_MODEL_OK" = "1" ]; then set -- "$@" "$MAPLE_MODEL/maple-manifest.json"; fi
 if [ -n "$EXTRACT_BIN" ]; then set -- "$@" "$EXTRACT_BIN"; fi
 if [ -n "$EXTRACT_LIB" ]; then set -- "$@" "$EXTRACT_LIB"; fi
 if [ "$SUMMARIZER_OK" = "1" ]; then
@@ -134,8 +131,7 @@ release_id="dev-$release_hash"
 stage="$HOME_DIR/releases/.${release_id}.partial.$$"
 final="$HOME_DIR/releases/$release_id"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-mkdir -p "$stage/bin" "$stage/share/molmo2" "$stage/voice/browser" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
-if [ "$MAPLE_MODEL_OK" = "1" ]; then mkdir -p "$stage/models/maple"; fi
+mkdir -p "$stage/bin" "$stage/voice/browser" "$HOME_DIR/models/qwen" "$HOME_DIR/releases" "$HOME_DIR/bin"
 if [ "$SUMMARIZER_OK" = "1" ]; then
   mkdir -p "$stage/lib" "$stage/models/native-summarizer"
 fi
@@ -153,14 +149,6 @@ if [ "$SNAPSHOT_OK" = "1" ]; then
   }
 fi
 cp "$ENGINE" "$stage/bin/qwen36b"
-cp "$MAPLE_ENGINE" "$stage/bin/samosa-maple"
-cp "$MOLMO2_ENGINE" "$stage/bin/samosa-molmo2"
-cp "$MOLMO2_PACK" "$stage/bin/molmo2-pack"
-cp "$MOLMO2_PROCESSOR" "$stage/share/molmo2/processor.json"
-ln "$MAPLE_METALLIB" "$stage/bin/mlx.metallib" || {
-  echo "hard-link failed for mlx.metallib; refusing to duplicate the Metal runtime" >&2
-  exit 1
-}
 cp "$FS_SIDECAR" "$stage/bin/samosa-fs"
 cp "$ROOT/dist/samosa" "$stage/bin/samosa"
 cp "$GATEWAY" "$stage/bin/samosa-gateway"
@@ -172,39 +160,22 @@ cp "$JOBSD" "$stage/bin/samosa-jobsd"
 cp "$CHUTNI_SERVICE" "$stage/bin/chutni-mcp"
 cp "$OCR" "$stage/bin/samosa-ocr"
 sh "$ROOT/tools/stage_tesseract_runtime.sh" "$stage"
-if [ -f "$BUILD_DIR/samosa-visionpsy" ]; then
-  cp "$BUILD_DIR/samosa-visionpsy" "$stage/bin/samosa-visionpsy"
-  chmod +x "$stage/bin/samosa-visionpsy"
+if [ "$(uname -s):$(uname -m)" = "Darwin:arm64" ]; then
+  cp "$VISIONPSY_ENGINE" "$VISIONPSY_METALLIB" "$stage/bin/"
 fi
 cp "$WHISPER_RUNTIME" "$stage/bin/samosa-voice-runtime"
 mkdir -p "$stage/voice/whisper"
 cp "$WHISPER_PROBE" "$stage/voice/whisper/qualification.wav"
 cp "$ROOT/tools/samosa_kokoro_runtime.sh" "$stage/bin/samosa-kokoro-runtime"
-cp "$ROOT/tools/samosa_decision.py" "$stage/bin/samosa-decision.py"
-printf '%s\n' "$DECISION_PYTHON" >"$stage/bin/samosa-decision-python.txt"
-cat >"$stage/bin/samosa-decision" <<'EOF'
-#!/bin/sh
-set -eu
-BIN_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-read -r DECISION_PYTHON_DEFAULT <"$BIN_DIR/samosa-decision-python.txt"
-DECISION_PYTHON=${SAMOSA_DECISION_PYTHON:-$DECISION_PYTHON_DEFAULT}
-if [ ! -x "$DECISION_PYTHON" ]; then
-  printf '%s\n' '{"ok":false,"error":"The local OpenDecision Python runtime is unavailable."}'
-  exit 0
-fi
-exec "$DECISION_PYTHON" "$BIN_DIR/samosa-decision.py" "$@"
-EOF
 cp "$ROOT/assets/app.html" "$stage/app.html"
 cp "$ROOT/assets/samosa-chat.png" "$stage/samosa-chat.png"
-cp "$ROOT/assets/models.json" "$stage/models.json"
+node "$ROOT/tools/write_release_model_catalog.mjs" "$ROOT/assets/models.json" >"$stage/models.json"
 for file in $(find "$BROWSER_VOICE_ASSETS" -type f -print | sort); do
   relative=${file#"$BROWSER_VOICE_ASSETS"/}
   mkdir -p "$stage/voice/browser/$(dirname "$relative")"
   cp "$file" "$stage/voice/browser/$relative"
 done
-chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime" "$stage/bin/samosa-molmo2" "$stage/bin/molmo2-pack"
-chmod +x "$stage/bin/samosa-decision"
-chmod +x "$stage/bin/samosa-maple"
+chmod +x "$stage/bin/qwen36b" "$stage/bin/samosa-fs" "$stage/bin/samosa" "$stage/bin/samosa-gateway" "$stage/bin/samosa-jobsd" "$stage/bin/chutni-mcp" "$stage/bin/samosa-ocr" "$stage/bin/samosa-voice-runtime" "$stage/bin/samosa-kokoro-runtime"
 
 if [ "$SUMMARIZER_OK" = "1" ]; then
   cp "$SUMMARIZER" "$stage/bin/samosa-summarizer"
@@ -217,16 +188,6 @@ if [ "$SUMMARIZER_OK" = "1" ]; then
       exit 1
     }
   chmod +x "$stage/bin/samosa-summarizer"
-fi
-
-if [ "$MAPLE_MODEL_OK" = "1" ]; then
-  for file in "$MAPLE_MODEL"/*; do
-    [ -f "$file" ] || continue
-    ln "$file" "$stage/models/maple/$(basename "$file")" || {
-      echo "hard-link failed for Maple asset $(basename "$file")" >&2
-      exit 1
-    }
-  done
 fi
 
 # Text, HTML, and DOCX extraction is portable; PDF support is optional and is
@@ -254,7 +215,7 @@ if [ -n "$EXTRACT_BIN" ]; then
     DOCUMENTS_ENABLED=1
   else
     sed -n '1,40p' "$EXTRACT_SMOKE_LOG" >&2 || true
-    echo "warning: skipping incompatible document extractor; Maple/app installation will continue" >&2
+    echo "warning: skipping incompatible document extractor; app installation will continue" >&2
     rm -f "$stage/bin/samosa-extract"
     if [ -n "$EXTRACT_LIB" ]; then rm -f "$stage/bin/$(basename "$EXTRACT_LIB")"; fi
     rm -f "$EXTRACT_SMOKE_INPUT" "$EXTRACT_SMOKE_LOG"
@@ -286,7 +247,7 @@ if [ "$SNAPSHOT_OK" = "1" ]; then
   echo "Model files were hard-linked, not copied."
 else
   echo "No local Qwen snapshot found, so none was staged."
-  echo "  The app starts without one: open it and pick a model to download."
+  echo "  Open the app to download Qwen."
 fi
 if [ "$DOCUMENTS_ENABLED" = "1" ]; then
   echo "Document reading: on (text/HTML/DOCX via $final/bin/samosa-extract; OCR via $final/bin/samosa-ocr)."
