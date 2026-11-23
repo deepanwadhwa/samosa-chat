@@ -1,6 +1,26 @@
 # Inference lifecycle: remaining requirements
 
-LIFE-08f, 2026-11-22. The versioned Mac Gateway uses Qwen as its only chat
+LIFE-08g, 2026-11-22. Native tests reproduced two gaps in the shared process
+owner. An overlapping launch could inherit a different guardian's control
+pipe and delay shutdown. A guardian could start a worker after its owner's
+pipe had closed. On macOS the guardian now inherits only the launch's
+mapped descriptors. A closed control pipe before admission triggers
+cleanup of the handed-off workspace without starting a worker.
+The independent Inference archive passes the 592-check engine-process
+suite in native and sanitizer builds. The native clean install and upgrade
+pass with real Qwen generation and worker shutdown. Peak process-tree
+RSS was 4,353 MB with zero swap growth.
+[Inference evidence](../components/samosa-inference/docs/EXTRACTION_STATUS.md).
+
+Recovery still needs to cover guardian loss after admission and interruption
+before the guardian receives the workspace. A native Whisper reproduction
+confirmed that `SIGKILL` before handoff leaves the new result directory
+behind while preserving the borrowed audio. The earlier primary fixture
+reproduces a live helper surviving guardian loss and verifies that the
+current owner retains its exclusion fence.
+[Primary guardian-loss fixture](../components/samosa-inference/docs/qualification/life07q-primary-lifecycle/README.md#evidence-and-scope).
+
+Previous LIFE-08f, 2026-11-22. The versioned Mac Gateway uses Qwen as its only chat
 model. Stock VisionPsy uses the Inference Activation owner with release
 pins, model pins and an image startup probe. The next area 3 work is shared
 recovery for guardian loss and interruption before admission, followed

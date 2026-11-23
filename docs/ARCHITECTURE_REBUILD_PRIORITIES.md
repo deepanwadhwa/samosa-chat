@@ -316,9 +316,11 @@ are reproducible, C01–C14 pass in full and the product no longer needs the mon
 ## Immediate next batch
 
 1. Finish shared crash recovery in the existing Inference process owner.
-   Reproduce guardian loss and interruption before admission. Verify that
-   only processes and temporary files belonging to the interrupted operation
-   are reclaimed and that uncertain cleanup still fences replacements.
+   The guardian now refuses launch when its owner's control pipe has closed
+   and can clean a workspace after handoff. Use the reproduced guardian
+   loss and pre-handoff Whisper failures to finish recovery. Verify that it
+   reclaims only the interrupted operation's processes and files and keeps
+   replacements fenced while cleanup is uncertain.
    [Original process contracts](INFERENCE_GUARDIAN_COMPATIBILITY.md).
 2. Qualify recovery and the remaining area 3 requirements through the native
    installed callers. Reuse the existing Qwen generation and selection,
